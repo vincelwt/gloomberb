@@ -1,5 +1,5 @@
 import { Box, ChartSurface, ScrollBox, Text } from "../../ui";
-import { TextAttributes, type BoxRenderable, type NativeRendererHost as CliRenderer } from "../../ui";
+import { TextAttributes, type BoxRenderable } from "../../ui";
 import { useNativeRenderer, useUiCapabilities } from "../../ui";
 import { useShortcut } from "../../react/input";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
@@ -65,10 +65,27 @@ import {
 } from "./comparison-chart-renderer";
 import {
   CELL_CURSOR_SNAP_DISTANCE,
-  sameCursorPosition,
   stepCursorTowards,
   type ChartCursorMotionKind,
 } from "./cursor-motion";
+import {
+  buildBlankPlotLines,
+  buildDisplayCursorState,
+  cancelAnimationFrameSafe,
+  EMPTY_DISPLAY_CURSOR,
+  getGlobalMouseX,
+  getLocalPlotPointer,
+  getRenderablePixelSize,
+  PIXEL_CURSOR_SNAP_DISTANCE,
+  requestAnimationFrameSafe,
+  resolveCursorMotionKind,
+  sameDisplayCursorState,
+  scaleLocalPixelCoordinate,
+  toCursorPosition,
+  type ChartMouseEvent,
+  type DisplayCursorState,
+  type LocalPlotPointer,
+} from "./chart-pointer";
 import {
   COMPARISON_RENDER_MODES,
   TIME_RANGES,
@@ -145,248 +162,8 @@ type PendingExpansionAction =
   | { kind: "pan-left"; targetPanOffset: number }
   | null;
 
-interface ChartMouseEvent {
-  x: number;
-  y: number;
-  pixelX?: number;
-  pixelY?: number;
-  stopPropagation?: () => void;
-  preventDefault?: () => void;
-  modifiers: {
-    shift: boolean;
-    alt: boolean;
-    ctrl: boolean;
-  };
-  scroll?: {
-    direction: "up" | "down" | "left" | "right";
-    delta: number;
-  };
-}
-
-interface LocalPlotPointer {
-  cellX: number;
-  cellY: number;
-  pixelX: number | null;
-  pixelY: number | null;
-  hasPixelPrecision: boolean;
-}
-
-interface DisplayCursorState {
-  cellX: number | null;
-  cellY: number | null;
-  pixelX: number | null;
-  pixelY: number | null;
-}
-
-const EMPTY_DISPLAY_CURSOR: DisplayCursorState = {
-  cellX: null,
-  cellY: null,
-  pixelX: null,
-  pixelY: null,
-};
-
-const PIXEL_CURSOR_SNAP_DISTANCE = 0.5;
-const globalAnimationFrame = globalThis as typeof globalThis & {
-  requestAnimationFrame?: (callback: (timestamp: number) => void) => number;
-  cancelAnimationFrame?: (handle: number) => void;
-};
-
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-function requestAnimationFrameSafe(callback: (timestamp: number) => void): number {
-  if (typeof globalAnimationFrame.requestAnimationFrame === "function") {
-    return globalAnimationFrame.requestAnimationFrame(callback);
-  }
-  return globalThis.setTimeout(() => callback(Date.now()), 16) as unknown as number;
-}
-
-function cancelAnimationFrameSafe(handle: number) {
-  if (typeof globalAnimationFrame.cancelAnimationFrame === "function") {
-    globalAnimationFrame.cancelAnimationFrame(handle);
-    return;
-  }
-  clearTimeout(handle);
-}
-
-function getRendererCellMetrics(renderer: Pick<CliRenderer, "resolution" | "terminalWidth" | "terminalHeight">) {
-  if (!renderer.resolution) return null;
-  const cellWidth = renderer.resolution.width / Math.max(renderer.terminalWidth, 1);
-  const cellHeight = renderer.resolution.height / Math.max(renderer.terminalHeight, 1);
-  if (!(cellWidth > 0) || !(cellHeight > 0)) return null;
-  return { cellWidth, cellHeight };
-}
-
-function getRenderablePixelSize(
-  renderable: Pick<RenderableNode, "width" | "height"> | null,
-  renderer: Pick<CliRenderer, "resolution" | "terminalWidth" | "terminalHeight">,
-) {
-  const metrics = getRendererCellMetrics(renderer);
-  if (!renderable || !metrics) return null;
-  return {
-    pixelWidth: Math.max(renderable.width * metrics.cellWidth, 1),
-    pixelHeight: Math.max(renderable.height * metrics.cellHeight, 1),
-  };
-}
-
-function projectCellCursorToLocalPixels(
-  cellX: number,
-  cellY: number,
-  renderable: Pick<RenderableNode, "width" | "height"> | null,
-  renderer: Pick<CliRenderer, "resolution" | "terminalWidth" | "terminalHeight">,
-): { pixelX: number; pixelY: number } | null {
-  const pixelSize = getRenderablePixelSize(renderable, renderer);
-  if (!renderable || !pixelSize) return null;
-
-  return {
-    pixelX: renderable.width <= 1
-      ? 0
-      : clamp(
-        (cellX / Math.max(renderable.width - 1, 1)) * Math.max(pixelSize.pixelWidth - 1, 0),
-        0,
-        Math.max(pixelSize.pixelWidth - 1, 0),
-      ),
-    pixelY: renderable.height <= 1
-      ? 0
-      : clamp(
-        (cellY / Math.max(renderable.height - 1, 1)) * Math.max(pixelSize.pixelHeight - 1, 0),
-        0,
-        Math.max(pixelSize.pixelHeight - 1, 0),
-      ),
-  };
-}
-
-function scaleLocalPixelCoordinate(value: number | null, sourceExtent: number, targetExtent: number): number | null {
-  if (value === null) return null;
-  if (targetExtent <= 1) return 0;
-  if (!(sourceExtent > 1)) {
-    return clamp(value, 0, Math.max(targetExtent - 1, 0));
-  }
-  return clamp(
-    (value / Math.max(sourceExtent - 1, 1)) * Math.max(targetExtent - 1, 0),
-    0,
-    Math.max(targetExtent - 1, 0),
-  );
-}
-
-function toCursorPosition(x: number | null, y: number | null) {
-  return { x, y };
-}
-
-function sameDisplayCursorState(
-  left: DisplayCursorState,
-  right: DisplayCursorState,
-  cellEpsilon = 0,
-  pixelEpsilon = 0,
-): boolean {
-  return sameCursorPosition(toCursorPosition(left.cellX, left.cellY), toCursorPosition(right.cellX, right.cellY), cellEpsilon)
-    && sameCursorPosition(toCursorPosition(left.pixelX, left.pixelY), toCursorPosition(right.pixelX, right.pixelY), pixelEpsilon);
-}
-
-function buildDisplayCursorState(
-  cellX: number | null,
-  cellY: number | null,
-  renderable: BoxRenderable | null,
-  renderer: Pick<CliRenderer, "resolution" | "terminalWidth" | "terminalHeight">,
-  pixelX: number | null = null,
-  pixelY: number | null = null,
-): DisplayCursorState {
-  if (cellX === null || cellY === null) return EMPTY_DISPLAY_CURSOR;
-  if (pixelX !== null && pixelY !== null) {
-    return { cellX, cellY, pixelX, pixelY };
-  }
-  const derivedPixels = projectCellCursorToLocalPixels(cellX, cellY, renderable, renderer);
-  return {
-    cellX,
-    cellY,
-    pixelX: derivedPixels?.pixelX ?? null,
-    pixelY: derivedPixels?.pixelY ?? null,
-  };
-}
-
-function getLocalPlotPointer(
-  event: ChartMouseEvent,
-  renderable: BoxRenderable | null,
-  renderer: Pick<CliRenderer, "resolution" | "terminalWidth" | "terminalHeight">,
-): LocalPlotPointer | null {
-  if (!renderable) return null;
-
-  const localCellX = event.x - renderable.x;
-  const localCellY = event.y - renderable.y;
-  if (localCellX < 0 || localCellX >= renderable.width || localCellY < 0 || localCellY >= renderable.height) {
-    return null;
-  }
-
-  const metrics = getRendererCellMetrics(renderer);
-  if (event.pixelX === undefined || event.pixelY === undefined || !metrics) {
-    return {
-      cellX: localCellX,
-      cellY: localCellY,
-      pixelX: null,
-      pixelY: null,
-      hasPixelPrecision: false,
-    };
-  }
-
-  const pixelLeft = renderable.x * metrics.cellWidth;
-  const pixelTop = renderable.y * metrics.cellHeight;
-  const pixelWidth = renderable.width * metrics.cellWidth;
-  const pixelHeight = renderable.height * metrics.cellHeight;
-  const localPixelX = event.pixelX - pixelLeft;
-  const localPixelY = event.pixelY - pixelTop;
-
-  if (localPixelX < 0 || localPixelY < 0 || localPixelX > pixelWidth || localPixelY > pixelHeight) {
-    return {
-      cellX: localCellX,
-      cellY: localCellY,
-      pixelX: null,
-      pixelY: null,
-      hasPixelPrecision: false,
-    };
-  }
-
-  return {
-    cellX: renderable.width <= 1
-      ? 0
-      : clamp(
-        (localPixelX / Math.max(pixelWidth - 1, 1)) * Math.max(renderable.width - 1, 0),
-        0,
-        Math.max(renderable.width - 1, 0),
-      ),
-    cellY: renderable.height <= 1
-      ? 0
-      : clamp(
-        (localPixelY / Math.max(pixelHeight - 1, 1)) * Math.max(renderable.height - 1, 0),
-        0,
-        Math.max(renderable.height - 1, 0),
-      ),
-    pixelX: clamp(localPixelX, 0, Math.max(pixelWidth - 1, 0)),
-    pixelY: clamp(localPixelY, 0, Math.max(pixelHeight - 1, 0)),
-    hasPixelPrecision: true,
-  };
-}
-
-function getGlobalMouseX(
-  event: ChartMouseEvent,
-  renderer: Pick<CliRenderer, "resolution" | "terminalWidth" | "terminalHeight">,
-): number {
-  const metrics = getRendererCellMetrics(renderer);
-  if (event.pixelX === undefined || !metrics) return event.x;
-  return event.pixelX / metrics.cellWidth;
-}
-
-function resolveCursorMotionKind(
-  event: ChartMouseEvent,
-  renderer: Pick<CliRenderer, "resolution" | "terminalWidth" | "terminalHeight">,
-): ChartCursorMotionKind {
-  return event.pixelX !== undefined && event.pixelY !== undefined && getRendererCellMetrics(renderer)
-    ? "pixel"
-    : "cell";
-}
-
-function buildBlankPlotLines(width: number, height: number): string[] {
-  return Array.from({ length: height }, () => " ".repeat(width));
 }
 
 function buildComparisonNativeBitmapKey(
@@ -1229,7 +1006,7 @@ function ComparisonStockChartView({
 
     const syncPlacement = () => {
       if (effectiveRenderer !== "kitty" || !rendererState.nativeReady || !plotRef.current) return;
-      const plot = plotRef.current as NativeSurfaceRenderableNode;
+      const plot = plotRef.current as unknown as NativeSurfaceRenderableNode;
       const rect = getRenderableCellRect(plot);
       const visibleRect = resolveNativeSurfaceVisibleRect(plot, renderer.terminalWidth, renderer.terminalHeight);
       const previous = lastNativeGeometryRef.current;
@@ -1286,7 +1063,7 @@ function ComparisonStockChartView({
       return;
     }
 
-    const plot = plotRef.current as NativeSurfaceRenderableNode;
+    const plot = plotRef.current as unknown as NativeSurfaceRenderableNode;
     const plotRect = getRenderableCellRect(plot);
     const visibleRect = resolveNativeSurfaceVisibleRect(plot, renderer.terminalWidth, renderer.terminalHeight);
     const bitmapSize = computeBitmapSize(plotRect, renderer.resolution, renderer.terminalWidth, renderer.terminalHeight);
@@ -1354,7 +1131,7 @@ function ComparisonStockChartView({
       return;
     }
 
-    const plot = plotRef.current as NativeSurfaceRenderableNode;
+    const plot = plotRef.current as unknown as NativeSurfaceRenderableNode;
     const plotRect = getRenderableCellRect(plot);
     const visibleRect = resolveNativeSurfaceVisibleRect(plot, renderer.terminalWidth, renderer.terminalHeight);
     const bitmapSize = computeBitmapSize(plotRect, renderer.resolution, renderer.terminalWidth, renderer.terminalHeight);
@@ -1524,8 +1301,9 @@ function ComparisonStockChartView({
         return;
     }
 
-    if (event.name >= "1" && event.name <= "7") {
-      const index = parseInt(event.name, 10) - 1;
+    const rangeKey = event.name ?? "";
+    if (rangeKey >= "1" && rangeKey <= "7") {
+      const index = parseInt(rangeKey, 10) - 1;
       if (index < TIME_RANGES.length) {
         setRangePreset(TIME_RANGES[index]!);
       }

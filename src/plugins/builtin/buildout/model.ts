@@ -4,7 +4,7 @@ import { apiClient } from "../../../utils/api-client";
 import { formatDetailDate as sharedFormatDetailDate, formatRelativeTime as sharedFormatRelativeTime, parseDisplayDate } from "../../../utils/datetime-format";
 import { httpFetch } from "../../../utils/http-transport";
 
-export const BUILDOUT_API_URL = "https://api.thebuildout.ai";
+const BUILDOUT_API_URL = "https://api.thebuildout.ai";
 export const BUILDOUT_NAME = "TheBuildout";
 export const PAGE_SIZE = 80;
 export const LOAD_MORE_THRESHOLD = 10;
@@ -332,7 +332,7 @@ export const tabs: Array<{ label: string; value: BuildoutTabId }> = [
   { label: "Intel", value: "intel" },
 ];
 
-export const listColumns: BuildoutColumn[] = [
+const listColumns: BuildoutColumn[] = [
   { id: "listName", label: "List Name", width: 30, align: "left", flexGrow: 2 },
   { id: "listDescription", label: "Description", width: 42, align: "left", flexGrow: 3 },
   { id: "companyCount", label: "Companies", width: 10, align: "right" },
@@ -342,9 +342,9 @@ export const listColumns: BuildoutColumn[] = [
   { id: "avgMargin", label: "Med Margin", width: 10, align: "right" },
 ];
 
-export const favoriteColumn: BuildoutColumn = { id: "favorite", label: "", width: 2, align: "left" };
+const favoriteColumn: BuildoutColumn = { id: "favorite", label: "", width: 2, align: "left" };
 
-export const companyColumns: BuildoutColumn[] = [
+const companyColumns: BuildoutColumn[] = [
   { id: "company", label: "Company", width: 26, align: "left", flexGrow: 2 },
   { id: "description", label: "Description", width: 34, align: "left", flexGrow: 2 },
   { id: "sectorTech", label: "Sector & Tech", width: 26, align: "left", flexGrow: 1 },
@@ -360,7 +360,7 @@ export const companyColumns: BuildoutColumn[] = [
   { id: "employees", label: "Employees", width: 9, align: "right" },
 ];
 
-export const siteColumns: BuildoutColumn[] = [
+const siteColumns: BuildoutColumn[] = [
   { id: "site", label: "Site Name", width: 28, align: "left", flexGrow: 2 },
   { id: "type", label: "Type", width: 14, align: "left" },
   { id: "owner", label: "Owner", width: 18, align: "left", flexGrow: 1 },
@@ -373,7 +373,7 @@ export const siteColumns: BuildoutColumn[] = [
   { id: "area", label: "Area", width: 9, align: "right" },
 ];
 
-export const intelColumns: BuildoutColumn[] = [
+const intelColumns: BuildoutColumn[] = [
   { id: "time", label: "Time", width: 4, align: "left" },
   { id: "companies", label: "Companies", width: 24, align: "left" },
   { id: "headline", label: "Title", width: 64, align: "left", flexGrow: 4 },
@@ -389,7 +389,7 @@ export function emptyPage<T>(loadingMore = false): BuildoutPagedState<T> {
   };
 }
 
-export function pageFromItems<T>(items: T[]): BuildoutPagedState<T> {
+function pageFromItems<T>(items: T[]): BuildoutPagedState<T> {
   return {
     items,
     offset: items.length,
@@ -418,7 +418,7 @@ export function textOrNull(value: unknown): string | null {
   return stringValue || null;
 }
 
-export function stringField(raw: RawObject, ...keys: string[]): string | null {
+function stringField(raw: RawObject, ...keys: string[]): string | null {
   for (const key of keys) {
     const value = textOrNull(raw[key]);
     if (value != null) return value;
@@ -426,7 +426,7 @@ export function stringField(raw: RawObject, ...keys: string[]): string | null {
   return null;
 }
 
-export function stringArrayField(raw: RawObject, ...keys: string[]): string[] {
+function stringArrayField(raw: RawObject, ...keys: string[]): string[] {
   for (const key of keys) {
     const value = raw[key];
     if (Array.isArray(value)) {
@@ -438,7 +438,7 @@ export function stringArrayField(raw: RawObject, ...keys: string[]): string[] {
   return [];
 }
 
-export function numberField(raw: RawObject, ...keys: string[]): number | null {
+function numberField(raw: RawObject, ...keys: string[]): number | null {
   for (const key of keys) {
     const value = raw[key];
     if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -450,7 +450,7 @@ export function numberField(raw: RawObject, ...keys: string[]): number | null {
   return null;
 }
 
-export function booleanField(raw: RawObject, ...keys: string[]): boolean | null {
+function booleanField(raw: RawObject, ...keys: string[]): boolean | null {
   for (const key of keys) {
     const value = raw[key];
     if (typeof value === "boolean") return value;
@@ -462,7 +462,7 @@ export function booleanField(raw: RawObject, ...keys: string[]): boolean | null 
   return null;
 }
 
-export function objectField(raw: RawObject, ...keys: string[]): RawObject | null {
+function objectField(raw: RawObject, ...keys: string[]): RawObject | null {
   for (const key of keys) {
     const value = raw[key];
     if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -472,7 +472,7 @@ export function objectField(raw: RawObject, ...keys: string[]): RawObject | null
   return null;
 }
 
-export function arrayField(raw: RawObject, ...keys: string[]): RawObject[] {
+function arrayField(raw: RawObject, ...keys: string[]): RawObject[] {
   for (const key of keys) {
     const value = raw[key];
     if (Array.isArray(value)) return value.filter((item): item is RawObject => (
@@ -482,7 +482,7 @@ export function arrayField(raw: RawObject, ...keys: string[]): RawObject[] {
   return [];
 }
 
-export function metricNumber(value: unknown): number | null {
+function metricNumber(value: unknown): number | null {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : null;
   }
@@ -512,7 +512,7 @@ export function metricNumber(value: unknown): number | null {
   return (negative ? -parsed : parsed) * multiplier;
 }
 
-export function compactInteger(value: number | null | undefined): string | null {
+function compactInteger(value: number | null | undefined): string | null {
   if (value == null || !Number.isFinite(value)) return null;
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
 }
@@ -628,7 +628,7 @@ export function intelSourceDomains(update: BuildoutUpdate) {
   ]);
 }
 
-export function normalizeSource(raw: RawObject): BuildoutSource {
+function normalizeSource(raw: RawObject): BuildoutSource {
   return {
     field: stringField(raw, "field"),
     title: stringField(raw, "title", "name"),
@@ -646,7 +646,7 @@ export function normalizeSource(raw: RawObject): BuildoutSource {
   };
 }
 
-export function normalizeRelatedCompany(raw: RawObject): BuildoutRelatedCompany {
+function normalizeRelatedCompany(raw: RawObject): BuildoutRelatedCompany {
   return {
     id: stringField(raw, "id", "companyId", "company_id"),
     name: stringField(raw, "name", "companyName", "company_name"),
@@ -656,7 +656,7 @@ export function normalizeRelatedCompany(raw: RawObject): BuildoutRelatedCompany 
   };
 }
 
-export function normalizeList(raw: RawObject): BuildoutList {
+function normalizeList(raw: RawObject): BuildoutList {
   const slug = stringField(raw, "slug") ?? stringField(raw, "id") ?? "all";
   return {
     id: stringField(raw, "id") ?? slug,
@@ -672,7 +672,7 @@ export function normalizeList(raw: RawObject): BuildoutList {
   };
 }
 
-export function normalizeCompany(raw: RawObject): BuildoutCompany {
+function normalizeCompany(raw: RawObject): BuildoutCompany {
   const ticker = tickerSymbol(stringField(raw, "ticker"));
   const name = stringField(raw, "name") ?? ticker ?? "Company";
   const supplyChain = objectField(raw, "supplyChain", "supply_chain");
@@ -809,7 +809,7 @@ export function normalizeCompany(raw: RawObject): BuildoutCompany {
   };
 }
 
-export function normalizeObservation(raw: RawObject): BuildoutObservation {
+function normalizeObservation(raw: RawObject): BuildoutObservation {
   const captureBounds = objectField(raw, "captureBounds", "capture_bounds");
   return {
     id: stringField(raw, "id") ?? undefined,
@@ -832,7 +832,7 @@ export function normalizeObservation(raw: RawObject): BuildoutObservation {
   };
 }
 
-export function normalizeReportSection(raw: RawObject): BuildoutReportSection {
+function normalizeReportSection(raw: RawObject): BuildoutReportSection {
   return {
     title: stringField(raw, "title", "heading", "name"),
     body: stringField(raw, "body", "text"),
@@ -842,7 +842,7 @@ export function normalizeReportSection(raw: RawObject): BuildoutReportSection {
   };
 }
 
-export function normalizeReportSections(raw: RawObject): BuildoutReportSection[] {
+function normalizeReportSections(raw: RawObject): BuildoutReportSection[] {
   const arraySections = arrayField(raw, "projectReportSections", "project_report_sections");
   if (arraySections.length > 0) return arraySections.map(normalizeReportSection);
 
@@ -861,7 +861,7 @@ export function normalizeReportSections(raw: RawObject): BuildoutReportSection[]
   });
 }
 
-export function normalizeSite(raw: RawObject): BuildoutSite {
+function normalizeSite(raw: RawObject): BuildoutSite {
   const location = objectField(raw, "location");
   const park = objectField(raw, "park");
   const area = stringField(raw, "areaKm2", "area_km2");
@@ -908,7 +908,7 @@ export function normalizeSite(raw: RawObject): BuildoutSite {
   };
 }
 
-export function normalizeUpdate(raw: RawObject): BuildoutUpdate {
+function normalizeUpdate(raw: RawObject): BuildoutUpdate {
   return {
     id: stringField(raw, "id") ?? stringField(raw, "headline") ?? "intel",
     headline: stringField(raw, "headline", "title") ?? "Intel",
@@ -934,7 +934,7 @@ export function normalizeUpdate(raw: RawObject): BuildoutUpdate {
   };
 }
 
-export function allCompaniesList(): BuildoutList {
+function allCompaniesList(): BuildoutList {
   return {
     id: "all",
     slug: "all",
@@ -969,7 +969,7 @@ export function rowTitle(row: BuildoutRow) {
   }
 }
 
-export function companyFavoriteIdentifier(company: BuildoutCompany) {
+function companyFavoriteIdentifier(company: BuildoutCompany) {
   const ticker = tickerSymbol(company.ticker);
   if (!ticker) return company.id;
   const exchange = textOrNull(company.exchange);
@@ -1057,11 +1057,11 @@ export function columnsForTab(activeTab: BuildoutTabId, selectedList: BuildoutLi
   return intelColumns;
 }
 
-export function compareText(left: string, right: string) {
+function compareText(left: string, right: string) {
   return left.localeCompare(right, "en-US", { sensitivity: "base" });
 }
 
-export function compareValues(left: SortComparable, right: SortComparable, direction: SortDirection) {
+function compareValues(left: SortComparable, right: SortComparable, direction: SortDirection) {
   if (left.type === "missing" && right.type === "missing") return 0;
   if (left.type === "missing") return 1;
   if (right.type === "missing") return -1;
@@ -1072,24 +1072,24 @@ export function compareValues(left: SortComparable, right: SortComparable, direc
   return direction === "asc" ? result : -result;
 }
 
-export function numberSort(value: unknown): SortComparable {
+function numberSort(value: unknown): SortComparable {
   const numberValue = metricNumber(value);
   return numberValue == null ? { type: "missing" } : { type: "number", value: numberValue };
 }
 
-export function dateSort(value: unknown): SortComparable {
+function dateSort(value: unknown): SortComparable {
   const stringValue = textOrNull(value);
   if (!stringValue) return { type: "missing" };
   const parsed = Date.parse(stringValue);
   return Number.isFinite(parsed) ? { type: "number", value: parsed } : { type: "missing" };
 }
 
-export function stringSort(value: unknown): SortComparable {
+function stringSort(value: unknown): SortComparable {
   const stringValue = textOrNull(value);
   return stringValue == null ? { type: "missing" } : { type: "string", value: stringValue };
 }
 
-export function sortValue(row: BuildoutRow, columnId: BuildoutColumnId): SortComparable {
+function sortValue(row: BuildoutRow, columnId: BuildoutColumnId): SortComparable {
   if (row.kind === "list") {
     const list = row.item;
     switch (columnId) {
@@ -1227,7 +1227,7 @@ export function defaultSortDirection(columnId: BuildoutColumnId | null): SortDir
   ].includes(columnId) ? "desc" : "asc";
 }
 
-export function buildPath(path: string, params: Record<string, string | number | boolean | null | undefined>) {
+function buildPath(path: string, params: Record<string, string | number | boolean | null | undefined>) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value == null) continue;
@@ -1248,7 +1248,7 @@ export async function buildoutApi<T>(path: string, token: string | null, init: R
   return response.json() as Promise<T>;
 }
 
-export async function fetchLists(token: string | null) {
+async function fetchLists(token: string | null) {
   const response = await buildoutApi<RawObject[]>("/lists", token);
   const lists = Array.isArray(response) ? response.map(normalizeList) : [];
   return [allCompaniesList(), ...lists.filter((list) => list.slug !== "all")];

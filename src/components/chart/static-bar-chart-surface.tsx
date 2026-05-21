@@ -1,7 +1,8 @@
 import { useMemo } from "react";
-import { Box, ChartSurface, Span, Text, useNativeRenderer, useUiCapabilities } from "../../ui";
+import { Box, ChartSurface, Span, Text } from "../../ui";
 import { colors } from "../../theme/colors";
-import { computeBitmapSize, type NativeChartBitmap } from "./native/chart-rasterizer";
+import type { NativeChartBitmap } from "./native/chart-rasterizer";
+import { useStaticChartBitmapSize } from "./static-chart-bitmap";
 import {
   buildBarChartScene,
   renderBarChart,
@@ -28,14 +29,6 @@ export function StaticBarChartSurface({
     axisColor: colors.textDim,
   },
 }: StaticBarChartSurfaceProps) {
-  const {
-    canvasCharts,
-    nativeCharts,
-    cellWidthPx = 8,
-    cellHeightPx = 18,
-    pixelRatio = 1,
-  } = useUiCapabilities();
-  const nativeRenderer = useNativeRenderer();
   const totalWidth = Math.max(1, Math.floor(width));
   const totalHeight = Math.max(4, Math.floor(height));
   const legendRows = series.length > 1 ? 1 : 0;
@@ -47,33 +40,7 @@ export function StaticBarChartSurface({
     colors: chartColors,
   }), [chartColors, plotHeight, series, totalWidth]);
 
-  const bitmapSize = useMemo(() => {
-    if (nativeCharts && nativeRenderer.resolution && nativeRenderer.terminalWidth > 0 && nativeRenderer.terminalHeight > 0) {
-      return computeBitmapSize(
-        { x: 0, y: 0, width: totalWidth, height: plotHeight },
-        nativeRenderer.resolution,
-        nativeRenderer.terminalWidth,
-        nativeRenderer.terminalHeight,
-      );
-    }
-    if (!canvasCharts && !nativeCharts) return null;
-    const scale = Math.max(1, pixelRatio);
-    return {
-      pixelWidth: Math.max(1, Math.round(totalWidth * cellWidthPx * scale)),
-      pixelHeight: Math.max(1, Math.round(plotHeight * cellHeightPx * scale)),
-    };
-  }, [
-    canvasCharts,
-    cellHeightPx,
-    cellWidthPx,
-    nativeCharts,
-    nativeRenderer.resolution,
-    nativeRenderer.terminalHeight,
-    nativeRenderer.terminalWidth,
-    pixelRatio,
-    plotHeight,
-    totalWidth,
-  ]);
+  const bitmapSize = useStaticChartBitmapSize(totalWidth, plotHeight);
 
   const bitmap = useMemo<NativeChartBitmap | null>(() => {
     if (!scene || !bitmapSize) return null;

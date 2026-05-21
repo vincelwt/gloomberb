@@ -7,7 +7,7 @@ import {
   pickUnit,
 } from "../../../utils/format";
 
-export type FinancialMetricFormat = "compact" | "eps" | "percent";
+type FinancialMetricFormat = "compact" | "eps" | "percent";
 
 export type MetricDef = {
   label: string;
@@ -20,7 +20,7 @@ export type MetricDef = {
 
 export type FinancialRowDef = MetricDef | FinancialGroupDef;
 
-export type FinancialGroupDef = {
+type FinancialGroupDef = {
   kind: "group";
   id: string;
   label: string;
@@ -574,10 +574,10 @@ const BALANCE_KEYS = new Set<string>([
 
 export const FINANCIAL_COL_W = 18;
 export const FINANCIAL_LABEL_W = 28;
-export const FINANCIAL_GROWTH_W = 7;
-export const FINANCIAL_VALUE_W = FINANCIAL_COL_W - FINANCIAL_GROWTH_W;
+const FINANCIAL_GROWTH_W = 7;
+const FINANCIAL_VALUE_W = FINANCIAL_COL_W - FINANCIAL_GROWTH_W;
 
-export function aggregateQuarterlyStatements(
+function aggregateQuarterlyStatements(
   statements: FinancialStatement[],
   date: string,
 ): FinancialStatement | null {
@@ -608,7 +608,7 @@ export function computeTTM(quarterlyStatements: FinancialStatement[]) {
   return aggregateQuarterlyStatements(quarterlyStatements.slice(-4), "TTM");
 }
 
-export function computePreviousTtm(quarterlyStatements: FinancialStatement[]) {
+function computePreviousTtm(quarterlyStatements: FinancialStatement[]) {
   return aggregateQuarterlyStatements(quarterlyStatements.slice(-8, -4), "prevTTM");
 }
 
@@ -804,14 +804,14 @@ export function resolveFinancialPeriodOption(value: string | undefined): Financi
   return undefined;
 }
 
-export interface FinancialTableCellModel {
+interface FinancialTableCellModel {
   valueText: string;
   growthText: string;
   value: number | undefined;
   growth: number | undefined;
 }
 
-export interface FinancialTableModelRow {
+interface FinancialTableModelRow {
   kind: FinancialTableRow["kind"];
   id: string;
   key?: keyof FinancialStatement;

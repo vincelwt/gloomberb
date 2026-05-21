@@ -14,8 +14,6 @@ export { TextField, NumberField } from "./fields";
 
 export { getMessageComposerBlockHeight, MessageComposer } from "./message-composer";
 
-export { EmptyState } from "./status";
-
 export { DialogFrame } from "./frame";
 
 export { ExternalLink, ExternalLinkText, openUrl } from "./external-link";

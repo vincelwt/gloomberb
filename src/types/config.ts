@@ -128,7 +128,6 @@ export interface AppConfig {
   layouts: SavedLayout[];
   activeLayoutIndex: number;
   brokerInstances: BrokerInstanceConfig[];
-  plugins: string[];
   disabledPlugins: string[];
   disabledSources: string[];
   pluginConfig: Record<string, Record<string, unknown>>;
@@ -592,7 +591,6 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     ],
     activeLayoutIndex: 0,
     brokerInstances: [],
-    plugins: ["portfolio-list", "ticker-detail", "manual-entry", "ibkr"],
     disabledPlugins: [],
     disabledSources: [],
     pluginConfig: {},

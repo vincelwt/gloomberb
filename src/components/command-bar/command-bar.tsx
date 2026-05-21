@@ -9,7 +9,6 @@ import {
   moveMultiSelectValue,
   toggleMultiSelectValue,
   toggleOrderedMultiSelectValue,
-  type MultiSelectOption,
 } from "../ui/multi-select";
 import { ToggleList } from "../toggle-list";
 import {
@@ -117,6 +116,11 @@ import type {
   CommandBarWorkflowField,
   CommandBarWorkflowRoute,
 } from "./workflow-types";
+import {
+  estimateWorkflowBodyRows,
+  getWorkflowFieldDescription,
+  toMultiSelectOptions,
+} from "./workflow-view";
 import { parseRootShortcutIntent } from "./root-shortcuts";
 import { getPaneTemplateDisplayLabel } from "./pane-template-display";
 import {
@@ -263,17 +267,6 @@ function getInputRef(
   return store[fieldId]!;
 }
 
-function normalizeWorkflowCopy(value?: string): string {
-  return (value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-function getWorkflowFieldDescription(field: CommandBarWorkflowField, active: boolean): string | null {
-  const description = field.description?.trim();
-  if (!description) return null;
-  if (normalizeWorkflowCopy(description) === normalizeWorkflowCopy(field.placeholder)) return null;
-  return field.type === "textarea" && active ? `${description} Ctrl+S submits.` : description;
-}
-
 function isSetAlertWorkflow(route: CommandBarRoute | null): route is CommandBarWorkflowRoute {
   return route?.kind === "workflow"
     && route.payload.kind === "plugin-command"
@@ -312,22 +305,6 @@ function updateAlertWorkflowFieldDescriptions(
   });
 }
 
-function estimateWorkflowBodyRows(route: CommandBarWorkflowRoute): number {
-  const visibleFields = getVisibleWorkflowFields(route.fields, route.values);
-  const introRows = (route.subtitle ? 1 : 0)
-    + (route.description?.length ?? 0)
-    + (route.subtitle || (route.description?.length ?? 0) > 0 ? 1 : 0);
-  const fieldRows = visibleFields.reduce((total, field, index) => {
-    const active = field.id === route.activeFieldId;
-    const controlRows = field.type === "textarea" ? 6 : 1;
-    const descriptionRows = getWorkflowFieldDescription(field, active) ? 1 : 0;
-    const gapRows = index === visibleFields.length - 1 ? 0 : 1;
-    return total + 1 + controlRows + descriptionRows + gapRows;
-  }, 0);
-  const statusRows = (route.error ? 1 : 0) + (route.pending && route.pendingLabel ? 1 : 0);
-  return introRows + fieldRows + statusRows + 1;
-}
-
 function clampListIndex(index: number, length: number): number {
   return Math.max(0, Math.min(index, Math.max(0, length - 1)));
 }
@@ -362,15 +339,6 @@ function getVisibleMultiSelectPickerOptions(
       description,
     };
   });
-}
-
-function toMultiSelectOptions(options: CommandBarPickerOption[]): MultiSelectOption[] {
-  return options.map((option) => ({
-    value: option.id,
-    label: option.label,
-    description: option.description,
-    disabled: option.disabled,
-  }));
 }
 
 type CommandBarListScrollEvent = {
@@ -1525,16 +1493,6 @@ export function CommandBar({
       }
   }, [activeCollectionId, activeTickerData, buildBrokerWorkflow, notify, openWorkflowRoute, pluginRegistry, state.config]);
 
-  const openPickerRoute = useCallback((
-    route: CommandBarRoute,
-  ) => {
-    pushRoute(route);
-  }, [pushRoute]);
-
-  const openConfirmRoute = useCallback((route: CommandBarRoute) => {
-    pushRoute(route);
-  }, [pushRoute]);
-
   const buildSharedWorkflowDeps = useCallback(() => ({
     dataProvider,
     tickerRepository,
@@ -1553,7 +1511,7 @@ export function CommandBar({
     onConfirm: () => void | Promise<void>;
     successBehavior?: "close" | "back" | "stay";
   }) => {
-    openConfirmRoute({
+    pushRoute({
       kind: "confirm",
       confirmId: options.confirmId,
       title: options.title,
@@ -1566,7 +1524,7 @@ export function CommandBar({
       error: null,
       successBehavior: options.successBehavior || "close",
     });
-  }, [openConfirmRoute]);
+  }, [pushRoute]);
 
   const buildPluginItems = useCallback((query: string): ResultItem[] => {
     const disabledPlugins = state.config.disabledPlugins || [];
@@ -1700,7 +1658,7 @@ export function CommandBar({
               };
             });
           if (pickerOptions.length === 0) return;
-          openPickerRoute({
+          pushRoute({
             kind: "picker",
             pickerId: "layout-swap",
             title: "Swap With…",
@@ -1881,7 +1839,7 @@ export function CommandBar({
     notifyGridlockRevert,
     openBuiltInWorkflow,
     openInlineConfirm,
-    openPickerRoute,
+    pushRoute,
     persistLayoutChange,
     pluginRegistry,
     state,
@@ -1980,7 +1938,7 @@ export function CommandBar({
             description,
           };
         });
-        openPickerRoute({
+        pushRoute({
           kind: "picker",
           pickerId: "collection-target",
           title: `Add ${resolvedTicker.symbol} to Portfolio`,
@@ -2043,7 +2001,7 @@ export function CommandBar({
         );
         return;
       }
-      openPickerRoute({
+      pushRoute({
         kind: "picker",
         pickerId: "collection-target",
         title: `${getCollectionCommandVerb(action)} ${resolvedTicker.symbol} ${action === "add" ? "to" : "from"} ${kind === "watchlist" ? "Watchlist" : "Portfolio"}`,
@@ -2112,7 +2070,7 @@ export function CommandBar({
     notify,
     openAddToPortfolioWorkflow,
     openModeRoute,
-    openPickerRoute,
+    pushRoute,
     pluginRegistry,
   ]);
 
@@ -2308,13 +2266,13 @@ export function CommandBar({
       return;
     }
     if (normalized.mode === "picker") {
-      openPickerRoute(normalized.route);
+      pushRoute(normalized.route);
     }
   }, [
     closeAll,
     normalizePaneSettingField,
     notify,
-    openPickerRoute,
+    pushRoute,
     openWorkflowRoute,
     pluginRegistry,
     updateTopRoute,
@@ -3312,7 +3270,7 @@ export function CommandBar({
             description: `${instance.brokerType.toUpperCase()} · ${instance.connectionMode || String(instance.config.connectionMode || "configured")}`,
           }));
           if (instances.length === 0) return;
-          openPickerRoute({
+          pushRoute({
             kind: "picker",
             pickerId: "disconnect-broker",
             title: "Disconnect Broker Account",
@@ -3336,7 +3294,7 @@ export function CommandBar({
             description: `Delete watchlist "${watchlist.name}"`,
           }));
           if (options.length === 0) return;
-          openPickerRoute({
+          pushRoute({
             kind: "picker",
             pickerId: "delete-watchlist",
             title: "Delete Watchlist",
@@ -3356,7 +3314,7 @@ export function CommandBar({
             description: `Delete portfolio "${portfolio.name}"`,
           }));
           if (options.length === 0) return;
-          openPickerRoute({
+          pushRoute({
             kind: "picker",
             pickerId: "delete-portfolio",
             title: "Delete Portfolio",
@@ -3466,7 +3424,7 @@ export function CommandBar({
     openInlineConfirm,
     openModeRoute,
     openPaneSettingsRoute,
-    openPickerRoute,
+    pushRoute,
     onCheckForUpdates,
     pluginRegistry,
     quitApp,
@@ -4589,7 +4547,7 @@ export function CommandBar({
     openBuiltInWorkflow,
     openInlineConfirm,
     openPaneSettingsRoute,
-    openPickerRoute,
+    pushRoute,
     paneShortcutItems,
     persistLayoutChange,
     pluginCommandItems,
@@ -4874,7 +4832,7 @@ export function CommandBar({
       return;
     }
     if (field.type === "select") {
-      openPickerRoute({
+      pushRoute({
         kind: "picker",
         pickerId: "field-select",
         title: field.label,
@@ -4896,7 +4854,7 @@ export function CommandBar({
       return;
     }
     if (field.type === "multi-select" || field.type === "ordered-multi-select") {
-      openPickerRoute({
+      pushRoute({
         kind: "picker",
         pickerId: "field-multi-select",
         title: field.label,
@@ -4917,7 +4875,7 @@ export function CommandBar({
         },
       });
     }
-  }, [openPickerRoute, syncActiveWorkflowTextarea, updateWorkflowValue]);
+  }, [pushRoute, syncActiveWorkflowTextarea, updateWorkflowValue]);
 
   const activateListSelection = useCallback((options?: { secondary?: boolean; item?: ResultItem }) => {
     const listState = visibleListStateRef.current;
