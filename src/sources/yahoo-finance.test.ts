@@ -163,4 +163,59 @@ describe("YahooFinanceClient exchange aliases", () => {
       priorPriceTarget: 248,
     });
   });
+
+  test("maps Yahoo corporate actions into pane rows", async () => {
+    const provider = new YahooFinanceClient() as any;
+    const unix = (date: string) => Math.floor(Date.parse(`${date}T00:00:00Z`) / 1000);
+
+    provider.getSymbolsToTry = () => ["USAU"];
+    provider.fetchChart = async () => ({
+      meta: { currency: "USD" },
+      history: [{ date: new Date("2026-02-03T00:00:00Z"), close: 15 }],
+      events: {
+        dividends: {
+          dividend: { date: unix("2026-02-03"), amount: 0.12 },
+        },
+        splits: {
+          split: { date: unix("2026-01-02"), numerator: 2, denominator: 1, splitRatio: "2:1" },
+        },
+      },
+    });
+    provider.fetchJsonWithCrumb = async () => ({
+      quoteSummary: {
+        result: [{
+          price: { symbol: "USAU", currency: "USD", shortName: "U.S. Gold Corp.", exchangeName: "NasdaqCM" },
+          calendarEvents: {
+            earnings: {
+              earningsDate: [{ raw: unix("2026-03-16") }],
+              earningsAverage: { raw: -0.185 },
+            },
+          },
+          earningsHistory: {
+            history: [{
+              quarter: { raw: unix("2026-01-31") },
+              epsActual: { raw: -0.35 },
+              epsEstimate: { raw: -0.13 },
+              epsDifference: { raw: -0.22 },
+              surprisePercent: { raw: -1.6923 },
+            }],
+          },
+        }],
+      },
+    });
+
+    const actions = await provider.getCorporateActions("USAU", "NASDAQ");
+
+    expect(actions).toMatchObject({
+      providerId: "yahoo",
+      symbol: "USAU",
+      currency: "USD",
+      dividends: [{ exDate: "2026-02-03", amount: 0.12 }],
+      splits: [{ date: "2026-01-02", description: "2:1 split", ratio: 2, fromFactor: 1, toFactor: 2 }],
+      earnings: [
+        { date: "2026-03-16", time: "BMO", epsEstimate: -0.185 },
+        { date: "2026-01-31", epsActual: -0.35, epsEstimate: -0.13, difference: -0.22, surprisePercent: -169.23 },
+      ],
+    });
+  });
 });

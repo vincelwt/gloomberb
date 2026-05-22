@@ -1,4 +1,4 @@
-import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState, OptionContract, OptionsChain, CompanyProfile, HolderData, HolderRecord, AnalystResearchData, AnalystEstimateRecord } from "../types/financials";
+import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState, OptionContract, OptionsChain, CompanyProfile, HolderData, HolderRecord, AnalystResearchData, AnalystEstimateRecord, CorporateActionsData, DividendAction, EarningsAction, SplitAction } from "../types/financials";
 import type { DataProvider, EarningsEvent, MarketDataRequestContext, NewsItem, SecFilingItem } from "../types/data-provider";
 import type { TimeRange } from "../components/chart/chart-types";
 import {
@@ -239,6 +239,15 @@ type ChartResult = {
   };
   timestamp?: number[];
   indicators?: { quote?: Array<{ open?: (number | null)[]; high?: (number | null)[]; low?: (number | null)[]; close?: (number | null)[]; volume?: (number | null)[] }> };
+  events?: {
+    dividends?: Record<string, { amount?: number; date?: number }>;
+    splits?: Record<string, {
+      date?: number;
+      numerator?: number;
+      denominator?: number;
+      splitRatio?: string;
+    }>;
+  };
 };
 
 type ChartResponse = { chart?: { result?: ChartResult[]; error?: { description?: string } | null } };
@@ -252,6 +261,11 @@ type QuoteSummaryResponse = {
         shortName?: string;
         longName?: string;
         exchangeName?: string;
+      };
+      quoteType?: {
+        exchange?: string;
+        shortName?: string;
+        longName?: string;
       };
       financialData?: {
         currentPrice?: { raw?: number } | number | null;
@@ -303,6 +317,23 @@ type QuoteSummaryResponse = {
             numberOfAnalysts?: { raw?: number } | number | null;
             growth?: { raw?: number } | number | null;
           };
+        }>;
+      };
+      calendarEvents?: {
+        earnings?: {
+          earningsDate?: Array<{ raw?: number; fmt?: string }>;
+          earningsCallDate?: Array<{ raw?: number; fmt?: string }>;
+          earningsAverage?: { raw?: number } | number | null;
+          isEarningsDateEstimate?: boolean;
+        };
+      };
+      earningsHistory?: {
+        history?: Array<{
+          epsActual?: { raw?: number } | number | null;
+          epsEstimate?: { raw?: number } | number | null;
+          epsDifference?: { raw?: number } | number | null;
+          surprisePercent?: { raw?: number } | number | null;
+          quarter?: { raw?: number; fmt?: string } | number | string | null;
         }>;
       };
       assetProfile?: {
@@ -382,6 +413,12 @@ function hasAnalystResearchValue(data: AnalystResearchData): boolean {
     || data.ratings.length > 0
     || data.earningsEstimates.length > 0
     || data.revenueEstimates.length > 0;
+}
+
+function hasCorporateActionsValue(data: CorporateActionsData): boolean {
+  return data.dividends.length > 0
+    || data.splits.length > 0
+    || data.earnings.length > 0;
 }
 
 function normalizeYahooRecommendationPeriod(period?: string): string {
@@ -555,6 +592,12 @@ function yahooRawDateTime(value: unknown): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function yahooTimestampDate(value: number | undefined): string | undefined {
+  if (value == null || !Number.isFinite(value)) return undefined;
+  const date = new Date(value * 1000);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString().slice(0, 10);
+}
+
 function inferEarningsTiming(date: Date): EarningsEvent["timing"] {
   const hour = date.getUTCHours();
   if (hour >= 20) return "AMC";
@@ -579,6 +622,63 @@ function deriveShareChange(position: number | undefined, changePercent: number |
   const denominator = 1 + changePercent;
   if (denominator <= 0) return undefined;
   return Math.round(position - position / denominator);
+}
+
+function mapYahooDividends(events: ChartResult["events"]): DividendAction[] {
+  return Object.values(events?.dividends ?? {})
+    .map((dividend): DividendAction | null => {
+      const date = yahooTimestampDate(dividend.date);
+      if (!date || dividend.amount == null || !Number.isFinite(dividend.amount)) return null;
+      return { exDate: date, amount: dividend.amount };
+    })
+    .filter((dividend): dividend is DividendAction => dividend !== null);
+}
+
+function mapYahooSplits(events: ChartResult["events"]): SplitAction[] {
+  return Object.values(events?.splits ?? {})
+    .map((split): SplitAction | null => {
+      const date = yahooTimestampDate(split.date);
+      if (!date) return null;
+      const numerator = split.numerator;
+      const denominator = split.denominator;
+      return {
+        date,
+        description: split.splitRatio ? `${split.splitRatio} split` : "Split",
+        ratio: numerator != null && denominator ? numerator / denominator : undefined,
+        fromFactor: denominator,
+        toFactor: numerator,
+      };
+    })
+    .filter((split): split is SplitAction => split !== null);
+}
+
+function mapYahooCalendarEarnings(result: YahooQuoteSummaryResult): EarningsAction[] {
+  const rawDate = result.calendarEvents?.earnings?.earningsDate?.[0];
+  const date = yahooRawDate(rawDate);
+  if (!date) return [];
+  const timestamp = yahooRawDateTime(rawDate);
+  return [{
+    date,
+    time: timestamp ? inferEarningsTiming(timestamp) : undefined,
+    epsEstimate: financeRawNumber(result.calendarEvents?.earnings?.earningsAverage),
+  }];
+}
+
+function mapYahooEarningsHistory(result: YahooQuoteSummaryResult): EarningsAction[] {
+  return (result.earningsHistory?.history ?? [])
+    .map((earning): EarningsAction | null => {
+      const date = yahooRawDate(earning.quarter);
+      if (!date) return null;
+      const surprisePercent = financeRawNumber(earning.surprisePercent);
+      return {
+        date,
+        epsEstimate: financeRawNumber(earning.epsEstimate),
+        epsActual: financeRawNumber(earning.epsActual),
+        difference: financeRawNumber(earning.epsDifference),
+        surprisePercent: surprisePercent == null ? undefined : surprisePercent * 100,
+      };
+    })
+    .filter((earning): earning is EarningsAction => earning !== null);
 }
 
 function deriveMarketState(meta: NonNullable<ChartResult["meta"]>): MarketState {
@@ -865,7 +965,7 @@ export class YahooFinanceClient implements DataProvider {
         volume: quote.volume?.[i] ?? undefined,
       });
     }
-    return { meta: result.meta || {}, history };
+    return { meta: result.meta || {}, history, events: result.events };
   }
 
   /** Fetch extended hours data using 1d intraday chart with pre/post market included */
@@ -1520,6 +1620,47 @@ export class YahooFinanceClient implements DataProvider {
 
     if (firstEmpty) return firstEmpty;
     throw lastError || new Error(`No analyst data for ${ticker}`);
+  }
+
+  async getCorporateActions(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<CorporateActionsData> {
+    const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
+    let firstEmpty: CorporateActionsData | null = null;
+    let lastError: any;
+
+    for (const symbol of symbolsToTry) {
+      try {
+        const chart = await this.fetchChart(symbol, "5y", "1d");
+        const params = new URLSearchParams({
+          modules: "price,quoteType,calendarEvents,earningsHistory",
+        });
+        const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
+        const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(`corporate actions ${symbol}`, url);
+        const result = data.quoteSummary?.result?.[0];
+        if (!result) throw new Error(`No corporate actions for ${symbol}`);
+
+        const actions: CorporateActionsData = {
+          providerId: this.id,
+          symbol: result.price?.symbol ?? symbol,
+          name: result.price?.shortName ?? result.price?.longName,
+          currency: result.price?.currency ?? chart.meta.currency,
+          exchange: result.price?.exchangeName ?? result.quoteType?.exchange,
+          dividends: mapYahooDividends(chart.events),
+          splits: mapYahooSplits(chart.events),
+          earnings: [
+            ...mapYahooCalendarEarnings(result),
+            ...mapYahooEarningsHistory(result),
+          ],
+        };
+
+        if (hasCorporateActionsValue(actions)) return actions;
+        firstEmpty ??= actions;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    if (firstEmpty) return firstEmpty;
+    throw lastError || new Error(`No corporate actions for ${ticker}`);
   }
 
   async getSecFilings(ticker: string, count = 10, _exchange = "", _context?: MarketDataRequestContext): Promise<SecFilingItem[]> {
