@@ -239,10 +239,6 @@ export class ChatController {
   private chatPresenceUnsubscribe: (() => void) | null = null;
   private notifiedMessageIds = new Set<string>();
 
-  private get wsConnection(): ChatConnection | null {
-    return this.ensureChannelState(DEFAULT_CHAT_CHANNEL_ID).wsConnection;
-  }
-
   attachPersistence(persistence: PluginPersistence, resume?: PluginResumeState): void {
     this.persistence = persistence;
     this.resume = resume ?? this.resume;

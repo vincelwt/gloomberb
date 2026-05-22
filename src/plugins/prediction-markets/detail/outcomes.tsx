@@ -46,7 +46,7 @@ export function PredictionMarketOutcomesView({
         </Box>
       </Box>
 
-      {sortedOutcomes.map((market, index) => {
+      {sortedOutcomes.map((market) => {
         const selected = market.key === selectedMarketKey;
         return (
           <Box

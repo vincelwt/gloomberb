@@ -4,7 +4,6 @@ import type {
   ComparisonChartRenderMode,
   ComparisonChartSeries,
   ComparisonChartViewState,
-  TimeRange,
 } from "./chart-types";
 import { getVisiblePointCount, resolveAnchoredChartZoom } from "./chart-viewport";
 

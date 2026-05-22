@@ -12,7 +12,7 @@ import { Box, TextAttributes } from "../../ui";
 import { apiClient, type ChatChannel, type ChatMessage } from "../../utils/api-client";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
 import { setSharedMarketDataForTests, setSharedRegistryForTests } from "../registry";
-import { ChatContent, ChatStatusWidget, getScrollTopForElementIntoView, getSelectedMessageScrollTop, gloomberbCloudPlugin } from "./chat";
+import { ChatContent, ChatStatusWidget, gloomberbCloudPlugin } from "./chat";
 import { chatController, ChatController } from "./chat-controller";
 
 const TRANSCRIPT_KIND = "channel-transcript";

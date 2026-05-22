@@ -37,7 +37,7 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
 
   const fetchGenRef = useRef(0);
 
-  const load = useCallback(async (force = false) => {
+  const load = useCallback(async () => {
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
     setLoading(true);
@@ -62,7 +62,7 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
   useShortcut((ev) => {
     if (!focused) return;
     if (ev.name === "r") {
-      load(true);
+      load();
     }
   });
 
@@ -76,7 +76,7 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: () => load(true) }],
+    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: () => load() }],
   }), [bp, error, inverted, load, loading]);
 
   if (loading && points.length === 0) {

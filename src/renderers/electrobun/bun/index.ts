@@ -28,7 +28,6 @@ import { registerElectrobunCoreCapabilities } from "./core-capabilities";
 import { setNativeIbkrGatewayModuleLoader } from "../../../plugins/ibkr/gateway-service";
 import { apiClient, type PersistedAuthUser } from "../../../utils/api-client";
 import {
-  checkElectrobunDesktopUpdate,
   runElectrobunDesktopUpdate,
 } from "./desktop-update";
 import {
@@ -817,11 +816,7 @@ async function initialize(
   };
 }
 
-async function handleDesktop(
-  rpc: DesktopRpc,
-  method: string,
-  payload: Record<string, unknown>,
-) {
+async function handleDesktop(method: string, payload: Record<string, unknown>) {
   const workspace = requireDesktopWorkspace();
   switch (method) {
     case "desktop.syncMainState": {
@@ -937,7 +932,7 @@ async function handleBackendRequest(
   if (method === "init") return initialize(rpc, payload);
   if (method === "http.fetch") return handleHttpFetch(payload);
   if (method.startsWith("capability.")) return handleCapability(rpc, method, payload);
-  if (method.startsWith("desktop.")) return handleDesktop(rpc, method, payload);
+  if (method.startsWith("desktop.")) return handleDesktop(method, payload);
 
   switch (method) {
     case "update.check":

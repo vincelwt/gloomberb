@@ -74,7 +74,7 @@ function visibleWarmupKey(kind: "quote" | "snapshot", ticker: TickerRecord): str
   return `${kind}:${ticker.metadata.ticker}:${ticker.metadata.exchange ?? ""}`;
 }
 
-function needsVisibleQuoteWarmup(ticker: TickerRecord, financials: TickerFinancials | undefined, now = Date.now()): boolean {
+function needsVisibleQuoteWarmup(financials: TickerFinancials | undefined, now = Date.now()): boolean {
   return !financials?.quote || isQuoteStaleForCurrentSession(financials.quote, now);
 }
 
@@ -482,7 +482,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       const financials = financialsMap.get(ticker.metadata.ticker);
       const quoteKey = visibleWarmupKey("quote", ticker);
       if (
-        needsVisibleQuoteWarmup(ticker, financials, nowTimestamp)
+        needsVisibleQuoteWarmup(financials, nowTimestamp)
         && !warmupInFlightRef.current.has(quoteKey)
         && nowTimestamp - (warmupAttemptRef.current.get(quoteKey) ?? 0) >= VISIBLE_FINANCIAL_REFRESH_COOLDOWN_MS
       ) {

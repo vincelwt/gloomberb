@@ -3,7 +3,6 @@ import { appReducer, createInitialState, resolveCollectionForPane, resolveTicker
 import { cloneLayout, createDefaultConfig, createPaneInstance } from "../types/config";
 import type { AppSessionSnapshot } from "../core/state/session-persistence";
 import { buildBrokerPortfolioId } from "../utils/broker-instances";
-import type { DesktopSharedStateSnapshot } from "../types/desktop-window";
 
 describe("resolveTickerForPane", () => {
   test("uses a portfolio pane cursor for inspector follow panes", () => {

@@ -1,7 +1,7 @@
 import { TextAttributes } from "@opentui/core";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
-import { Box, Text } from "../../../ui";
+import { Box } from "../../../ui";
 import { testRender } from "../../../renderers/opentui/test-utils";
 import {
   AppContext,

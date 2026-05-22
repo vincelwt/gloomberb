@@ -17,7 +17,6 @@ import {
   formatFinancialHeader,
   FINANCIAL_SUB_TABS,
   resolveFinancialPeriodOption,
-  resolveFinancialSubTabKey,
 } from "../plugins/builtin/ticker-detail/financials-model";
 import { renderDesktopPaneScreenshot, type DesktopPaneShotPayload } from "./desktop-pane-shot";
 import type { PaneRuntimeState } from "../core/state/app-state";

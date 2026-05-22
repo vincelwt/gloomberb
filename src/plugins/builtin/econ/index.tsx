@@ -290,7 +290,7 @@ function EconDetailView({ event, width, height, focused }: EconDetailViewProps) 
   // For "change" mode, compute m/m or q/q percent change from consecutive observations
   const descObs = [...observations].reverse();
   const ascObs = observations; // already ascending from FRED
-  const tableRows = descObs.slice(0, 12).map((obs, i) => {
+  const tableRows = descObs.slice(0, 12).map((obs) => {
     if (mapping.displayMode !== "change" || obs.value == null) {
       return { date: obs.date, display: obs.value != null ? obs.value.toLocaleString("en-US", { maximumFractionDigits: 1 }) : "—" };
     }

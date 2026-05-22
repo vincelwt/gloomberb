@@ -536,7 +536,7 @@ export class AssetDataRouter implements DataProvider {
 
     targets.forEach((target, index) => {
       const context = target.context;
-      const entityKey = this.getEntityKey(target.symbol, target.exchange, context?.instrument);
+      const entityKey = this.getEntityKey(target.symbol, context?.instrument);
       const variantKeys = this.getTickerVariantCandidates(target.exchange);
       const sourceKeys = [
         ...this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate)),
@@ -570,7 +570,7 @@ export class AssetDataRouter implements DataProvider {
         const key = this.quoteBatchKey(item.target);
         const sourceKey = this.providerSourceKey(batchProvider);
         for (const entry of providerIndexes.get(key) ?? []) {
-          const entityKey = this.getEntityKey(entry.target.symbol, entry.target.exchange, entry.target.context?.instrument);
+          const entityKey = this.getEntityKey(entry.target.symbol, entry.target.context?.instrument);
           const variantKey = this.getTickerVariantCandidates(entry.target.exchange)[0] ?? "";
           this.cacheResource("quote", entityKey, variantKey, sourceKey, item.quote, this.resolveProviderPolicy("quote", batchProvider));
           results[entry.index] = { target: entry.target, quote: item.quote };
@@ -631,7 +631,7 @@ export class AssetDataRouter implements DataProvider {
         if (!value) continue;
         const sourceKey = this.providerSourceKey(batchProvider);
         for (const entry of providerIndexes.get(key) ?? []) {
-          const entityKey = this.getEntityKey(entry.target.symbol, entry.target.exchange, entry.target.instrument ?? undefined);
+          const entityKey = this.getEntityKey(entry.target.symbol, entry.target.instrument ?? undefined);
           const variantKey = this.getTickerVariantCandidates(entry.target.exchange)[0] ?? "";
           this.cacheResource("financials", entityKey, variantKey, sourceKey, value, this.resolveProviderPolicy("financials", batchProvider));
           results[entry.index] = { target: entry.target, financials: value };
@@ -708,7 +708,7 @@ export class AssetDataRouter implements DataProvider {
   }
 
   async getQuote(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<Quote> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKeys = this.getTickerVariantCandidates(exchange);
     const sourceKeys = [
       ...this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate)),
@@ -872,12 +872,12 @@ export class AssetDataRouter implements DataProvider {
   }
 
   async getHolders(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<HolderData> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKeys = this.getTickerVariantCandidates(exchange);
     const cached = this.selectCachedResource<HolderData>("holders", entityKey, variantKeys, this.getProviderSourceKeys(), false);
     const forceRefresh = context?.cacheMode === "refresh";
     if (cached && !forceRefresh) {
-      this.scheduleRevalidation(this.makeRevalidationKey("holders", ticker, exchange, context), async () => {
+      this.scheduleRevalidation(this.makeRevalidationKey("holders", ticker, context), async () => {
         await this.revalidateHolders(ticker, exchange, context);
       });
       return cached.value;
@@ -890,12 +890,12 @@ export class AssetDataRouter implements DataProvider {
   }
 
   async getAnalystResearch(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<AnalystResearchData> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKeys = this.getTickerVariantCandidates(exchange);
     const cached = this.selectCachedAnalystResearch(entityKey, variantKeys, this.getProviderSourceKeys(), false);
     const forceRefresh = context?.cacheMode === "refresh";
     if (cached && !forceRefresh && !isAnalystResearchMissingRatingTargets(cached.value)) {
-      this.scheduleRevalidation(this.makeRevalidationKey("analystResearch", ticker, exchange, context), async () => {
+      this.scheduleRevalidation(this.makeRevalidationKey("analystResearch", ticker, context), async () => {
         await this.revalidateAnalystResearch(ticker, exchange, context);
       });
       return cached.value;
@@ -908,12 +908,12 @@ export class AssetDataRouter implements DataProvider {
   }
 
   async getCorporateActions(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<CorporateActionsData> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKeys = this.getTickerVariantCandidates(exchange);
     const cached = this.selectCachedResource<CorporateActionsData>("corporateActions", entityKey, variantKeys, this.getProviderSourceKeys(), false);
     const forceRefresh = context?.cacheMode === "refresh";
     if (cached && !forceRefresh) {
-      this.scheduleRevalidation(this.makeRevalidationKey("corporateActions", ticker, exchange, context), async () => {
+      this.scheduleRevalidation(this.makeRevalidationKey("corporateActions", ticker, context), async () => {
         await this.revalidateCorporateActions(ticker, exchange, context);
       });
       return cached.value;
@@ -926,7 +926,7 @@ export class AssetDataRouter implements DataProvider {
   }
 
   async getSecFilings(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<SecFilingItem[]> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKeys = [
       buildVariantKey([["exchange", canonicalExchange(exchange)], ["count", count]]),
       buildVariantKey([["count", count]]),
@@ -934,7 +934,7 @@ export class AssetDataRouter implements DataProvider {
     ];
     const cached = this.selectCachedResource<SecFilingItem[]>("sec-filings", entityKey, variantKeys, this.getProviderSourceKeys(), false);
     if (cached) {
-      this.scheduleRevalidation(this.makeRevalidationKey("sec-filings", ticker, exchange, context, count), async () => {
+      this.scheduleRevalidation(this.makeRevalidationKey("sec-filings", ticker, context, count), async () => {
         await this.revalidateSecFilings(ticker, count, exchange, context);
       });
       return cached.value;
@@ -986,7 +986,7 @@ export class AssetDataRouter implements DataProvider {
   }
 
   async getPriceHistory(ticker: string, exchange: string, range: TimeRange, context?: MarketDataRequestContext): Promise<PricePoint[]> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKeys = [
       buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", range]]),
       buildVariantKey([["range", range]]),
@@ -1024,7 +1024,7 @@ export class AssetDataRouter implements DataProvider {
     resolution: ManualChartResolution,
     context?: MarketDataRequestContext,
   ): Promise<PricePoint[]> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKeys = [
       buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", bufferRange], ["resolution", resolution]]),
       buildVariantKey([["range", bufferRange], ["resolution", resolution]]),
@@ -1085,7 +1085,7 @@ export class AssetDataRouter implements DataProvider {
     barSize: string,
     context?: MarketDataRequestContext,
   ): Promise<PricePoint[]> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKeys = [
       buildVariantKey([["exchange", canonicalExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]),
       buildVariantKey([["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]),
@@ -1114,7 +1114,7 @@ export class AssetDataRouter implements DataProvider {
   }
 
   async getOptionsChain(ticker: string, exchange?: string, expirationDate?: number, context?: MarketDataRequestContext): Promise<OptionsChain> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKeys = [
       buildVariantKey([["exchange", canonicalExchange(exchange)], ["expiration", expirationDate ?? "default"]]),
       buildVariantKey([["expiration", expirationDate ?? "default"]]),
@@ -1126,7 +1126,7 @@ export class AssetDataRouter implements DataProvider {
     ];
     const cached = this.selectCachedResource<OptionsChain>("options-chain", entityKey, variantKeys, sourceKeys, false);
     if (cached) {
-      this.scheduleRevalidation(this.makeRevalidationKey("options-chain", ticker, exchange, context, expirationDate ?? "default"), async () => {
+      this.scheduleRevalidation(this.makeRevalidationKey("options-chain", ticker, context, expirationDate ?? "default"), async () => {
         await this.revalidateOptionsChain(ticker, exchange, expirationDate, context);
       });
       return cached.value;
@@ -1142,10 +1142,10 @@ export class AssetDataRouter implements DataProvider {
     return providerChain.value;
   }
 
-  private makeRevalidationKey(kind: string, ticker: string, exchange?: string, context?: MarketDataRequestContext, extra?: string | number): string {
+  private makeRevalidationKey(kind: string, ticker: string, context?: MarketDataRequestContext, extra?: string | number): string {
     return [
       kind,
-      this.getEntityKey(ticker, exchange, context?.instrument),
+      this.getEntityKey(ticker, context?.instrument),
       extra != null ? String(extra) : "",
     ].join("|");
   }
@@ -1160,7 +1160,7 @@ export class AssetDataRouter implements DataProvider {
     this.revalidationInFlight.set(key, promise);
   }
 
-  private getEntityKey(ticker: string, exchange?: string, instrument?: BrokerContractRef | null): string {
+  private getEntityKey(ticker: string, instrument?: BrokerContractRef | null): string {
     if (instrument?.conId != null) return `contract:${instrument.conId}`;
     if (instrument?.localSymbol) return `contract:${instrument.localSymbol.toUpperCase()}`;
     if (instrument?.symbol) return `contract:${instrument.symbol.toUpperCase()}`;
@@ -1303,7 +1303,7 @@ export class AssetDataRouter implements DataProvider {
     allowExpired = false,
     options: CachedFinancialsReadOptions = {},
   ): CachedFinancialsSelection {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKeys = this.getTickerVariantCandidates(exchange);
     const brokerSourceKeys = this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate));
     const brokerRecord = brokerSourceKeys.length > 0
@@ -1548,7 +1548,7 @@ export class AssetDataRouter implements DataProvider {
     exchange?: string,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<TickerFinancials> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
     for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getTickerFinancials) continue;
@@ -1582,7 +1582,7 @@ export class AssetDataRouter implements DataProvider {
     exchange?: string,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<TickerFinancials> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
     let primaryResult: SourceResult<TickerFinancials> | null = null;
 
@@ -1634,7 +1634,7 @@ export class AssetDataRouter implements DataProvider {
     exchange?: string,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<Quote> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
     for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getQuote) continue;
@@ -1666,7 +1666,7 @@ export class AssetDataRouter implements DataProvider {
     exchange?: string,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<Quote> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
     for (const provider of this.providersInPriorityOrder()) {
       try {
@@ -1690,7 +1690,7 @@ export class AssetDataRouter implements DataProvider {
     range: TimeRange,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", range]]);
     for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getPriceHistory) continue;
@@ -1726,7 +1726,7 @@ export class AssetDataRouter implements DataProvider {
     resolution: ManualChartResolution,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", bufferRange], ["resolution", resolution]]);
     for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getPriceHistoryForResolution) continue;
@@ -1762,7 +1762,7 @@ export class AssetDataRouter implements DataProvider {
     range: TimeRange,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", range]]);
     let firstEmptyResult: SourceResult<PricePoint[]> | null = null;
 
@@ -1800,7 +1800,7 @@ export class AssetDataRouter implements DataProvider {
     resolution: ManualChartResolution,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", bufferRange], ["resolution", resolution]]);
     let firstEmptyResult: SourceResult<PricePoint[]> | null = null;
 
@@ -1897,7 +1897,7 @@ export class AssetDataRouter implements DataProvider {
     barSize: string,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]);
     for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getDetailedPriceHistory) continue;
@@ -1936,7 +1936,7 @@ export class AssetDataRouter implements DataProvider {
     barSize: string,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]);
     let firstEmptyResult: SourceResult<PricePoint[]> | null = null;
 
@@ -1974,7 +1974,7 @@ export class AssetDataRouter implements DataProvider {
     expirationDate?: number,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<OptionsChain> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["expiration", expirationDate ?? "default"]]);
     for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getOptionsChain) continue;
@@ -2008,7 +2008,7 @@ export class AssetDataRouter implements DataProvider {
     expirationDate?: number,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<OptionsChain> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["expiration", expirationDate ?? "default"]]);
     const result = await this.firstProvider(async (provider) => {
       if (!provider.getOptionsChain) return null;
@@ -2027,7 +2027,7 @@ export class AssetDataRouter implements DataProvider {
     exchange?: string,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<HolderData> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
     let firstEmptyResult: SourceResult<HolderData> | null = null;
     let lastError: unknown = null;
@@ -2058,7 +2058,7 @@ export class AssetDataRouter implements DataProvider {
     exchange?: string,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<AnalystResearchData> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
     let firstEmptyResult: SourceResult<AnalystResearchData> | null = null;
     let firstIncompleteResult: SourceResult<AnalystResearchData> | null = null;
@@ -2097,7 +2097,7 @@ export class AssetDataRouter implements DataProvider {
     exchange?: string,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<CorporateActionsData> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
     let firstEmptyResult: SourceResult<CorporateActionsData> | null = null;
     let lastError: unknown = null;
@@ -2129,7 +2129,7 @@ export class AssetDataRouter implements DataProvider {
     exchange?: string,
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<SecFilingItem[]> | null> {
-    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const entityKey = this.getEntityKey(ticker, context?.instrument);
     const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["count", count]]);
     let lastError: unknown = null;
 

@@ -17,7 +17,7 @@ import { formatPercentRaw } from "../../../utils/format";
 import { formatMarketPriceWithCurrency, formatSignedMarketPrice } from "../../../utils/market-format";
 import { getActiveQuoteDisplay } from "../../../utils/market-status";
 import { EmptyState } from "../../../components";
-import { useQuoteFlashDirection, type QuoteFlashDirection } from "../../../components/quote-flash";
+import { useQuoteFlashDirection } from "../../../components/quote-flash";
 import {
   PriceAreaSparklineBackground,
   PriceSparkline,
@@ -430,7 +430,7 @@ export function QuoteMonitorPane({ paneId, focused, width, height }: PaneProps) 
           height: "100%",
         }}
       >
-        {symbols.map((symbol, index) => {
+        {symbols.map((symbol) => {
           const ticker = tickersBySymbol.get(symbol) ?? (fallbackTicker?.metadata.ticker === symbol ? fallbackTicker : null);
           return (
             <QuoteMonitorCard

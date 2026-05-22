@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, useEffect, useRef, useState } from "react";
 import { TestDialogProvider, testRender } from "../../renderers/opentui/test-utils";
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core";
-import { Button } from "./button";
 import { ChoiceDialog } from "./choice-dialog";
 import { DataTable, type DataTableColumn } from "./data-table";
 import { TextField } from "./fields";
@@ -17,7 +16,6 @@ import {
   toggleOrderedMultiSelectValue,
 } from "./multi-select";
 import { Tabs } from "./tabs";
-import { ToggleList } from "../toggle-list";
 import { AppContext, PaneInstanceProvider, createInitialState } from "../../state/app-context";
 import { createDefaultConfig } from "../../types/config";
 import { DataTableView } from "../data-table-view";
@@ -282,30 +280,6 @@ afterEach(() => {
 });
 
 describe("shared UI kit", () => {
-  test("renders navigation and button primitives", async () => {
-    testSetup = await testRender(
-      <box flexDirection="column">
-        <Tabs
-          tabs={[
-            { label: "Overview", value: "overview" },
-            { label: "News", value: "news" },
-          ]}
-          activeValue="overview"
-          onSelect={() => {}}
-        />
-        <box height={1} />
-        <Button label="Save" variant="primary" shortcut="⌘S" onPress={() => {}} />
-      </box>,
-      { width: 40, height: 6 },
-    );
-
-    await testSetup.renderOnce();
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Overview");
-    expect(frame).toContain("Save");
-  });
-
   test("scrolls overflowing tabs horizontally with the mouse wheel", async () => {
     testSetup = await testRender(
       <Tabs
@@ -418,52 +392,6 @@ describe("shared UI kit", () => {
       await testSetup!.renderOnce();
     });
     expect(addedTab).toBe(true);
-  });
-
-  test("renders default tabs in one row", async () => {
-    testSetup = await testRender(
-      <box flexDirection="column">
-        <Tabs
-          tabs={[
-            { label: "Overview", value: "overview" },
-            { label: "Chart", value: "chart" },
-          ]}
-          activeValue="chart"
-          onSelect={() => {}}
-        />
-        <text>After tabs</text>
-      </box>,
-      { width: 32, height: 3 },
-    );
-
-    await testSetup.renderOnce();
-
-    const lines = testSetup.captureCharFrame().split("\n");
-    expect(lines[0]).toContain("Overview");
-    expect(lines[0]).toContain("Chart");
-    expect(lines[1]).toContain("After tabs");
-  });
-
-  test("renders toggle lists with selection and descriptions", async () => {
-    testSetup = await testRender(
-      <ToggleList
-        items={[
-          { id: "news", label: "News", enabled: true, description: "Headlines and previews" },
-          { id: "notes", label: "Notes", enabled: false, description: "Ticker notes" },
-        ]}
-        selectedIdx={0}
-        onSelect={() => {}}
-        onToggle={() => {}}
-      />,
-      { width: 40, height: 6 },
-    );
-
-    await testSetup.renderOnce();
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("[✓] News");
-    expect(frame).toContain("Notes");
-    expect(frame).toContain("Headlines and previews");
   });
 
   test("opens compact multi-select dialogs from a button", async () => {

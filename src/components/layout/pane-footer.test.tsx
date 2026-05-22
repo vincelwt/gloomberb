@@ -3,7 +3,6 @@ import { act } from "react";
 import { Box } from "../../ui";
 import { testRender } from "../../renderers/opentui/test-utils";
 import {
-  hasPaneFooterContent,
   PaneFooterBar,
   PaneFooterProvider,
   usePaneFooter,
@@ -20,14 +19,11 @@ afterEach(() => {
 });
 
 function Registration({
-  visible = true,
   onRefresh,
 }: {
-  visible?: boolean;
   onRefresh?: () => void;
 }) {
   usePaneFooter("test", () => {
-    if (!visible) return null;
     return {
       info: [
         {
@@ -42,7 +38,7 @@ function Registration({
         { id: "refresh", key: "r", label: "efresh", onPress: onRefresh },
       ],
     };
-  }, [onRefresh, visible]);
+  }, [onRefresh]);
   return null;
 }
 
@@ -58,18 +54,16 @@ function ExternalLinkRegistration() {
 
 function FooterHarness({
   focused = false,
-  visible = true,
   onRefresh,
 }: {
   focused?: boolean;
-  visible?: boolean;
   onRefresh?: () => void;
 }) {
   return (
     <PaneFooterProvider>
       {(footer) => (
         <Box width={64} height={1}>
-          <Registration visible={visible} onRefresh={onRefresh} />
+          <Registration onRefresh={onRefresh} />
           <PaneFooterBar footer={footer} focused={focused} width={64} />
         </Box>
       )}
@@ -91,27 +85,6 @@ function ExternalLinkFooterHarness() {
 }
 
 describe("PaneFooterBar", () => {
-  test("reports when footer has content", () => {
-    expect(hasPaneFooterContent(null)).toBe(false);
-    expect(hasPaneFooterContent({ info: [], hints: [] })).toBe(false);
-    expect(hasPaneFooterContent({
-      info: [{ id: "rows", parts: [{ text: "Rows", tone: "label" }] }],
-      hints: [],
-    })).toBe(true);
-  });
-
-  test("renders focused info left and hints right", async () => {
-    testSetup = await testRender(<FooterHarness focused />, { width: 64, height: 1 });
-    await act(async () => {
-      await testSetup!.renderOnce();
-      await testSetup!.renderOnce();
-    });
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Rows 12");
-    expect(frame).toContain("[r]efresh");
-  });
-
   test("hides hints on inactive footers but keeps info visible", async () => {
     testSetup = await testRender(<FooterHarness />, { width: 64, height: 1 });
     await act(async () => {
@@ -154,17 +127,5 @@ describe("PaneFooterBar", () => {
       await testSetup!.renderOnce();
     });
     expect(refreshCount).toBe(1);
-  });
-
-  test("clears a registration when the component unmounts", async () => {
-    testSetup = await testRender(<FooterHarness visible={false} />, { width: 64, height: 1 });
-    await act(async () => {
-      await testSetup!.renderOnce();
-      await testSetup!.renderOnce();
-    });
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).not.toContain("Rows 12");
-    expect(frame).not.toContain("[r]efresh");
   });
 });

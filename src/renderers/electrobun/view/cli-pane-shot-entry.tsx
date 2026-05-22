@@ -16,9 +16,9 @@ import { setSharedMarketDataForTests } from "../../../plugins/registry";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../../plugins/plugin-runtime";
 import { FloatingPaneWrapper } from "../../../components/layout/floating-pane";
 import { PaneContent } from "../../../components/layout/pane-content";
-import { getNativePaneBodyHeight, getNativePaneBodyWidth } from "../../../components/layout/pane-sizing";
+import { resolvePaneBodyFrame } from "../../../components/layout/pane-sizing";
 import { getPaneDisplayTitle } from "../../../components/layout/pane-title";
-import type { AppConfig, PaneInstanceConfig } from "../../../types/config";
+import type { AppConfig } from "../../../types/config";
 import type { CachedFinancialsTarget, DataProvider, QuoteSubscriptionTarget } from "../../../types/data-provider";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
@@ -326,8 +326,12 @@ function ShotPane({ payload }: { payload: CliPaneShotPayload }) {
   const title = getPaneDisplayTitle(titleState, instance, pane);
   const width = payload.widthCells;
   const height = payload.heightCells;
-  const bodyWidth = getNativePaneBodyWidth(width);
-  const bodyHeight = getNativePaneBodyHeight(height, false);
+  const bodyFrame = resolvePaneBodyFrame({
+    width,
+    height,
+    nativePaneChrome: true,
+    reserveFooter: false,
+  });
 
   return (
     <FloatingPaneWrapper
@@ -347,8 +351,8 @@ function ShotPane({ payload }: { payload: CliPaneShotPayload }) {
         paneId={instance.instanceId}
         paneType={instance.paneId}
         focused
-        width={bodyWidth}
-        height={bodyHeight}
+        width={bodyFrame.width ?? 1}
+        height={bodyFrame.height ?? 1}
       />
     </FloatingPaneWrapper>
   );

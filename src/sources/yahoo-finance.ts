@@ -826,8 +826,8 @@ export class YahooFinanceClient implements DataProvider {
   }
 
   /** Fetch JSON from a Yahoo endpoint that requires crumb authentication. */
-  private async fetchJsonWithCrumb<T>(label: string, url: string): Promise<T> {
-    return this.withRetry(label, async () => {
+  private async fetchJsonWithCrumb<T>(url: string): Promise<T> {
+    return this.withRetry(async () => {
       await this.ensureCrumb();
       const separator = url.includes("?") ? "&" : "?";
       const fullUrl = `${url}${separator}crumb=${encodeURIComponent(this.crumb!)}`;
@@ -846,7 +846,7 @@ export class YahooFinanceClient implements DataProvider {
     });
   }
 
-  private async withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  private async withRetry<T>(fn: () => Promise<T>): Promise<T> {
     let lastError: any;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
@@ -861,8 +861,8 @@ export class YahooFinanceClient implements DataProvider {
     throw lastError;
   }
 
-  private async fetchJson<T>(label: string, url: string): Promise<T> {
-    return this.withRetry(label, async () => {
+  private async fetchJson<T>(url: string): Promise<T> {
+    return this.withRetry(async () => {
       const resp = await fetch(url, {
         headers: this.defaultHeaders(),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -946,7 +946,7 @@ export class YahooFinanceClient implements DataProvider {
   private async fetchChart(symbol: string, range: string, interval = "1d", includePrePost = false) {
     const params = new URLSearchParams({ interval, range, includePrePost: String(includePrePost), events: "div,split" });
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${params}`;
-    const data = await this.fetchJson<ChartResponse>(`chart ${symbol}`, url);
+    const data = await this.fetchJson<ChartResponse>(url);
     const result = data.chart?.result?.[0];
     if (!result?.timestamp?.length) throw new Error(data.chart?.error?.description || `No chart data for ${symbol}`);
     const quote = result.indicators?.quote?.[0];
@@ -969,14 +969,14 @@ export class YahooFinanceClient implements DataProvider {
   }
 
   /** Fetch extended hours data using 1d intraday chart with pre/post market included */
-  private async fetchExtendedHoursData(symbol: string, regularPrice: number, meta: NonNullable<ChartResult["meta"]>): Promise<ExtendedHoursData> {
+  private async fetchExtendedHoursData(symbol: string, meta: NonNullable<ChartResult["meta"]>): Promise<ExtendedHoursData> {
     const marketState = deriveMarketState(meta);
     if (marketState !== "PRE" && marketState !== "POST") return {};
 
     try {
       const params = new URLSearchParams({ interval: "5m", range: "1d", includePrePost: "true" });
       const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${params}`;
-      const data = await this.fetchJson<ChartResponse>(`ext-hours ${symbol}`, url);
+      const data = await this.fetchJson<ChartResponse>(url);
       const result = data.chart?.result?.[0];
       if (!result?.timestamp?.length) return {};
       const closes = result.indicators?.quote?.[0]?.close || [];
@@ -991,14 +991,14 @@ export class YahooFinanceClient implements DataProvider {
     const p2 = Math.floor(Date.now() / 1000);
     const params = new URLSearchParams({ type: types.join(","), period1: String(p1), period2: String(p2) });
     const url = `https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}?${params}`;
-    const data = await this.fetchJson<TimeseriesResponse>(`timeseries ${symbol}`, url);
+    const data = await this.fetchJson<TimeseriesResponse>(url);
     return data.timeseries?.result || [];
   }
 
   private async fetchAssetProfile(symbol: string): Promise<CompanyProfile | undefined> {
     const params = new URLSearchParams({ modules: "assetProfile" });
     const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
-    const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(`asset profile ${symbol}`, url);
+    const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(url);
     const profile = data.quoteSummary?.result?.[0]?.assetProfile;
     if (!profile) return undefined;
 
@@ -1018,7 +1018,7 @@ export class YahooFinanceClient implements DataProvider {
     try {
       const params = new URLSearchParams({ modules: "summaryDetail" });
       const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
-      const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(`quote supplement ${symbol}`, url);
+      const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(url);
       const summaryDetail = data.quoteSummary?.result?.[0]?.summaryDetail;
       if (!summaryDetail) return {};
 
@@ -1136,7 +1136,7 @@ export class YahooFinanceClient implements DataProvider {
     const changePct = prev ? (change / prev) * 100 : 0;
 
     const marketState = deriveMarketState(meta);
-    const extHours = await this.fetchExtendedHoursData(symbol, currentPrice, meta);
+    const extHours = await this.fetchExtendedHoursData(symbol, meta);
 
     // Normalize extended hours prices too
     if (currencyDivisor !== 1) {
@@ -1430,7 +1430,7 @@ export class YahooFinanceClient implements DataProvider {
         const change = prev != null ? price - prev : 0;
 
         const marketState = deriveMarketState(meta);
-        const extHours = await this.fetchExtendedHoursData(symbol, price, meta);
+        const extHours = await this.fetchExtendedHoursData(symbol, meta);
 
         if (currencyDivisor !== 1) {
           if (extHours.preMarketPrice != null) extHours.preMarketPrice /= currencyDivisor;
@@ -1543,7 +1543,7 @@ export class YahooFinanceClient implements DataProvider {
           modules: "price,majorHoldersBreakdown,institutionOwnership",
         });
         const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
-        const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(`holders ${symbol}`, url);
+        const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(url);
         const result = data.quoteSummary?.result?.[0];
         if (!result) throw new Error(`No holder data for ${symbol}`);
 
@@ -1606,7 +1606,7 @@ export class YahooFinanceClient implements DataProvider {
           modules: "price,financialData,recommendationTrend,upgradeDowngradeHistory,earningsTrend",
         });
         const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
-        const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(`analyst research ${symbol}`, url);
+        const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(url);
         const result = data.quoteSummary?.result?.[0];
         if (!result) throw new Error(`No analyst data for ${symbol}`);
 
@@ -1634,7 +1634,7 @@ export class YahooFinanceClient implements DataProvider {
           modules: "price,quoteType,calendarEvents,earningsHistory",
         });
         const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
-        const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(`corporate actions ${symbol}`, url);
+        const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(url);
         const result = data.quoteSummary?.result?.[0];
         if (!result) throw new Error(`No corporate actions for ${symbol}`);
 
@@ -1798,7 +1798,7 @@ export class YahooFinanceClient implements DataProvider {
               }>;
             }>;
           };
-        }>("options " + symbol, url);
+        }>(url);
 
         const result = data.optionChain?.result?.[0];
         if (!result) throw new Error("No options data");
@@ -1885,7 +1885,7 @@ export class YahooFinanceClient implements DataProvider {
                 };
               }>;
             };
-          }>(`earnings ${symbol}`, url);
+          }>(url);
 
           const mod = data.quoteSummary?.result?.[0];
           if (!mod) return null;

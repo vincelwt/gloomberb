@@ -240,7 +240,7 @@ function normalizeDetachedEntries(layout: LayoutConfig) {
     .map((entry) => ({ ...entry }));
 }
 
-function captureDockedMemory(layout: LayoutConfig, dockRoot: DockLayoutNode | null): Map<string, DockedPlacementMemory> {
+function captureDockedMemory(dockRoot: DockLayoutNode | null): Map<string, DockedPlacementMemory> {
   const memory = new Map<string, DockedPlacementMemory>();
   const leaves = collectDockLeafRefs(dockRoot);
 
@@ -274,7 +274,7 @@ function captureDockedMemory(layout: LayoutConfig, dockRoot: DockLayoutNode | nu
 }
 
 function capturePlacementMemory(layout: LayoutConfig): LayoutConfig {
-  const dockedMemory = captureDockedMemory(layout, layout.dockRoot);
+  const dockedMemory = captureDockedMemory(layout.dockRoot);
   const floatingById = new Map(layout.floating.map((entry) => [entry.instanceId, entry] as const));
   const detachedById = new Map((layout.detached ?? []).map((entry) => [entry.instanceId, entry] as const));
 
@@ -384,31 +384,6 @@ function insertRelativeToSubtreePath(
     ...base,
     dockRoot: replaceNodeAtPath(base.dockRoot, candidatePath, replacement),
   });
-}
-
-function scoreDirectionalCandidate(
-  current: DockLeafLayout,
-  candidate: DockLeafLayout,
-  direction: DockTarget["position"],
-): number | null {
-  const currentCenterX = current.rect.x + Math.floor(current.rect.width / 2);
-  const currentCenterY = current.rect.y + Math.floor(current.rect.height / 2);
-  const candidateCenterX = candidate.rect.x + Math.floor(candidate.rect.width / 2);
-  const candidateCenterY = candidate.rect.y + Math.floor(candidate.rect.height / 2);
-
-  if (direction === "left" && candidateCenterX >= currentCenterX) return null;
-  if (direction === "right" && candidateCenterX <= currentCenterX) return null;
-  if (direction === "above" && candidateCenterY >= currentCenterY) return null;
-  if (direction === "below" && candidateCenterY <= currentCenterY) return null;
-
-  const primaryDelta = direction === "left" || direction === "right"
-    ? Math.abs(currentCenterX - candidateCenterX)
-    : Math.abs(currentCenterY - candidateCenterY);
-  const secondaryDelta = direction === "left" || direction === "right"
-    ? Math.abs(currentCenterY - candidateCenterY)
-    : Math.abs(currentCenterX - candidateCenterX);
-
-  return primaryDelta * 1000 + secondaryDelta;
 }
 
 function resolveSplitSizes(total: number, ratio: number, minSize: number, precise = false): [number, number] {

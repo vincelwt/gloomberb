@@ -1,12 +1,15 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
-import { join, relative } from "path";
+import { join } from "path";
 import { pathToFileURL } from "url";
-import { TITLEBAR_OVERLAY_HEIGHT_PX } from "../components/layout/titlebar-overlay";
 import type { AppConfig } from "../types/config";
 import type { TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
 import type { PaneRuntimeState } from "../core/state/app-state";
+import {
+  electrobunViewPath,
+  writeElectrobunViewPage,
+} from "../renderers/electrobun/view/build-assets";
 
 export interface DesktopPaneShotPayload {
   config: AppConfig;
@@ -59,74 +62,20 @@ export async function renderDesktopPaneScreenshot(
   }
 }
 
-function aliasImport(args: { path: string }, sourceSuffix: string, target: string) {
-  const electrobunViewDir = join(process.cwd(), "src", "renderers", "electrobun", "view");
-  if (args.path.endsWith(sourceSuffix)) {
-    return { path: join(electrobunViewDir, target) };
-  }
-  return undefined;
-}
-
 async function buildShotPage(outdir: string, payload: DesktopPaneShotPayload): Promise<string> {
-  const entrypoint = join(process.cwd(), "src", "renderers", "electrobun", "view", "cli-pane-shot-entry.tsx");
-  const result = await Bun.build({
-    entrypoints: [entrypoint],
-    outdir,
-    target: "browser",
-    format: "esm",
-    splitting: false,
-    sourcemap: "external",
-    minify: true,
-    define: {
-      "process.env.NODE_ENV": "\"production\"",
-    },
-    plugins: [
-      {
-        name: "desktop-pane-shot-native-bridges",
-        setup(build) {
-          build.onResolve({ filter: /.*/ }, (args) => (
-            aliasImport(args, "plugins/builtin/notes-files", "notes-files.ts")
-            ?? aliasImport(args, "notes-files", "notes-files.ts")
-            ?? aliasImport(args, "backend-rpc", "native-stubs/backend-rpc.ts")
-            ?? aliasImport(args, "native/kitty-support", "native-stubs/chart-kitty-support.ts")
-            ?? aliasImport(args, "native/surface-manager", "native-stubs/chart-surface-manager.ts")
-            ?? aliasImport(args, "native/surface-sync", "native-stubs/chart-surface-sync.ts")
-          ));
-        },
-      },
-    ],
-  });
-
-  if (!result.success) {
-    const details = result.logs.map((log) => log.message).join("\n");
-    throw new Error(`Failed to build desktop pane screenshot renderer.\n${details}`);
-  }
-
-  const entry = result.outputs.find((output) => output.kind === "entry-point" && output.path.endsWith(".js"));
-  if (!entry) throw new Error("Desktop pane screenshot build did not produce a JavaScript entrypoint.");
-
-  const electrobunViewDir = join(process.cwd(), "src", "renderers", "electrobun", "view");
-  const stylesheet = (await readFile(join(electrobunViewDir, "styles.css"), "utf8"))
-    .replaceAll("__TITLEBAR_OVERLAY_HEIGHT_PX__", String(TITLEBAR_OVERLAY_HEIGHT_PX));
-  const entrySrc = `./${relative(outdir, entry.path).replaceAll("\\", "/")}`;
-  const htmlPath = join(outdir, "index.html");
-  await writeFile(htmlPath, renderShotHtml(entrySrc, stylesheet, payload));
-  return htmlPath;
-}
-
-function renderShotHtml(entrySrc: string, stylesheet: string, payload: DesktopPaneShotPayload): string {
   const payloadJson = JSON.stringify(payload).replace(/</g, "\\u003c");
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gloomberb Pane Shot</title>
-    <style>${stylesheet}</style>
-  </head>
-  <body style="margin:0;background:#000;">
-    <div id="root"><div class="gloom-loading">Rendering pane...</div></div>
-    <script>
+  return writeElectrobunViewPage({
+    entrypoint: electrobunViewPath("cli-pane-shot-entry.tsx"),
+    outdir,
+    pluginName: "desktop-pane-shot-native-bridges",
+    extraAliasRules: [
+      ["backend-rpc", "native-stubs/backend-rpc.ts"],
+    ],
+    failureMessage: "Failed to build desktop pane screenshot renderer.",
+    missingEntryMessage: "Desktop pane screenshot build did not produce a JavaScript entrypoint.",
+    title: "Gloomberb Pane Shot",
+    loadingText: "Rendering pane...",
+    bootstrapScript: `
       window.__GLOOM_CLI_SHOT_PAYLOAD__ = ${payloadJson};
       window.addEventListener("error", (event) => {
         window.__GLOOM_CLI_SHOT_ERROR__ = event.error && event.error.stack ? event.error.stack : String(event.error || event.message);
@@ -134,10 +83,8 @@ function renderShotHtml(entrySrc: string, stylesheet: string, payload: DesktopPa
       window.addEventListener("unhandledrejection", (event) => {
         window.__GLOOM_CLI_SHOT_ERROR__ = event.reason && event.reason.stack ? event.reason.stack : String(event.reason);
       });
-    </script>
-    <script type="module" src="${entrySrc}"></script>
-  </body>
-</html>`;
+`,
+  });
 }
 
 async function findChromeExecutable(): Promise<string> {

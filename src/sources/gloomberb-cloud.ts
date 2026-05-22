@@ -481,16 +481,6 @@ function unwrapRequiredCloudResponse<T>(response: CloudMarketResponse<T>, messag
   throw new Error(response.reasonCode ?? message);
 }
 
-function unwrapOptionalCloudResponse<T>(response: CloudMarketResponse<T>): T | null {
-  if ((response.status === "success" || response.status === "partial") && response.data != null) {
-    return response.data;
-  }
-  if (isEmptyCloudStatus(response.status)) {
-    return null;
-  }
-  throw new Error(response.reasonCode ?? "Cloud data request failed");
-}
-
 export class GloomberbCloudProvider implements AssetDataProvider {
   readonly id = providerId;
   readonly name = "Gloomberb Cloud";

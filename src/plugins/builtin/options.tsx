@@ -65,7 +65,7 @@ const OPTION_COLUMNS: Array<Omit<OptionColumn, "headerColor">> = [
   { id: "putOpenInterest", label: "P OI", width: 6, align: "right" },
 ];
 
-export function OptionsView({ width, height, focused, onCapture = () => {} }: OptionsViewProps) {
+export function OptionsView({ width, focused, onCapture = () => {} }: OptionsViewProps) {
   const { ticker, financials } = usePaneTicker();
   const [expIdx, setExpIdx] = useState(0);
   const [strikeIdx, setStrikeIdx] = useState(0);

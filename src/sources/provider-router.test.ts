@@ -5,14 +5,17 @@ import { join } from "path";
 import { AppPersistence } from "../data/app-persistence";
 import { AssetDataRouter } from "./provider-router";
 import { assetDataProvider } from "../capabilities";
+import type { PluginRegistry } from "../plugins/registry";
 import type { BrokerAdapter } from "../types/broker";
 import type { DataProvider, QuoteSubscriptionTarget } from "../types/data-provider";
 import type { CapabilityRouteSource } from "../types/capability-route-source";
 import type { NewsArticle } from "../news/types";
-import { cloneLayout, CURRENT_CONFIG_VERSION, DEFAULT_LAYOUT, type AppConfig } from "../types/config";
+import { cloneLayout, createDefaultConfig, DEFAULT_LAYOUT, type AppConfig } from "../types/config";
+import type { Quote, TickerFinancials } from "../types/financials";
 
 const originalConsoleError = console.error;
 const tempPaths: string[] = [];
+type BrokerInstance = AppConfig["brokerInstances"][number];
 
 function createTempDbPath(name: string): string {
   const path = join(tmpdir(), `gloomberb-provider-router-${name}-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
@@ -31,17 +34,10 @@ const fallbackProvider: DataProvider = {
   id: "fallback",
   name: "Fallback",
   async getTickerFinancials() {
-    return { annualStatements: [], quarterlyStatements: [], priceHistory: [] };
+    return makeFinancials();
   },
   async getQuote() {
-    return {
-      symbol: "AAPL",
-      price: 100,
-      currency: "USD",
-      change: 0,
-      changePercent: 0,
-      lastUpdated: Date.now(),
-    };
+    return makeQuote();
   },
   async getExchangeRate() {
     return 1;
@@ -56,6 +52,27 @@ const fallbackProvider: DataProvider = {
     return [];
   },
 };
+
+function makeFinancials(overrides: Partial<TickerFinancials> = {}): TickerFinancials {
+  return {
+    annualStatements: [],
+    quarterlyStatements: [],
+    priceHistory: [],
+    ...overrides,
+  };
+}
+
+function makeQuote(overrides: Partial<Quote> = {}): Quote {
+  return {
+    symbol: "AAPL",
+    price: 100,
+    currency: "USD",
+    change: 0,
+    changePercent: 0,
+    lastUpdated: Date.now(),
+    ...overrides,
+  };
+}
 
 function makeArticle(id: string): NewsArticle {
   return {
@@ -80,6 +97,47 @@ function makeArticle(id: string): NewsArticle {
     isBreaking: false,
     isDeveloping: false,
   };
+}
+
+function brokerInstance(overrides: Partial<BrokerInstance> = {}): BrokerInstance {
+  return {
+    id: "ibkr-work",
+    brokerType: "ibkr",
+    label: "Work",
+    connectionMode: "gateway",
+    config: {},
+    enabled: true,
+    ...overrides,
+  };
+}
+
+function createBrokerConfig(brokerInstances: BrokerInstance[]): AppConfig {
+  const layout = cloneLayout(DEFAULT_LAYOUT);
+  return {
+    ...createDefaultConfig(""),
+    portfolios: [],
+    watchlists: [],
+    layout,
+    layouts: [{ name: "Default", layout: cloneLayout(layout) }],
+    brokerInstances,
+  };
+}
+
+function attachTestRegistry(
+  router: AssetDataRouter,
+  options: {
+    brokers?: Array<[string, BrokerAdapter]>;
+    getEnabledCapabilities?: PluginRegistry["getEnabledCapabilities"];
+  } = {},
+): void {
+  router.attachRegistry({
+    brokers: new Map(options.brokers ?? []),
+    getEnabledCapabilities: options.getEnabledCapabilities ?? (() => []),
+  } as unknown as PluginRegistry);
+}
+
+function setBrokerInstances(router: AssetDataRouter, brokerInstances: BrokerInstance[]): void {
+  router.setConfigAccessor(() => createBrokerConfig(brokerInstances));
 }
 
 describe("AssetDataRouter", () => {
@@ -358,38 +416,12 @@ describe("AssetDataRouter", () => {
       },
     };
 
-    router.attachRegistry({
-      brokers: new Map([["ibkr", broker]]),
-      getEnabledCapabilities: () => [],
-    } as any);
-    router.setConfigAccessor(() => ({
-      dataDir: "",
-      configVersion: CURRENT_CONFIG_VERSION,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [],
-      watchlists: [],
-      layout: cloneLayout(DEFAULT_LAYOUT),
-      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
-      activeLayoutIndex: 0,
-      brokerInstances: [{
-        id: "ibkr-work",
-        brokerType: "ibkr",
-        label: "Work",
-        connectionMode: "gateway",
+    attachTestRegistry(router, { brokers: [["ibkr", broker]] });
+    setBrokerInstances(router, [
+      brokerInstance({
         config: { connectionMode: "gateway", gateway: { host: "127.0.0.1", port: 4002, clientId: 1 } },
-        enabled: true,
-      }],
-      disabledPlugins: [],
-      disabledSources: [],
-      pluginConfig: {},
-      theme: "amber",
-      chartPreferences: {
-        defaultRenderMode: "area",
-        renderer: "auto",
-      },
-      recentTickers: [],
-    }));
+      }),
+    ]);
 
     const quote = await router.getQuote("AAPL", "NASDAQ", { brokerId: "ibkr", brokerInstanceId: "ibkr-work" });
     expect(quote.price).toBe(123.45);
@@ -444,38 +476,12 @@ describe("AssetDataRouter", () => {
         },
       };
 
-      router.attachRegistry({
-        brokers: new Map([["ibkr", broker]]),
-        getEnabledCapabilities: () => [],
-      } as any);
-      router.setConfigAccessor(() => ({
-        dataDir: "",
-        configVersion: CURRENT_CONFIG_VERSION,
-        baseCurrency: "USD",
-        refreshIntervalMinutes: 30,
-        portfolios: [],
-        watchlists: [],
-        layout: cloneLayout(DEFAULT_LAYOUT),
-        layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
-        activeLayoutIndex: 0,
-        brokerInstances: [{
-          id: "ibkr-work",
-          brokerType: "ibkr",
-          label: "Work",
-          connectionMode: "gateway",
+      attachTestRegistry(router, { brokers: [["ibkr", broker]] });
+      setBrokerInstances(router, [
+        brokerInstance({
           config: { connectionMode: "gateway", gateway: { host: "127.0.0.1", port: 4002, clientId: 1 } },
-          enabled: true,
-        }],
-        disabledPlugins: [],
-      disabledSources: [],
-      pluginConfig: {},
-        theme: "amber",
-        chartPreferences: {
-          defaultRenderMode: "area",
-          renderer: "auto",
-        },
-        recentTickers: [],
-      }));
+        }),
+      ]);
 
       const quote = await router.getQuote("285A.T", "TSEJ", { brokerId: "ibkr", brokerInstanceId: "ibkr-work" });
       expect(quote.providerId).toBe("yahoo");
@@ -513,48 +519,17 @@ describe("AssetDataRouter", () => {
       },
     };
 
-    router.attachRegistry({
-      brokers: new Map([["ibkr", broker]]),
-      getEnabledCapabilities: () => [],
-    } as any);
-    router.setConfigAccessor(() => ({
-      dataDir: "",
-      configVersion: CURRENT_CONFIG_VERSION,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [],
-      watchlists: [],
-      layout: cloneLayout(DEFAULT_LAYOUT),
-      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
-      activeLayoutIndex: 0,
-      brokerInstances: [
-        {
-          id: "ibkr-work",
-          brokerType: "ibkr",
-          label: "Work",
-          connectionMode: "gateway",
-          config: { connectionMode: "gateway", gateway: { host: "127.0.0.1", port: 4002, clientId: 1 } },
-          enabled: true,
-        },
-        {
-          id: "ibkr-personal",
-          brokerType: "ibkr",
-          label: "Personal",
-          connectionMode: "gateway",
-          config: { connectionMode: "gateway", gateway: { host: "127.0.0.1", port: 4003, clientId: 2 } },
-          enabled: true,
-        },
-      ],
-      disabledPlugins: [],
-      disabledSources: [],
-      pluginConfig: {},
-      theme: "amber",
-      chartPreferences: {
-        defaultRenderMode: "area",
-        renderer: "auto",
-      },
-      recentTickers: [],
-    }));
+    attachTestRegistry(router, { brokers: [["ibkr", broker]] });
+    setBrokerInstances(router, [
+      brokerInstance({
+        config: { connectionMode: "gateway", gateway: { host: "127.0.0.1", port: 4002, clientId: 1 } },
+      }),
+      brokerInstance({
+        id: "ibkr-personal",
+        label: "Personal",
+        config: { connectionMode: "gateway", gateway: { host: "127.0.0.1", port: 4003, clientId: 2 } },
+      }),
+    ]);
 
     const results = await router.search("AAPL", { preferBroker: true, brokerInstanceId: "ibkr-work" });
     expect(results[0]?.brokerInstanceId).toBe("ibkr-work");
@@ -607,38 +582,12 @@ describe("AssetDataRouter", () => {
     };
     const router = new AssetDataRouter(fallbackProvider, [provider]);
 
-    router.attachRegistry({
-      brokers: new Map([["ibkr", broker]]),
-      getEnabledCapabilities: () => [],
-    } as any);
-    router.setConfigAccessor(() => ({
-      dataDir: "",
-      configVersion: CURRENT_CONFIG_VERSION,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [],
-      watchlists: [],
-      layout: cloneLayout(DEFAULT_LAYOUT),
-      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
-      activeLayoutIndex: 0,
-      brokerInstances: [{
-        id: "ibkr-work",
-        brokerType: "ibkr",
-        label: "Work",
-        connectionMode: "gateway",
+    attachTestRegistry(router, { brokers: [["ibkr", broker]] });
+    setBrokerInstances(router, [
+      brokerInstance({
         config: { connectionMode: "gateway", gateway: { host: "127.0.0.1", port: 4002, clientId: 1 } },
-        enabled: true,
-      }],
-      disabledPlugins: [],
-      disabledSources: [],
-      pluginConfig: {},
-      theme: "amber",
-      chartPreferences: {
-        defaultRenderMode: "area",
-        renderer: "auto",
-      },
-      recentTickers: [],
-    }));
+      }),
+    ]);
 
     const results = await router.search("AAPL", { preferBroker: true, brokerInstanceId: "ibkr-work" });
     expect(results).toHaveLength(1);
@@ -648,10 +597,7 @@ describe("AssetDataRouter", () => {
 
   test("ignores disabled plugin sources when the registry filters them out", async () => {
     const router = new AssetDataRouter(fallbackProvider);
-    router.attachRegistry({
-      brokers: new Map(),
-      getEnabledCapabilities: () => [],
-    } as any);
+    attachTestRegistry(router);
 
     const quote = await router.getQuote("AAPL", "NASDAQ");
     expect(quote.price).toBe(100);
@@ -709,12 +655,11 @@ describe("AssetDataRouter", () => {
       },
     };
     const router = new AssetDataRouter(fallbackProvider);
-    router.attachRegistry({
-      brokers: new Map(),
+    attachTestRegistry(router, {
       getEnabledCapabilities: (kind?: string) => (
         kind === "asset-data" ? [assetDataProvider(cloudProvider)] : []
       ),
-    } as any);
+    });
 
     const quote = await router.getQuote("AAPL", "NASDAQ");
     expect(quote.price).toBe(125);
@@ -848,38 +793,8 @@ describe("AssetDataRouter", () => {
     };
 
     const router = new AssetDataRouter(fallbackProvider, [streamingProvider]);
-    router.attachRegistry({
-      brokers: new Map([["ibkr", broker]]),
-      getEnabledCapabilities: () => [],
-    } as any);
-    router.setConfigAccessor(() => ({
-      dataDir: "",
-      configVersion: CURRENT_CONFIG_VERSION,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [],
-      watchlists: [],
-      layout: cloneLayout(DEFAULT_LAYOUT),
-      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
-      activeLayoutIndex: 0,
-      brokerInstances: [{
-        id: "ibkr-work",
-        brokerType: "ibkr",
-        label: "Work",
-        connectionMode: "gateway",
-        config: {},
-        enabled: true,
-      }],
-      disabledPlugins: [],
-      disabledSources: [],
-      pluginConfig: {},
-      theme: "amber",
-      chartPreferences: {
-        defaultRenderMode: "area",
-        renderer: "auto",
-      },
-      recentTickers: [],
-    }));
+    attachTestRegistry(router, { brokers: [["ibkr", broker]] });
+    setBrokerInstances(router, [brokerInstance()]);
 
     const seenSymbols: string[] = [];
     const unsubscribe = router.subscribeQuotes([
@@ -951,38 +866,8 @@ describe("AssetDataRouter", () => {
     };
 
     const router = new AssetDataRouter(fallbackProvider, [streamingProvider]);
-    router.attachRegistry({
-      brokers: new Map([["ibkr", broker]]),
-      getEnabledCapabilities: () => [],
-    } as any);
-    router.setConfigAccessor(() => ({
-      dataDir: "",
-      configVersion: CURRENT_CONFIG_VERSION,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [],
-      watchlists: [],
-      layout: cloneLayout(DEFAULT_LAYOUT),
-      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
-      activeLayoutIndex: 0,
-      brokerInstances: [{
-        id: "ibkr-work",
-        brokerType: "ibkr",
-        label: "Work",
-        connectionMode: "gateway",
-        config: {},
-        enabled: true,
-      }],
-      disabledPlugins: [],
-      disabledSources: [],
-      pluginConfig: {},
-      theme: "amber",
-      chartPreferences: {
-        defaultRenderMode: "area",
-        renderer: "auto",
-      },
-      recentTickers: [],
-    }));
+    attachTestRegistry(router, { brokers: [["ibkr", broker]] });
+    setBrokerInstances(router, [brokerInstance()]);
 
     const unsubscribe = router.subscribeQuotes([{
       symbol: "AAPL",
@@ -1012,22 +897,20 @@ describe("AssetDataRouter", () => {
     const router = new AssetDataRouter({
       ...fallbackProvider,
       async getTickerFinancials() {
-        return { annualStatements: [], quarterlyStatements: [], priceHistory: [] };
+        return makeFinancials();
       },
       async getQuote(ticker) {
-        return {
+        return makeQuote({
           symbol: ticker,
           price: 252.375,
-          currency: "USD",
           change: 1.5,
           changePercent: 0.6,
           bid: 250.25,
           ask: 254.5,
           mark: 252.375,
-          lastUpdated: Date.now(),
           providerId: "gloomberb-cloud",
           dataSource: "delayed",
-        };
+        });
       },
     });
 
@@ -1047,12 +930,11 @@ describe("AssetDataRouter", () => {
       ...fallbackProvider,
       async getTickerFinancials() {
         providerCalls.fallback += 1;
-        return {
+        return makeFinancials({
           annualStatements: [{ date: "2025-12-31", totalRevenue: 1000 }],
           quarterlyStatements: [{ date: "2025-12-31", totalRevenue: 250 }],
-          priceHistory: [],
           fundamentals: { revenue: 1000, netIncome: 200 },
-        };
+        });
       },
     }, [], persistence.resources);
     const broker: BrokerAdapter = {
@@ -1067,55 +949,19 @@ describe("AssetDataRouter", () => {
       },
       async getTickerFinancials() {
         providerCalls.broker += 1;
-        return {
-          annualStatements: [],
-          quarterlyStatements: [],
-          priceHistory: [],
-          quote: {
-            symbol: "AAPL",
+        return makeFinancials({
+          quote: makeQuote({
             price: 125,
-            currency: "USD",
             change: 2,
             changePercent: 1.6,
-            lastUpdated: Date.now(),
-          },
+          }),
           fundamentals: {},
-        };
+        });
       },
     };
 
-    router.attachRegistry({
-      brokers: new Map([["ibkr", broker]]),
-      getEnabledCapabilities: () => [],
-    } as any);
-    router.setConfigAccessor(() => ({
-      dataDir: "",
-      configVersion: CURRENT_CONFIG_VERSION,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [],
-      watchlists: [],
-      layout: cloneLayout(DEFAULT_LAYOUT),
-      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
-      activeLayoutIndex: 0,
-      brokerInstances: [{
-        id: "ibkr-work",
-        brokerType: "ibkr",
-        label: "Work",
-        connectionMode: "gateway",
-        config: {},
-        enabled: true,
-      }],
-      disabledPlugins: [],
-      disabledSources: [],
-      pluginConfig: {},
-      theme: "amber",
-      chartPreferences: {
-        defaultRenderMode: "area",
-        renderer: "auto",
-      },
-      recentTickers: [],
-    }));
+    attachTestRegistry(router, { brokers: [["ibkr", broker]] });
+    setBrokerInstances(router, [brokerInstance()]);
 
     const merged = await router.getTickerFinancials("AAPL", "NASDAQ", {
       brokerId: "ibkr",
@@ -1141,22 +987,19 @@ describe("AssetDataRouter", () => {
     const router = new AssetDataRouter({
       ...fallbackProvider,
       async getTickerFinancials() {
-        return {
-          annualStatements: [],
-          quarterlyStatements: [],
+        return makeFinancials({
           priceHistory: [{ date: new Date("2026-03-28T00:00:00Z"), close: 0.245 }],
-          quote: {
+          quote: makeQuote({
             symbol: "IQE.L",
             providerId: "yahoo",
             price: 0.245,
             currency: "GBP",
             change: -0.021,
             changePercent: -7.89,
-            lastUpdated: Date.now(),
             dataSource: "delayed",
-          },
+          }),
           fundamentals: { revenue: 1000 },
-        };
+        });
       },
     });
     const broker: BrokerAdapter = {
@@ -1170,57 +1013,24 @@ describe("AssetDataRouter", () => {
         return [];
       },
       async getTickerFinancials() {
-        return {
-          annualStatements: [],
-          quarterlyStatements: [],
+        return makeFinancials({
           priceHistory: [{ date: new Date("2026-03-28T00:00:00Z"), close: 24.5 }],
-          quote: {
+          quote: makeQuote({
             symbol: "IQE",
             providerId: "ibkr",
             price: 24.5,
             currency: "GBP",
             change: -2.1,
             changePercent: -7.89,
-            lastUpdated: Date.now(),
             dataSource: "live",
-          },
+          }),
           fundamentals: { netIncome: 200 },
-        };
+        });
       },
     };
 
-    router.attachRegistry({
-      brokers: new Map([["ibkr", broker]]),
-      getEnabledCapabilities: () => [],
-    } as any);
-    router.setConfigAccessor(() => ({
-      dataDir: "",
-      configVersion: CURRENT_CONFIG_VERSION,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [],
-      watchlists: [],
-      layout: cloneLayout(DEFAULT_LAYOUT),
-      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
-      activeLayoutIndex: 0,
-      brokerInstances: [{
-        id: "ibkr-work",
-        brokerType: "ibkr",
-        label: "Work",
-        connectionMode: "gateway",
-        config: {},
-        enabled: true,
-      }],
-      disabledPlugins: [],
-      disabledSources: [],
-      pluginConfig: {},
-      theme: "amber",
-      chartPreferences: {
-        defaultRenderMode: "area",
-        renderer: "auto",
-      },
-      recentTickers: [],
-    }));
+    attachTestRegistry(router, { brokers: [["ibkr", broker]] });
+    setBrokerInstances(router, [brokerInstance()]);
 
     const merged = await router.getTickerFinancials("IQE", "LSE", {
       brokerId: "ibkr",
@@ -1237,16 +1047,13 @@ describe("AssetDataRouter", () => {
     const router = new AssetDataRouter({
       ...fallbackProvider,
       async getTickerFinancials() {
-        return {
-          annualStatements: [],
-          quarterlyStatements: [],
-          priceHistory: [],
+        return makeFinancials({
           profile: {
             description: "Builds hardware and software.",
             sector: "Technology",
             industry: "Consumer Electronics",
           },
-        };
+        });
       },
     });
     const broker: BrokerAdapter = {
@@ -1260,47 +1067,14 @@ describe("AssetDataRouter", () => {
         return [];
       },
       async getTickerFinancials() {
-        return {
-          annualStatements: [],
-          quarterlyStatements: [],
-          priceHistory: [],
+        return makeFinancials({
           fundamentals: { revenue: 1000, netIncome: 200 },
-        };
+        });
       },
     };
 
-    router.attachRegistry({
-      brokers: new Map([["ibkr", broker]]),
-      getEnabledCapabilities: () => [],
-    } as any);
-    router.setConfigAccessor(() => ({
-      dataDir: "",
-      configVersion: CURRENT_CONFIG_VERSION,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [],
-      watchlists: [],
-      layout: cloneLayout(DEFAULT_LAYOUT),
-      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
-      activeLayoutIndex: 0,
-      brokerInstances: [{
-        id: "ibkr-work",
-        brokerType: "ibkr",
-        label: "Work",
-        connectionMode: "gateway",
-        config: {},
-        enabled: true,
-      }],
-      disabledPlugins: [],
-      disabledSources: [],
-      pluginConfig: {},
-      theme: "amber",
-      chartPreferences: {
-        defaultRenderMode: "area",
-        renderer: "auto",
-      },
-      recentTickers: [],
-    }));
+    attachTestRegistry(router, { brokers: [["ibkr", broker]] });
+    setBrokerInstances(router, [brokerInstance()]);
 
     const merged = await router.getTickerFinancials("AAPL", "NASDAQ", {
       brokerId: "ibkr",
@@ -1318,22 +1092,16 @@ describe("AssetDataRouter", () => {
       name: "Cloud",
       priority: 100,
       async getTickerFinancials() {
-        return {
-          annualStatements: [],
-          quarterlyStatements: [],
-          priceHistory: [],
-          quote: {
-            symbol: "AAPL",
+        return makeFinancials({
+          quote: makeQuote({
             price: 125,
-            currency: "USD",
             change: 2,
             changePercent: 1.6,
-            lastUpdated: Date.now(),
-          },
+          }),
           fundamentals: {
             trailingPE: 25,
           },
-        };
+        });
       },
     };
     let yahooCalls = 0;
@@ -1344,23 +1112,20 @@ describe("AssetDataRouter", () => {
       priority: 1000,
       async getTickerFinancials() {
         yahooCalls += 1;
-        return {
+        return makeFinancials({
           annualStatements: [{ date: "2025-12-31", totalRevenue: 391035000000 }],
           quarterlyStatements: [{ date: "2026-03-31", totalRevenue: 95359000000 }],
           priceHistory: [{ date: new Date("2026-03-28T00:00:00Z"), close: 124 }],
-          quote: {
-            symbol: "AAPL",
+          quote: makeQuote({
             price: 124,
-            currency: "USD",
             change: 1,
             changePercent: 0.8,
             marketCap: 2_000_000_000,
-            lastUpdated: Date.now(),
-          },
+          }),
           fundamentals: {
             forwardPE: 22,
           },
-        };
+        });
       },
     };
 
@@ -1384,19 +1149,15 @@ describe("AssetDataRouter", () => {
       name: "Cloud",
       priority: 100,
       async getTickerFinancials() {
-        return {
+        return makeFinancials({
           annualStatements: [{ date: "2025-12-31", totalRevenue: 1000 }],
-          quarterlyStatements: [],
-          priceHistory: [],
-          quote: {
+          quote: makeQuote({
             symbol: "AMD",
             price: 125,
-            currency: "USD",
             change: 2,
             changePercent: 1.6,
-            lastUpdated: Date.now(),
-          },
-        };
+          }),
+        });
       },
     };
     let yahooCalls = 0;
@@ -1407,16 +1168,14 @@ describe("AssetDataRouter", () => {
       priority: 1000,
       async getTickerFinancials() {
         yahooCalls += 1;
-        return {
+        return makeFinancials({
           annualStatements: [{
             date: "2025-12-31",
             totalRevenue: 900,
             accountsReceivable: 250,
             inventory: 125,
           }],
-          quarterlyStatements: [],
-          priceHistory: [],
-        };
+        });
       },
     };
 
@@ -1443,25 +1202,19 @@ describe("AssetDataRouter", () => {
       name: "Cloud",
       priority: 100,
       async getTickerFinancials() {
-        return {
-          annualStatements: [],
-          quarterlyStatements: [],
-          priceHistory: [],
-          quote: {
-            symbol: "AAPL",
+        return makeFinancials({
+          quote: makeQuote({
             price: 125,
-            currency: "USD",
             change: 2,
             changePercent: 1.6,
-            lastUpdated: Date.now(),
-          },
+          }),
           fundamentals: {
             trailingPE: 25,
           },
           profile: {
             sector: "Technology",
           },
-        };
+        });
       },
     };
     const yahooProvider: DataProvider = {
@@ -1470,23 +1223,18 @@ describe("AssetDataRouter", () => {
       name: "Yahoo",
       priority: 1000,
       async getTickerFinancials() {
-        return {
-          annualStatements: [],
-          quarterlyStatements: [],
+        return makeFinancials({
           priceHistory: [{ date: new Date("2026-03-28T00:00:00Z"), close: 124 }],
-          quote: {
-            symbol: "AAPL",
+          quote: makeQuote({
             price: 124,
-            currency: "USD",
             change: 1,
             changePercent: 0.8,
             marketCap: 2_000_000_000,
-            lastUpdated: Date.now(),
-          },
+          }),
           fundamentals: {
             forwardPE: 22,
           },
-        };
+        });
       },
     };
 
@@ -1540,58 +1288,21 @@ describe("AssetDataRouter", () => {
         return [];
       },
       async getTickerFinancials() {
-        return {
-          annualStatements: [],
-          quarterlyStatements: [],
-          priceHistory: [],
+        return makeFinancials({
           fundamentals: { revenue: 1000, netIncome: 200 },
-        };
+        });
       },
     };
 
-    const config: AppConfig = {
-      dataDir: "",
-      configVersion: CURRENT_CONFIG_VERSION,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [],
-      watchlists: [],
-      layout: cloneLayout(DEFAULT_LAYOUT),
-      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
-      activeLayoutIndex: 0,
-      brokerInstances: [{
-        id: "ibkr-work",
-        brokerType: "ibkr",
-        label: "Work",
-        connectionMode: "gateway",
-        config: {},
-        enabled: true,
-      }],
-      disabledPlugins: [],
-      disabledSources: [],
-      pluginConfig: {},
-      theme: "amber",
-      chartPreferences: {
-        defaultRenderMode: "area",
-        renderer: "auto",
-      },
-      recentTickers: [],
-    };
+    const config = createBrokerConfig([brokerInstance()]);
 
     const seedRouter = new AssetDataRouter({
       ...fallbackProvider,
       async getTickerFinancials() {
-        return {
-          annualStatements: [],
-          quarterlyStatements: [],
-          priceHistory: [],
-        };
+        return makeFinancials();
       },
     }, [], persistence.resources);
-    seedRouter.attachRegistry({
-      brokers: new Map([["ibkr", broker]]),
-      getEnabledCapabilities: () => [],
-    } as any);
+    attachTestRegistry(seedRouter, { brokers: [["ibkr", broker]] });
     seedRouter.setConfigAccessor(() => config);
 
     const seeded = await seedRouter.getTickerFinancials("PSTG", "NYSE", {
@@ -1603,22 +1314,16 @@ describe("AssetDataRouter", () => {
     const refreshedRouter = new AssetDataRouter({
       ...fallbackProvider,
       async getTickerFinancials() {
-        return {
-          annualStatements: [],
-          quarterlyStatements: [],
-          priceHistory: [],
+        return makeFinancials({
           profile: {
             description: "Provides enterprise data storage platforms.",
             sector: "Technology",
             industry: "Computer Hardware",
           },
-        };
+        });
       },
     }, [], persistence.resources);
-    refreshedRouter.attachRegistry({
-      brokers: new Map([["ibkr", broker]]),
-      getEnabledCapabilities: () => [],
-    } as any);
+    attachTestRegistry(refreshedRouter, { brokers: [["ibkr", broker]] });
     refreshedRouter.setConfigAccessor(() => config);
 
     const refreshed = await refreshedRouter.getTickerFinancials("PSTG", "NYSE", {
@@ -1637,21 +1342,15 @@ describe("AssetDataRouter", () => {
     const router = new AssetDataRouter({
       ...fallbackProvider,
       async getTickerFinancials() {
-        return {
-          annualStatements: [],
-          quarterlyStatements: [],
-          priceHistory: [],
-          quote: {
+        return makeFinancials({
+          quote: makeQuote({
             symbol: "IQE.L",
             providerId: "yahoo",
             price: 0.245,
             currency: "GBP",
-            change: 0,
-            changePercent: 0,
-            lastUpdated: Date.now(),
             dataSource: "delayed",
-          },
-        };
+          }),
+        });
       },
     }, [], persistence.resources);
     const broker: BrokerAdapter = {
@@ -1668,66 +1367,23 @@ describe("AssetDataRouter", () => {
         if (instance.id === "ibkr-flex") {
           throw new Error("Gateway mode is required for broker market data");
         }
-        return {
-          annualStatements: [],
-          quarterlyStatements: [],
-          priceHistory: [],
-          quote: {
+        return makeFinancials({
+          quote: makeQuote({
             symbol: "IQE",
             providerId: "ibkr",
             price: 24.5,
             currency: "GBP",
-            change: 0,
-            changePercent: 0,
-            lastUpdated: Date.now(),
             dataSource: "live",
-          },
-        };
+          }),
+        });
       },
     };
 
-    router.attachRegistry({
-      brokers: new Map([["ibkr", broker]]),
-      getEnabledCapabilities: () => [],
-    } as any);
-    router.setConfigAccessor(() => ({
-      dataDir: "",
-      configVersion: CURRENT_CONFIG_VERSION,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [],
-      watchlists: [],
-      layout: cloneLayout(DEFAULT_LAYOUT),
-      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
-      activeLayoutIndex: 0,
-      brokerInstances: [
-        {
-          id: "ibkr-flex",
-          brokerType: "ibkr",
-          label: "Flex",
-          connectionMode: "flex",
-          config: {},
-          enabled: true,
-        },
-        {
-          id: "ibkr-live",
-          brokerType: "ibkr",
-          label: "Live",
-          connectionMode: "gateway",
-          config: {},
-          enabled: true,
-        },
-      ],
-      disabledPlugins: [],
-      disabledSources: [],
-      pluginConfig: {},
-      theme: "amber",
-      chartPreferences: {
-        defaultRenderMode: "area",
-        renderer: "auto",
-      },
-      recentTickers: [],
-    }));
+    attachTestRegistry(router, { brokers: [["ibkr", broker]] });
+    setBrokerInstances(router, [
+      brokerInstance({ id: "ibkr-flex", label: "Flex", connectionMode: "flex" }),
+      brokerInstance({ id: "ibkr-live", label: "Live" }),
+    ]);
 
     const live = await router.getTickerFinancials("IQE", "LSE", {
       brokerId: "ibkr",
@@ -1765,11 +1421,8 @@ describe("AssetDataRouter", () => {
         variantKey: "exchange=LSE",
         sourceKey: "provider:gloomberb-cloud",
       },
-      {
-        annualStatements: [],
-        quarterlyStatements: [],
-        priceHistory: [],
-        quote: {
+      makeFinancials({
+        quote: makeQuote({
           symbol: "IQE",
           price: 23.1,
           currency: "GBp",
@@ -1778,11 +1431,11 @@ describe("AssetDataRouter", () => {
           previousClose: 24.5,
           lastUpdated: now,
           dataSource: "delayed",
-        },
+        }),
         profile: {
           description: "Cloud profile",
         },
-      },
+      }),
       {
         cachePolicy: { staleMs: 60_000, expireMs: 60_000 },
         fetchedAt: now,
@@ -1796,11 +1449,8 @@ describe("AssetDataRouter", () => {
         variantKey: "exchange=LSE",
         sourceKey: "provider:yahoo",
       },
-      {
-        annualStatements: [],
-        quarterlyStatements: [],
-        priceHistory: [],
-        quote: {
+      makeFinancials({
+        quote: makeQuote({
           symbol: "IQE.L",
           providerId: "yahoo",
           price: 0.231,
@@ -1810,11 +1460,11 @@ describe("AssetDataRouter", () => {
           previousClose: 0.245,
           lastUpdated: now,
           dataSource: "delayed",
-        },
+        }),
         fundamentals: {
           revenue: 1000,
         },
-      },
+      }),
       {
         cachePolicy: { staleMs: 60_000, expireMs: 60_000 },
         fetchedAt: now,
@@ -1872,11 +1522,8 @@ describe("AssetDataRouter", () => {
         variantKey: "exchange=FWB2",
         sourceKey: "provider:gloomberb-cloud",
       },
-      {
-        annualStatements: [],
-        quarterlyStatements: [],
-        priceHistory: [],
-        quote: {
+      makeFinancials({
+        quote: makeQuote({
           symbol: "HY9H",
           price: 528,
           currency: "EUR",
@@ -1888,14 +1535,14 @@ describe("AssetDataRouter", () => {
           listingExchangeName: "FWB2",
           providerId: "gloomberb-cloud",
           dataSource: "delayed",
-        },
+        }),
         fundamentals: {
           revenue: 1234,
         },
         profile: {
           description: "Cloud profile",
         },
-      },
+      }),
       {
         cachePolicy: { staleMs: 60_000, expireMs: 60_000 },
         fetchedAt: now,
@@ -1909,11 +1556,8 @@ describe("AssetDataRouter", () => {
         variantKey: "exchange=FWB2",
         sourceKey: "provider:yahoo",
       },
-      {
-        annualStatements: [],
-        quarterlyStatements: [],
-        priceHistory: [],
-        quote: {
+      makeFinancials({
+        quote: makeQuote({
           symbol: "HY9H.F",
           price: 596,
           currency: "EUR",
@@ -1925,8 +1569,8 @@ describe("AssetDataRouter", () => {
           listingExchangeName: "FWB2",
           providerId: "yahoo",
           dataSource: "delayed",
-        },
-      },
+        }),
+      }),
       {
         cachePolicy: { staleMs: 60_000, expireMs: 60_000 },
         fetchedAt: now,
@@ -1976,14 +1620,10 @@ describe("AssetDataRouter", () => {
         variantKey: "exchange=NASDAQ",
         sourceKey: "provider:gloomberb-cloud",
       },
-      {
-        annualStatements: [],
-        quarterlyStatements: [],
-        priceHistory: [],
-        quote: {
+      makeFinancials({
+        quote: makeQuote({
           symbol: "AMD",
           price: 221.53,
-          currency: "USD",
           change: 1.35,
           changePercent: 0.61,
           lastUpdated: now,
@@ -1992,8 +1632,8 @@ describe("AssetDataRouter", () => {
           listingExchangeName: "NASDAQ",
           providerId: "gloomberb-cloud",
           dataSource: "delayed",
-        },
-      },
+        }),
+      }),
       {
         cachePolicy: { staleMs: 60_000, expireMs: 60_000 },
         fetchedAt: now,
@@ -2007,14 +1647,10 @@ describe("AssetDataRouter", () => {
         variantKey: "exchange=NASDAQ",
         sourceKey: "provider:yahoo",
       },
-      {
-        annualStatements: [],
-        quarterlyStatements: [],
-        priceHistory: [],
-        quote: {
+      makeFinancials({
+        quote: makeQuote({
           symbol: "AMD",
           price: 221.53,
-          currency: "USD",
           change: 1.35,
           changePercent: 0.61,
           lastUpdated: now,
@@ -2026,8 +1662,8 @@ describe("AssetDataRouter", () => {
           listingExchangeName: "NASDAQ",
           providerId: "yahoo",
           dataSource: "delayed",
-        },
-      },
+        }),
+      }),
       {
         cachePolicy: { staleMs: 60_000, expireMs: 60_000 },
         fetchedAt: now,
@@ -2075,14 +1711,10 @@ describe("AssetDataRouter", () => {
         variantKey: "exchange=NASDAQ",
         sourceKey: "provider:gloomberb-cloud",
       },
-      {
-        annualStatements: [],
-        quarterlyStatements: [],
-        priceHistory: [],
-        quote: {
+      makeFinancials({
+        quote: makeQuote({
           symbol: "OLD",
           price: 42,
-          currency: "USD",
           change: -1,
           changePercent: -2.33,
           lastUpdated: Date.UTC(2020, 0, 2),
@@ -2091,11 +1723,11 @@ describe("AssetDataRouter", () => {
           listingExchangeName: "NASDAQ",
           providerId: "gloomberb-cloud",
           dataSource: "delayed",
-        },
+        }),
         fundamentals: {
           trailingPE: 12,
         },
-      },
+      }),
       {
         cachePolicy: { staleMs: 60_000, expireMs: 60_000 },
         fetchedAt: now,
@@ -2138,14 +1770,10 @@ describe("AssetDataRouter", () => {
         variantKey: "exchange=NASDAQ",
         sourceKey: "provider:gloomberb-cloud",
       },
-      {
-        annualStatements: [],
-        quarterlyStatements: [],
-        priceHistory: [],
-        quote: {
+      makeFinancials({
+        quote: makeQuote({
           symbol: "AMD",
           price: 445.38,
-          currency: "USD",
           change: -2.91,
           changePercent: -0.65,
           lastUpdated: now,
@@ -2154,11 +1782,11 @@ describe("AssetDataRouter", () => {
           listingExchangeName: "NASDAQ",
           providerId: "gloomberb-cloud",
           dataSource: "delayed",
-        },
+        }),
         fundamentals: {
           sharesOutstanding: 1_630_000_000,
         },
-      },
+      }),
       {
         cachePolicy: { staleMs: 60_000, expireMs: 60_000 },
         fetchedAt: now,
@@ -2197,11 +1825,8 @@ describe("AssetDataRouter", () => {
         variantKey: "exchange=JPX",
         sourceKey: "provider:yahoo",
       },
-      {
-        annualStatements: [],
-        quarterlyStatements: [],
-        priceHistory: [],
-        quote: {
+      makeFinancials({
+        quote: makeQuote({
           symbol: "4092.T",
           providerId: "yahoo",
           price: 3770,
@@ -2212,8 +1837,8 @@ describe("AssetDataRouter", () => {
           marketState: "CLOSED",
           exchangeName: "JPX",
           listingExchangeName: "JPX",
-        },
-      },
+        }),
+      }),
       {
         cachePolicy: { staleMs: 60_000, expireMs: 7 * 24 * 60 * 60_000 },
         fetchedAt: old,
@@ -2227,11 +1852,8 @@ describe("AssetDataRouter", () => {
         variantKey: "exchange=JPX",
         sourceKey: "provider:yahoo",
       },
-      {
-        annualStatements: [],
-        quarterlyStatements: [],
-        priceHistory: [],
-        quote: {
+      makeFinancials({
+        quote: makeQuote({
           symbol: "4092.T",
           providerId: "yahoo",
           price: 3925,
@@ -2242,8 +1864,8 @@ describe("AssetDataRouter", () => {
           marketState: "CLOSED",
           exchangeName: "JPX",
           listingExchangeName: "JPX",
-        },
-      },
+        }),
+      }),
       {
         cachePolicy: { staleMs: 60_000, expireMs: 7 * 24 * 60 * 60_000 },
         fetchedAt: now,
@@ -2290,11 +1912,8 @@ describe("AssetDataRouter", () => {
         variantKey: "exchange=JPX",
         sourceKey: "provider:yahoo",
       },
-      {
-        annualStatements: [],
-        quarterlyStatements: [],
-        priceHistory: [],
-        quote: {
+      makeFinancials({
+        quote: makeQuote({
           symbol: "6315.T",
           providerId: "yahoo",
           price: 3380,
@@ -2305,12 +1924,12 @@ describe("AssetDataRouter", () => {
           marketState: "CLOSED",
           exchangeName: "JPX",
           listingExchangeName: "JPX",
-        },
+        }),
         fundamentals: {
           sharesOutstanding: 75_000_462,
           trailingPE: 37.2,
         },
-      },
+      }),
       {
         cachePolicy: { staleMs: 60_000, expireMs: 7 * 24 * 60 * 60_000 },
         fetchedAt: old,
@@ -2324,7 +1943,7 @@ describe("AssetDataRouter", () => {
         variantKey: "exchange=JPX",
         sourceKey: "provider:yahoo",
       },
-      {
+      makeQuote({
         symbol: "6315.T",
         providerId: "yahoo",
         price: 2688,
@@ -2335,7 +1954,7 @@ describe("AssetDataRouter", () => {
         marketState: "CLOSED",
         exchangeName: "JPX",
         listingExchangeName: "JPX",
-      },
+      }),
       {
         cachePolicy: { staleMs: 60_000, expireMs: 7 * 24 * 60 * 60_000 },
         fetchedAt: now,
@@ -2457,8 +2076,8 @@ describe("AssetDataRouter", () => {
         sourceKey: "provider:yahoo",
       },
       [
-        { date: null as any, close: 101 },
-        { date: null as any, close: 102 },
+        { date: null, close: 101 },
+        { date: null, close: 102 },
       ],
       {
         cachePolicy: { staleMs: 60_000, expireMs: 60_000 },
@@ -2494,19 +2113,14 @@ describe("AssetDataRouter", () => {
     const seedRouter = new AssetDataRouter({
       ...fallbackProvider,
       async getTickerFinancials() {
-        return {
-          annualStatements: [],
-          quarterlyStatements: [],
+        return makeFinancials({
           priceHistory: [{ date: new Date("2026-03-27T00:00:00Z"), close: 101 }],
-          quote: {
-            symbol: "AAPL",
+          quote: makeQuote({
             price: 101,
-            currency: "USD",
             change: 1,
             changePercent: 1,
-            lastUpdated: Date.now(),
-          },
-        };
+          }),
+        });
       },
     }, [], persistence.resources);
     await seedRouter.getTickerFinancials("AAPL", "NASDAQ");
@@ -2516,19 +2130,14 @@ describe("AssetDataRouter", () => {
       ...fallbackProvider,
       async getTickerFinancials() {
         providerCalls += 1;
-        return {
-          annualStatements: [],
-          quarterlyStatements: [],
+        return makeFinancials({
           priceHistory: [{ date: new Date("2026-03-28T00:00:00Z"), close: 202 }],
-          quote: {
-            symbol: "AAPL",
+          quote: makeQuote({
             price: 202,
-            currency: "USD",
             change: 2,
             changePercent: 1,
-            lastUpdated: Date.now(),
-          },
-        };
+          }),
+        });
       },
     }, [], persistence.resources);
 

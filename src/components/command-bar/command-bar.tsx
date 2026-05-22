@@ -1,10 +1,10 @@
-import { Box, Input, ScrollBox, Text, Textarea, useUiCapabilities } from "../../ui";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Box, Text, useUiCapabilities } from "../../ui";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { TextAttributes, type InputRenderable, type ScrollBoxRenderable, type TextareaRenderable } from "../../ui";
 import { useShortcut, useViewport } from "../../react/input";
-import { Button, NumberField, Spinner, TextField } from "../ui";
-import { NativeSelect, openNativeSelect, type NativeSelectElement } from "../ui/native-select";
+import { Button } from "../ui";
+import { openNativeSelect, type NativeSelectElement } from "../ui/native-select";
 import {
   moveMultiSelectValue,
   toggleMultiSelectValue,
@@ -23,7 +23,6 @@ import {
   commandBarSelectedText,
   commandBarSubtleText,
   commandBarText,
-  colors,
   getCurrentThemeId,
   previewTheme,
 } from "../../theme/colors";
@@ -43,7 +42,7 @@ import { ThemePicker, type ThemePickerHandle } from "./theme-picker";
 import { exportConfig, importConfig, resetAllData } from "../../data/config-store";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRepository } from "../../data/ticker-repository";
-import type { PluginRegistry, WindowEditMode } from "../../plugins/registry";
+import type { PluginRegistry } from "../../plugins/registry";
 import type { TickerRecord } from "../../types/ticker";
 import type { Quote } from "../../types/financials";
 import type {
@@ -54,8 +53,6 @@ import type {
   PaneTemplateDef,
 } from "../../types/plugin";
 import {
-  DEFAULT_LAYOUT,
-  cloneLayout,
   createPaneInstance,
   findPaneInstance,
   findPrimaryPaneInstance,
@@ -69,13 +66,6 @@ import {
 import {
   addPaneFloating,
   addPaneToLayout,
-  dockPane,
-  floatPane,
-  getDockedPaneIds,
-  getLayoutPreview,
-  gridlockAllPanes,
-  isPaneDocked,
-  removePane,
   swapPanes,
   type LayoutBounds,
 } from "../../plugins/pane-manager";
@@ -84,7 +74,6 @@ import { resolveAppHeaderHeightCells } from "../layout/shell";
 import { CHART_RENDERER_PREFERENCES } from "../chart/chart-types";
 import {
   getEmptyState,
-  getRowPresentation,
   resolveCommandBarMode,
   truncateText,
 } from "./view-model";
@@ -92,10 +81,15 @@ import {
   buildListRows,
   buildNativeListRows,
   orderListResults,
-  type CommandBarListRow,
   type ListScreenState,
   type ResultItem,
 } from "./list-model";
+import {
+  CommandBarListBody,
+  CommandBarListHeader,
+  type CommandBarListScrollEvent,
+} from "./list-view";
+import { CommandBarWorkflowBody } from "./workflow-body";
 import { CommandBarConfirmBody } from "./confirm-body";
 import {
   createLocalTickerSearchCandidates,
@@ -118,7 +112,6 @@ import type {
 } from "./workflow-types";
 import {
   estimateWorkflowBodyRows,
-  getWorkflowFieldDescription,
   toMultiSelectOptions,
 } from "./workflow-view";
 import { parseRootShortcutIntent } from "./root-shortcuts";
@@ -145,7 +138,6 @@ import {
   getScreenFooterRight,
   getVisibleWorkflowFields,
   isCollectionCommand,
-  isRootParsedCommand,
   isRouteCommandId,
   isWorkflowTextField,
   looksDestructiveCommand,
@@ -155,8 +147,12 @@ import {
   slugifyName,
   summarizeError,
   summarizePaneSettingValue,
-  summarizeWorkflowFieldValue,
 } from "./helpers";
+import {
+  buildLayoutResultItems,
+  buildWindowModeResultItems,
+  parseWindowModeCommandArg,
+} from "./layout-items";
 import {
   buildAddToPortfolioWorkflow,
   buildSetPortfolioPositionWorkflow,
@@ -182,37 +178,6 @@ interface CommandBarProps {
 
 type WorkflowStringValues = Record<string, string>;
 
-const WINDOW_MODE_COMMAND_OPTIONS: Array<{
-  mode: WindowEditMode;
-  label: string;
-  detail: string;
-  query: string;
-  searchText: string;
-}> = [
-  {
-    mode: "move",
-    label: "Move Window",
-    detail: "Enter window edit mode with Tab cycling windows",
-    query: "WIN move",
-    searchText: "window mode move reposition",
-  },
-  {
-    mode: "resize",
-    label: "Resize Window",
-    detail: "Enter window edit mode with Tab cycling resize handles",
-    query: "WIN resize",
-    searchText: "window mode resize size corner divider",
-  },
-];
-
-function parseWindowModeCommandArg(arg: string): WindowEditMode | null {
-  const normalized = arg.trim().toLowerCase();
-  if (!normalized) return null;
-  if ("move".startsWith(normalized) || normalized === "m") return "move";
-  if ("resize".startsWith(normalized) || normalized === "r") return "resize";
-  return null;
-}
-
 const commandBarLog = debugLog.createLogger("command-bar");
 const COMMAND_BAR_OVERLAY_Z_INDEX = 2_147_483_646;
 const COMMAND_BAR_PANEL_Z_INDEX = 2_147_483_647;
@@ -220,6 +185,18 @@ const NATIVE_COMMAND_BAR_PADDING_X_PX = 14;
 const NATIVE_COMMAND_BAR_PADDING_Y_PX = 14;
 const NATIVE_COMMAND_BAR_SHADOW = "0 10px 18px color-mix(in srgb, var(--gloom-bg) 34%, transparent)";
 const QUICK_LOOK_TICKER_SEARCH_OPTIONS = { includeOptionContracts: false } as const;
+
+function buildTickerSearchCacheKey(
+  query: string,
+  brokerId?: string | null,
+  brokerInstanceId?: string | null,
+): string {
+  return [query.trim().toUpperCase(), brokerId || "", brokerInstanceId || ""].join("|");
+}
+
+function createQuickLookTickerCandidates(tickers: Iterable<TickerRecord>): TickerSearchCandidate[] {
+  return createLocalTickerSearchCandidates(tickers, new Map(), QUICK_LOOK_TICKER_SEARCH_OPTIONS);
+}
 
 function normalizeCommandTickerSearchText(value: string): string {
   return value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
@@ -340,310 +317,6 @@ function getVisibleMultiSelectPickerOptions(
     };
   });
 }
-
-type CommandBarListScrollEvent = {
-  stopPropagation: () => void;
-  preventDefault: () => void;
-  scroll?: { direction?: string; delta?: number };
-};
-
-interface CommandBarListHeaderProps {
-  kind: ListScreenState["kind"];
-  query: string;
-  queryDisplayWidth: number;
-  nativePaneChrome: boolean;
-  inputBg: string;
-  paletteBg: string;
-  paletteText: string;
-  paletteSubtleText: string;
-  cursorColor: string;
-  contentPadding: number;
-  rootGhostSuffix: string | null;
-  rootQueryLength: number;
-  rootShortcutFeedback: string | null;
-  onQueryChange: (query: string) => void;
-}
-
-const CommandBarListHeader = memo(function CommandBarListHeader({
-  kind,
-  query,
-  queryDisplayWidth,
-  nativePaneChrome,
-  inputBg,
-  paletteBg,
-  paletteText,
-  paletteSubtleText,
-  cursorColor,
-  contentPadding,
-  rootGhostSuffix,
-  rootQueryLength,
-  rootShortcutFeedback,
-  onQueryChange,
-}: CommandBarListHeaderProps) {
-  return (
-    <>
-      <Box height={1} paddingX={contentPadding}>
-        <Box
-          width={queryDisplayWidth}
-          height={1}
-          position="relative"
-          backgroundColor={nativePaneChrome ? undefined : inputBg}
-          style={nativePaneChrome ? undefined : {
-            overflow: "hidden",
-          }}
-        >
-          <Input
-            value={query}
-            onInput={onQueryChange}
-            onChange={onQueryChange}
-            placeholder={kind === "root" ? "Search" : "Filter"}
-            focused
-            width={nativePaneChrome ? "100%" : queryDisplayWidth}
-            backgroundColor={nativePaneChrome ? "transparent" : paletteBg}
-            focusedBackgroundColor={nativePaneChrome ? "transparent" : paletteBg}
-            textColor={paletteText}
-            focusedTextColor={paletteText}
-            placeholderColor={paletteSubtleText}
-            cursorColor={cursorColor}
-          />
-          {kind === "root" && rootGhostSuffix && (
-            <Box
-              position="absolute"
-              top={0}
-              left={Math.max(0, Math.min(rootQueryLength, queryDisplayWidth - 1))}
-              width={Math.max(0, queryDisplayWidth - Math.min(rootQueryLength, queryDisplayWidth - 1))}
-              height={1}
-            >
-              <Text fg={paletteSubtleText}>
-                {truncateText(
-                  rootGhostSuffix,
-                  Math.max(0, queryDisplayWidth - Math.min(rootQueryLength, queryDisplayWidth - 1)),
-                )}
-              </Text>
-            </Box>
-          )}
-        </Box>
-      </Box>
-      <Box height={1} paddingX={contentPadding}>
-        {kind === "root" && rootShortcutFeedback
-          ? (
-            <Text fg={paletteSubtleText}>
-              {truncateText(rootShortcutFeedback, queryDisplayWidth)}
-            </Text>
-          )
-          : null}
-      </Box>
-    </>
-  );
-});
-
-interface CommandBarListItemRowProps {
-  item: ResultItem;
-  globalIdx: number;
-  isSelected: boolean;
-  isHovered: boolean;
-  contentPadding: number;
-  labelWidth: number;
-  trailingWidth: number;
-  nativePaneChrome: boolean;
-  paletteBg: string;
-  paletteHoverBg: string;
-  paletteSelectedBg: string;
-  paletteSelectedText: string;
-  paletteSubtleText: string;
-  paletteText: string;
-  panelBg: string;
-  onHoverIndex: (index: number | null) => void;
-  onListScroll: (event: CommandBarListScrollEvent) => void;
-  onRowMouseDown: (event: any, item: ResultItem, globalIdx: number) => void;
-}
-
-const CommandBarListItemRow = memo(function CommandBarListItemRow({
-  item,
-  globalIdx,
-  isSelected,
-  isHovered,
-  contentPadding,
-  labelWidth,
-  trailingWidth,
-  nativePaneChrome,
-  paletteBg,
-  paletteHoverBg,
-  paletteSelectedBg,
-  paletteSelectedText,
-  paletteSubtleText,
-  paletteText,
-  panelBg,
-  onHoverIndex,
-  onListScroll,
-  onRowMouseDown,
-}: CommandBarListItemRowProps) {
-  const presentation = getRowPresentation(item, isSelected, trailingWidth > 0);
-  const label = truncateText(presentation.label, labelWidth);
-  const trailing = truncateText(presentation.trailing, trailingWidth);
-
-  return (
-    <Box
-      key={item.id}
-      flexDirection="row"
-      height={1}
-      paddingX={contentPadding}
-      backgroundColor={isSelected
-        ? paletteSelectedBg
-        : isHovered
-          ? paletteHoverBg
-          : (nativePaneChrome ? panelBg : paletteBg)}
-      onMouseMove={() => onHoverIndex(globalIdx)}
-      onMouseOut={() => onHoverIndex(null)}
-      {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}
-      onMouseDown={(event: any) => onRowMouseDown(event, item, globalIdx)}
-      data-command-bar-row-selected={nativePaneChrome && isSelected ? "true" : undefined}
-      style={nativePaneChrome ? { borderRadius: 6 } : undefined}
-    >
-      <Box width={labelWidth}>
-        <Text fg={isSelected ? paletteSelectedText : presentation.primaryMuted ? paletteSubtleText : paletteText}>
-          {label}
-        </Text>
-      </Box>
-      <Box width={trailingWidth}>
-        <Text fg={isSelected ? paletteSelectedText : paletteSubtleText}>{trailing}</Text>
-      </Box>
-    </Box>
-  );
-});
-
-interface CommandBarListBodyProps {
-  visibleListState: ListScreenState;
-  nativeListRows: CommandBarListRow[];
-  listBodyHeight: number;
-  contentPadding: number;
-  labelWidth: number;
-  nativePaneChrome: boolean;
-  nativeListScrollRef: RefObject<ScrollBoxRenderable | null>;
-  paletteBg: string;
-  paletteHeadingText: string;
-  paletteHoverBg: string;
-  paletteSelectedBg: string;
-  paletteSelectedText: string;
-  paletteSubtleText: string;
-  paletteText: string;
-  panelBg: string;
-  queryDisplayWidth: number;
-  trailingWidth: number;
-  onHoverIndex: (index: number | null) => void;
-  onListScroll: (event: CommandBarListScrollEvent) => void;
-  onRowMouseDown: (event: any, item: ResultItem, globalIdx: number) => void;
-}
-
-const CommandBarListBody = memo(function CommandBarListBody({
-  visibleListState,
-  nativeListRows,
-  listBodyHeight,
-  contentPadding,
-  labelWidth,
-  nativePaneChrome,
-  nativeListScrollRef,
-  paletteBg,
-  paletteHeadingText,
-  paletteHoverBg,
-  paletteSelectedBg,
-  paletteSelectedText,
-  paletteSubtleText,
-  paletteText,
-  panelBg,
-  queryDisplayWidth,
-  trailingWidth,
-  onHoverIndex,
-  onListScroll,
-  onRowMouseDown,
-}: CommandBarListBodyProps) {
-  const visibleRows = useMemo(() => {
-    const rows = nativeListRows;
-    if (nativePaneChrome) return rows;
-    const paddedRows = [...rows];
-    while (paddedRows.length < listBodyHeight) {
-      paddedRows.push({ kind: "filler", id: `filler:${paddedRows.length}` });
-    }
-    return paddedRows;
-  }, [
-    listBodyHeight,
-    nativeListRows,
-    nativePaneChrome,
-  ]);
-
-  const renderedRows = (
-    <>
-      {visibleRows.map((row) => {
-        if (row.kind === "filler" || row.kind === "spacer") {
-          return <Box key={row.id} height={1} />;
-        }
-        if (row.kind === "spinner") {
-          return (
-            <Box key={row.id} height={1} paddingX={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}>
-              <Spinner label={row.label} />
-            </Box>
-          );
-        }
-        if (row.kind === "message") {
-          return (
-            <Box key={row.id} height={1} paddingX={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}>
-              <Text fg={paletteText}>{truncateText(row.label, queryDisplayWidth)}</Text>
-            </Box>
-          );
-        }
-        if (row.kind === "heading") {
-          return (
-            <Box key={row.id} height={1} paddingX={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}>
-              <Text attributes={TextAttributes.BOLD} fg={paletteHeadingText}>
-                {truncateText(row.label, queryDisplayWidth)}
-              </Text>
-            </Box>
-          );
-        }
-
-        const isSelected = row.globalIdx === visibleListState.selectedIdx;
-        const isHovered = row.globalIdx === visibleListState.hoveredIdx && !isSelected;
-        const itemRowKey = `item:${row.globalIdx}:${row.item.id}:${row.item.category}:${row.item.label}:${row.item.right || ""}`;
-        return (
-          <CommandBarListItemRow
-            key={itemRowKey}
-            item={row.item}
-            globalIdx={row.globalIdx}
-            isSelected={isSelected}
-            isHovered={isHovered}
-            contentPadding={contentPadding}
-            labelWidth={labelWidth}
-            trailingWidth={trailingWidth}
-            nativePaneChrome={nativePaneChrome}
-            paletteBg={paletteBg}
-            paletteHoverBg={paletteHoverBg}
-            paletteSelectedBg={paletteSelectedBg}
-            paletteSelectedText={paletteSelectedText}
-            paletteSubtleText={paletteSubtleText}
-            paletteText={paletteText}
-            panelBg={panelBg}
-            onHoverIndex={onHoverIndex}
-            onListScroll={onListScroll}
-            onRowMouseDown={onRowMouseDown}
-          />
-        );
-      })}
-    </>
-  );
-
-  return (
-    <ScrollBox
-      ref={nativeListScrollRef}
-      flexDirection="column"
-      height={listBodyHeight}
-      scrollY
-      focusable={false}
-      {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}
-    >
-      {renderedRows}
-    </ScrollBox>
-  );
-});
 
 export function CommandBar({
   dataProvider,
@@ -851,7 +524,7 @@ export function CommandBar({
     }
 
     setRouteStack((current) => current.slice(0, -1));
-  }, [clearThemePreview, closeAll, currentRoute, routeStack.length, setRootQuery]);
+  }, [closeAll, currentRoute, routeStack.length, setRootQuery]);
 
   const dismissCommandBar = useCallback(() => {
     if (currentRoute) {
@@ -1491,7 +1164,7 @@ export function CommandBar({
       default:
         return;
       }
-  }, [activeCollectionId, activeTickerData, buildBrokerWorkflow, notify, openWorkflowRoute, pluginRegistry, state.config]);
+  }, [activeCollectionId, activeTickerData, buildBrokerWorkflow, notify, openWorkflowRoute, state.config]);
 
   const buildSharedWorkflowDeps = useCallback(() => ({
     dataProvider,
@@ -1563,285 +1236,39 @@ export function CommandBar({
     });
   }, [dispatch, persistConfig, pluginRegistry, state.config]);
 
-  const buildWindowModeItems = useCallback((arg: string): ResultItem[] => {
-    const normalized = arg.trim().toLowerCase();
-    const exactMode = parseWindowModeCommandArg(arg);
-    const options = normalized
-      ? WINDOW_MODE_COMMAND_OPTIONS.filter((option) => (
-        option.mode === exactMode
-        || option.mode.startsWith(normalized)
-        || fuzzyFilter([option], normalized, (item) => `${item.label} ${item.detail} ${item.searchText}`).length > 0
-      ))
-      : WINDOW_MODE_COMMAND_OPTIONS;
-
-    const visibleOptions = options.length > 0 ? options : WINDOW_MODE_COMMAND_OPTIONS;
-    return visibleOptions.map((option) => ({
-      id: `window-mode:${option.mode}`,
-      label: option.label,
-      detail: option.detail,
-      category: "Config",
-      kind: "action" as const,
-      right: option.query,
-      shortcutQuery: option.query,
-      action: () => {
-        closeAll({ revertThemePreview: false });
-        pluginRegistry.openWindowMode(state.focusedPaneId ?? undefined, option.mode);
-      },
-    }));
-  }, [closeAll, pluginRegistry, state.focusedPaneId]);
+  const buildWindowModeItems = useCallback((arg: string): ResultItem[] => buildWindowModeResultItems({
+    arg,
+    closeAll,
+    focusedPaneId: state.focusedPaneId,
+    pluginRegistry,
+  }), [closeAll, pluginRegistry, state.focusedPaneId]);
 
   const buildLayoutItems = useCallback((
     query: string,
     options?: { confirmDangerousActions?: boolean },
-  ): ResultItem[] => {
-    const currentLayout = state.config.layout;
-    const focusedPane = state.focusedPaneId ? findPaneInstance(currentLayout, state.focusedPaneId) : null;
-    const focusedPaneDef = focusedPane ? pluginRegistry.panes.get(focusedPane.paneId) : null;
-    const dockedPaneIds = getDockedPaneIds(currentLayout);
-    const layoutHistory = state.layoutHistory[state.config.activeLayoutIndex];
-    const layoutItems: ResultItem[] = [];
-
-    if (focusedPane && focusedPaneDef) {
-      const focusedFloating = currentLayout.floating.find((entry) => entry.instanceId === focusedPane.instanceId);
-      layoutItems.push({
-        id: "layout-toggle-mode",
-        label: focusedFloating ? "Dock Pane" : "Float Pane",
-        detail: focusedFloating ? "Return the focused window to the layout" : "Detach the focused pane into a floating window",
-        category: "Focused Pane",
-        kind: "action",
-        action: () => {
-          const { width, height } = pluginRegistry.getTermSizeFn();
-          const nextLayout = focusedFloating
-            ? dockPane(currentLayout, focusedPane.instanceId)
-            : floatPane(currentLayout, focusedPane.instanceId, width, height, focusedPaneDef);
-          persistLayoutChange(nextLayout);
-          closeAll({ revertThemePreview: false });
-        },
-      });
-
-      layoutItems.push(...WINDOW_MODE_COMMAND_OPTIONS.map((option) => ({
-        id: `layout-window-mode:${option.mode}`,
-        label: option.label,
-        detail: option.detail,
-        category: "Focused Pane",
-        kind: "action" as const,
-        right: option.query,
-        action: () => {
-          closeAll({ revertThemePreview: false });
-          pluginRegistry.openWindowMode(focusedPane.instanceId, option.mode);
-        },
-      })));
-
-      layoutItems.push({
-        id: "layout-swap",
-        label: "Swap With…",
-        detail: dockedPaneIds.length + currentLayout.floating.length > 1
-          ? "Choose another pane to swap positions"
-          : "Need at least two panes",
-        category: "Focused Pane",
-        kind: "action",
-        disabled: dockedPaneIds.length + currentLayout.floating.length <= 1,
-        action: () => {
-          const pickerOptions = [
-            ...dockedPaneIds,
-            ...currentLayout.floating.map((entry) => entry.instanceId),
-          ]
-            .filter((paneId) => paneId !== focusedPane.instanceId)
-            .map((paneId) => {
-              const instance = findPaneInstance(currentLayout, paneId)!;
-              const isFloating = currentLayout.floating.some((entry) => entry.instanceId === paneId);
-              return {
-                id: paneId,
-                label: instance.title || pluginRegistry.panes.get(instance.paneId)?.name || instance.paneId,
-                detail: isFloating ? "Floating window" : "Docked pane",
-                description: isFloating ? "Floating window" : "Docked pane",
-              };
-            });
-          if (pickerOptions.length === 0) return;
-          pushRoute({
-            kind: "picker",
-            pickerId: "layout-swap",
-            title: "Swap With…",
-            query: "",
-            selectedIdx: 0,
-            hoveredIdx: null,
-            options: pickerOptions,
-            payload: { sourcePaneId: focusedPane.instanceId },
-          });
-        },
-      });
-
-      layoutItems.push({
-        id: "layout-duplicate",
-        label: "Duplicate Pane",
-        detail: "Create another instance next to the focused pane",
-        category: "Focused Pane",
-        kind: "action",
-        action: () => {
-          duplicatePane(focusedPane.instanceId);
-          closeAll({ revertThemePreview: false });
-        },
-      });
-
-      layoutItems.push({
-        id: "layout-close-pane",
-        label: "Close Pane",
-        detail: "Remove the focused pane from the layout",
-        category: "Focused Pane",
-        kind: "action",
-        action: options?.confirmDangerousActions
-          ? () => {
-            openInlineConfirm({
-              confirmId: "layout-close-pane",
-              title: "Close Pane",
-              body: [`Close "${focusedPane.title || focusedPaneDef.name || focusedPane.instanceId}"?`],
-              confirmLabel: "Close Pane",
-              cancelLabel: "Back",
-              tone: "danger",
-              onConfirm: () => {
-                persistLayoutChange(removePane(currentLayout, focusedPane.instanceId));
-              },
-            });
-          }
-          : () => {
-            persistLayoutChange(removePane(currentLayout, focusedPane.instanceId));
-            closeAll({ revertThemePreview: false });
-          },
-      });
-    } else {
-      layoutItems.push({
-        id: "layout-no-focused-pane",
-        label: "No focused pane",
-        detail: "Focus a pane to show pane-specific layout actions",
-        category: "Focused Pane",
-        kind: "info",
-        action: () => {},
-      });
-    }
-
-    layoutItems.push({
-      id: "layout-undo",
-      label: "Undo Layout Change",
-      detail: (layoutHistory?.past.length ?? 0) > 0 ? "Restore the previous layout state" : "No previous layout state",
-      category: "Current Layout",
-      kind: "action",
-      disabled: (layoutHistory?.past.length ?? 0) === 0,
-      action: () => {
-        if ((layoutHistory?.past.length ?? 0) === 0) return;
-        dispatch({ type: "UNDO_LAYOUT" });
-        closeAll({ revertThemePreview: false });
-      },
-    });
-    layoutItems.push({
-      id: "layout-redo",
-      label: "Redo Layout Change",
-      detail: (layoutHistory?.future.length ?? 0) > 0 ? "Reapply the next layout state" : "No later layout state",
-      category: "Current Layout",
-      kind: "action",
-      disabled: (layoutHistory?.future.length ?? 0) === 0,
-      action: () => {
-        if ((layoutHistory?.future.length ?? 0) === 0) return;
-        dispatch({ type: "REDO_LAYOUT" });
-        closeAll({ revertThemePreview: false });
-      },
-    });
-    layoutItems.push({
-      id: "layout-reset",
-      label: "Reset Current Layout",
-      detail: "Restore the default two-pane layout",
-      category: "Current Layout",
-      kind: "action",
-      action: options?.confirmDangerousActions
-        ? () => {
-          openInlineConfirm({
-            confirmId: "layout-reset",
-            title: "Reset Current Layout",
-            body: ["Reset the current layout to the default two-pane arrangement?"],
-            confirmLabel: "Reset Layout",
-            cancelLabel: "Back",
-            tone: "danger",
-            onConfirm: () => {
-              persistLayoutChange(cloneLayout(DEFAULT_LAYOUT));
-            },
-          });
-        }
-        : () => {
-          persistLayoutChange(cloneLayout(DEFAULT_LAYOUT));
-          closeAll({ revertThemePreview: false });
-        },
-    });
-    layoutItems.push({
-      id: "layout-gridlock",
-      label: "Gridlock All Windows",
-      detail: currentLayout.floating.length > 0
-        ? "Infer a tiled layout from the current window positions"
-        : "Retile all panes from their current arrangement",
-      category: "Current Layout",
-      kind: "action",
-      action: () => {
-        const { width, height } = pluginRegistry.getTermSizeFn();
-        persistLayoutChange(gridlockAllPanes(currentLayout, { x: 0, y: 0, width, height }));
-        notifyGridlockRevert();
-        closeAll({ revertThemePreview: false });
-      },
-    });
-    layoutItems.push({
-      id: "layout-rename",
-      label: "Rename Layout",
-      detail: "Change the current saved layout name",
-      category: "Current Layout",
-      kind: "action",
-      action: () => openBuiltInWorkflow("rename-layout"),
-    });
-    layoutItems.push({
-      id: "layout-duplicate-layout",
-      label: "Duplicate Layout",
-      detail: "Create a copy of the current layout",
-      category: "Current Layout",
-      kind: "action",
-      action: () => {
-        dispatch({ type: "DUPLICATE_LAYOUT", index: state.config.activeLayoutIndex });
-        closeAll({ revertThemePreview: false });
-      },
-    });
-    layoutItems.push({
-      id: "layout-new",
-      label: "New Layout",
-      detail: "Create a fresh saved layout",
-      category: "Current Layout",
-      kind: "action",
-      action: () => openBuiltInWorkflow("new-layout"),
-    });
-
-    state.config.layouts.forEach((savedLayout, index) => {
-      layoutItems.push({
-        id: `layout-switch:${index}`,
-        label: savedLayout.name,
-        detail: index === state.config.activeLayoutIndex ? "Current layout" : "Switch to this saved layout",
-        right: getLayoutPreview(savedLayout.layout),
-        category: "Saved Layouts",
-        kind: "action",
-        current: index === state.config.activeLayoutIndex,
-        action: () => {
-          dispatch({ type: "SWITCH_LAYOUT", index });
-          closeAll({ revertThemePreview: false });
-        },
-      });
-    });
-
-    return query
-      ? fuzzyFilter(layoutItems, query, (item) => `${item.label} ${item.detail} ${item.right || ""}`)
-      : layoutItems;
-  }, [
+  ): ResultItem[] => buildLayoutResultItems({
+    closeAll,
+    confirmDangerousActions: options?.confirmDangerousActions,
+    dispatch,
+    duplicatePane,
+    notifyGridlockRevert,
+    openBuiltInWorkflow,
+    openInlineConfirm,
+    persistLayoutChange,
+    pluginRegistry,
+    pushRoute,
+    query,
+    state,
+  }), [
     closeAll,
     dispatch,
     duplicatePane,
     notifyGridlockRevert,
     openBuiltInWorkflow,
     openInlineConfirm,
-    pushRoute,
     persistLayoutChange,
     pluginRegistry,
+    pushRoute,
     state,
   ]);
 
@@ -1868,7 +1295,7 @@ export function CommandBar({
       cancelLabel: "Back",
       tone: "danger" as const,
     };
-  }, [activeCollectionId, activeTickerSymbol, state.config, state.config.layout]);
+  }, [activeCollectionId, activeTickerSymbol, state.config]);
 
   const openPaneSettingsRoute = useCallback((paneId: string) => {
     const descriptor = pluginRegistry.resolvePaneSettings(paneId);
@@ -2071,7 +1498,6 @@ export function CommandBar({
     openAddToPortfolioWorkflow,
     openModeRoute,
     pushRoute,
-    pluginRegistry,
   ]);
 
   const runSecurityDescriptionShortcut = useCallback(async (query?: string) => {
@@ -2830,12 +2256,6 @@ export function CommandBar({
     return merged.length > 0 ? merged : rootItems;
   }, []);
 
-  const buildTickerSearchCacheKey = useCallback((
-    query: string,
-    brokerId?: string | null,
-    brokerInstanceId?: string | null,
-  ) => [query.trim().toUpperCase(), brokerId || "", brokerInstanceId || ""].join("|"), []);
-
   const readTickerSearchCache = useCallback((
     query: string,
     brokerId?: string | null,
@@ -2843,7 +2263,7 @@ export function CommandBar({
   ): TickerSearchCandidate[] | null => {
     const key = buildTickerSearchCacheKey(query, brokerId, brokerInstanceId);
     return tickerSearchCacheRef.current.get(key) ?? null;
-  }, [buildTickerSearchCacheKey]);
+  }, []);
 
   const writeTickerSearchCache = useCallback((
     query: string,
@@ -2858,30 +2278,26 @@ export function CommandBar({
       if (!oldestKey) break;
       tickerSearchCacheRef.current.delete(oldestKey);
     }
-  }, [buildTickerSearchCacheKey]);
+  }, []);
 
   useEffect(() => {
     tickerSearchCacheRef.current.clear();
   }, [state.tickers]);
-
-  const createQuickLookLocalTickerCandidates = useCallback((tickers: Iterable<TickerRecord>) => (
-    createLocalTickerSearchCandidates(tickers, new Map(), QUICK_LOOK_TICKER_SEARCH_OPTIONS)
-  ), []);
 
   const localTickerSearchResultItems = useCallback((query?: string, options?: {
     category?: string;
     limit?: number;
   }): ResultItem[] => {
     const items = query
-      ? rankTickerSearchItems(createQuickLookLocalTickerCandidates(state.tickers.values()), query)
-      : createQuickLookLocalTickerCandidates(state.tickers.values());
+      ? rankTickerSearchItems(createQuickLookTickerCandidates(state.tickers.values()), query)
+      : createQuickLookTickerCandidates(state.tickers.values());
     return items
       .slice(0, options?.limit)
       .map((candidate) => ({
         ...mapTickerSearchCandidateToResultItem(candidate),
         category: options?.category ?? candidate.category,
       }));
-  }, [createQuickLookLocalTickerCandidates, mapTickerSearchCandidateToResultItem, state.tickers]);
+  }, [mapTickerSearchCandidateToResultItem, state.tickers]);
 
   const adaptTickerSearchRouteResult = useCallback((
     item: ResultItem,
@@ -3855,18 +3271,18 @@ export function CommandBar({
       const recentTickers = recentSymbols
         .map((symbol) => state.tickers.get(symbol))
         .filter((ticker): ticker is NonNullable<typeof ticker> => (
-          ticker != null && createQuickLookLocalTickerCandidates([ticker]).length > 0
+          ticker != null && createQuickLookTickerCandidates([ticker]).length > 0
         ));
       if (recentTickers.length < maxDefaultTickers) {
         const seen = new Set(recentSymbols);
         for (const ticker of state.tickers.values()) {
           if (recentTickers.length >= maxDefaultTickers) break;
-          if (createQuickLookLocalTickerCandidates([ticker]).length === 0) continue;
+          if (createQuickLookTickerCandidates([ticker]).length === 0) continue;
           if (!seen.has(ticker.metadata.ticker)) recentTickers.push(ticker);
         }
       }
       items.push(...recentTickers.flatMap((ticker) => {
-        const candidate = createQuickLookLocalTickerCandidates([ticker])[0];
+        const candidate = createQuickLookTickerCandidates([ticker])[0];
         return candidate
           ? [{
             ...mapTickerSearchCandidateToResultItem(candidate),
@@ -3909,7 +3325,6 @@ export function CommandBar({
     buildWindowModeItems,
     buildPaneSettingItems,
     buildPluginItems,
-    createQuickLookLocalTickerCandidates,
     createPluginCommandItem,
     currentRoute,
     executeCollectionCommand,
@@ -3919,7 +3334,6 @@ export function CommandBar({
     pluginCommandItems,
     pluginCommandResultItems,
     pluginRegistry,
-    rootModeInfo.kind,
     rootQuery,
     rootShortcutIntent,
     runDirectCommand,
@@ -4537,32 +3951,11 @@ export function CommandBar({
     return null;
   }, [
     adaptTickerSearchRouteResult,
-    activeCollectionId,
     activeMatch,
-    activeTickerData,
-    activeTickerSymbol,
     buildLayoutItems,
     buildPaneSettingItems,
     buildPluginItems,
-    closeAll,
-    createPaneTemplateItem,
     currentRoute,
-    dispatch,
-    duplicatePane,
-    executeCollectionCommand,
-    getAvailablePaneShortcutTemplates,
-    getAvailablePaneTemplates,
-    localTickerSearchResultItems,
-    mapTickerSearchCandidateToResultItem,
-    nonShortcutPaneTemplateItems,
-    notifyGridlockRevert,
-    openBuiltInWorkflow,
-    openInlineConfirm,
-    openPaneSettingsRoute,
-    pushRoute,
-    paneShortcutItems,
-    persistLayoutChange,
-    pluginCommandItems,
     pluginRegistry,
     rootHoveredIdx,
     rootModeInfo.kind,
@@ -4571,11 +3964,6 @@ export function CommandBar({
     rootSectionOrder,
     rootSearching,
     rootSelectedIdx,
-    rootShortcutIntent,
-    runDirectCommand,
-    shouldOpenTemplateConfig,
-    state,
-    tickerActionItems,
     tickerSearchPending,
     tickerSearchResults,
   ]);
@@ -4625,7 +4013,7 @@ export function CommandBar({
     }
   }, [availableCommands, clearThemePreview, setRootQuery, updateTopRoute]);
 
-  const applyListSelectionDelta = useCallback((delta: number) => {
+  const moveListSelection = useCallback((delta: number) => {
     const listState = visibleListStateRef.current;
     if (!listState || listState.results.length === 0 || delta === 0) return;
     const nextIndex = clampListIndex(listState.selectedIdx + delta, listState.results.length);
@@ -4653,10 +4041,6 @@ export function CommandBar({
     });
   }, []);
 
-  const moveListSelection = useCallback((delta: number) => {
-    applyListSelectionDelta(delta);
-  }, [applyListSelectionDelta]);
-
   const setHoveredIndex = useCallback((index: number | null) => {
     if (!currentRouteRef.current) {
       setRootHoveredIdx((current) => (current === index ? current : index));
@@ -4676,11 +4060,7 @@ export function CommandBar({
     });
   }, []);
 
-  const handleListScroll = useCallback((event: {
-    stopPropagation: () => void;
-    preventDefault: () => void;
-    scroll?: { direction?: string; delta?: number };
-  }) => {
+  const handleListScroll = useCallback((event: CommandBarListScrollEvent) => {
     event.stopPropagation();
     event.preventDefault();
     const direction = event.scroll?.direction;
@@ -5531,234 +4911,45 @@ export function CommandBar({
     };
   }, [nativeOccluderRect, onNativeOccluderChange]);
 
-  useEffect(() => {
-    if (!nativePaneChrome || currentRoute?.kind !== "workflow") return;
-    const scrollBox = workflowScrollRef.current;
-    if (!scrollBox) return;
-    const visibleFields = getVisibleWorkflowFields(currentRoute.fields, currentRoute.values);
-    const activeIndex = visibleFields.findIndex((field) => field.id === currentRoute.activeFieldId);
-    if (activeIndex < 0) return;
+  const getWorkflowInputRef = useCallback((fieldId: string) => (
+    getInputRef(workflowInputRefs.current, fieldId)
+  ), []);
 
-    const estimatedFieldHeight = 4;
-    const fieldTop = activeIndex * estimatedFieldHeight;
-    const fieldBottom = fieldTop + estimatedFieldHeight;
-    const viewportHeight = Math.max(1, scrollBox.viewport?.height ?? bodyHeight);
-    if (fieldTop < scrollBox.scrollTop) {
-      scrollBox.scrollTo(fieldTop);
-    } else if (fieldBottom > scrollBox.scrollTop + viewportHeight) {
-      scrollBox.scrollTo(fieldBottom - viewportHeight);
-    }
-  }, [bodyHeight, currentRoute, nativePaneChrome]);
+  const focusWorkflowField = useCallback((fieldId: string) => {
+    updateTopRoute((route) => route.kind === "workflow"
+      ? { ...route, activeFieldId: fieldId, error: null }
+      : route);
+  }, [updateTopRoute]);
 
   const renderWorkflowBody = () => {
     if (currentRoute?.kind !== "workflow") return null;
-    const visibleFields = getVisibleWorkflowFields(currentRoute.fields, currentRoute.values);
-    const workflowContent = (
-      <>
-        {currentRoute.subtitle && (
-          <Box height={1}>
-            <Text fg={paletteSubtleText}>{truncateText(currentRoute.subtitle, queryDisplayWidth)}</Text>
-          </Box>
-        )}
-        {currentRoute.description?.map((line, index) => (
-          <Box key={`workflow-desc:${index}`} height={1}>
-            <Text fg={paletteSubtleText}>{truncateText(line, queryDisplayWidth)}</Text>
-          </Box>
-        ))}
-        {currentRoute.subtitle || (currentRoute.description?.length ?? 0) > 0 ? <Box height={1} /> : null}
-        {visibleFields.map((field, fieldIndex) => {
-          const active = field.id === currentRoute.activeFieldId;
-          const isLastField = fieldIndex === visibleFields.length - 1;
-          const value = currentRoute.values[field.id];
-          const borderColor = active ? paletteSelectedBg : paletteBg;
-          const fieldBg = nativePaneChrome ? "transparent" : active ? inputBg : panelBg;
-          const useNativeSelect = nativePaneChrome && field.type === "select";
-          const fieldDescription = getWorkflowFieldDescription(field, active);
-          return (
-            <Box
-              key={field.id}
-              flexDirection="column"
-              {...(!nativePaneChrome ? { marginBottom: isLastField ? 0 : 1 } : {})}
-              backgroundColor={fieldBg}
-              onMouseDown={(event: any) => {
-                event.stopPropagation?.();
-                syncActiveWorkflowTextarea(currentRoute);
-                updateTopRoute((route) => route.kind === "workflow"
-                  ? { ...route, activeFieldId: field.id, error: null }
-                  : route);
-                if (!isWorkflowTextField(field) && !useNativeSelect) {
-                  openWorkflowFieldPicker(currentRoute, field);
-                }
-              }}
-              style={nativePaneChrome ? {
-                marginBottom: isLastField ? 8 : 10,
-                paddingBlock: 3,
-              } : undefined}
-            >
-              <Box height={1}>
-                <Text fg={active ? paletteText : paletteSubtleText} attributes={active ? TextAttributes.BOLD : 0}>
-                  {field.label}
-                </Text>
-              </Box>
-              {isWorkflowTextField(field) ? (
-                field.type === "number" ? (
-                  <NumberField
-                    inputRef={getInputRef(workflowInputRefs.current, field.id) as RefObject<InputRenderable | null>}
-                    value={coerceFieldString(value)}
-                    placeholder={field.placeholder}
-                    focused={active && !currentRoute.pending}
-                    variant="default"
-                    backgroundColor={nativePaneChrome ? inputBg : fieldBg}
-                    onChange={(nextValue) => updateWorkflowValue(field.id, nextValue)}
-                    onSubmit={() => {
-                      const index = visibleFields.findIndex((entry) => entry.id === field.id);
-                      if (index === visibleFields.length - 1) {
-                        void submitWorkflowRoute(currentRoute);
-                      } else {
-                        moveWorkflowFocus(1);
-                      }
-                    }}
-                  />
-                ) : field.type === "textarea" ? (
-                  <Box
-                    minHeight={6}
-                    height={6}
-                    border={!nativePaneChrome}
-                    borderColor={active ? paletteSelectedBg : paletteBg}
-                    backgroundColor={nativePaneChrome ? inputBg : fieldBg}
-                    style={nativePaneChrome ? {
-                      border: `1px solid ${active ? themeColors.borderFocused : themeColors.border}`,
-                      borderRadius: 6,
-                      overflow: "hidden",
-                    } : undefined}
-                  >
-                    {active ? (
-                      <Textarea
-                        key={field.id}
-                        ref={getInputRef(workflowInputRefs.current, field.id) as RefObject<TextareaRenderable | null>}
-                        initialValue={coerceFieldString(value)}
-                        placeholder={field.placeholder || ""}
-                        focused={!currentRoute.pending}
-                        textColor={paletteText}
-                        placeholderColor={paletteSubtleText}
-                        backgroundColor={nativePaneChrome ? inputBg : themeColors.panel}
-                        flexGrow={1}
-                        wrapText
-                      />
-                    ) : (
-                      <Box flexDirection="column" paddingX={1} paddingY={0}>
-                        {(() => {
-                          const preview = coerceFieldString(value).trim();
-                          const lines = (preview || field.placeholder || "Unset")
-                            .split("\n")
-                            .flatMap((line) => line.match(new RegExp(`.{1,${Math.max(1, queryDisplayWidth - 8)}}`, "g")) ?? [""])
-                            .slice(0, 4);
-                          return lines.map((line, index) => (
-                            <Box key={`${field.id}:preview:${index}`} height={1}>
-                              <Text fg={preview ? paletteText : paletteSubtleText}>{line || " "}</Text>
-                            </Box>
-                          ));
-                        })()}
-                      </Box>
-                    )}
-                  </Box>
-                ) : (
-                  <TextField
-                    inputRef={getInputRef(workflowInputRefs.current, field.id) as RefObject<InputRenderable | null>}
-                    type={field.type === "password" ? "password" : "text"}
-                    value={coerceFieldString(value)}
-                    placeholder={field.placeholder}
-                    focused={active && !currentRoute.pending}
-                    variant="default"
-                    backgroundColor={nativePaneChrome ? inputBg : fieldBg}
-                    onChange={(nextValue) => updateWorkflowValue(field.id, nextValue)}
-                    onSubmit={() => {
-                      const index = visibleFields.findIndex((entry) => entry.id === field.id);
-                      if (index === visibleFields.length - 1) {
-                        void submitWorkflowRoute(currentRoute);
-                      } else {
-                        moveWorkflowFocus(1);
-                      }
-                    }}
-                  />
-                )
-              ) : useNativeSelect ? (
-                <NativeSelect
-                  value={coerceFieldString(value)}
-                  options={field.options}
-                  width="100%"
-                  selectRef={(element) => setWorkflowNativeSelectRef(field.id, element)}
-                  onFocus={() => {
-                    updateTopRoute((route) => route.kind === "workflow"
-                      ? { ...route, activeFieldId: field.id, error: null }
-                      : route);
-                  }}
-                  onChange={(nextValue) => updateWorkflowValue(field.id, nextValue)}
-                />
-              ) : (
-                <Box
-                  height={1}
-                  backgroundColor={nativePaneChrome ? "transparent" : borderColor}
-                  onMouseDown={(event: any) => {
-                    event.stopPropagation?.();
-                    openWorkflowFieldPicker(currentRoute, field);
-                  }}
-                  style={nativePaneChrome ? { borderRadius: 4 } : undefined}
-                >
-                  <Text fg={active ? paletteText : paletteSubtleText}>
-                    {truncateText(summarizeWorkflowFieldValue(field, value), queryDisplayWidth)}
-                  </Text>
-                </Box>
-              )}
-              {fieldDescription && (
-                <Box height={1}>
-                  <Text fg={paletteSubtleText}>
-                    {truncateText(fieldDescription, queryDisplayWidth)}
-                  </Text>
-                </Box>
-              )}
-            </Box>
-          );
-        })}
-        {currentRoute.error && (
-          <Box height={1}>
-            <Text fg={themeColors.negative}>{truncateText(currentRoute.error, queryDisplayWidth)}</Text>
-          </Box>
-        )}
-        {currentRoute.pendingLabel && currentRoute.pending && (
-          <Box height={1}>
-            <Spinner label={currentRoute.pendingLabel} />
-          </Box>
-        )}
-        {!nativePaneChrome && <Box flexGrow={1} />}
-        <Box flexDirection="row" gap={1} justifyContent={visibleFields.some((field) => field.type === "textarea") ? "flex-end" : "flex-start"}>
-          <Button label={currentRoute.submitLabel} variant="primary" onPress={() => { void submitWorkflowRoute(currentRoute); }} disabled={currentRoute.pending} />
-        </Box>
-      </>
-    );
-
-    if (nativePaneChrome) {
-      return (
-        <ScrollBox
-          ref={workflowScrollRef}
-          height={bodyHeight}
-          scrollY
-          style={{ overflowX: "hidden", paddingRight: 4 }}
-        >
-          <Box
-            flexDirection="column"
-            paddingX={contentPadding}
-          >
-            {workflowContent}
-          </Box>
-        </ScrollBox>
-      );
-    }
-
     return (
-      <Box flexDirection="column" height={bodyHeight} paddingX={contentPadding}>
-        {workflowContent}
-      </Box>
+      <CommandBarWorkflowBody
+        route={currentRoute}
+        bodyHeight={bodyHeight}
+        contentPadding={contentPadding}
+        inputBg={inputBg}
+        nativePaneChrome={nativePaneChrome}
+        paletteBg={paletteBg}
+        paletteSelectedBg={paletteSelectedBg}
+        paletteSubtleText={paletteSubtleText}
+        paletteText={paletteText}
+        panelBg={panelBg}
+        queryDisplayWidth={queryDisplayWidth}
+        themeBorder={themeColors.border}
+        themeBorderFocused={themeColors.borderFocused}
+        themeNegative={themeColors.negative}
+        themePanel={themeColors.panel}
+        workflowScrollRef={workflowScrollRef}
+        getWorkflowInputRef={getWorkflowInputRef}
+        onActiveTextareaSync={syncActiveWorkflowTextarea}
+        onFieldFocus={focusWorkflowField}
+        onFieldPickerOpen={openWorkflowFieldPicker}
+        onFieldValueChange={updateWorkflowValue}
+        onMoveFieldFocus={moveWorkflowFocus}
+        onNativeSelectRef={setWorkflowNativeSelectRef}
+        onSubmit={submitWorkflowRoute}
+      />
     );
   };
 

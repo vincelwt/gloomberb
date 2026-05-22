@@ -959,7 +959,6 @@ export class IbkrGatewayService {
       const contract = await withTimeout(this.resolveContract(ticker, exchange, instrument ?? null), IBKR_DATA_TIMEOUT, "resolveContract");
       const details = await withTimeout(this.getPrimaryContractDetails(contract), IBKR_DATA_TIMEOUT, "getContractDetails");
       const marketData = await this.withMarketDataFallback(
-        config,
         () => withTimeout(this.api!.getMarketDataSnapshot(contract, "", false), IBKR_DATA_TIMEOUT, "getMarketDataSnapshot"),
       );
       const quote = this.marketDataToQuote(contract, details, marketData);
@@ -1089,7 +1088,6 @@ export class IbkrGatewayService {
       const detailsPromise = withTimeout(this.getPrimaryContractDetails(contract), IBKR_DATA_TIMEOUT, "getContractDetails")
         .catch(() => undefined);
       const bars = await this.withMarketDataFallback(
-        config,
         () => withTimeout(this.api!.getHistoricalData(
           contract,
           "",
@@ -1150,7 +1148,6 @@ export class IbkrGatewayService {
       const detailsPromise = withTimeout(this.getPrimaryContractDetails(contract), IBKR_DATA_TIMEOUT, "getContractDetails")
         .catch(() => undefined);
       const bars = await this.withMarketDataFallback(
-        config,
         () => withTimeout(this.api!.getHistoricalData(
           contract,
           "",
@@ -1208,7 +1205,6 @@ export class IbkrGatewayService {
       else durationStr = `${Math.ceil(spanDays / 365)} Y`;
 
       const bars = await this.withMarketDataFallback(
-        config,
         () => withTimeout(this.api!.getHistoricalData(
           contract,
           endDateTime,
@@ -1316,7 +1312,7 @@ export class IbkrGatewayService {
         resolve();
       };
 
-      const onOrderStatus = (incomingOrderId: number, status: string) => {
+      const onOrderStatus = (incomingOrderId: number) => {
         if (incomingOrderId !== orderId) return;
         cleanup();
         resolve();
@@ -1378,7 +1374,7 @@ export class IbkrGatewayService {
         resolve();
       };
 
-      const onOrderStatus = (incomingOrderId: number, status: string) => {
+      const onOrderStatus = (incomingOrderId: number) => {
         if (incomingOrderId !== orderId) return;
         cleanup();
         resolve();
@@ -1744,7 +1740,7 @@ export class IbkrGatewayService {
       return;
     }
 
-    const seededQuote = await this.loadSeedQuote(contract, details, config).catch(() => null);
+    const seededQuote = await this.loadSeedQuote(contract, details).catch(() => null);
     if (seededQuote) {
       stream.lastQuote = seededQuote;
       for (const [listener, listenerTarget] of stream.listeners.entries()) {
@@ -1869,11 +1865,9 @@ export class IbkrGatewayService {
   private async loadSeedQuote(
     contract: Contract,
     details: ContractDetails,
-    config: IbkrGatewayConfig,
   ): Promise<Quote | null> {
     try {
       const marketData = await this.withMarketDataFallback(
-        config,
         () => withTimeout(this.api!.getMarketDataSnapshot(contract, "", false), IBKR_DATA_TIMEOUT, "getMarketDataSnapshot"),
       );
       const quote = this.marketDataToQuote(contract, details, marketData);
@@ -1930,10 +1924,7 @@ export class IbkrGatewayService {
     };
   }
 
-  private async withMarketDataFallback<T>(
-    config: IbkrGatewayConfig,
-    operation: () => Promise<T>,
-  ): Promise<T> {
+  private async withMarketDataFallback<T>(operation: () => Promise<T>): Promise<T> {
     try {
       return await operation();
     } catch (error: any) {

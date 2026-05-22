@@ -297,12 +297,10 @@ function PositionTable({ rows, width }: { rows: PositionTableRow[]; width: numbe
 
 export function OverviewTab({
   width,
-  symbol,
   ticker,
   financials,
 }: {
   width?: number;
-  symbol: string | null;
   ticker: TickerRecord | null;
   financials: TickerFinancials | null;
 }) {

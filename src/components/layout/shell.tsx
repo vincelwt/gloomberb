@@ -53,13 +53,7 @@ import { FloatingPaneWrapper } from "./floating-pane";
 import { PaneContent } from "./pane-content";
 import { PaneWrapper } from "./pane";
 import { hasPaneFooterContent, PaneFooterProvider } from "./pane-footer";
-import {
-  getNativePaneBodyHeight,
-  getNativePaneBodyWidth,
-  getPaneBodyHeight,
-  getPaneBodyWidth,
-  shouldReservePaneFooter,
-} from "./pane-sizing";
+import { resolvePaneBodyFrame, shouldReservePaneFooter } from "./pane-sizing";
 import { getPaneDisplayTitle } from "./pane-title";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "./titlebar-overlay";
 import { capturePaneScreenshotPngBase64 } from "../../utils/dom-screenshot";
@@ -2017,7 +2011,6 @@ export function Shell({
         const focused = focusedPaneId === leaf.instanceId && (!overlayOpen || menuState?.paneId === leaf.instanceId);
         const windowModeSelected = windowMode?.paneId === leaf.instanceId;
         const showActions = focused || hoveredPaneId === leaf.instanceId || menuState?.paneId === leaf.instanceId;
-        const bodyWidth = nativePaneChrome ? getNativePaneBodyWidth(leaf.rect.width) : getPaneBodyWidth(leaf.rect.width);
         return (
           <Box
             key={`dock:${leaf.instanceId}`}
@@ -2030,9 +2023,12 @@ export function Shell({
             <PaneFooterProvider>
               {(footer) => {
                 const reserveFooter = shouldReservePaneFooter(nativePaneChrome, hasPaneFooterContent(footer));
-                const bodyHeight = nativePaneChrome
-                  ? getNativePaneBodyHeight(leaf.rect.height, reserveFooter)
-                  : getPaneBodyHeight(leaf.rect.height, reserveFooter);
+                const bodyFrame = resolvePaneBodyFrame({
+                  width: leaf.rect.width,
+                  height: leaf.rect.height,
+                  nativePaneChrome,
+                  reserveFooter,
+                });
                 return (
                   <PaneWrapper
                     paneId={leaf.instanceId}
@@ -2056,8 +2052,8 @@ export function Shell({
                       paneId={pane.instance.instanceId}
                       paneType={pane.instance.paneId}
                       focused={focused}
-                      width={bodyWidth}
-                      height={bodyHeight}
+                      width={bodyFrame.width ?? 1}
+                      height={bodyFrame.height ?? 1}
                     />
                   </PaneWrapper>
                 );
@@ -2074,14 +2070,16 @@ export function Shell({
         const focused = focusedPaneId === pane.instance.instanceId && (!overlayOpen || menuState?.paneId === pane.instance.instanceId);
         const windowModeSelected = windowMode?.paneId === pane.instance.instanceId;
         const showActions = focused || hoveredPaneId === pane.instance.instanceId || menuState?.paneId === pane.instance.instanceId;
-        const bodyWidth = nativePaneChrome ? getNativePaneBodyWidth(preview.width) : getPaneBodyWidth(preview.width);
         return (
           <PaneFooterProvider key={`float:${pane.instance.instanceId}`}>
             {(footer) => {
               const reserveFooter = shouldReservePaneFooter(nativePaneChrome, hasPaneFooterContent(footer));
-              const bodyHeight = nativePaneChrome
-                ? getNativePaneBodyHeight(preview.height, reserveFooter)
-                : getPaneBodyHeight(preview.height, reserveFooter);
+              const bodyFrame = resolvePaneBodyFrame({
+                width: preview.width,
+                height: preview.height,
+                nativePaneChrome,
+                reserveFooter,
+              });
               return (
                 <FloatingPaneWrapper
                   paneId={pane.instance.instanceId}
@@ -2112,8 +2110,8 @@ export function Shell({
                     paneId={pane.instance.instanceId}
                     paneType={pane.instance.paneId}
                     focused={focused}
-                    width={bodyWidth}
-                    height={bodyHeight}
+                    width={bodyFrame.width ?? 1}
+                    height={bodyFrame.height ?? 1}
                     onClose={handleFloatingClose}
                   />
                 </FloatingPaneWrapper>

@@ -419,7 +419,7 @@ function AppInner({
     });
   }, [buildPaneBinding, state]);
 
-  const performRefreshTicker = useCallback(async (symbol: string, exchange = "", tickerOverride?: TickerRecord | null) => {
+  const performRefreshTicker = useCallback(async (symbol: string, tickerOverride?: TickerRecord | null) => {
     if (refreshInFlight.has(symbol)) return;
     refreshInFlight.add(symbol);
     dispatch({ type: "SET_REFRESHING", symbol, refreshing: true });
@@ -447,7 +447,7 @@ function AppInner({
     }
   }, [dispatch, marketData, pluginRegistry.events, state.config.baseCurrency, state.tickers]);
 
-  const performRefreshQuote = useCallback(async (symbol: string, exchange = "", tickerOverride?: TickerRecord | null) => {
+  const performRefreshQuote = useCallback(async (symbol: string, tickerOverride?: TickerRecord | null) => {
     if (refreshInFlight.has(symbol) || quoteRefreshInFlight.has(symbol)) return;
     quoteRefreshInFlight.add(symbol);
     try {
@@ -490,7 +490,7 @@ function AppInner({
     appLog.info("app activity propagated", { active: appActive });
   }, [appActive]);
 
-  const refreshTicker = useCallback((symbol: string, exchange = "", tickerOverride?: TickerRecord | null, priority = 2) => {
+  const refreshTicker = useCallback((symbol: string, _exchange = "", tickerOverride?: TickerRecord | null, priority = 2) => {
     if (refreshInFlight.has(symbol) || pendingRefreshesRef.current.financials.has(symbol)) return;
     pendingRefreshesRef.current.financials.add(symbol);
     refreshQueueRef.current.queue.enqueue({
@@ -498,7 +498,7 @@ function AppInner({
       priority,
       run: async () => {
         try {
-          await performRefreshTicker(symbol, exchange, tickerOverride ?? null);
+          await performRefreshTicker(symbol, tickerOverride ?? null);
         } finally {
           pendingRefreshesRef.current.financials.delete(symbol);
         }
@@ -506,7 +506,7 @@ function AppInner({
     });
   }, [performRefreshTicker]);
 
-  const refreshQuote = useCallback((symbol: string, exchange = "", tickerOverride?: TickerRecord | null, priority = 2) => {
+  const refreshQuote = useCallback((symbol: string, _exchange = "", tickerOverride?: TickerRecord | null, priority = 2) => {
     if (
       refreshInFlight.has(symbol)
       || quoteRefreshInFlight.has(symbol)
@@ -522,7 +522,7 @@ function AppInner({
       run: async () => {
         try {
           if (pendingRefreshesRef.current.financials.has(symbol) || refreshInFlight.has(symbol)) return;
-          await performRefreshQuote(symbol, exchange, tickerOverride ?? null);
+          await performRefreshQuote(symbol, tickerOverride ?? null);
         } finally {
           pendingRefreshesRef.current.quotes.delete(symbol);
         }

@@ -28,14 +28,6 @@ const chartFixture: PricePoint[] = [
   { date: new Date("2024-01-05"), open: 9, high: 11, low: 8.5, close: 10.5, volume: 160 },
 ];
 
-function buildDenseHistory(length: number): PricePoint[] {
-  return Array.from({ length }, (_, index) => ({
-    date: new Date(Date.UTC(2024, 0, index + 1)),
-    close: 100 + index,
-    volume: 1_000 + index,
-  }));
-}
-
 const palette = resolveChartPalette({
   bg: "#000000",
   border: "#333333",

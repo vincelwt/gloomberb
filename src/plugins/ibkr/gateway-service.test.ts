@@ -434,7 +434,7 @@ describe("IbkrGatewayService", () => {
     (service as any).connect = async () => {};
     (service as any).resolveContract = async () => ({ symbol: "AAPL", exchange: "SMART", currency: "USD" });
     (service as any).getPrimaryContractDetails = async () => undefined;
-    (service as any).withMarketDataFallback = async (_config: unknown, task: () => Promise<unknown>) => task();
+    (service as any).withMarketDataFallback = async (task: () => Promise<unknown>) => task();
     (service as any).api = {
       getHistoricalData: async (_contract: unknown, _end: string, duration: string, barSize: string) => {
         requestArgs = { duration, barSize };

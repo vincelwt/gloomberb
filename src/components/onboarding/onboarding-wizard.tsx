@@ -558,7 +558,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
   const contentTop = Math.max(1, Math.floor((termHeight - 24) / 2));
 
   // Progress bar
-  const progressDots = STEPS.map((s, i) => {
+  const progressDots = STEPS.map((_, i) => {
     if (i < stepIdx) return "\u2501";
     if (i === stepIdx) return "\u25cf";
     return "\u00b7";

@@ -39,7 +39,6 @@ interface ChatContentProps {
   width: number;
   height: number;
   focused: boolean;
-  close?: () => void;
   channelId?: string;
   onChannelChange?: (channelId: string) => void;
   controller?: Pick<
@@ -1302,7 +1301,6 @@ export function ChatContent({
   width,
   height,
   focused,
-  close,
   channelId: rawChannelId,
   onChannelChange,
   controller = chatController,
@@ -2326,7 +2324,7 @@ export function ChatContent({
   );
 }
 
-function ChatPane({ focused, width, height, close }: PaneProps) {
+function ChatPane({ focused, width, height }: PaneProps) {
   const dispatch = useAppDispatch();
   const stateRef = useAppStateRef();
   const paneId = usePaneInstanceId();
@@ -2393,7 +2391,6 @@ function ChatPane({ focused, width, height, close }: PaneProps) {
       width={width}
       height={height}
       focused={focused}
-      close={close}
       channelId={channelId}
       onChannelChange={setChannelId}
     />

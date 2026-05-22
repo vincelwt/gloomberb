@@ -1,14 +1,10 @@
 import { Box, Text, useUiCapabilities } from "../../ui";
 import type { ReactNode } from "react";
 import { colors, floatingPaneBg } from "../../theme/colors";
+import { PaneBodyFrame, getPaneWindowAttributes } from "./pane-frame";
 import { PaneHeader } from "./pane-header";
 import { hasPaneFooterContent, PaneFooterBar, type CombinedPaneFooter } from "./pane-footer";
-import {
-  getNativePaneBodyHeight,
-  getPaneBodyHeight,
-  NATIVE_PANE_BODY_LAYOUT_PROPS,
-  shouldReservePaneFooter,
-} from "./pane-sizing";
+import { resolvePaneBodyFrame, shouldReservePaneFooter } from "./pane-sizing";
 
 interface FloatingPaneWrapperProps {
   paneId?: string;
@@ -84,12 +80,7 @@ export function FloatingPaneWrapper({
   const bg = floatingPaneBg(focused);
   const showFooter = hasPaneFooterContent(footer);
   const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
-  const bodyHeight = nativePaneChrome
-    ? getNativePaneBodyHeight(height, reserveFooter)
-    : getPaneBodyHeight(height, reserveFooter);
-  const bodyLayoutProps = nativePaneChrome
-    ? NATIVE_PANE_BODY_LAYOUT_PROPS
-    : { height: bodyHeight };
+  const bodyFrame = resolvePaneBodyFrame({ height, nativePaneChrome, reserveFooter });
 
   return (
     <Box
@@ -102,14 +93,15 @@ export function FloatingPaneWrapper({
       backgroundColor={bg}
       flexDirection="column"
       overflow="hidden"
-      {...(nativePaneChrome ? {
-        "data-gloom-role": "pane-window",
-        "data-gloom-pane-id": paneId,
-        "data-floating": "true",
-        "data-focused": focused ? "true" : "false",
-        "data-window-mode-selected": windowModeSelected ? "true" : "false",
-        style: { "--pane-border-color": focused || windowModeSelected ? colors.borderFocused : colors.border },
-      } : {})}
+      {...getPaneWindowAttributes({
+        enabled: nativePaneChrome,
+        role: "pane-window",
+        paneId,
+        floating: true,
+        focused,
+        windowModeSelected,
+        showBorderColor: true,
+      })}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
     >
@@ -128,10 +120,9 @@ export function FloatingPaneWrapper({
         onCloseMouseDown={onCloseMouseDown}
       />
 
-      {/* Content */}
-      <Box {...bodyLayoutProps} overflow="hidden" backgroundColor={bg}>
+      <PaneBodyFrame layoutProps={bodyFrame.layoutProps} backgroundColor={bg}>
         {children}
-      </Box>
+      </PaneBodyFrame>
 
       {reserveFooter && (
         <PaneFooterBar

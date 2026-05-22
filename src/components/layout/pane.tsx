@@ -1,14 +1,10 @@
 import { Box, useUiCapabilities } from "../../ui";
 import type { ReactNode } from "react";
-import { colors, paneBg } from "../../theme/colors";
+import { paneBg } from "../../theme/colors";
+import { PaneBodyFrame, getPaneWindowAttributes } from "./pane-frame";
 import { PaneHeader } from "./pane-header";
 import { hasPaneFooterContent, PaneFooterBar, type CombinedPaneFooter } from "./pane-footer";
-import {
-  getNativePaneBodyHeight,
-  getPaneBodyHeight,
-  NATIVE_PANE_BODY_LAYOUT_PROPS,
-  shouldReservePaneFooter,
-} from "./pane-sizing";
+import { resolvePaneBodyFrame, shouldReservePaneFooter } from "./pane-sizing";
 
 interface PaneWrapperProps {
   paneId?: string;
@@ -28,23 +24,6 @@ interface PaneWrapperProps {
   onActionMouseDown?: (event: any) => void;
   footer?: CombinedPaneFooter | null;
   children: ReactNode;
-}
-
-function resolvePaneBodyHeight(
-  height: number,
-  hasTitle: boolean,
-  reserveFooter: boolean,
-  nativePaneChrome: boolean | undefined,
-): number {
-  if (nativePaneChrome) {
-    return hasTitle
-      ? getNativePaneBodyHeight(height, reserveFooter)
-      : Math.max(1, height);
-  }
-
-  return hasTitle
-    ? getPaneBodyHeight(height, reserveFooter)
-    : Math.max(1, Math.floor(height));
 }
 
 export function PaneWrapper({
@@ -69,17 +48,13 @@ export function PaneWrapper({
   const { nativePaneChrome } = useUiCapabilities();
   const bg = paneBg(focused);
   const showFooter = hasPaneFooterContent(footer);
-  const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
-  const bodyHeight = typeof height === "number"
-    ? resolvePaneBodyHeight(height, !!title, reserveFooter, nativePaneChrome)
-    : undefined;
-  const bodyLayoutProps = nativePaneChrome
-    ? NATIVE_PANE_BODY_LAYOUT_PROPS
-    : {
-        height: bodyHeight,
-        flexGrow: bodyHeight == null ? 1 : 0,
-        flexBasis: bodyHeight == null ? 0 : undefined,
-      };
+  const reserveFooter = !!title && shouldReservePaneFooter(nativePaneChrome, showFooter);
+  const bodyFrame = resolvePaneBodyFrame({
+    height: typeof height === "number" ? height : undefined,
+    nativePaneChrome,
+    reserveFooter,
+    headerRows: title ? 1 : 0,
+  });
 
   return (
     <Box
@@ -89,14 +64,15 @@ export function PaneWrapper({
       flexGrow={flexGrow}
       backgroundColor={bg}
       overflow="hidden"
-      {...(nativePaneChrome ? {
-        "data-gloom-role": "pane-window",
-        "data-gloom-pane-id": paneId,
-        "data-floating": "false",
-        "data-focused": focused ? "true" : "false",
-        "data-window-mode-selected": windowModeSelected ? "true" : "false",
-        style: { "--pane-border-color": focused || windowModeSelected ? colors.borderFocused : colors.border },
-      } : {})}
+      {...getPaneWindowAttributes({
+        enabled: nativePaneChrome,
+        role: "pane-window",
+        paneId,
+        floating: false,
+        focused,
+        windowModeSelected,
+        showBorderColor: true,
+      })}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
     >
@@ -114,13 +90,9 @@ export function PaneWrapper({
           onActionMouseDown={onActionMouseDown}
         />
       )}
-      <Box
-        {...bodyLayoutProps}
-        overflow="hidden"
-        backgroundColor={bg}
-      >
+      <PaneBodyFrame layoutProps={bodyFrame.layoutProps} backgroundColor={bg}>
         {children}
-      </Box>
+      </PaneBodyFrame>
       {title && reserveFooter && (
         <PaneFooterBar
           footer={footer}

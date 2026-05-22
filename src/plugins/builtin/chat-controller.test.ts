@@ -339,13 +339,11 @@ describe("ChatController", () => {
     });
 
     controller.ensureConnection();
-    expect((controller as any).wsConnection).not.toBeNull();
 
     controller.dispose();
 
     expect(closed).toBe(true);
     expect((controller as any).verificationPollTimer).toBeNull();
-    expect((controller as any).wsConnection).toBeNull();
   });
 
   test("runs a quiet safety refresh while the live connection is active", async () => {

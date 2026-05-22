@@ -124,7 +124,7 @@ describe("YahooFinanceClient exchange aliases", () => {
     const provider = new YahooFinanceClient() as any;
     let requestUrl = "";
     provider.getSymbolsToTry = () => ["AMD"];
-    provider.fetchJsonWithCrumb = async (_label: string, url: string) => {
+    provider.fetchJsonWithCrumb = async (url: string) => {
       requestUrl = url;
       return {
         quoteSummary: {

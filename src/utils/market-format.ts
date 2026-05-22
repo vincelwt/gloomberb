@@ -1,5 +1,3 @@
-import { formatCurrency } from "./format";
-
 export type AssetDisplayKind = "cash" | "crypto" | "equity" | "contract" | "other";
 
 export interface AssetDisplayContext {

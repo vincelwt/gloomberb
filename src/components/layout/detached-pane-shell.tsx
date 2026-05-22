@@ -8,8 +8,9 @@ import type { PluginRegistry } from "../../plugins/registry";
 import { colors, floatingPaneBg, floatingPaneTitleBg, paneTitleText } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
 import { hasPaneFooterContent, PaneFooterBar, PaneFooterProvider } from "./pane-footer";
+import { PaneBodyFrame, getPaneWindowAttributes } from "./pane-frame";
 import { PaneContent } from "./pane-content";
-import { getNativePaneBodyWidth, getPaneBodyWidth, NATIVE_PANE_BODY_LAYOUT_PROPS } from "./pane-sizing";
+import { resolvePaneBodyFrame } from "./pane-sizing";
 import { getPaneDisplayTitle } from "./pane-title";
 import { TITLEBAR_OVERLAY_HEIGHT_PX, TITLEBAR_TRAFFIC_LIGHT_WIDTH } from "./titlebar-overlay";
 import {
@@ -52,7 +53,6 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
     ? getPaneDisplayTitle(titleState, instance, paneDef)
     : "Detached Pane";
   const focused = windowFocused;
-  const bodyWidth = nativePaneChrome ? getNativePaneBodyWidth(width) : getPaneBodyWidth(width);
 
   const focusPane = useCallback(() => {
     setWindowFocused(true);
@@ -128,13 +128,17 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
       {(footer) => {
         const showFooter = hasPaneFooterContent(footer);
         const headerHeightRows = titleBarOverlay ? TITLEBAR_OVERLAY_HEIGHT_PX / cellHeightPx : 1;
-        const footerHeightRows = showFooter ? 1 : 0;
-        const bodyHeight = Math.max(1, height - headerHeightRows - footerHeightRows);
         const background = floatingPaneBg(focused);
         const titleBackground = floatingPaneTitleBg(focused);
-        const bodyLayoutProps = nativePaneChrome
-          ? NATIVE_PANE_BODY_LAYOUT_PROPS
-          : { height: bodyHeight };
+        const bodyFrame = resolvePaneBodyFrame({
+          width,
+          height,
+          nativePaneChrome,
+          reserveFooter: showFooter,
+          headerRows: headerHeightRows,
+        });
+        const bodyWidth = bodyFrame.width ?? 1;
+        const bodyHeight = bodyFrame.height ?? 1;
 
         return (
           <Box
@@ -143,9 +147,11 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
             width={width}
             height={height}
             backgroundColor={background}
-            data-gloom-role="detached-pane-window"
-            data-gloom-pane-id={desktopWindowBridge.paneId}
-            data-focused={focused ? "true" : "false"}
+            {...getPaneWindowAttributes({
+              role: "detached-pane-window",
+              paneId: desktopWindowBridge.paneId,
+              focused,
+            })}
             onMouseDown={focusPane}
           >
             <Box
@@ -185,7 +191,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
                 )}
               </Box>
             </Box>
-            <Box {...bodyLayoutProps} overflow="hidden" backgroundColor={background}>
+            <PaneBodyFrame layoutProps={bodyFrame.layoutProps} backgroundColor={background}>
               <PaneContent
                 component={paneDef.component}
                 paneId={instance.instanceId}
@@ -194,7 +200,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
                 width={bodyWidth}
                 height={bodyHeight}
               />
-            </Box>
+            </PaneBodyFrame>
             {showFooter && <PaneFooterBar footer={footer} focused={focused} width={width} />}
           </Box>
         );

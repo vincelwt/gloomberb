@@ -60,7 +60,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
   const paneInstance = usePaneInstance();
-  const { symbol, ticker, financials } = usePaneTicker();
+  const { ticker, financials } = usePaneTicker();
   const streamingTarget = quoteSubscriptionTargetFromTicker(ticker, ticker?.metadata.ticker, "provider");
   const streamingTargets = useMemo(() => (
     streamingTarget
@@ -230,7 +230,6 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
             <PaneFooterScope active={resolvedTabId === "overview"}>
               <OverviewTab
                 width={width}
-                symbol={symbol}
                 ticker={ticker}
                 financials={financials}
               />
@@ -273,7 +272,6 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
                 interactive={chartInteractive}
                 axisMode={paneSettings.chartAxisMode}
                 onActivate={() => setChartInteractiveEager(true)}
-                symbol={symbol}
                 ticker={ticker}
                 financials={financials}
               />
