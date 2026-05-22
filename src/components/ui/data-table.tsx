@@ -67,6 +67,9 @@ export interface DataTableProps<
   isSelected: (item: T, index: number) => boolean;
   onSelect: (item: T, index: number) => void;
   onActivate?: (item: T, index: number) => void;
+  onRowMouseDown?: (item: T, index: number, event: any) => boolean | void;
+  onRowContextMenu?: (item: T, index: number, event: any) => void;
+  rowContextMenuSurface?: boolean;
   renderCell: (
     item: T,
     column: C,
@@ -148,6 +151,9 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
   isSelected,
   onSelect,
   onActivate,
+  onRowMouseDown,
+  onRowContextMenu,
+  rowContextMenuSurface = false,
   renderCell,
   renderSectionHeader,
   getRowBackgroundColor,
@@ -463,16 +469,24 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
                     {...tableContentWidthProps(measuredContentWidth)}
                     paddingX={1}
                     backgroundColor={rowBg}
+                    data-gloom-context-menu-surface={rowContextMenuSurface ? "true" : undefined}
                     onMouseMove={() => {
                       if (hoveredIdx !== index) setHoveredIdx(index);
                     }}
                     onMouseDown={(event: any) => {
                       focusPane();
+                      if (onRowMouseDown?.(item, index, event) === true) {
+                        return;
+                      }
                       event.preventDefault();
                       handleRowMouseDown(getItemKey(item, index), {
                         item,
                         index,
                       }, event);
+                    }}
+                    onContextMenu={(event: any) => {
+                      focusPane();
+                      onRowContextMenu?.(item, index, event);
                     }}
                   >
                     {displayColumns.map((column) => {
@@ -486,6 +500,10 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
                             focusPane();
                             if (cell.onMouseDown) {
                               cell.onMouseDown(event);
+                              return;
+                            }
+                            if (onRowMouseDown?.(item, index, event) === true) {
+                              event.stopPropagation?.();
                               return;
                             }
                             event.preventDefault();

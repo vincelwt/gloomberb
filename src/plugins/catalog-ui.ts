@@ -1,7 +1,6 @@
 import type { GloomPlugin } from "../types/plugin";
 import { portfolioListPlugin } from "./builtin/portfolio-list";
 import { tickerDetailPlugin } from "./builtin/ticker-detail";
-import { manualEntryPlugin } from "./builtin/manual-entry";
 import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
 import { aiPlugin } from "./builtin/ai";
@@ -24,7 +23,6 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   gloomberbCloudPlugin,
   portfolioListPlugin,
   tickerDetailPlugin,
-  manualEntryPlugin,
   ibkrPlugin,
   brokerManagerPlugin,
   layoutManagerPlugin,

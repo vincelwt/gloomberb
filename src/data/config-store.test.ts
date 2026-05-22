@@ -35,7 +35,6 @@ function createSavedConfig(overrides: Record<string, unknown> = {}): Record<stri
     layouts: [{ name: "Default", layout: DEFAULT_LAYOUT }],
     activeLayoutIndex: 0,
     brokerInstances: [],
-    plugins: [],
     disabledPlugins: [],
     theme: "amber",
     chartPreferences: { defaultRenderMode: "area", renderer: "auto" },
@@ -468,7 +467,7 @@ describe("loadConfig", () => {
 
     expect(persisted.configVersion).toBe(CURRENT_CONFIG_VERSION);
     expect(persisted.activeLayoutIndex).toBe(1);
-    expect(persisted.layouts[1]?.layout).toEqual(DEFAULT_LAYOUT);
+    expect(persisted.layouts[1]?.layout).toEqual(DEFAULT_LAYOUT as unknown as Record<string, unknown>);
   });
 });
 

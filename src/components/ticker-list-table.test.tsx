@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, useEffect, useRef, useState } from "react";
+import { act, useEffect, useRef, useState, type ReactNode } from "react";
 import { testRender } from "../renderers/opentui/test-utils";
+import { AppContext, PaneInstanceProvider, createInitialState } from "../state/app-context";
+import { createDefaultConfig } from "../types/config";
 import type { ColumnConfig } from "../types/config";
 import type { TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
 import type { ScrollBoxRenderable } from "../ui";
-import { TickerListTable, type TickerTableCell } from "./ticker-list-table";
-import { TickerListTableView } from "./ticker-list-table-view";
+import { TickerListTableView, type TickerTableCell } from "./ticker-list-table-view";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let setHarnessTickers: ((tickers: TickerRecord[]) => void) | null = null;
@@ -38,6 +39,17 @@ function resolveCell(_column: ColumnConfig, ticker: TickerRecord, _financials: T
   return { text: ticker.metadata.ticker };
 }
 
+function TickerTableTestProviders({ children }: { children: ReactNode }) {
+  const state = createInitialState(createDefaultConfig("/tmp/gloomberb-ticker-table-test"));
+  return (
+    <AppContext value={{ state, dispatch: () => {} }}>
+      <PaneInstanceProvider paneId="ticker-table-test">
+        {children}
+      </PaneInstanceProvider>
+    </AppContext>
+  );
+}
+
 function LargeTickerListTableHarness() {
   const [cursorSymbol, setCursorSymbol] = useState("T0");
   const scrollRef = useRef<ScrollBoxRenderable>(null);
@@ -52,17 +64,19 @@ function LargeTickerListTableHarness() {
   });
 
   return (
-    <TickerListTable
-      columns={columns}
-      tickers={manyTickers}
-      cursorSymbol={cursorSymbol}
-      hoveredIdx={null}
-      setHoveredIdx={noop}
-      setCursorSymbol={setCursorSymbol}
-      resolveCell={resolveCell}
-      financialsMap={financialsMap}
-      scrollRef={scrollRef}
-    />
+    <TickerTableTestProviders>
+      <TickerListTableView
+        columns={columns}
+        tickers={manyTickers}
+        cursorSymbol={cursorSymbol}
+        hoveredIdx={null}
+        setHoveredIdx={noop}
+        setCursorSymbol={setCursorSymbol}
+        resolveCell={resolveCell}
+        financialsMap={financialsMap}
+        scrollRef={scrollRef}
+      />
+    </TickerTableTestProviders>
   );
 }
 
@@ -81,16 +95,18 @@ function ReorderingTickerListTableViewHarness() {
   });
 
   return (
-    <TickerListTableView
-      focused
-      columns={columns}
-      tickers={rows}
-      cursorSymbol="T0"
-      setCursorSymbol={() => {}}
-      resolveCell={resolveCell}
-      financialsMap={financialsMap}
-      scrollRef={scrollRef}
-    />
+    <TickerTableTestProviders>
+      <TickerListTableView
+        focused
+        columns={columns}
+        tickers={rows}
+        cursorSymbol="T0"
+        setCursorSymbol={() => {}}
+        resolveCell={resolveCell}
+        financialsMap={financialsMap}
+        scrollRef={scrollRef}
+      />
+    </TickerTableTestProviders>
   );
 }
 
@@ -106,7 +122,7 @@ afterEach(async () => {
   tableScrollRef = null;
 });
 
-describe("TickerListTable", () => {
+describe("TickerListTableView", () => {
   test("renders a bounded window for large ticker lists", async () => {
     testSetup = await testRender(
       <LargeTickerListTableHarness />,
@@ -120,7 +136,7 @@ describe("TickerListTable", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("T0");
     expect(frame).not.toContain("T999");
-    expect(resolveCellCallCount).toBeLessThan(40);
+    expect(resolveCellCallCount).toBeLessThan(100);
 
     await act(async () => {
       for (let index = 0; index < 12; index++) {

@@ -9,7 +9,7 @@ import type { BrokerAdapter } from "../types/broker";
 import type { DataProvider, QuoteSubscriptionTarget } from "../types/data-provider";
 import type { CapabilityRouteSource } from "../types/capability-route-source";
 import type { NewsArticle } from "../news/types";
-import { cloneLayout, CURRENT_CONFIG_VERSION, DEFAULT_LAYOUT } from "../types/config";
+import { cloneLayout, CURRENT_CONFIG_VERSION, DEFAULT_LAYOUT, type AppConfig } from "../types/config";
 
 const originalConsoleError = console.error;
 const tempPaths: string[] = [];
@@ -369,7 +369,6 @@ describe("AssetDataRouter", () => {
       refreshIntervalMinutes: 30,
       portfolios: [],
       watchlists: [],
-      columns: [],
       layout: cloneLayout(DEFAULT_LAYOUT),
       layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
       activeLayoutIndex: 0,
@@ -381,8 +380,9 @@ describe("AssetDataRouter", () => {
         config: { connectionMode: "gateway", gateway: { host: "127.0.0.1", port: 4002, clientId: 1 } },
         enabled: true,
       }],
-      plugins: [],
       disabledPlugins: [],
+      disabledSources: [],
+      pluginConfig: {},
       theme: "amber",
       chartPreferences: {
         defaultRenderMode: "area",
@@ -455,7 +455,6 @@ describe("AssetDataRouter", () => {
         refreshIntervalMinutes: 30,
         portfolios: [],
         watchlists: [],
-        columns: [],
         layout: cloneLayout(DEFAULT_LAYOUT),
         layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
         activeLayoutIndex: 0,
@@ -467,8 +466,9 @@ describe("AssetDataRouter", () => {
           config: { connectionMode: "gateway", gateway: { host: "127.0.0.1", port: 4002, clientId: 1 } },
           enabled: true,
         }],
-        plugins: [],
         disabledPlugins: [],
+      disabledSources: [],
+      pluginConfig: {},
         theme: "amber",
         chartPreferences: {
           defaultRenderMode: "area",
@@ -524,7 +524,6 @@ describe("AssetDataRouter", () => {
       refreshIntervalMinutes: 30,
       portfolios: [],
       watchlists: [],
-      columns: [],
       layout: cloneLayout(DEFAULT_LAYOUT),
       layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
       activeLayoutIndex: 0,
@@ -546,8 +545,9 @@ describe("AssetDataRouter", () => {
           enabled: true,
         },
       ],
-      plugins: [],
       disabledPlugins: [],
+      disabledSources: [],
+      pluginConfig: {},
       theme: "amber",
       chartPreferences: {
         defaultRenderMode: "area",
@@ -618,7 +618,6 @@ describe("AssetDataRouter", () => {
       refreshIntervalMinutes: 30,
       portfolios: [],
       watchlists: [],
-      columns: [],
       layout: cloneLayout(DEFAULT_LAYOUT),
       layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
       activeLayoutIndex: 0,
@@ -630,8 +629,9 @@ describe("AssetDataRouter", () => {
         config: { connectionMode: "gateway", gateway: { host: "127.0.0.1", port: 4002, clientId: 1 } },
         enabled: true,
       }],
-      plugins: [],
       disabledPlugins: [],
+      disabledSources: [],
+      pluginConfig: {},
       theme: "amber",
       chartPreferences: {
         defaultRenderMode: "area",
@@ -859,7 +859,6 @@ describe("AssetDataRouter", () => {
       refreshIntervalMinutes: 30,
       portfolios: [],
       watchlists: [],
-      columns: [],
       layout: cloneLayout(DEFAULT_LAYOUT),
       layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
       activeLayoutIndex: 0,
@@ -871,8 +870,9 @@ describe("AssetDataRouter", () => {
         config: {},
         enabled: true,
       }],
-      plugins: [],
       disabledPlugins: [],
+      disabledSources: [],
+      pluginConfig: {},
       theme: "amber",
       chartPreferences: {
         defaultRenderMode: "area",
@@ -962,7 +962,6 @@ describe("AssetDataRouter", () => {
       refreshIntervalMinutes: 30,
       portfolios: [],
       watchlists: [],
-      columns: [],
       layout: cloneLayout(DEFAULT_LAYOUT),
       layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
       activeLayoutIndex: 0,
@@ -974,8 +973,9 @@ describe("AssetDataRouter", () => {
         config: {},
         enabled: true,
       }],
-      plugins: [],
       disabledPlugins: [],
+      disabledSources: [],
+      pluginConfig: {},
       theme: "amber",
       chartPreferences: {
         defaultRenderMode: "area",
@@ -1095,7 +1095,6 @@ describe("AssetDataRouter", () => {
       refreshIntervalMinutes: 30,
       portfolios: [],
       watchlists: [],
-      columns: [],
       layout: cloneLayout(DEFAULT_LAYOUT),
       layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
       activeLayoutIndex: 0,
@@ -1107,8 +1106,9 @@ describe("AssetDataRouter", () => {
         config: {},
         enabled: true,
       }],
-      plugins: [],
       disabledPlugins: [],
+      disabledSources: [],
+      pluginConfig: {},
       theme: "amber",
       chartPreferences: {
         defaultRenderMode: "area",
@@ -1200,7 +1200,6 @@ describe("AssetDataRouter", () => {
       refreshIntervalMinutes: 30,
       portfolios: [],
       watchlists: [],
-      columns: [],
       layout: cloneLayout(DEFAULT_LAYOUT),
       layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
       activeLayoutIndex: 0,
@@ -1212,8 +1211,9 @@ describe("AssetDataRouter", () => {
         config: {},
         enabled: true,
       }],
-      plugins: [],
       disabledPlugins: [],
+      disabledSources: [],
+      pluginConfig: {},
       theme: "amber",
       chartPreferences: {
         defaultRenderMode: "area",
@@ -1280,7 +1280,6 @@ describe("AssetDataRouter", () => {
       refreshIntervalMinutes: 30,
       portfolios: [],
       watchlists: [],
-      columns: [],
       layout: cloneLayout(DEFAULT_LAYOUT),
       layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
       activeLayoutIndex: 0,
@@ -1292,8 +1291,9 @@ describe("AssetDataRouter", () => {
         config: {},
         enabled: true,
       }],
-      plugins: [],
       disabledPlugins: [],
+      disabledSources: [],
+      pluginConfig: {},
       theme: "amber",
       chartPreferences: {
         defaultRenderMode: "area",
@@ -1549,14 +1549,13 @@ describe("AssetDataRouter", () => {
       },
     };
 
-    const config = {
+    const config: AppConfig = {
       dataDir: "",
       configVersion: CURRENT_CONFIG_VERSION,
       baseCurrency: "USD",
       refreshIntervalMinutes: 30,
       portfolios: [],
       watchlists: [],
-      columns: [],
       layout: cloneLayout(DEFAULT_LAYOUT),
       layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
       activeLayoutIndex: 0,
@@ -1568,8 +1567,9 @@ describe("AssetDataRouter", () => {
         config: {},
         enabled: true,
       }],
-      plugins: [],
       disabledPlugins: [],
+      disabledSources: [],
+      pluginConfig: {},
       theme: "amber",
       chartPreferences: {
         defaultRenderMode: "area",
@@ -1697,7 +1697,6 @@ describe("AssetDataRouter", () => {
       refreshIntervalMinutes: 30,
       portfolios: [],
       watchlists: [],
-      columns: [],
       layout: cloneLayout(DEFAULT_LAYOUT),
       layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
       activeLayoutIndex: 0,
@@ -1719,8 +1718,9 @@ describe("AssetDataRouter", () => {
           enabled: true,
         },
       ],
-      plugins: [],
       disabledPlugins: [],
+      disabledSources: [],
+      pluginConfig: {},
       theme: "amber",
       chartPreferences: {
         defaultRenderMode: "area",
@@ -2652,7 +2652,7 @@ describe("AssetDataRouter", () => {
       name: "Yahoo",
       priority: 1000,
       async getChartResolutionCapabilities() {
-        return ["1wk", "auto", "1d", "bogus"];
+        return ["1wk", "auto", "1d", "bogus"] as any;
       },
     };
 

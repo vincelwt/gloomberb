@@ -1,17 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import type { BoxRenderable, CliRenderer } from "@opentui/core";
 import {
-  getLocalPlotPointer,
   computeProjectedIndicatorOverlays,
-  projectCellCursorToLocalPixels,
   resolveAutoDisplayState,
   resolveAutoPlanningWindow,
   resolveAutoZoomWindow,
   resolveAdjacentSelectionCursorX,
   resolveChartKeyboardKey,
   resolveIndicatorBufferRange,
-  resolveSelectionDisplayCursorState,
 } from "./stock-chart";
+import {
+  getLocalPlotPointer,
+  projectCellCursorToLocalPixels,
+  resolveSelectionDisplayCursorState,
+} from "./chart-pointer";
 import { getPointTerminalColumn } from "./chart-renderer";
 
 const renderer = {

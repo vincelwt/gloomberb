@@ -334,6 +334,8 @@ function WebDataTableRowInner<
   columns,
   focusPane,
   onActivateRow,
+  onRowContextMenu,
+  onRowMouseDown,
   onSelectRow,
   hovered,
   index,
@@ -345,12 +347,15 @@ function WebDataTableRowInner<
   renderSectionHeader,
   rowSize,
   rowStart,
+  rowContextMenuSurface,
   selected,
   setHoveredIdx,
 }: {
   columns: C[];
   focusPane: () => void;
   onActivateRow?: (item: T, index: number) => void;
+  onRowContextMenu?: DataTableProps<T, C>["onRowContextMenu"];
+  onRowMouseDown?: DataTableProps<T, C>["onRowMouseDown"];
   onSelectRow: (item: T, index: number) => void;
   hovered: boolean;
   index: number;
@@ -362,6 +367,7 @@ function WebDataTableRowInner<
   renderSectionHeader?: DataTableProps<T, C>["renderSectionHeader"];
   rowSize: number;
   rowStart: number;
+  rowContextMenuSurface: boolean;
   selected: boolean;
   setHoveredIdx: (index: number | null) => void;
 }) {
@@ -430,6 +436,7 @@ function WebDataTableRowInner<
     <div
       key={itemKey}
       data-gloom-role="data-table-row"
+      data-gloom-context-menu-surface={rowContextMenuSurface ? "true" : undefined}
       data-selected={selected ? "true" : undefined}
       style={{
         ...baseRowStyle,
@@ -440,8 +447,15 @@ function WebDataTableRowInner<
       }}
       onMouseDown={(event) => {
         focusPane();
+        if (onRowMouseDown?.(item, index, eventWithCellCoordinates(event)) === true) {
+          return;
+        }
         event.preventDefault();
         onSelectRow(item, index);
+      }}
+      onContextMenu={(event) => {
+        focusPane();
+        onRowContextMenu?.(item, index, eventWithCellCoordinates(event));
       }}
       onDoubleClick={(event) => {
         focusPane();
@@ -466,6 +480,10 @@ function WebDataTableRowInner<
               focusPane();
               if (cell.onMouseDown) {
                 cell.onMouseDown(eventWithCellCoordinates(event));
+                return;
+              }
+              if (onRowMouseDown?.(item, index, eventWithCellCoordinates(event)) === true) {
+                event.stopPropagation();
                 return;
               }
               event.preventDefault();
@@ -533,6 +551,9 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   isSelected,
   onSelect,
   onActivate,
+  onRowMouseDown,
+  onRowContextMenu,
+  rowContextMenuSurface = false,
   renderCell,
   renderSectionHeader,
   getRowBackgroundColor,
@@ -787,11 +808,14 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                     focusPane={focusPane}
                     gridTemplateColumns={gridTemplateColumns}
                     onActivateRow={onActivate ? activateRow : undefined}
+                    onRowContextMenu={onRowContextMenu}
+                    onRowMouseDown={onRowMouseDown}
                     onSelectRow={selectRow}
                     hovered={hovered}
                     getRowBackgroundColor={getRowBackgroundColor}
                     renderCell={renderCell}
                     renderSectionHeader={renderSectionHeader}
+                    rowContextMenuSurface={rowContextMenuSurface}
                     selected={selected}
                     setHoveredIdx={setHoveredIdx}
                   />

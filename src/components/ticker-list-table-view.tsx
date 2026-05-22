@@ -1,40 +1,52 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
+  useState,
   type ReactNode,
   type RefObject,
 } from "react";
-import type { ScrollBoxRenderable } from "../ui";
-import { useShortcut } from "../react/input";
-import { TickerListTable, type TickerListTableProps } from "./ticker-list-table";
-import type { TickerRecord } from "../types/ticker";
-import type { DataTableKeyEvent } from "./data-table-view";
 import {
-  isNextTableRowKey,
-  isPreviousTableRowKey,
-  isTableActivationKey,
-  stopTableKey,
-  TableViewFrame,
-  useResetTableScroll,
-  useTableBodyScrollActivity,
-  useTableViewState,
-} from "./table-view-shared";
+  TextAttributes,
+  tickerContextMenuItems,
+  useContextMenu,
+  useRendererHost,
+  useUiCapabilities,
+  type ScrollBoxRenderable,
+} from "../ui";
+import { colors } from "../theme/colors";
+import { getSharedRegistry } from "../plugins/registry";
+import type { ColumnConfig } from "../types/config";
+import type { TickerFinancials, PricePoint } from "../types/financials";
+import type { TickerRecord } from "../types/ticker";
+import { PRICE_SPARKLINE_COLUMN_ID, PriceSparkline } from "./price-sparkline-view";
+import { DataTableView, type DataTableKeyEvent } from "./data-table-view";
+import type { QuoteFlashDirection } from "./quote-flash";
+
+export interface TickerTableCell {
+  text: string;
+  color?: string;
+}
+
+type ResolveTickerTableCell = (
+  column: ColumnConfig,
+  ticker: TickerRecord,
+  financials: TickerFinancials | undefined,
+) => TickerTableCell;
 
 export interface TickerListVisibleRange {
   start: number;
   end: number;
 }
 
-export interface TickerListTableViewProps extends Omit<
-  TickerListTableProps,
-  | "headerScrollRef"
-  | "scrollRef"
-  | "syncHeaderScroll"
-  | "onBodyScrollActivity"
-  | "hoveredIdx"
-  | "setHoveredIdx"
-> {
+export interface TickerListTableViewProps {
+  columns: ColumnConfig[];
+  tickers: TickerRecord[];
+  cursorSymbol: string | null;
+  setCursorSymbol: (symbol: string) => void;
+  resolveCell: ResolveTickerTableCell;
+  financialsMap: Map<string, TickerFinancials>;
   focused?: boolean;
   rootBefore?: ReactNode;
   rootAfter?: ReactNode;
@@ -54,6 +66,43 @@ export interface TickerListTableViewProps extends Omit<
   onVisibleRangeChange?: (range: TickerListVisibleRange) => void;
   visibleRangeBuffer?: number;
   resetScrollKey?: unknown;
+  flashSymbols?: Map<string, QuoteFlashDirection>;
+  sortColumnId?: string | null;
+  sortDirection?: "asc" | "desc";
+  onHeaderClick?: (columnId: string) => void;
+  onRowActivate?: (ticker: TickerRecord) => void;
+  emptyTitle?: string;
+  emptyHint?: string;
+  virtualize?: boolean;
+  overscan?: number;
+}
+
+const FLASHABLE_QUOTE_COLUMN_IDS = new Set([
+  "price",
+  "change",
+  "change_pct",
+  "bid",
+  "ask",
+  "spread",
+  "ext_hours",
+  "market_cap",
+  "mkt_value",
+  "day_pnl",
+  "pnl",
+  "pnl_pct",
+]);
+
+const EMPTY_FLASH_SYMBOLS = new Map<string, QuoteFlashDirection>();
+
+type TableMouseEvent = {
+  button?: number;
+  detail?: number;
+  preventDefault?: () => void;
+  stopPropagation?: () => void;
+};
+
+function getPriceHistory(financials: TickerFinancials | undefined): PricePoint[] | undefined {
+  return financials?.priceHistory;
 }
 
 export function TickerListTableView({
@@ -76,24 +125,36 @@ export function TickerListTableView({
   onVisibleRangeChange,
   visibleRangeBuffer = 0,
   resetScrollKey,
-  ...tableProps
+  columns,
+  tickers,
+  cursorSymbol,
+  setCursorSymbol,
+  resolveCell,
+  financialsMap,
+  flashSymbols,
+  sortColumnId,
+  sortDirection = "asc",
+  onHeaderClick,
+  onRowActivate,
+  emptyTitle = "No tickers.",
+  emptyHint = "Press Ctrl+P to add one.",
+  virtualize = true,
+  overscan = 4,
 }: TickerListTableViewProps) {
-  const {
-    effectiveHeaderScrollRef,
-    effectiveScrollRef,
-    effectiveHoveredIdx,
-    effectiveSetHoveredIdx,
-    effectiveSyncHeaderScroll,
-  } = useTableViewState({
-    headerScrollRef,
-    scrollRef,
-    syncHeaderScroll,
-    hoveredIdx,
-    setHoveredIdx,
-  });
-  const selectedIndex = tableProps.tickers.findIndex(
-    (ticker) => ticker.metadata.ticker === tableProps.cursorSymbol,
+  const renderer = useRendererHost();
+  const { showContextMenu } = useContextMenu();
+  const { nativeContextMenu } = useUiCapabilities();
+  const internalHeaderScrollRef = useRef<ScrollBoxRenderable>(null);
+  const internalScrollRef = useRef<ScrollBoxRenderable>(null);
+  const effectiveHeaderScrollRef = headerScrollRef ?? internalHeaderScrollRef;
+  const effectiveScrollRef = scrollRef ?? internalScrollRef;
+  const safeFlashSymbols = flashSymbols ?? EMPTY_FLASH_SYMBOLS;
+  const selectedIndex = useMemo(
+    () => tickers.findIndex((ticker) => ticker.metadata.ticker === cursorSymbol),
+    [cursorSymbol, tickers],
   );
+  const [scrollToIndex, setScrollToIndex] = useState<number | null>(null);
+  const [scrollToIndexVersion, setScrollToIndexVersion] = useState(0);
   const lastScrollCursorSymbolRef = useRef<string | null | undefined>(undefined);
 
   const emitVisibleRange = useCallback(() => {
@@ -102,132 +163,135 @@ export function TickerListTableView({
     if (!scrollBox?.viewport) return;
     const start = Math.max(0, scrollBox.scrollTop - visibleRangeBuffer);
     const end = Math.min(
-      tableProps.tickers.length,
+      tickers.length,
       scrollBox.scrollTop + scrollBox.viewport.height + visibleRangeBuffer,
     );
     onVisibleRangeChange({ start, end });
-  }, [effectiveScrollRef, onVisibleRangeChange, tableProps.tickers.length, visibleRangeBuffer]);
+  }, [effectiveScrollRef, onVisibleRangeChange, tickers.length, visibleRangeBuffer]);
 
-  const handleBodyScrollActivity = useTableBodyScrollActivity({
-    onBodyScrollActivity,
-    syncHeaderScroll: effectiveSyncHeaderScroll,
-    afterScroll: emitVisibleRange,
-  });
-
-  useEffect(() => {
-    const scrollBox = effectiveScrollRef.current;
-    if (!scrollBox?.viewport || !scrollBox.verticalScrollBar) return;
-    scrollBox.verticalScrollBar.visible = tableProps.tickers.length > scrollBox.viewport.height;
+  const handleBodyScrollActivity = useCallback(() => {
+    onBodyScrollActivity?.();
     emitVisibleRange();
-  }, [emitVisibleRange, effectiveScrollRef, rootHeight, tableProps.tickers.length]);
-
-  useResetTableScroll({
-    headerScrollRef: effectiveHeaderScrollRef,
-    scrollRef: effectiveScrollRef,
-    resetScrollKey,
-    afterReset: emitVisibleRange,
-  });
-
-  const selectIndex = useCallback((index: number) => {
-    if (index < 0 || index >= tableProps.tickers.length) return;
-    const ticker = tableProps.tickers[index]!;
-    if (onSelectIndex) {
-      onSelectIndex(index, ticker);
-      return;
-    }
-    tableProps.setCursorSymbol(ticker.metadata.ticker);
-  }, [onSelectIndex, tableProps]);
-
-  const activateIndex = useCallback((index: number) => {
-    if (index < 0 || index >= tableProps.tickers.length) return;
-    const ticker = tableProps.tickers[index]!;
-    if (onActivateIndex) {
-      onActivateIndex(index, ticker);
-      return;
-    }
-    tableProps.onRowActivate?.(ticker);
-  }, [onActivateIndex, tableProps]);
-
-  const selectByOffset = useCallback((offset: -1 | 1) => {
-    if (tableProps.tickers.length === 0) return;
-    const nextIndex = selectedIndex >= 0
-      ? Math.max(0, Math.min(selectedIndex + offset, tableProps.tickers.length - 1))
-      : 0;
-    selectIndex(nextIndex);
-  }, [selectIndex, selectedIndex, tableProps.tickers.length]);
-
-  const activateSelection = useCallback(() => {
-    if (tableProps.tickers.length === 0) return;
-    activateIndex(selectedIndex >= 0 ? selectedIndex : 0);
-  }, [activateIndex, selectedIndex, tableProps.tickers.length]);
-
-  useShortcut((event) => {
-    if (event.defaultPrevented || event.propagationStopped) return;
-    if (!focused || !keyboardNavigation) return;
-
-    if (onRootKeyDown?.(event)) return;
-    if (tableProps.tickers.length === 0) return;
-
-    if (isNextTableRowKey(event)) {
-      stopTableKey(event);
-      selectByOffset(1);
-      return;
-    }
-
-    if (isPreviousTableRowKey(event)) {
-      stopTableKey(event);
-      selectByOffset(-1);
-      return;
-    }
-
-    if (isTableActivationKey(event.name)) {
-      stopTableKey(event);
-      activateSelection();
-    }
-  });
+  }, [emitVisibleRange, onBodyScrollActivity]);
 
   useEffect(() => {
-    const scrollBox = effectiveScrollRef.current;
-    if (!scrollBox?.viewport || selectedIndex < 0) {
-      queueMicrotask(emitVisibleRange);
-      return;
-    }
-
-    const shouldScrollToCursor =
-      lastScrollCursorSymbolRef.current !== tableProps.cursorSymbol;
-    lastScrollCursorSymbolRef.current = tableProps.cursorSymbol;
-
-    if (!shouldScrollToCursor) {
-      queueMicrotask(emitVisibleRange);
-      return;
-    }
-
-    const viewportHeight = Math.max(scrollBox.viewport.height, 1);
-    if (selectedIndex < scrollBox.scrollTop) {
-      scrollBox.scrollTo(selectedIndex);
-    } else if (selectedIndex >= scrollBox.scrollTop + viewportHeight) {
-      scrollBox.scrollTo(selectedIndex - viewportHeight + 1);
+    const shouldScrollToCursor = lastScrollCursorSymbolRef.current !== cursorSymbol;
+    lastScrollCursorSymbolRef.current = cursorSymbol;
+    if (shouldScrollToCursor && selectedIndex >= 0) {
+      setScrollToIndex(selectedIndex);
+      setScrollToIndexVersion((current) => current + 1);
     }
     queueMicrotask(emitVisibleRange);
-  }, [effectiveScrollRef, emitVisibleRange, selectedIndex, tableProps.cursorSymbol]);
+  }, [cursorSymbol, emitVisibleRange, selectedIndex]);
+
+  useEffect(() => {
+    queueMicrotask(emitVisibleRange);
+  }, [emitVisibleRange, scrollToIndexVersion]);
+
+  const renderCell = useCallback((
+    ticker: TickerRecord,
+    column: ColumnConfig,
+    _index: number,
+    rowState: { selected: boolean; hovered: boolean },
+  ) => {
+    const financials = financialsMap.get(ticker.metadata.ticker);
+    if (column.id === PRICE_SPARKLINE_COLUMN_ID) {
+      return {
+        text: ticker.metadata.ticker,
+        content: <PriceSparkline priceHistory={getPriceHistory(financials)} width={column.width} />,
+      };
+    }
+
+    const { text, color } = resolveCell(column, ticker, financials);
+    const shouldFlash = safeFlashSymbols.has(ticker.metadata.ticker)
+      && FLASHABLE_QUOTE_COLUMN_IDS.has(column.id);
+    return {
+      text,
+      color: color || (rowState.selected ? colors.selectedText : undefined),
+      attributes: shouldFlash ? TextAttributes.DIM : TextAttributes.NONE,
+    };
+  }, [financialsMap, resolveCell, safeFlashSymbols]);
+
+  const showTickerContextMenu = useCallback((
+    ticker: TickerRecord,
+    event: TableMouseEvent,
+  ) => {
+    const financials = financialsMap.get(ticker.metadata.ticker);
+    const registry = getSharedRegistry() ?? null;
+    void showContextMenu(
+      {
+        kind: "ticker",
+        symbol: ticker.metadata.ticker,
+        ticker,
+        financials: financials ?? null,
+      },
+      tickerContextMenuItems({
+        ticker,
+        financials: financials ?? null,
+        registry,
+        copyText: renderer.copyText.bind(renderer),
+      }),
+      event,
+    );
+  }, [financialsMap, renderer, showContextMenu]);
+
+  const handleRowMouseDown = useCallback((ticker: TickerRecord, _index: number, event: TableMouseEvent) => {
+    setCursorSymbol(ticker.metadata.ticker);
+    if (event.button !== 2) return false;
+    if (nativeContextMenu !== true) {
+      showTickerContextMenu(ticker, event);
+    }
+    return true;
+  }, [nativeContextMenu, setCursorSymbol, showTickerContextMenu]);
+
+  const handleRowContextMenu = useCallback((ticker: TickerRecord, _index: number, event: TableMouseEvent) => {
+    setCursorSymbol(ticker.metadata.ticker);
+    showTickerContextMenu(ticker, event);
+  }, [setCursorSymbol, showTickerContextMenu]);
 
   return (
-    <TableViewFrame
-      width={rootWidth}
-      height={rootHeight}
-      backgroundColor={rootBackgroundColor}
-      before={rootBefore}
-      after={rootAfter}
-    >
-      <TickerListTable
-        {...tableProps}
-        headerScrollRef={effectiveHeaderScrollRef}
-        scrollRef={effectiveScrollRef}
-        syncHeaderScroll={effectiveSyncHeaderScroll}
-        onBodyScrollActivity={handleBodyScrollActivity}
-        hoveredIdx={effectiveHoveredIdx}
-        setHoveredIdx={effectiveSetHoveredIdx}
-      />
-    </TableViewFrame>
+    <DataTableView<TickerRecord, ColumnConfig>
+      focused={focused}
+      columns={columns}
+      items={tickers}
+      sortColumnId={sortColumnId ?? null}
+      sortDirection={sortDirection}
+      onHeaderClick={onHeaderClick ?? (() => {})}
+      getItemKey={(ticker) => ticker.metadata.ticker}
+      isSelected={(ticker) => ticker.metadata.ticker === cursorSymbol}
+      onSelect={(ticker) => {
+        setCursorSymbol(ticker.metadata.ticker);
+      }}
+      onActivate={(ticker) => {
+        onRowActivate?.(ticker);
+      }}
+      onRowMouseDown={handleRowMouseDown}
+      onRowContextMenu={handleRowContextMenu}
+      rowContextMenuSurface
+      renderCell={renderCell}
+      emptyStateTitle={emptyTitle}
+      emptyStateHint={emptyHint}
+      virtualize={virtualize}
+      overscan={overscan}
+      selectedIndex={selectedIndex}
+      onSelectIndex={onSelectIndex}
+      onActivateIndex={onActivateIndex}
+      rootBefore={rootBefore}
+      rootAfter={rootAfter}
+      rootWidth={rootWidth}
+      rootHeight={rootHeight}
+      rootBackgroundColor={rootBackgroundColor}
+      headerScrollRef={effectiveHeaderScrollRef}
+      scrollRef={effectiveScrollRef}
+      syncHeaderScroll={syncHeaderScroll}
+      onBodyScrollActivity={handleBodyScrollActivity}
+      hoveredIdx={hoveredIdx}
+      setHoveredIdx={setHoveredIdx}
+      keyboardNavigation={keyboardNavigation}
+      onRootKeyDown={onRootKeyDown}
+      resetScrollKey={resetScrollKey}
+      scrollToIndex={scrollToIndex}
+      scrollToIndexVersion={scrollToIndexVersion}
+    />
   );
 }

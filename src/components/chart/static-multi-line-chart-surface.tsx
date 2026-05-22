@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useRef } from "react";
-import { Box, ChartSurface, Text, useNativeRenderer, useUiCapabilities, type BoxRenderable } from "../../ui";
+import { Box, ChartSurface, Text, type BoxRenderable } from "../../ui";
 import { colors } from "../../theme/colors";
 import { computeGridLines, formatAxisCell } from "./chart-renderer";
-import { computeBitmapSize, type NativeChartBitmap } from "./native/chart-rasterizer";
+import type { NativeChartBitmap } from "./native/chart-rasterizer";
+import { useStaticChartBitmapSize } from "./static-chart-bitmap";
 import {
   buildMultiLineChartScene,
   renderMultiLineChart,
@@ -72,14 +73,6 @@ export function StaticMultiLineChartSurface({
   formatYAxisValue,
   onCursorDateChange,
 }: StaticMultiLineChartSurfaceProps) {
-  const {
-    canvasCharts,
-    nativeCharts,
-    cellWidthPx = 8,
-    cellHeightPx = 18,
-    pixelRatio = 1,
-  } = useUiCapabilities();
-  const nativeRenderer = useNativeRenderer();
   const plotRef = useRef<BoxRenderable | null>(null);
   const timeAxisRows = showTimeAxis ? 1 : 0;
   const labelRows = yAxisLabel ? 1 : 0;
@@ -121,36 +114,7 @@ export function StaticMultiLineChartSurface({
   const effectiveAxisLabelsByRow = useMemo(() => {
     return new Map(axisLabels.map((entry) => [entry.row, entry.label] as const));
   }, [axisLabels]);
-  const rendererResolution = nativeRenderer.resolution;
-  const rendererTerminalWidth = nativeRenderer.terminalWidth;
-  const rendererTerminalHeight = nativeRenderer.terminalHeight;
-  const bitmapSize = useMemo(() => {
-    if (nativeCharts && rendererResolution && rendererTerminalWidth > 0 && rendererTerminalHeight > 0) {
-      return computeBitmapSize(
-        { x: 0, y: 0, width: plotWidth, height: plotHeight },
-        rendererResolution,
-        rendererTerminalWidth,
-        rendererTerminalHeight,
-      );
-    }
-    if (!canvasCharts && !nativeCharts) return null;
-    const scale = Math.max(1, pixelRatio);
-    return {
-      pixelWidth: Math.max(1, Math.round(plotWidth * cellWidthPx * scale)),
-      pixelHeight: Math.max(1, Math.round(plotHeight * cellHeightPx * scale)),
-    };
-  }, [
-    canvasCharts,
-    cellHeightPx,
-    cellWidthPx,
-    nativeCharts,
-    pixelRatio,
-    plotHeight,
-    plotWidth,
-    rendererResolution,
-    rendererTerminalHeight,
-    rendererTerminalWidth,
-  ]);
+  const bitmapSize = useStaticChartBitmapSize(plotWidth, plotHeight);
   const bitmap = useMemo<NativeChartBitmap | null>(() => {
     if (!scene || !bitmapSize) return null;
     return renderNativeMultiLineChart(scene, bitmapSize.pixelWidth, bitmapSize.pixelHeight);
