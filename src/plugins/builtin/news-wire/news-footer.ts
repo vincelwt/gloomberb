@@ -33,20 +33,23 @@ export function useNewsArticleFooter({
 }: UseNewsArticleFooterOptions) {
   const rendererHost = useRendererHost();
   const hasRealtimeAccess = hasRealtimeNewsAccess();
+  const showAccessFooter = !article;
   const openUpgrade = useCallback(() => {
     void rendererHost.openExternal(CLOUD_UPGRADE_URL);
   }, [rendererHost]);
 
   useShortcut((event) => {
     const key = (event.name ?? event.key ?? "").toLowerCase();
-    if (!focused || hasRealtimeAccess || key !== "u") return;
+    if (!focused || !showAccessFooter || hasRealtimeAccess || key !== "u") return;
     event.stopPropagation();
     event.preventDefault();
     openUpgrade();
   }, { scope: `${registrationId}:news-upgrade` });
 
   const accessInfo = useMemo<PaneFooterSegment[]>(() => (
-    hasRealtimeAccess
+    !showAccessFooter
+      ? []
+      : hasRealtimeAccess
       ? [{
         id: "news-access",
         parts: [{ text: "realtime news", tone: "positive" }],
@@ -56,10 +59,10 @@ export function useNewsArticleFooter({
         onPress: openUpgrade,
         parts: [{ text: "delayed 12h, upgrade for realtime", tone: "warning" }],
       }]
-  ), [hasRealtimeAccess, openUpgrade]);
+  ), [hasRealtimeAccess, openUpgrade, showAccessFooter]);
   const upgradeHints = useMemo<PaneHint[]>(() => (
-    hasRealtimeAccess ? [] : [{ id: "upgrade", key: "u", label: "pgrade", onPress: openUpgrade }]
-  ), [hasRealtimeAccess, openUpgrade]);
+    showAccessFooter && !hasRealtimeAccess ? [{ id: "upgrade", key: "u", label: "pgrade", onPress: openUpgrade }] : []
+  ), [hasRealtimeAccess, openUpgrade, showAccessFooter]);
   const footerInfo = useMemo(() => [...accessInfo, ...(info ?? [])], [accessInfo, info]);
   const footerHints = useMemo(() => [...upgradeHints, ...(hints ?? [])], [hints, upgradeHints]);
 
