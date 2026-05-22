@@ -7,7 +7,7 @@ import { useAppDispatch, useAppSelector, usePaneInstance, usePaneInstanceId, use
 import { usePaneFooter, type PaneFooterSegment, type PaneHint } from "../layout/pane-footer";
 import { ShortcutHint } from "../ui";
 import { getSharedMarketData } from "../../plugins/registry";
-import { colors } from "../../theme/colors";
+import { colors, getChartIndicatorColor } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
 import { formatCompact } from "../../utils/format";
 import { formatMarketPriceWithCurrency } from "../../utils/market-format";
@@ -929,19 +929,6 @@ function resolveSelectionCursor(
   };
 }
 
-function getIndicatorColor(index: number): string {
-  const indicatorColors = [
-    colors.negative,
-    colors.positive,
-    colors.borderFocused,
-    colors.warning,
-    colors.textBright,
-    colors.neutral,
-    colors.textMuted,
-  ];
-  return indicatorColors[((index % indicatorColors.length) + indicatorColors.length) % indicatorColors.length]!;
-}
-
 function getIndicatorWarmupPeriod(config: IndicatorConfig): number {
   const periods = [
     ...(config.sma ?? []),
@@ -1056,7 +1043,7 @@ function computeIndicatorOverlays(
   config: IndicatorConfig,
 ): ChartIndicatorOverlays {
   let colorIdx = 0;
-  const nextColor = () => getIndicatorColor(colorIdx++);
+  const nextColor = () => getChartIndicatorColor(colorIdx++);
 
   const smaLines = (config.sma ?? []).map((period) => ({
     period,
