@@ -2,9 +2,9 @@ import { useCallback, useRef } from "react";
 import {
   TickerListTableView,
   type DataTableKeyEvent,
-  type QuoteFlashDirection,
   type TickerListVisibleRange,
 } from "../../../components";
+import type { QuoteFlashDirection } from "../../../components/quote-flash";
 import { createRowValueCache } from "../../../components/ui/row-value-cache";
 import type { ColumnConfig } from "../../../types/config";
 import type { TickerFinancials } from "../../../types/financials";

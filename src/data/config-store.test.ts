@@ -39,6 +39,7 @@ function createSavedConfig(overrides: Record<string, unknown> = {}): Record<stri
     disabledPlugins: [],
     theme: "amber",
     chartPreferences: { defaultRenderMode: "area", renderer: "auto" },
+    valueFlashingEnabled: true,
     recentTickers: [],
     ...overrides,
   };
@@ -231,6 +232,25 @@ describe("loadConfig", () => {
       renderer: "auto",
     });
     expect(config.pluginConfig).toEqual({});
+  });
+
+  test("defaults value flashing on and preserves an explicit off setting", async () => {
+    const missingDir = await createTempConfigDir();
+    await writeConfigJson(missingDir, createSavedConfig({
+      configVersion: 16,
+      valueFlashingEnabled: undefined,
+    }));
+
+    const missingConfig = await loadConfig(missingDir);
+    expect(missingConfig.valueFlashingEnabled).toBe(true);
+
+    const disabledDir = await createTempConfigDir();
+    await writeConfigJson(disabledDir, createSavedConfig({
+      valueFlashingEnabled: false,
+    }));
+
+    const disabledConfig = await loadConfig(disabledDir);
+    expect(disabledConfig.valueFlashingEnabled).toBe(false);
   });
 
   test("preserves plugin config state from disk", async () => {

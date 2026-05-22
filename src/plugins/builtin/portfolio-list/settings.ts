@@ -31,6 +31,7 @@ const PORTFOLIO_COLUMN_DEFS: ColumnConfig[] = [
   { id: "avg_cost", label: "AVG COST", width: 10, align: "right", format: "currency" },
   { id: "cost_basis", label: "COST", width: 10, align: "right", format: "compact" },
   { id: "mkt_value", label: "MKT VAL", width: 10, align: "right", format: "compact" },
+  { id: "day_pnl", label: "DAY", width: 10, align: "right", format: "compact" },
   { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" },
   { id: "pnl_pct", label: "P&L%", width: 8, align: "right", format: "percent" },
 ];
@@ -41,6 +42,7 @@ const PORTFOLIO_ONLY_COLUMN_IDS = new Set([
   "avg_cost",
   "cost_basis",
   "mkt_value",
+  "day_pnl",
   "pnl",
   "pnl_pct",
 ]);

@@ -25,7 +25,7 @@ const PROVIDER_DEFS: AiProviderDefinition[] = [
     id: "codex",
     name: "Codex",
     command: "codex",
-    buildArgs: (prompt) => ["exec", prompt],
+    buildArgs: (prompt) => ["exec", "--skip-git-repo-check", prompt],
   },
 ];
 

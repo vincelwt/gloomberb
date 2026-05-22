@@ -23,13 +23,13 @@ import { tableContentWidthProps, useMeasuredTableContentWidth } from "./ui/table
 import { useViewport } from "../react/input";
 import { measurePerf } from "../utils/perf-marks";
 import { useScrollBoxScrollActivity } from "./table-view-shared";
+import type { QuoteFlashDirection } from "./quote-flash";
 
 export interface TickerTableCell {
   text: string;
   color?: string;
 }
 
-export type QuoteFlashDirection = "up" | "down" | "flat";
 type ResolveTickerTableCell = (
   column: ColumnConfig,
   ticker: TickerRecord,
@@ -52,6 +52,7 @@ const FLASHABLE_QUOTE_COLUMN_IDS = new Set([
   "ext_hours",
   "market_cap",
   "mkt_value",
+  "day_pnl",
   "pnl",
   "pnl_pct",
 ]);

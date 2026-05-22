@@ -3428,6 +3428,16 @@ export function CommandBar({
         closeAll({ revertThemePreview: false });
         return;
       }
+      case "toggle-value-flashing": {
+        const nextConfig = {
+          ...state.config,
+          valueFlashingEnabled: !state.config.valueFlashingEnabled,
+        };
+        dispatch({ type: "SET_CONFIG", config: nextConfig });
+        persistConfig(nextConfig);
+        closeAll({ revertThemePreview: false });
+        return;
+      }
       case "check-for-updates":
         void onCheckForUpdates?.();
         closeAll({ revertThemePreview: false });
@@ -3699,6 +3709,8 @@ export function CommandBar({
           if (state.updateAvailable) return `Latest available: v${state.updateAvailable.version}`;
           if (state.updateNotice) return state.updateNotice;
           return command.description;
+        case "toggle-value-flashing":
+          return state.config.valueFlashingEnabled ? "Currently on" : "Currently off";
         default:
           return command.description;
       }

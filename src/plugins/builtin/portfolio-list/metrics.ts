@@ -268,6 +268,12 @@ export function getColumnValue(
         return { text: formatCompact(toBasePosition(brokerFallbackMktValue)) };
       }
       return { text: "—" };
+    case "day_pnl":
+      if (activeQuote && totalPriceUnits !== 0) {
+        const dayPnl = toBaseQuote(totalPriceUnits * activeQuote.change);
+        return { text: `${dayPnl >= 0 ? "+" : ""}${formatCompact(dayPnl)}`, color: priceColor(dayPnl) };
+      }
+      return { text: "—" };
     case "pnl":
       if (activeQuote && totalPriceUnits !== 0) {
         const pnl = toBaseQuote(Math.abs(totalPriceUnits) * activeQuote.price) - toBasePosition(totalCost);
@@ -366,6 +372,11 @@ export function getSortValue(
       }
       if (brokerFallbackMktValue != null) {
         return toBasePosition(brokerFallbackMktValue);
+      }
+      return null;
+    case "day_pnl":
+      if (activeQuote && totalPriceUnits !== 0) {
+        return toBaseQuote(totalPriceUnits * activeQuote.change);
       }
       return null;
     case "pnl":

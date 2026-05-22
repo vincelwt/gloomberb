@@ -221,9 +221,15 @@ describe("portfolio-metrics", () => {
       positions: [{ portfolio: "main", shares: 10, avgCost: 100, broker: "manual" }],
     });
     const financials = createFinancials();
+    const dayPnlColumn: ColumnConfig = { id: "day_pnl", label: "DAY", width: 10, align: "right", format: "compact" };
     const pnlColumn: ColumnConfig = { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" };
     const latencyColumn: ColumnConfig = { id: "latency", label: "AGE", width: 6, align: "right" };
 
+    expect(getColumnValue(dayPnlColumn, ticker, financials, defaultColumnContext)).toEqual({
+      text: "+50",
+      color: expect.any(String),
+    });
+    expect(getSortValue(dayPnlColumn, ticker, financials, defaultColumnContext)).toBe(50);
     expect(getColumnValue(pnlColumn, ticker, financials, defaultColumnContext)).toEqual({
       text: "+200",
       color: expect.any(String),
