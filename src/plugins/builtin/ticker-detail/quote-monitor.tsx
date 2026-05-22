@@ -17,6 +17,7 @@ import { formatPercentRaw } from "../../../utils/format";
 import { formatMarketPriceWithCurrency, formatSignedMarketPrice } from "../../../utils/market-format";
 import { getActiveQuoteDisplay } from "../../../utils/market-status";
 import { EmptyState } from "../../../components";
+import { useQuoteFlashDirection, type QuoteFlashDirection } from "../../../components/quote-flash";
 import {
   PriceAreaSparklineBackground,
   PriceSparkline,
@@ -87,6 +88,7 @@ function QuoteMonitorCard({
   showRightDivider,
   showBottomDivider,
   chartPeriod,
+  valueFlashingEnabled,
   onOpen,
 }: {
   symbol: string;
@@ -97,14 +99,18 @@ function QuoteMonitorCard({
   showRightDivider: boolean;
   showBottomDivider: boolean;
   chartPeriod: PriceSparklinePeriod;
+  valueFlashingEnabled: boolean;
   onOpen: (symbol: string) => void;
 }) {
   const { nativePaneChrome } = useUiCapabilities();
   const marketFinancials = useTickerFinancials(symbol, ticker);
   const financials = marketFinancials ?? cachedFinancials;
+  const flashDirection = useQuoteFlashDirection(financials, valueFlashingEnabled);
   const quote = financials?.quote;
   const display = getQuoteMonitorDisplay(quote);
   const changeColor = priceColor(display?.change ?? 0);
+  const priceAttributes = flashDirection ? TextAttributes.DIM : TextAttributes.BOLD;
+  const changeAttributes = flashDirection ? TextAttributes.DIM : TextAttributes.NONE;
   const currency = quote?.currency ?? ticker?.metadata.currency ?? "USD";
   const stacked = width < 31;
   const priceText = display
@@ -244,15 +250,15 @@ function QuoteMonitorCard({
             }}
           >
             <Text
-              attributes={TextAttributes.BOLD}
+              attributes={priceAttributes}
               fg={changeColor}
               style={desktopPriceStyle}
             >
               {priceText}
             </Text>
             <Box flexDirection="row" gap={1} justifyContent="flex-end">
-              <Text fg={changeColor} style={desktopChangeStyle}>{changePercentText}</Text>
-              <Text fg={changeColor} style={desktopChangeStyle}>{changeValueText}</Text>
+              <Text fg={changeColor} attributes={changeAttributes} style={desktopChangeStyle}>{changePercentText}</Text>
+              <Text fg={changeColor} attributes={changeAttributes} style={desktopChangeStyle}>{changeValueText}</Text>
             </Box>
           </Box>
 
@@ -284,12 +290,12 @@ function QuoteMonitorCard({
                 {symbol}
               </Text>
               <Box flexDirection="column">
-                <Text attributes={TextAttributes.BOLD} fg={changeColor} style={desktopPriceStyle}>
+                <Text attributes={priceAttributes} fg={changeColor} style={desktopPriceStyle}>
                   {priceText}
                 </Text>
                 <Box flexDirection="row" gap={1}>
-                  <Text fg={changeColor} style={desktopChangeStyle}>{changePercentText}</Text>
-                  <Text fg={changeColor} style={desktopChangeStyle}>{changeValueText}</Text>
+                  <Text fg={changeColor} attributes={changeAttributes} style={desktopChangeStyle}>{changePercentText}</Text>
+                  <Text fg={changeColor} attributes={changeAttributes} style={desktopChangeStyle}>{changeValueText}</Text>
                 </Box>
               </Box>
             </Box>
@@ -322,15 +328,15 @@ function QuoteMonitorCard({
               </Box>
               <Box flexDirection="column" alignItems="flex-end">
                 <Text
-                  attributes={TextAttributes.BOLD}
+                  attributes={priceAttributes}
                   fg={changeColor}
                   style={desktopPriceStyle}
                 >
                   {priceText}
                 </Text>
                 <Box flexDirection="row" gap={1} justifyContent="flex-end">
-                  <Text fg={changeColor} style={desktopChangeStyle}>{changePercentText}</Text>
-                  <Text fg={changeColor} style={desktopChangeStyle}>{changeValueText}</Text>
+                  <Text fg={changeColor} attributes={changeAttributes} style={desktopChangeStyle}>{changePercentText}</Text>
+                  <Text fg={changeColor} attributes={changeAttributes} style={desktopChangeStyle}>{changeValueText}</Text>
                 </Box>
               </Box>
             </Box>
@@ -367,6 +373,7 @@ export function QuoteMonitorPane({ paneId, focused, width, height }: PaneProps) 
   const symbols = settings.symbols;
   const financialsBySymbol = useAppSelector((state) => state.financials);
   const tickersBySymbol = useAppSelector((state) => state.tickers);
+  const valueFlashingEnabled = useAppSelector((state) => state.config.valueFlashingEnabled);
   const streamingTargets = useMemo(() => (
     symbols
       .map((symbol) => {
@@ -436,6 +443,7 @@ export function QuoteMonitorPane({ paneId, focused, width, height }: PaneProps) 
               showRightDivider={false}
               showBottomDivider
               chartPeriod={settings.chartPeriod}
+              valueFlashingEnabled={valueFlashingEnabled}
               onOpen={openTicker}
             />
           );
@@ -468,6 +476,7 @@ export function QuoteMonitorPane({ paneId, focused, width, height }: PaneProps) 
                 showRightDivider={columnIndex < row.length - 1}
                 showBottomDivider={rowIndex < rows.length - 1}
                 chartPeriod={settings.chartPeriod}
+                valueFlashingEnabled={valueFlashingEnabled}
                 onOpen={openTicker}
               />
             );

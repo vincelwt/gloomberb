@@ -22,13 +22,12 @@ import type { TickerFinancials, PricePoint } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
 import { PRICE_SPARKLINE_COLUMN_ID, PriceSparkline } from "./price-sparkline-view";
 import { DataTableView, type DataTableKeyEvent } from "./data-table-view";
+import type { QuoteFlashDirection } from "./quote-flash";
 
 export interface TickerTableCell {
   text: string;
   color?: string;
 }
-
-export type QuoteFlashDirection = "up" | "down" | "flat";
 
 type ResolveTickerTableCell = (
   column: ColumnConfig,
@@ -88,6 +87,7 @@ const FLASHABLE_QUOTE_COLUMN_IDS = new Set([
   "ext_hours",
   "market_cap",
   "mkt_value",
+  "day_pnl",
   "pnl",
   "pnl_pct",
 ]);

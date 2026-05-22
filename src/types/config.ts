@@ -1,6 +1,6 @@
 import type { Portfolio, Watchlist } from "./ticker";
 
-export const CURRENT_CONFIG_VERSION = 16;
+export const CURRENT_CONFIG_VERSION = 17;
 
 export type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc" | "hlc";
 export type ChartRendererPreference = "auto" | "kitty" | "braille";
@@ -133,6 +133,7 @@ export interface AppConfig {
   pluginConfig: Record<string, Record<string, unknown>>;
   theme: string;
   chartPreferences: ChartPreferences;
+  valueFlashingEnabled: boolean;
   recentTickers: string[];
   onboardingComplete?: boolean;
 }
@@ -163,6 +164,7 @@ export const DEFAULT_PORTFOLIO_COLUMN_IDS = [
   "avg_cost",
   "cost_basis",
   "mkt_value",
+  "day_pnl",
   "pnl",
   "pnl_pct",
 ];
@@ -599,6 +601,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
       defaultRenderMode: "area",
       renderer: "auto",
     },
+    valueFlashingEnabled: true,
     recentTickers: [],
   };
 }

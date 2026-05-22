@@ -22,7 +22,6 @@ import {
 } from "../../../state/app-context";
 import { useQuoteStreaming } from "../../../state/use-quote-streaming";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
-import { getActiveQuoteDisplay } from "../../../utils/market-status";
 import type { AppConfig, ColumnConfig } from "../../../types/config";
 import type { TickerRecord } from "../../../types/ticker";
 import type { PaneProps } from "../../../types/plugin";
@@ -45,7 +44,8 @@ import { formatPercentRaw } from "../../../utils/format";
 import { getMostRecentQuoteUpdate } from "../../../utils/quote-time";
 import { isQuoteStaleForCurrentSession } from "../../../utils/quote-freshness";
 import { priceColor } from "../../../theme/colors";
-import { PortfolioTickerTable, type QuoteFlashDirection } from "./table";
+import { useQuoteFlashMap } from "../../../components/quote-flash";
+import { PortfolioTickerTable } from "./table";
 import { useThrottledCursorSymbol } from "./use-throttled-cursor-symbol";
 import { isManualPortfolio } from "./mutations";
 import { QuickAddTickerInput, type QuickAddCollectionKind } from "./quick-add";
@@ -237,11 +237,9 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const [cashDrawerExpanded, setCashDrawerExpanded] = usePaneStateValue<boolean>("cashDrawerExpanded", false);
 
   const [now, setNow] = useState(Date.now());
-  const [flashSymbols, setFlashSymbols] = useState<Map<string, QuoteFlashDirection>>(new Map());
   const [streamWindow, setStreamWindow] = useState({ start: 0, end: 24 });
   const [quickAddFocused, setQuickAddFocused] = useState(false);
 
-  const previousPricesRef = useRef<Map<string, number>>(new Map());
   const mountedRef = useRef(true);
   const warmupInFlightRef = useRef(new Set<string>());
   const warmupAttemptRef = useRef(new Map<string, number>());
@@ -286,6 +284,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     }
     return merged;
   }, [cachedFinancials, marketFinancialsMap]);
+  const valueFlashingEnabled = useAppSelector((state) => state.config.valueFlashingEnabled);
+  const flashSymbols = useQuoteFlashMap(financialsMap, valueFlashingEnabled);
 
   const accountStateInput = useMemo(() => ({ brokerAccounts, config }), [brokerAccounts, config]);
   const accountState = usePortfolioAccountState(currentPortfolio, accountStateInput);
@@ -426,27 +426,6 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     const timerId = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timerId);
   }, [appActive]);
-
-  useEffect(() => {
-    const changed = new Map<string, QuoteFlashDirection>();
-
-    for (const [symbol, financials] of financialsMap) {
-      const price = getActiveQuoteDisplay(financials.quote)?.price ?? financials.quote?.price;
-      if (price == null) continue;
-
-      const previousPrice = previousPricesRef.current.get(symbol);
-      if (previousPrice != null && previousPrice !== price) {
-        changed.set(symbol, price > previousPrice ? "up" : price < previousPrice ? "down" : "flat");
-      }
-      previousPricesRef.current.set(symbol, price);
-    }
-
-    if (changed.size === 0) return;
-
-    setFlashSymbols(changed);
-    const timeoutId = setTimeout(() => setFlashSymbols(new Map()), 450);
-    return () => clearTimeout(timeoutId);
-  }, [financialsMap]);
 
   useEffect(() => {
     if (sortedTickers.length === 0) {

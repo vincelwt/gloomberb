@@ -30,6 +30,16 @@ const PRE_SPARKLINE_PORTFOLIO_COLUMN_IDS = [
   "pnl",
   "pnl_pct",
 ];
+const PRE_DAY_PNL_PORTFOLIO_COLUMN_IDS = [
+  ...DEFAULT_COLUMNS.map((column) => column.id),
+  "sparkline",
+  "shares",
+  "avg_cost",
+  "cost_basis",
+  "mkt_value",
+  "pnl",
+  "pnl_pct",
+];
 const BUILTIN_SOURCE_IDS = new Set(["yahoo", "gloomberb-cloud"]);
 const BUILTIN_PLUGIN_GROUP_ALIASES: Record<string, string> = {
   "comparison-chart": "market-overview",
@@ -136,6 +146,7 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
     pluginConfig: sanitizePluginConfig(saved.pluginConfig),
     theme: typeof saved.theme === "string" ? saved.theme : defaults.theme,
     chartPreferences: sanitizeChartPreferences(saved.chartPreferences, defaults.chartPreferences),
+    valueFlashingEnabled: typeof saved.valueFlashingEnabled === "boolean" ? saved.valueFlashingEnabled : defaults.valueFlashingEnabled,
     recentTickers: sanitizeStringArray(saved.recentTickers, defaults.recentTickers),
     onboardingComplete: typeof saved.onboardingComplete === "boolean" ? saved.onboardingComplete : defaults.onboardingComplete,
   };
@@ -149,6 +160,7 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
     || !Array.isArray(saved.disabledSources)
     || !isPluginConfigMap(saved.pluginConfig)
     || !isChartPreferences(saved.chartPreferences)
+    || typeof saved.valueFlashingEnabled !== "boolean"
     || typeof saved.activeLayoutIndex !== "number";
 
   return { config, needsSave };
@@ -179,6 +191,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
     disabledSources: sanitizeUniqueStringList(config.disabledSources),
     pluginConfig: sanitizePluginConfig(config.pluginConfig),
     chartPreferences: sanitizeChartPreferences(config.chartPreferences, createDefaultConfig(config.dataDir).chartPreferences),
+    valueFlashingEnabled: config.valueFlashingEnabled !== false,
     recentTickers: sanitizeStringArray(config.recentTickers, []),
   };
 
@@ -412,7 +425,8 @@ function hasExactColumnIds(value: unknown, expected: string[]): boolean {
 
 function shouldMigratePortfolioColumnIds(value: unknown): boolean {
   return hasExactColumnIds(value, LEGACY_MAIN_PORTFOLIO_COLUMN_IDS)
-    || hasExactColumnIds(value, PRE_SPARKLINE_PORTFOLIO_COLUMN_IDS);
+    || hasExactColumnIds(value, PRE_SPARKLINE_PORTFOLIO_COLUMN_IDS)
+    || hasExactColumnIds(value, PRE_DAY_PNL_PORTFOLIO_COLUMN_IDS);
 }
 
 function migrateLegacyPortfolioDefaultColumns(layout: LayoutConfig, enabled: boolean): LayoutConfig {

@@ -56,6 +56,7 @@ function runWithBun({
   const done = (async () => {
     const proc = Bun.spawn([provider.command, ...provider.buildArgs(prompt)], {
       cwd,
+      stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
     });

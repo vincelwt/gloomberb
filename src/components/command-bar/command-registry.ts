@@ -182,6 +182,14 @@ export const commands: Command[] = [
     },
   },
   {
+    id: "toggle-value-flashing",
+    prefix: "VF",
+    label: "Toggle Value Flashing",
+    description: "Turn quote update flashing on or off",
+    category: "Config",
+    execute: () => {}, // handled by command bar
+  },
+  {
     id: "check-for-updates",
     prefix: "",
     label: "Check for Updates",
