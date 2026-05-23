@@ -1,7 +1,6 @@
 export type {
   NewsArticle,
   NewsQuery,
-  NewsQueryPhase,
   NewsQueryState,
   NewsStoryItem,
 } from "../news/types";

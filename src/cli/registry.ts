@@ -15,7 +15,7 @@ import { debugLog } from "../utils/debug-log";
 
 const registryLog = debugLog.createLogger("cli-registry");
 
-export interface RegisteredCliCommand {
+interface RegisteredCliCommand {
   command: CliCommandDef;
   ownerId: string;
   source: "core" | "plugin";
@@ -83,7 +83,7 @@ function renderHelpSections(registry: CliCommandRegistry): string[] {
 
 export function renderCliHelp(registry: CliCommandRegistry, version: string): string {
   const lines = [
-    `${cliStyles.bold(`gloomberb v${version}`)}\n${cliStyles.muted("Bloomberg-style portfolio tracker for the terminal")}`,
+    `${cliStyles.bold(`gloomberb v${version}`)}\n${cliStyles.muted("Market research and portfolio tracker for the terminal")}`,
     "",
     renderSection("Usage"),
     "gloomberb [command]",

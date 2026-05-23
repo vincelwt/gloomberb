@@ -22,22 +22,33 @@ import {
   apiClient,
   type CloudAnalystResearchPayload,
   type CloudCorporateActionsPayload,
-  type CloudMarketBatchItem,
   type CloudHoldersPayload,
   type CloudMarketResponse,
-  type CloudNewsPayload,
-  type CloudNewsStoryItemPayload,
-  type CloudOptionsChainPayload,
-  type CloudPricePointPayload,
-  type CloudQuotePayload,
 } from "../utils/api-client";
-import type { NewsArticle, NewsQuery, NewsStoryItem } from "../types/news-source";
-import { normalizePriceValueByDivisor, resolveCurrencyUnit } from "../utils/currency-units";
-import { canonicalTickerKey, publicExchange, resolveExchangeTimeZone } from "../utils/exchanges";
-import { collectNewsDisplayTickers } from "../news/ticker-symbols";
+import type { NewsArticle, NewsQuery } from "../types/news-source";
+import { resolveCurrencyUnit } from "../utils/currency-units";
+import { canonicalTickerKey, publicExchange } from "../utils/exchanges";
 import { createProviderMiss } from "./provider-errors";
+import {
+  cloudNewsParams,
+  mapCloudNewsArticle,
+  mapCloudNewsItem,
+} from "./gloomberb-cloud-news";
+import {
+  GLOOMBERB_CLOUD_PROVIDER_ID,
+  formatCloudDateTime,
+  getRangeStartDate,
+  isEmptyCloudStatus,
+  mapBatchError,
+  mapCloudFinancials,
+  mapOptionsChain,
+  mapPricePoint,
+  mapQuote,
+  toCloudInterval,
+  toHistoryRequest,
+} from "./gloomberb-cloud-normalizers";
 
-const providerId = "gloomberb-cloud" as const;
+const providerId = GLOOMBERB_CLOUD_PROVIDER_ID;
 const CLOUD_RESOLUTION_SUPPORT = normalizeChartResolutionSupport([
   { resolution: "1m", maxRange: "1W" },
   { resolution: "5m", maxRange: "1M" },
@@ -54,7 +65,6 @@ const CLOUD_PROVIDER_MISS_PATTERNS = [
   /figi.*missing or invalid/i,
   /error in the query/i,
 ];
-type CloudProviderMeta = NonNullable<CloudMarketResponse<unknown>["providerMeta"]>;
 
 function isCloudProviderMiss(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -72,392 +82,12 @@ async function withCloudFallback<T>(load: () => Promise<T>, message: string): Pr
   }
 }
 
-function cloudInternalProviderId(providerMeta?: CloudProviderMeta): string | null {
-  const upstream = providerMeta?.provider ?? providerMeta?.upstream;
-  return upstream ? `${providerId}:${upstream}` : null;
-}
-
 function isStaleCloudResponse(response: CloudMarketResponse<unknown>): boolean {
   return response.stale === true || response.providerMeta?.stale === true;
 }
 
-function mapQuote(quote: CloudQuotePayload, providerMeta?: CloudProviderMeta): Quote {
-  const { currency, divisor } = resolveCurrencyUnit(quote.currency);
-  const listingExchangeName = quote.listingExchangeName ?? quote.exchangeName;
-  const listingExchangeFullName = quote.listingExchangeFullName ?? quote.fullExchangeName ?? listingExchangeName;
-  const internalProviderId = cloudInternalProviderId(providerMeta);
-  return {
-    ...quote,
-    currency: currency || quote.currency,
-    price: normalizePriceValueByDivisor(quote.price, divisor) ?? quote.price,
-    change: normalizePriceValueByDivisor(quote.change, divisor) ?? quote.change,
-    previousClose: normalizePriceValueByDivisor(quote.previousClose, divisor),
-    high52w: normalizePriceValueByDivisor(quote.high52w, divisor),
-    low52w: normalizePriceValueByDivisor(quote.low52w, divisor),
-    bid: normalizePriceValueByDivisor(quote.bid, divisor),
-    ask: normalizePriceValueByDivisor(quote.ask, divisor),
-    open: normalizePriceValueByDivisor(quote.open, divisor),
-    high: normalizePriceValueByDivisor(quote.high, divisor),
-    low: normalizePriceValueByDivisor(quote.low, divisor),
-    mark: normalizePriceValueByDivisor(quote.mark, divisor),
-    preMarketPrice: normalizePriceValueByDivisor(quote.preMarketPrice, divisor),
-    preMarketChange: normalizePriceValueByDivisor(quote.preMarketChange, divisor),
-    postMarketPrice: normalizePriceValueByDivisor(quote.postMarketPrice, divisor),
-    postMarketChange: normalizePriceValueByDivisor(quote.postMarketChange, divisor),
-    listingExchangeName,
-    listingExchangeFullName,
-    exchangeName: listingExchangeName,
-    fullExchangeName: listingExchangeFullName,
-    providerId,
-    provenance: internalProviderId
-      ? {
-        ...quote.provenance,
-        price: {
-          providerId: internalProviderId,
-          dataSource: quote.dataSource,
-        },
-        session: {
-          providerId: internalProviderId,
-          dataSource: quote.dataSource,
-        },
-        routing: {
-          providerId,
-          dataSource: quote.dataSource,
-        },
-        fields: {
-          ...quote.provenance?.fields,
-          cloudProvider: { providerId: internalProviderId, dataSource: quote.dataSource },
-          ...(providerMeta?.fallbackReason
-            ? { fallbackReason: { providerId: providerMeta.fallbackReason } }
-            : {}),
-        },
-      }
-      : quote.provenance,
-  };
-}
-
-const LOCAL_DATE_TIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?)?$/;
-const EXPLICIT_TIME_ZONE_PATTERN = /(?:Z|[+-]\d{2}:?\d{2})$/i;
-
-function getZonedDateParts(date: Date, timeZone: string): Map<string, string> {
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  const parts = new Map<string, string>();
-  for (const part of formatter.formatToParts(date)) {
-    if (part.type !== "literal") parts.set(part.type, part.value);
-  }
-  return parts;
-}
-
-function getTimeZoneOffsetMs(utcMs: number, timeZone: string): number {
-  const parts = getZonedDateParts(new Date(utcMs), timeZone);
-  const zonedAsUtcMs = Date.UTC(
-    Number(parts.get("year")),
-    Number(parts.get("month")) - 1,
-    Number(parts.get("day")),
-    Number(parts.get("hour")),
-    Number(parts.get("minute")),
-    Number(parts.get("second")),
-  );
-  return zonedAsUtcMs - utcMs;
-}
-
-function exchangeLocalDateTimeToUtc(match: RegExpMatchArray, timeZone: string): Date {
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const hour = Number(match[4] ?? "0");
-  const minute = Number(match[5] ?? "0");
-  const second = Number(match[6] ?? "0");
-  const localAsUtcMs = Date.UTC(year, month - 1, day, hour, minute, second);
-  const firstOffset = getTimeZoneOffsetMs(localAsUtcMs, timeZone);
-  const firstUtcMs = localAsUtcMs - firstOffset;
-  const verifiedOffset = getTimeZoneOffsetMs(firstUtcMs, timeZone);
-  return new Date(localAsUtcMs - verifiedOffset);
-}
-
-function parseCloudPricePointDate(value: Date | string | number, exchange: string): Date {
-  if (value instanceof Date || typeof value === "number") return new Date(value);
-  if (EXPLICIT_TIME_ZONE_PATTERN.test(value)) return new Date(value);
-
-  const match = value.match(LOCAL_DATE_TIME_PATTERN);
-  if (!match) return new Date(value);
-
-  const hasTime = match[4] !== undefined;
-  if (!hasTime) {
-    return new Date(`${match[1]}-${match[2]}-${match[3]}T00:00:00Z`);
-  }
-
-  const timeZone = resolveExchangeTimeZone(exchange);
-  return timeZone ? exchangeLocalDateTimeToUtc(match, timeZone) : new Date(value);
-}
-
-function mapPricePoint(point: CloudPricePointPayload, divisor = 1, exchange = ""): PricePoint {
-  return {
-    date: parseCloudPricePointDate(point.date, exchange),
-    open: normalizePriceValueByDivisor(point.open, divisor),
-    high: normalizePriceValueByDivisor(point.high, divisor),
-    low: normalizePriceValueByDivisor(point.low, divisor),
-    close: normalizePriceValueByDivisor(point.close, divisor) ?? point.close,
-    volume: point.volume,
-  };
-}
-
-function mapCloudFinancials(financials: TickerFinancials, providerMeta?: CloudProviderMeta): TickerFinancials {
-  const quote = financials.quote ? mapQuote(financials.quote as CloudQuotePayload, providerMeta) : undefined;
-  const divisor = quote ? resolveCurrencyUnit(quote.currency).divisor : 1;
-  return {
-    quote,
-    quoteContributions: financials.quoteContributions,
-    profile: financials.profile,
-    fundamentals: financials.fundamentals,
-    annualStatements: financials.annualStatements ?? [],
-    quarterlyStatements: financials.quarterlyStatements ?? [],
-    priceHistory: (financials.priceHistory ?? []).map((point) =>
-      point.date instanceof Date
-        ? point
-        : mapPricePoint(point as unknown as CloudPricePointPayload, divisor)
-    ),
-  };
-}
-
-function mapOptionsChain(chain: CloudOptionsChainPayload): OptionsChain {
-  return {
-    underlyingSymbol: chain.underlyingSymbol,
-    expirationDates: chain.expirationDates ?? [],
-    calls: chain.calls ?? [],
-    puts: chain.puts ?? [],
-  };
-}
-
-function mapBatchError<T>(
-  item: CloudMarketBatchItem<T>,
-  fallbackMessage: string,
-): Error {
-  if (isEmptyCloudStatus(item.status)) {
-    return createProviderMiss(item.reasonCode ?? fallbackMessage);
-  }
-  return new Error(item.reasonCode ?? fallbackMessage);
-}
-
-function normalizeStringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-    : [];
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
-}
-
-function mapCloudNewsTickers(item: CloudNewsPayload, fallbackTicker?: string): string[] {
-  const tickers = collectNewsDisplayTickers(
-    item.tickerLinks.flatMap((link) => [link.symbol, link.canonicalTicker]),
-  );
-  const fallbackTickers = collectNewsDisplayTickers([fallbackTicker]);
-  if (tickers.length === 0) tickers.push(...fallbackTickers);
-  return tickers;
-}
-
-function mapCloudNewsStoryItem(item: CloudNewsStoryItemPayload): NewsStoryItem {
-  const publishedAt = new Date(item.publishedAt);
-  return {
-    id: item.id,
-    sourceKey: item.sourceKey,
-    sourceName: item.sourceName || item.sourceKey,
-    title: item.title,
-    summary: item.summary,
-    url: item.url,
-    publishedAt: Number.isNaN(publishedAt.getTime()) ? new Date(0) : publishedAt,
-    hasArticleText: item.hasArticleText,
-  };
-}
-
-function mapCloudNewsArticle(item: CloudNewsPayload, fallbackTicker?: string): NewsArticle {
-  const publishedAt = new Date(item.lastPublishedAt || item.firstPublishedAt || item.lastSeenAt);
-  const topic = item.topic ?? item.category ?? "general";
-  const topics = uniqueStrings([topic, ...normalizeStringArray(item.topics)]);
-  const sectors = normalizeStringArray(item.sectors);
-  const scores = {
-    importance: item.scores?.importance ?? 0,
-    urgency: item.scores?.urgency ?? 0,
-    marketImpact: item.scores?.marketImpact ?? 0,
-    novelty: item.scores?.novelty ?? 0,
-    confidence: item.scores?.confidence ?? 0,
-  };
-  const tickers = mapCloudNewsTickers(item, fallbackTicker);
-  return {
-    id: item.id,
-    title: item.headline,
-    url: item.primaryUrl,
-    source: item.primarySource,
-    publishedAt: Number.isNaN(publishedAt.getTime()) ? new Date(0) : publishedAt,
-    summary: item.summary,
-    topic,
-    topics,
-    sectors,
-    categories: uniqueStrings([...topics, ...sectors]),
-    tickers,
-    sentiment: item.sentiment,
-    scores,
-    importance: scores.importance,
-    isBreaking: !!item.flags?.breaking,
-    isDeveloping: !!item.flags?.developing,
-    items: item.items?.map(mapCloudNewsStoryItem) ?? [],
-  };
-}
-
-function mapCloudNewsItem(item: CloudNewsPayload): NewsItem {
-  const article = mapCloudNewsArticle(item);
-  return {
-    title: article.title,
-    url: article.url,
-    source: article.source,
-    publishedAt: article.publishedAt,
-    summary: article.summary,
-  };
-}
-
-function cloudNewsParams(query: NewsQuery): Parameters<typeof apiClient.getCloudNews>[0] {
-  const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
-  return {
-    feed,
-    ticker: feed === "ticker" ? query.ticker : undefined,
-    exchange: feed === "ticker" ? publicExchange(query.exchange) : undefined,
-    tickerTier: feed === "ticker" ? query.tickerTier ?? "primary" : query.tickerTier,
-    tickerRelations: query.tickerRelations,
-    limit: query.limit,
-    topics: query.topics,
-    categories: query.topics ? undefined : query.categories,
-    sectors: query.sectors,
-    sources: query.sources,
-    excludeSources: query.excludeSources,
-    sentiment: query.sentiment,
-    minImportance: query.minImportance,
-    minUrgency: query.minUrgency,
-    breaking: query.breaking,
-    since: query.since,
-    until: query.until,
-    cursor: query.cursor,
-  };
-}
-
 function quoteTargetKey(symbol: string, exchange?: string): string {
   return canonicalTickerKey(symbol, exchange);
-}
-
-function toCloudInterval(interval: string): string {
-  switch (interval) {
-    case "1m":
-      return "1min";
-    case "5m":
-      return "5min";
-    case "15m":
-      return "15min";
-    case "30m":
-      return "30min";
-    case "45m":
-      return "45min";
-    case "1d":
-      return "1day";
-    case "1wk":
-      return "1week";
-    case "1mo":
-      return "1month";
-    default:
-      return interval;
-  }
-}
-
-function padTimePart(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-function formatCloudDateTime(date: Date, includeTime: boolean, exchange = ""): string {
-  if (includeTime) {
-    const timeZone = resolveExchangeTimeZone(exchange);
-    if (timeZone) {
-      const parts = getZonedDateParts(date, timeZone);
-      return `${parts.get("year")}-${parts.get("month")}-${parts.get("day")} ${parts.get("hour")}:${parts.get("minute")}:${parts.get("second")}`;
-    }
-  }
-
-  const year = includeTime ? date.getFullYear() : date.getUTCFullYear();
-  const month = padTimePart((includeTime ? date.getMonth() : date.getUTCMonth()) + 1);
-  const day = padTimePart(includeTime ? date.getDate() : date.getUTCDate());
-  if (!includeTime) {
-    return `${year}-${month}-${day}`;
-  }
-  const hours = padTimePart(date.getHours());
-  const minutes = padTimePart(date.getMinutes());
-  const seconds = padTimePart(date.getSeconds());
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-}
-
-function getRangeStartDate(range: TimeRange, endDate = new Date()): Date {
-  const startDate = new Date(endDate);
-  switch (range) {
-    case "1D":
-      startDate.setDate(startDate.getDate() - 1);
-      break;
-    case "1W":
-      startDate.setDate(startDate.getDate() - 7);
-      break;
-    case "1M":
-      startDate.setMonth(startDate.getMonth() - 1);
-      break;
-    case "3M":
-      startDate.setMonth(startDate.getMonth() - 3);
-      break;
-    case "6M":
-      startDate.setMonth(startDate.getMonth() - 6);
-      break;
-    case "1Y":
-      startDate.setFullYear(startDate.getFullYear() - 1);
-      break;
-    case "5Y":
-      startDate.setFullYear(startDate.getFullYear() - 5);
-      break;
-    case "ALL":
-      startDate.setFullYear(startDate.getFullYear() - 20);
-      break;
-  }
-  return startDate;
-}
-
-function toHistoryRequest(range: TimeRange): {
-  interval: string;
-  outputsize: number;
-  rangeKey: TimeRange;
-} {
-  switch (range) {
-    case "1D":
-      return { interval: "5min", outputsize: 24 * 12, rangeKey: range };
-    case "1W":
-      return { interval: "1h", outputsize: 7 * 24, rangeKey: range };
-    case "1M":
-      return { interval: "1day", outputsize: 31, rangeKey: range };
-    case "3M":
-      return { interval: "1day", outputsize: 93, rangeKey: range };
-    case "6M":
-      return { interval: "1day", outputsize: 186, rangeKey: range };
-    case "1Y":
-      return { interval: "1day", outputsize: 366, rangeKey: range };
-    case "5Y":
-      return { interval: "1week", outputsize: 261, rangeKey: range };
-    case "ALL":
-      return { interval: "1month", outputsize: 240, rangeKey: range };
-    default:
-      return { interval: "1day", outputsize: 366, rangeKey: range };
-  }
 }
 
 async function requireVerifiedSession(): Promise<void> {
@@ -465,10 +95,6 @@ async function requireVerifiedSession(): Promise<void> {
   if (!user) {
     throw createProviderMiss("Gloomberb Cloud requires signup and email verification");
   }
-}
-
-function isEmptyCloudStatus(status: CloudMarketResponse<unknown>["status"]): boolean {
-  return status === "empty" || status === "unsupported";
 }
 
 function unwrapRequiredCloudResponse<T>(response: CloudMarketResponse<T>, message: string): T {

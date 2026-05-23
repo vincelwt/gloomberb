@@ -50,7 +50,7 @@ export interface MultiSelectDialogButtonProps {
 
 type DialogTriggerEvent = { stopPropagation?: () => void; preventDefault?: () => void };
 
-export interface MultiSelectDialogTriggerProps {
+interface MultiSelectDialogTriggerProps {
   buttonLabel: string;
   buttonText: string;
   summary: string;
@@ -261,7 +261,7 @@ export function MultiSelectDialogButton({
     if (disabled) return;
     void dialog.alert({
       closeOnClickOutside: true,
-      content: (ctx) => (
+      content: (ctx: AlertContext) => (
         <MultiSelectDialogContent
           {...ctx}
           title={title ?? label}

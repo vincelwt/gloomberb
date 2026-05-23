@@ -5,7 +5,7 @@ import { getTheme, DEFAULT_THEME, type Theme } from "./themes";
 // React components re-read these on each render triggered by the SET_THEME action.
 export const colors: Omit<Theme, "name" | "description"> = { ...getTheme(DEFAULT_THEME) };
 
-export type ColorKey = keyof typeof colors;
+type ColorKey = keyof typeof colors;
 
 let currentThemeId = DEFAULT_THEME;
 let transientPreviewThemeId: string | null = null;

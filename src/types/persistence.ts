@@ -6,7 +6,7 @@ export interface CachePolicy {
 
 export type CachePolicyMap = Partial<Record<string, CachePolicy>>;
 
-export interface PersistedResourceMetadata {
+interface PersistedResourceMetadata {
   fetchedAt: number;
   staleAt: number;
   expiresAt: number;

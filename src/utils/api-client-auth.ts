@@ -1,0 +1,167 @@
+import { ApiRequestError, isHardSessionInvalidMessage } from "./api-client-errors";
+import type {
+  AccountProfile,
+  AccountProfileUpdate,
+  AuthUser,
+  BuildoutAccountResponse,
+  BuildoutTokenResponse,
+  CloudVerificationResponse,
+  PersistedAuthUser,
+} from "./api-client-types";
+
+type CloudApiRequest = <T>(path: string, options?: RequestInit) => Promise<T>;
+
+interface CloudAuthApiOptions {
+  getCurrentUser(): AuthUser | null;
+  getSessionToken(): string | null;
+  request: CloudApiRequest;
+  requireCapturedSession(message: string): void;
+  setCurrentUser(user: AuthUser | null): void;
+  setSessionToken(token: string | null): void;
+  updateCurrentUser(updater: (user: AuthUser) => AuthUser): void;
+}
+
+export class CloudAuthApi {
+  constructor(private readonly options: CloudAuthApiOptions) {}
+
+  restoreCachedUser(user: PersistedAuthUser | null): void {
+    if (!this.options.getSessionToken() || !user?.id) {
+      this.options.setCurrentUser(null);
+      return;
+    }
+    this.options.setCurrentUser({
+      id: user.id,
+      name: typeof user.name === "string" && user.name.length > 0
+        ? user.name
+        : user.username ?? "User",
+      email: typeof user.email === "string" ? user.email : "",
+      username: typeof user.username === "string" ? user.username : null,
+      emailVerified: user.emailVerified === true,
+      image: typeof user.image === "string" ? user.image : null,
+      createdAt: typeof user.createdAt === "string" ? user.createdAt : "",
+      updatedAt: typeof user.updatedAt === "string" ? user.updatedAt : "",
+    });
+  }
+
+  async ensureVerifiedSession(): Promise<AuthUser | null> {
+    if (!this.options.getSessionToken()) return null;
+    if (!this.options.getCurrentUser()) {
+      await this.getSession();
+    }
+    const user = this.options.getCurrentUser();
+    return user?.emailVerified ? user : null;
+  }
+
+  async signUp(email: string, username: string, name: string, password: string): Promise<AuthUser> {
+    const result = await this.options.request<{ user: AuthUser }>("/auth/sign-up/email", {
+      method: "POST",
+      body: JSON.stringify({ email, username, name, password }),
+    });
+    this.options.requireCapturedSession(
+      "Account created, but Gloomberb could not save the login session. Please try logging in again.",
+    );
+    this.options.setCurrentUser(result.user);
+    return result.user;
+  }
+
+  async signIn(email: string, password: string): Promise<AuthUser> {
+    const result = await this.options.request<{ user: AuthUser }>("/auth/sign-in/email", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
+    this.options.requireCapturedSession(
+      "Logged in, but Gloomberb could not save the login session. Please try again.",
+    );
+    this.options.setCurrentUser(result.user);
+    return result.user;
+  }
+
+  async signOut(): Promise<void> {
+    try {
+      await this.options.request("/auth/sign-out", { method: "POST" });
+    } finally {
+      this.options.setSessionToken(null);
+    }
+  }
+
+  async getSession(): Promise<AuthUser | null> {
+    try {
+      const result = await this.options.request<{ user: AuthUser }>("/auth/get-session", {
+        method: "GET",
+      });
+      const user = result?.user ?? null;
+      this.options.setCurrentUser(user);
+      return user;
+    } catch (error) {
+      if (error instanceof ApiRequestError && isHardSessionInvalidMessage(error.message)) {
+        this.options.setSessionToken(null);
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async sendVerification(): Promise<CloudVerificationResponse> {
+    return this.options.request<CloudVerificationResponse>("/cloud/auth/send-verification", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
+
+  async getAccountProfile(): Promise<AccountProfile> {
+    const result = await this.options.request<{ profile: AccountProfile }>("/account/profile", {
+      method: "GET",
+    });
+    return result.profile;
+  }
+
+  async getBuildoutAccount(): Promise<BuildoutAccountResponse> {
+    return this.options.request<BuildoutAccountResponse>("/account/buildout", {
+      method: "GET",
+    });
+  }
+
+  async getBuildoutToken(): Promise<BuildoutTokenResponse> {
+    return this.options.request<BuildoutTokenResponse>("/account/buildout/token", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
+
+  async updateAccountProfile(update: AccountProfileUpdate): Promise<AccountProfile> {
+    const result = await this.options.request<{ profile: AccountProfile }>("/account/profile", {
+      method: "PATCH",
+      body: JSON.stringify(update),
+    });
+    const profile = result.profile;
+    if (this.options.getCurrentUser()?.id === profile.id) {
+      this.options.updateCurrentUser((currentUser) => ({
+        ...currentUser,
+        name: profile.name,
+        username: profile.username,
+        plan: profile.plan,
+        company: profile.company,
+        title: profile.title,
+        bio: profile.bio,
+        profilePublic: profile.profilePublic,
+        publicEmail: profile.publicEmail,
+        xAccount: profile.xAccount,
+        sharedPortfolioId: profile.sharedPortfolioId,
+        acceptUnknownDms: profile.acceptUnknownDms,
+        updatedAt: profile.updatedAt ?? currentUser.updatedAt,
+      }));
+    }
+    return profile;
+  }
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await this.options.request("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({
+        currentPassword,
+        newPassword,
+        revokeOtherSessions: false,
+      }),
+    });
+  }
+}

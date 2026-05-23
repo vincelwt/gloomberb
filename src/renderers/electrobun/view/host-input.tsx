@@ -1,0 +1,294 @@
+/// <reference lib="dom" />
+/** @jsxImportSource react */
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from "react";
+import type { InputRenderable, TextareaRenderable } from "../../../ui/host";
+import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
+import { NATIVE_CONTEXT_MENU_SUPPORTED, showEditableTextContextMenu } from "./host-native";
+import { cellHeight, cellWidth, cleanDomProps, commonStyle } from "./host-style";
+
+function textInputStyle(props: Record<string, unknown>, multiline: boolean): CSSProperties {
+  const focused = props.focused === true;
+  const textColor = focused && typeof props.focusedTextColor === "string"
+    ? props.focusedTextColor
+    : props.textColor;
+  const backgroundColor = focused && typeof props.focusedBackgroundColor === "string"
+    ? props.focusedBackgroundColor
+    : props.backgroundColor;
+
+  return {
+    ...commonStyle(props),
+    display: "block",
+    resize: "none",
+    border: "none",
+    outline: "none",
+    color: typeof textColor === "string" ? textColor : "var(--gloom-text)",
+    backgroundColor: typeof backgroundColor === "string" ? backgroundColor : "transparent",
+    whiteSpace: multiline && props.wrapText ? "pre-wrap" : "pre",
+    overflow: multiline ? "auto" : "hidden",
+    width: cellWidth(props.width) ?? "100%",
+    height: cellHeight(props.height) ?? (multiline ? "100%" : "var(--cell-h)"),
+    padding: 0,
+    margin: 0,
+    caretColor: typeof props.cursorColor === "string" ? props.cursorColor : "auto",
+    ...(props.style as CSSProperties | undefined),
+  };
+}
+
+function getStringProp(props: Record<string, unknown>, key: string): string | undefined {
+  const value = props[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function callTextHandler(handler: unknown, value: string): void {
+  if (typeof handler === "function") {
+    (handler as (value: string) => void)(value);
+  }
+}
+
+function useEditableValue(props: Record<string, unknown>) {
+  const controlledValue = getStringProp(props, "value");
+  const [internalValue, setInternalValue] = useState(getStringProp(props, "initialValue") ?? "");
+  const value = controlledValue ?? internalValue;
+  const valueRef = useRef(value);
+  valueRef.current = value;
+
+  const setValue = (nextValue: string) => {
+    valueRef.current = nextValue;
+    if (controlledValue == null) {
+      setInternalValue(nextValue);
+    }
+  };
+
+  return { value, valueRef, setValue };
+}
+
+type WebVisualCursor = TextareaRenderable["visualCursor"];
+
+function textareaColumnCount(props: Record<string, unknown>, element: HTMLTextAreaElement | null): number {
+  if (typeof props.width === "number") return Math.max(1, Math.floor(props.width));
+  const width = element?.clientWidth ?? 0;
+  return Math.max(1, Math.floor(width / WEB_CELL_WIDTH));
+}
+
+function wrappedLineCount(line: string, columns: number, wrap: boolean): number {
+  if (!wrap) return 1;
+  return Math.max(1, Math.ceil(line.length / columns));
+}
+
+function textareaMetrics(
+  text: string,
+  offset: number,
+  columns: number,
+  wrap: boolean,
+): { virtualLineCount: number; visualCursor: WebVisualCursor } {
+  const lines = text.split("\n");
+  const clampedOffset = Math.max(0, Math.min(offset, text.length));
+  let consumed = 0;
+  let virtualLineCount = 0;
+  let visualCursor: WebVisualCursor = {
+    visualRow: 0,
+    visualCol: 0,
+    logicalRow: 0,
+    logicalCol: 0,
+    offset: clampedOffset,
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const lineStart = consumed;
+    const lineEnd = lineStart + line.length;
+    const lineVirtualRows = wrappedLineCount(line, columns, wrap);
+    const cursorIsOnLine = clampedOffset <= lineEnd || index === lines.length - 1;
+
+    if (cursorIsOnLine) {
+      const logicalCol = Math.max(0, Math.min(clampedOffset - lineStart, line.length));
+      const visualRowInLine = wrap
+        ? Math.min(Math.floor(logicalCol / columns), lineVirtualRows - 1)
+        : 0;
+      visualCursor = {
+        visualRow: virtualLineCount + visualRowInLine,
+        visualCol: wrap ? logicalCol % columns : logicalCol,
+        logicalRow: index,
+        logicalCol,
+        offset: clampedOffset,
+      };
+    }
+
+    virtualLineCount += lineVirtualRows;
+    consumed = lineEnd + 1;
+    if (cursorIsOnLine) {
+      for (let remaining = index + 1; remaining < lines.length; remaining += 1) {
+        virtualLineCount += wrappedLineCount(lines[remaining] ?? "", columns, wrap);
+      }
+      break;
+    }
+  }
+
+  return {
+    virtualLineCount: Math.max(1, virtualLineCount),
+    visualCursor,
+  };
+}
+
+export const WebInput = forwardRef<InputRenderable, Record<string, unknown>>(function WebInput(props, ref) {
+  const elementRef = useRef<HTMLInputElement | null>(null);
+  const { value, valueRef, setValue } = useEditableValue(props);
+  const [cursorOffset, setCursorOffset] = useState(value.length);
+
+  useEffect(() => {
+    if (props.focused === true) {
+      elementRef.current?.focus();
+    }
+  }, [props.focused]);
+
+  useImperativeHandle(ref, () => ({
+    editBuffer: {
+      getText: () => valueRef.current,
+      setText: (nextText: string) => setValue(nextText),
+    },
+    get cursorOffset() {
+      return cursorOffset;
+    },
+    focus: () => elementRef.current?.focus(),
+  }), [cursorOffset, setValue, valueRef]);
+
+  const handleValueChange = (nextValue: string) => {
+    setValue(nextValue);
+    setCursorOffset(elementRef.current?.selectionStart ?? nextValue.length);
+    callTextHandler(props.onInput, nextValue);
+    callTextHandler(props.onChange, nextValue);
+    callTextHandler(props.onCursorChange, nextValue);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter" && typeof props.onSubmit === "function") {
+      event.preventDefault();
+      (props.onSubmit as (value: string) => void)(valueRef.current);
+    }
+  };
+
+  return (
+    <input
+      {...cleanDomProps(props)}
+      ref={elementRef}
+      value={value}
+      autoCorrect="off"
+      autoCapitalize="off"
+      autoComplete="off"
+      spellCheck={false}
+      placeholder={getStringProp(props, "placeholder")}
+      onChange={(event) => handleValueChange(event.currentTarget.value)}
+      onKeyDown={handleKeyDown}
+      onContextMenu={(event) => {
+        if (!NATIVE_CONTEXT_MENU_SUPPORTED) return;
+        elementRef.current?.focus();
+        event.preventDefault();
+        event.stopPropagation();
+        void showEditableTextContextMenu();
+      }}
+      onSelect={() => {
+        setCursorOffset(elementRef.current?.selectionStart ?? valueRef.current.length);
+        callTextHandler(props.onCursorChange, valueRef.current);
+      }}
+      style={textInputStyle(props, false)}
+    />
+  );
+});
+
+export const WebTextarea = forwardRef<TextareaRenderable, Record<string, unknown>>(function WebTextarea(props, ref) {
+  const elementRef = useRef<HTMLTextAreaElement | null>(null);
+  const { value, valueRef, setValue } = useEditableValue(props);
+  const [cursorOffset, setCursorOffset] = useState(value.length);
+
+  useEffect(() => {
+    if (props.focused === true) {
+      elementRef.current?.focus();
+    }
+  }, [props.focused]);
+
+  useImperativeHandle(ref, () => ({
+    editBuffer: {
+      getText: () => valueRef.current,
+      setText: (nextText: string) => setValue(nextText),
+    },
+    get cursorOffset() {
+      return cursorOffset;
+    },
+    get virtualLineCount() {
+      const metrics = textareaMetrics(
+        valueRef.current,
+        elementRef.current?.selectionStart ?? cursorOffset,
+        textareaColumnCount(props, elementRef.current),
+        props.wrapText === true || props.wrapMode === "word" || props.wrapMode === "char",
+      );
+      return metrics.virtualLineCount;
+    },
+    get visualCursor() {
+      return textareaMetrics(
+        valueRef.current,
+        elementRef.current?.selectionStart ?? cursorOffset,
+        textareaColumnCount(props, elementRef.current),
+        props.wrapText === true || props.wrapMode === "word" || props.wrapMode === "char",
+      ).visualCursor;
+    },
+    focus: () => elementRef.current?.focus(),
+    setText: (nextText: string) => setValue(nextText),
+    hasSelection: () => {
+      const element = elementRef.current;
+      return !!element && element.selectionStart !== element.selectionEnd;
+    },
+    syntaxStyle: null,
+    addHighlight: () => {},
+    clearLineHighlights: () => {},
+  }), [cursorOffset, props, setValue, valueRef]);
+
+  const handleValueChange = (nextValue: string) => {
+    setValue(nextValue);
+    setCursorOffset(elementRef.current?.selectionStart ?? nextValue.length);
+    callTextHandler(props.onInput, nextValue);
+    callTextHandler(props.onChange, nextValue);
+    callTextHandler(props.onCursorChange, nextValue);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey && typeof props.onSubmit === "function") {
+      event.preventDefault();
+      (props.onSubmit as (value: string) => void)(valueRef.current);
+    }
+  };
+
+  return (
+    <textarea
+      {...cleanDomProps(props)}
+      ref={elementRef}
+      value={value}
+      autoCorrect="off"
+      autoCapitalize="off"
+      autoComplete="off"
+      spellCheck={false}
+      placeholder={getStringProp(props, "placeholder")}
+      onChange={(event) => handleValueChange(event.currentTarget.value)}
+      onKeyDown={handleKeyDown}
+      onContextMenu={(event) => {
+        if (!NATIVE_CONTEXT_MENU_SUPPORTED) return;
+        elementRef.current?.focus();
+        event.preventDefault();
+        event.stopPropagation();
+        void showEditableTextContextMenu();
+      }}
+      onSelect={() => {
+        setCursorOffset(elementRef.current?.selectionStart ?? valueRef.current.length);
+        callTextHandler(props.onCursorChange, valueRef.current);
+      }}
+      style={textInputStyle(props, true)}
+    />
+  );
+});

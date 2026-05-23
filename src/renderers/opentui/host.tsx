@@ -7,7 +7,6 @@ import type { NativeRendererHost, PixelResolution, RendererHost } from "../../ui
 import { colors } from "../../theme/colors";
 
 export { useKeyboard, useTerminalDimensions };
-export type { CliRenderer };
 
 export interface OpenTuiHost {
   renderer: CliRenderer;
@@ -25,6 +24,8 @@ export function toKeyEventLike(event: {
   meta?: boolean;
   preventDefault?: () => void;
   stopPropagation?: () => void;
+  defaultPrevented?: boolean;
+  propagationStopped?: boolean;
   sequence?: string;
   key?: string;
   super?: boolean;

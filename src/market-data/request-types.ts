@@ -12,7 +12,7 @@ export interface InstrumentRef {
   instrument?: BrokerContractRef | null;
 }
 
-export type ChartGranularity = "range" | "detail" | "resolution";
+type ChartGranularity = "range" | "detail" | "resolution";
 
 export interface ChartRequest {
   instrument: InstrumentRef;

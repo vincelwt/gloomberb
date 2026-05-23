@@ -1,17 +1,13 @@
 import { Box } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Tabs,
   usePaneFooter,
   type DataTableKeyEvent,
-  type PaneFooterSegment,
   type TickerListVisibleRange,
 } from "../../../components";
-import { createRowValueCache } from "../../../components/ui/row-value-cache";
 import { usePluginTickerActions } from "../../plugin-runtime";
-import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
-import { instrumentFromTicker, quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
 import { useAppActive } from "../../../state/app-activity";
 import {
   useAppSelector,
@@ -20,19 +16,16 @@ import {
   usePaneStateValue,
   type CollectionSortPreference,
 } from "../../../state/app-context";
-import { useQuoteStreaming } from "../../../state/use-quote-streaming";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
-import type { AppConfig, ColumnConfig } from "../../../types/config";
 import type { TickerRecord } from "../../../types/ticker";
 import type { PaneProps } from "../../../types/plugin";
-import type { TickerFinancials } from "../../../types/financials";
-import { calculatePortfolioSummaryTotals, getSortValue, resolveCollectionSortPreference, type ColumnContext } from "./metrics";
+import { resolveCollectionSortPreference, type ColumnContext } from "./metrics";
 import {
   PortfolioCashMarginDrawer,
   shouldToggleCashMarginDrawer,
   usePortfolioAccountState,
 } from "./header";
-import { buildPortfolioSummarySegments, type ResolvedPortfolioAccountState } from "./summary";
+import { buildPortfolioFooterSegments } from "./summary";
 import {
   getCollectionEntries,
   getPortfolioPaneSettings,
@@ -40,184 +33,19 @@ import {
   resolveScopedCollectionEntries,
   resolveVisibleColumns,
 } from "./settings";
-import { formatPercentRaw } from "../../../utils/format";
-import { getMostRecentQuoteUpdate } from "../../../utils/quote-time";
-import { isQuoteStaleForCurrentSession } from "../../../utils/quote-freshness";
-import { priceColor } from "../../../theme/colors";
 import { useQuoteFlashMap } from "../../../components/quote-flash";
 import { PortfolioTickerTable } from "./table";
 import { useThrottledCursorSymbol } from "./use-throttled-cursor-symbol";
 import { isManualPortfolio } from "./mutations";
 import { QuickAddTickerInput, type QuickAddCollectionKind } from "./quick-add";
-import { PRICE_SPARKLINE_COLUMN_ID } from "../../../components/price-sparkline-view";
-
-const VISIBLE_FINANCIAL_REFRESH_COOLDOWN_MS = 5 * 60_000;
-const VISIBLE_FINANCIAL_WARMUP_DELAY_MS = 350;
-const VISIBLE_SNAPSHOT_WARMUP_BATCH_LIMIT = 3;
-const STREAM_OVERSCAN_ROWS = 6;
-const FUNDAMENTAL_COLUMN_IDS = new Set(["pe", "forward_pe", "dividend_yield"]);
-const sortValueCache = createRowValueCache<string, ReturnType<typeof getSortValue>>(5000);
-
-interface VisibleWarmupRequirements {
-  fundamentals: boolean;
-  priceHistory: boolean;
-}
-
-function resolveVisibleWarmupRequirements(columns: ColumnConfig[]): VisibleWarmupRequirements {
-  return {
-    fundamentals: columns.some((column) => FUNDAMENTAL_COLUMN_IDS.has(column.id)),
-    priceHistory: columns.some((column) => column.id === PRICE_SPARKLINE_COLUMN_ID),
-  };
-}
-
-function visibleWarmupKey(kind: "quote" | "snapshot", ticker: TickerRecord): string {
-  return `${kind}:${ticker.metadata.ticker}:${ticker.metadata.exchange ?? ""}`;
-}
-
-function needsVisibleQuoteWarmup(financials: TickerFinancials | undefined, now = Date.now()): boolean {
-  return !financials?.quote || isQuoteStaleForCurrentSession(financials.quote, now);
-}
-
-function needsVisibleSnapshotWarmup(
-  ticker: TickerRecord,
-  financials: TickerFinancials | undefined,
-  requirements: VisibleWarmupRequirements,
-): boolean {
-  if (ticker.metadata.assetCategory === "OPT") return false;
-  if (!financials?.quote) return false;
-  if (requirements.fundamentals && Object.keys(financials.fundamentals ?? {}).length === 0) return true;
-  return requirements.priceHistory && financials.priceHistory.length === 0;
-}
-
-export function selectStreamTickers(
-  tickers: TickerRecord[],
-  visibleRange: { start: number; end: number },
-  selectedSymbol?: string | null,
-) {
-  const start = Math.max(0, visibleRange.start - STREAM_OVERSCAN_ROWS);
-  const end = Math.min(tickers.length, visibleRange.end + STREAM_OVERSCAN_ROWS);
-  const visible = tickers.slice(start, end);
-  if (!selectedSymbol || visible.some((ticker) => ticker.metadata.ticker === selectedSymbol)) {
-    return visible;
-  }
-  const selectedTicker = tickers.find((ticker) => ticker.metadata.ticker === selectedSymbol);
-  return selectedTicker ? [...visible, selectedTicker] : visible;
-}
-
-function buildTrackedCurrencies(
-  tickers: TickerRecord[],
-  financialsMap: Map<string, TickerFinancials>,
-  accountState: ResolvedPortfolioAccountState | null,
-  baseCurrency: string,
-): string[] {
-  const currencies = new Set<string>([baseCurrency]);
-
-  for (const ticker of tickers) {
-    if (ticker.metadata.currency) {
-      currencies.add(ticker.metadata.currency);
-    }
-    for (const position of ticker.metadata.positions) {
-      if (position.currency) {
-        currencies.add(position.currency);
-      }
-    }
-    const financials = financialsMap.get(ticker.metadata.ticker);
-    if (financials?.quote?.currency) {
-      currencies.add(financials.quote.currency);
-    }
-  }
-
-  for (const balance of accountState?.visibleCashBalances ?? []) {
-    if (balance.currency) {
-      currencies.add(balance.currency);
-    }
-    if (balance.baseCurrency) {
-      currencies.add(balance.baseCurrency);
-    }
-  }
-
-  return [...currencies];
-}
-
-function getCollectionTypeFromConfig(config: AppConfig, collectionId: string | null): "portfolio" | "watchlist" | null {
-  if (!collectionId) return null;
-  if (config.portfolios.some((portfolio) => portfolio.id === collectionId)) return "portfolio";
-  if (config.watchlists.some((watchlist) => watchlist.id === collectionId)) return "watchlist";
-  return null;
-}
-
-function getCollectionTickersFromConfig(
-  config: AppConfig,
-  tickersBySymbol: Map<string, TickerRecord>,
-  collectionId: string | null,
-): TickerRecord[] {
-  if (!collectionId) return [];
-  const isPortfolio = config.portfolios.some((portfolio) => portfolio.id === collectionId);
-  const isWatchlist = !isPortfolio && config.watchlists.some((watchlist) => watchlist.id === collectionId);
-  if (!isPortfolio && !isWatchlist) return [];
-  return [...tickersBySymbol.values()]
-    .filter((ticker) => (
-      isPortfolio
-        ? ticker.metadata.portfolios.includes(collectionId)
-        : ticker.metadata.watchlists.includes(collectionId)
-    ))
-    .sort((left, right) => left.metadata.ticker.localeCompare(right.metadata.ticker));
-}
-
-function sortTickers(
-  tickers: TickerRecord[],
-  financialsMap: Map<string, TickerFinancials>,
-  sortPreference: CollectionSortPreference,
-  columnContext: ColumnContext,
-  columns: ColumnConfig[],
-) {
-  if (!sortPreference.columnId) return tickers;
-
-  const sortColumn = columns.find((column) => column.id === sortPreference.columnId);
-  if (!sortColumn) return tickers;
-  const exchangeRatesVersion = [...columnContext.exchangeRates]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([currency, rate]) => `${currency}:${rate}`)
-    .join(",");
-  const sortContextVersion = [
-    sortColumn.id,
-    columnContext.activeTab ?? "",
-    columnContext.baseCurrency,
-    exchangeRatesVersion,
-    sortColumn.id === "latency" ? columnContext.now : 0,
-  ].join("|");
-  const sortValues = new Map<string, ReturnType<typeof getSortValue>>();
-  for (const ticker of tickers) {
-    const financials = financialsMap.get(ticker.metadata.ticker);
-    const financialsVersion = [
-      financials?.quote?.lastUpdated ?? 0,
-      Object.keys(financials?.fundamentals ?? {}).length,
-      financials?.priceHistory.length ?? 0,
-    ].join(":");
-    const positionsVersion = JSON.stringify(ticker.metadata.positions);
-    const version = `${sortContextVersion}|${financialsVersion}|${positionsVersion}`;
-    sortValues.set(ticker.metadata.ticker, sortValueCache.get(
-      `${ticker.metadata.ticker}:${sortColumn.id}`,
-      version,
-      () => getSortValue(sortColumn, ticker, financials, columnContext),
-    ));
-  }
-
-  return [...tickers].sort((leftTicker, rightTicker) => {
-    const leftValue = sortValues.get(leftTicker.metadata.ticker) ?? null;
-    const rightValue = sortValues.get(rightTicker.metadata.ticker) ?? null;
-
-    if (leftValue == null && rightValue == null) return 0;
-    if (leftValue == null) return 1;
-    if (rightValue == null) return -1;
-
-    const comparison = typeof leftValue === "string" && typeof rightValue === "string"
-      ? leftValue.localeCompare(rightValue)
-      : (leftValue as number) - (rightValue as number);
-
-    return sortPreference.direction === "asc" ? comparison : -comparison;
-  });
-}
+import {
+  buildTrackedCurrencies,
+  getCollectionTickersFromConfig,
+  getCollectionTypeFromConfig,
+  resolveVisibleWarmupRequirements,
+  sortTickers,
+} from "./pane-data";
+import { usePortfolioPaneStreaming } from "./pane-streaming";
 
 export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
@@ -240,9 +68,6 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const [streamWindow, setStreamWindow] = useState({ start: 0, end: 24 });
   const [quickAddFocused, setQuickAddFocused] = useState(false);
 
-  const mountedRef = useRef(true);
-  const warmupInFlightRef = useRef(new Set<string>());
-  const warmupAttemptRef = useRef(new Map<string, number>());
   const {
     cursorSymbol,
     setCursorSymbol,
@@ -276,7 +101,6 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     [activeCollectionId, config, tickersBySymbol],
   );
   const marketFinancialsMap = useTickerFinancialsMap(tickers);
-  const sharedCoordinator = getSharedMarketDataCoordinator();
   const financialsMap = useMemo(() => {
     const merged = new Map(cachedFinancials);
     for (const [symbol, financials] of marketFinancialsMap) {
@@ -416,12 +240,6 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   }, [activeCollectionId, cancelPendingCursorSymbol, currentCollectionId, setCurrentCollectionId]);
 
   useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
     if (!appActive) return;
     const timerId = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timerId);
@@ -439,166 +257,29 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     }
   }, [cursorSymbol, setCursorSymbol, sortedTickers]);
 
-  const streamTickers = useMemo(
-    () => selectStreamTickers(sortedTickers, streamWindow, cursorSymbol),
-    [cursorSymbol, sortedTickers, streamWindow],
-  );
-  const priorityStreamSymbols = useMemo(
-    () => new Set(streamTickers.map((ticker) => ticker.metadata.ticker)),
-    [streamTickers],
-  );
-  const streamSurface = isPortfolioTab ? "portfolio" : "watchlist";
-  const streamTargets = useMemo(() => (
-    sortedTickers
-      .map((ticker) => {
-        const target = quoteSubscriptionTargetFromTicker(ticker, ticker.metadata.ticker, "provider");
-        if (!target) return null;
-        const selected = ticker.metadata.ticker === cursorSymbol;
-        const visible = priorityStreamSymbols.has(ticker.metadata.ticker);
-        return {
-          ...target,
-          surface: streamSurface,
-          visible,
-          selected,
-          weight: selected ? 100 : visible ? 80 : 10,
-        };
-      })
-      .filter((target): target is NonNullable<typeof target> => target != null)
-  ), [cursorSymbol, priorityStreamSymbols, sortedTickers, streamSurface]);
-  const visibleFinancialTickers = useMemo(
-    () => sortedTickers.slice(streamWindow.start, streamWindow.end),
-    [sortedTickers, streamWindow.end, streamWindow.start],
-  );
+  usePortfolioPaneStreaming({
+    appActive,
+    focused,
+    sortedTickers,
+    cursorSymbol,
+    streamWindow,
+    isPortfolioTab,
+    financialsMap,
+    visibleWarmupRequirements,
+  });
 
-  useEffect(() => {
-    if (!appActive) return;
-    if (!focused) return;
-    if (!sharedCoordinator) return;
-
-    const nowTimestamp = Date.now();
-    const quoteQueue: TickerRecord[] = [];
-    const snapshotQueue: TickerRecord[] = [];
-    for (const ticker of visibleFinancialTickers) {
-      const financials = financialsMap.get(ticker.metadata.ticker);
-      const quoteKey = visibleWarmupKey("quote", ticker);
-      if (
-        needsVisibleQuoteWarmup(financials, nowTimestamp)
-        && !warmupInFlightRef.current.has(quoteKey)
-        && nowTimestamp - (warmupAttemptRef.current.get(quoteKey) ?? 0) >= VISIBLE_FINANCIAL_REFRESH_COOLDOWN_MS
-      ) {
-        quoteQueue.push(ticker);
-        continue;
-      }
-
-      const snapshotKey = visibleWarmupKey("snapshot", ticker);
-      if (
-        needsVisibleSnapshotWarmup(ticker, financials, visibleWarmupRequirements)
-        && !warmupInFlightRef.current.has(snapshotKey)
-        && nowTimestamp - (warmupAttemptRef.current.get(snapshotKey) ?? 0) >= VISIBLE_FINANCIAL_REFRESH_COOLDOWN_MS
-      ) {
-        snapshotQueue.push(ticker);
-      }
-    }
-    const limitedSnapshotQueue = snapshotQueue.slice(0, VISIBLE_SNAPSHOT_WARMUP_BATCH_LIMIT);
-    if (quoteQueue.length === 0 && limitedSnapshotQueue.length === 0) return;
-
-    let cancelled = false;
-    const runBatch = async (): Promise<void> => {
-      const quoteEntries = quoteQueue.flatMap((ticker) => {
-        const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
-        if (!instrument) return [];
-        const key = visibleWarmupKey("quote", ticker);
-        warmupInFlightRef.current.add(key);
-        warmupAttemptRef.current.set(key, nowTimestamp);
-        return [{ key, instrument }];
-      });
-      const snapshotEntries = limitedSnapshotQueue.flatMap((ticker) => {
-        const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
-        if (!instrument) return [];
-        const key = visibleWarmupKey("snapshot", ticker);
-        warmupInFlightRef.current.add(key);
-        warmupAttemptRef.current.set(key, nowTimestamp);
-        return [{ key, instrument }];
-      });
-      if (quoteEntries.length === 0 && snapshotEntries.length === 0) return;
-      try {
-        await Promise.allSettled([
-          quoteEntries.length > 0
-            ? sharedCoordinator.loadQuotesBatch(quoteEntries.map((entry) => entry.instrument))
-            : Promise.resolve(),
-          snapshotEntries.length > 0
-            ? sharedCoordinator.loadSnapshotsBatch(snapshotEntries.map((entry) => entry.instrument))
-            : Promise.resolve(),
-        ]);
-      } catch {
-        // Best-effort warmup for visible rows only.
-      } finally {
-        for (const entry of [...quoteEntries, ...snapshotEntries]) {
-          warmupInFlightRef.current.delete(entry.key);
-        }
-      }
-    };
-
-    const timeoutId = setTimeout(() => {
-      if (!cancelled && mountedRef.current) void runBatch();
-    }, VISIBLE_FINANCIAL_WARMUP_DELAY_MS);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-    };
-  }, [appActive, financialsMap, focused, sharedCoordinator, visibleFinancialTickers, visibleWarmupRequirements]);
-
-  useQuoteStreaming(streamTargets);
-
-  const summaryFooterInfo = useMemo<PaneFooterSegment[]>(() => {
-    if (paneSettings.hideHeader) return [];
-
-    const lastRefreshTimestamp = getMostRecentQuoteUpdate(
-      sortedTickers.map((ticker) => financialsMap.get(ticker.metadata.ticker)?.quote),
-    );
-    const refreshText = refreshingSize > 0
-      ? "Refreshing..."
-      : lastRefreshTimestamp != null
-        ? new Date(lastRefreshTimestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-        : "-";
-    const totals = calculatePortfolioSummaryTotals(
-      sortedTickers,
-      financialsMap,
-      config.baseCurrency,
-      effectiveExchangeRates,
-      isPortfolioTab,
-      activeCollectionId,
-    );
-
-    if (!isPortfolioTab) {
-      if (totals.watchlistCount === 0) return [];
-      return [
-        {
-          id: "avg-day",
-          parts: [
-            { text: "Avg Day", tone: "label" },
-            { text: formatPercentRaw(totals.avgWatchlistChange), tone: "value", color: priceColor(totals.avgWatchlistChange), bold: true },
-          ],
-        },
-        {
-          id: "refresh",
-          parts: [{ text: refreshText, tone: "muted" }],
-        },
-      ];
-    }
-
-    if (!totals.hasPositions && !accountState) return [];
-    return buildPortfolioSummarySegments({
-      totals,
-      accountState: accountState ? { account: accountState.account, sourceLabel: accountState.sourceLabel } : null,
-      widthBudget: Math.max(16, width - 14),
-      refreshText,
-    }).map((segment) => ({
-      id: segment.id,
-      parts: segment.parts,
-    }));
-  }, [
+  const summaryFooterInfo = useMemo(() => buildPortfolioFooterSegments({
+    accountState: accountState ? { account: accountState.account, sourceLabel: accountState.sourceLabel } : null,
+    activeCollectionId,
+    baseCurrency: config.baseCurrency,
+    exchangeRates: effectiveExchangeRates,
+    financialsMap,
+    hideHeader: paneSettings.hideHeader,
+    isPortfolioTab,
+    refreshingSize,
+    sortedTickers,
+    width,
+  }), [
     accountState,
     activeCollectionId,
     effectiveExchangeRates,

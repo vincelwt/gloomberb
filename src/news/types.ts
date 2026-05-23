@@ -1,8 +1,8 @@
-export type NewsQueryScope = "global" | "ticker";
+type NewsQueryScope = "global" | "ticker";
 export type NewsFeed = "latest" | "top" | "breaking" | "ticker" | "sector" | "topic";
-export type NewsSentiment = "positive" | "neutral" | "negative";
+type NewsSentiment = "positive" | "neutral" | "negative";
 
-export interface NewsScores {
+interface NewsScores {
   importance: number;
   urgency: number;
   marketImpact: number;

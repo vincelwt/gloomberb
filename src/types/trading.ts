@@ -1,6 +1,6 @@
 import type { BrokerContractRef } from "./instrument";
 
-export type BrokerOrderAction = "BUY" | "SELL";
+type BrokerOrderAction = "BUY" | "SELL";
 export type BrokerOrderType = "MKT" | "LMT" | "STP" | "STP LMT";
 
 export interface BrokerCashBalance {

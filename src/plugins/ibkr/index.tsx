@@ -13,8 +13,6 @@ import { hasIbkrTradingProfiles } from "./trade-utils";
 import { TradeTab } from "./trade-tab";
 import { TradingPane } from "./trading-pane";
 
-export { TradeTab } from "./trade-tab";
-
 let lastSelectedTickerSymbol: string | null = null;
 
 function ensureIbkrTradingProfile(ctx: GloomPluginContext): boolean {

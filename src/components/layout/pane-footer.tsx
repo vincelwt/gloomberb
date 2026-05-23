@@ -1,213 +1,27 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type DependencyList,
-  type ReactNode,
-} from "react";
 import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../ui";
 import { colors, blendHex } from "../../theme/colors";
 import { getShortcutHintWidth, ShortcutHint } from "../ui/shortcut-hint";
+import {
+  EMPTY_FOOTER,
+  hasPaneFooterContent,
+  type CombinedPaneFooter,
+  type PaneFooterPart,
+  type PaneFooterSegment,
+  type PaneHint,
+} from "./pane-footer-model";
 
-export interface PaneFooterRegistration {
-  order?: number;
-  info?: PaneFooterSegment[];
-  hints?: PaneHint[];
-}
-
-export interface PaneFooterSegment {
-  id: string;
-  parts: PaneFooterPart[];
-  onPress?: () => void;
-  disabled?: boolean;
-}
-
-export interface PaneFooterPart {
-  text: string;
-  tone?: "label" | "value" | "muted" | "positive" | "negative" | "warning";
-  color?: string;
-  bold?: boolean;
-}
-
-export interface PaneHint {
-  id: string;
-  key: string;
-  label: string;
-  onPress?: () => void;
-  disabled?: boolean;
-}
-
-export interface CombinedPaneFooter {
-  info: PaneFooterSegment[];
-  hints: PaneHint[];
-}
-
-interface PaneFooterContextValue {
-  register(registrationId: string, registration: PaneFooterRegistration | null): void;
-  unregister(registrationId: string): void;
-}
-
-const PaneFooterContext = createContext<PaneFooterContextValue | null>(null);
-
-const EMPTY_FOOTER: CombinedPaneFooter = { info: [], hints: [] };
-
-export function hasPaneFooterContent(footer?: CombinedPaneFooter | null): boolean {
-  if (!footer) return false;
-  return footer.info.length > 0 || footer.hints.length > 0;
-}
-
-function combineRegistrations(registrations: Map<string, PaneFooterRegistration>): CombinedPaneFooter {
-  if (registrations.size === 0) return EMPTY_FOOTER;
-
-  const ordered = Array.from(registrations.entries()).sort(([idA, a], [idB, b]) => {
-    const orderDelta = (a.order ?? 0) - (b.order ?? 0);
-    return orderDelta || idA.localeCompare(idB);
-  });
-
-  const info: PaneFooterSegment[] = [];
-  const hints: PaneHint[] = [];
-  for (const [, registration] of ordered) {
-    if (registration.info) info.push(...registration.info);
-    if (registration.hints) hints.push(...registration.hints);
-  }
-
-  if (info.length === 0 && hints.length === 0) return EMPTY_FOOTER;
-  return { info, hints };
-}
-
-function sameFooterParts(left: PaneFooterPart[], right: PaneFooterPart[]): boolean {
-  return left.length === right.length && left.every((part, index) => {
-    const other = right[index];
-    return !!other
-      && part.text === other.text
-      && part.tone === other.tone
-      && part.color === other.color
-      && part.bold === other.bold;
-  });
-}
-
-function sameFooterRegistration(
-  left: PaneFooterRegistration | null,
-  right: PaneFooterRegistration | null,
-): boolean {
-  if (left === right) return true;
-  if (!left || !right) return false;
-  const leftInfo = left.info ?? [];
-  const rightInfo = right.info ?? [];
-  const leftHints = left.hints ?? [];
-  const rightHints = right.hints ?? [];
-  return (left.order ?? 0) === (right.order ?? 0)
-    && leftInfo.length === rightInfo.length
-    && leftHints.length === rightHints.length
-    && leftInfo.every((segment, index) => {
-      const other = rightInfo[index];
-      return !!other
-        && segment.id === other.id
-        && segment.disabled === other.disabled
-        && sameFooterParts(segment.parts, other.parts);
-    })
-    && leftHints.every((hint, index) => {
-      const other = rightHints[index];
-      return !!other
-        && hint.id === other.id
-        && hint.key === other.key
-        && hint.label === other.label
-        && hint.disabled === other.disabled;
-    });
-}
-
-export function PaneFooterProvider({
-  children,
-}: {
-  children: (footer: CombinedPaneFooter) => ReactNode;
-}) {
-  const [registrations, setRegistrations] = useState<Map<string, PaneFooterRegistration>>(() => new Map());
-
-  const register = useCallback((registrationId: string, registration: PaneFooterRegistration | null) => {
-    setRegistrations((current) => {
-      const next = new Map(current);
-      if (registration && ((registration.info?.length ?? 0) > 0 || (registration.hints?.length ?? 0) > 0)) {
-        next.set(registrationId, registration);
-      } else {
-        next.delete(registrationId);
-      }
-      return next;
-    });
-  }, []);
-
-  const unregister = useCallback((registrationId: string) => {
-    setRegistrations((current) => {
-      if (!current.has(registrationId)) return current;
-      const next = new Map(current);
-      next.delete(registrationId);
-      return next;
-    });
-  }, []);
-
-  const value = useMemo(() => ({ register, unregister }), [register, unregister]);
-  const footer = useMemo(() => combineRegistrations(registrations), [registrations]);
-
-  return (
-    <PaneFooterContext.Provider value={value}>
-      {children(footer)}
-    </PaneFooterContext.Provider>
-  );
-}
-
-export function PaneFooterScope({
-  active,
-  children,
-}: {
-  active: boolean;
-  children: ReactNode;
-}) {
-  const context = useContext(PaneFooterContext);
-  return (
-    <PaneFooterContext.Provider value={active ? context : null}>
-      {children}
-    </PaneFooterContext.Provider>
-  );
-}
-
-export function usePaneFooter(
-  registrationId: string,
-  factory: () => PaneFooterRegistration | null | undefined,
-  deps: DependencyList,
-) {
-  const context = useContext(PaneFooterContext);
-  const previousRegistrationRef = useRef<PaneFooterRegistration | null>(null);
-
-  useEffect(() => {
-    return () => {
-      previousRegistrationRef.current = null;
-      context?.unregister(registrationId);
-    };
-  }, [context, registrationId]);
-
-  useEffect(() => {
-    if (!context) return;
-    const nextRegistration = factory() ?? null;
-    if (sameFooterRegistration(previousRegistrationRef.current, nextRegistration)) return;
-    previousRegistrationRef.current = nextRegistration;
-    context.register(registrationId, nextRegistration);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [context, registrationId, ...deps]);
-}
-
-export function usePaneHints(
-  registrationId: string,
-  factory: () => PaneHint[] | null | undefined,
-  deps: DependencyList,
-) {
-  usePaneFooter(registrationId, () => {
-    const hints = factory();
-    return hints && hints.length > 0 ? { hints } : null;
-  }, deps);
-}
+export {
+  hasPaneFooterContent,
+  type CombinedPaneFooter,
+  type PaneFooterSegment,
+  type PaneHint,
+} from "./pane-footer-model";
+export {
+  PaneFooterProvider,
+  PaneFooterScope,
+  usePaneFooter,
+  usePaneHints,
+} from "./pane-footer-registration";
 
 function footerToneColor(part: PaneFooterPart): string {
   if (part.color) return part.color;

@@ -1,479 +1,34 @@
-import { Box, ScrollBox, Text } from "../../../ui";
+import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
-import { useShortcut } from "../../../react/input";
-import { DataTableStackView, StaticChartSurface, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
+import { DataTableStackView, usePaneFooter, type DataTableCell } from "../../../components";
 import type { GloomPluginContext, PaneProps } from "../../../types/plugin";
 import { colors, blendHex } from "../../../theme/colors";
-import { fetchEconCalendar } from "./calendar-source";
-import type { EconEvent, EconImpact } from "./types";
-import { usePluginTickerActions } from "../../plugin-runtime";
-import { resolveFredMapping } from "./fred-series-map";
-import { resolveChartPalette } from "../../../components/chart/chart-renderer";
-import type { ProjectedChartPoint } from "../../../components/chart/chart-data";
-import { apiClient, type CloudFredObservationPayload, type CloudFredSeriesInfoPayload } from "../../../utils/api-client";
-import { isPlainKey } from "../../../utils/keyboard";
-
-const CACHE_TTL_MS = 15 * 60 * 1000;
-
-type ImpactFilter = "high" | "medium" | "low" | "all";
-type CountryFilter = "all" | "US" | "G7" | "EU";
-
-const FILTER_CYCLE: ImpactFilter[] = ["all", "high", "medium", "low"];
-const COUNTRY_CYCLE: CountryFilter[] = ["all", "US", "G7", "EU"];
-const G7_COUNTRIES = new Set(["US", "GB", "EU", "JP", "CA", "DE"]);
-
-const FLAG_MAP: Record<string, string> = {
-  US: "🇺🇸", GB: "🇬🇧", EU: "🇪🇺", JP: "🇯🇵", CA: "🇨🇦",
-  AU: "🇦🇺", CH: "🇨🇭", CN: "🇨🇳", NZ: "🇳🇿", SE: "🇸🇪", "--": "🌐",
-};
-
-const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
-const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
-
-function countryFlag(code: string): string {
-  return FLAG_MAP[code] ?? code;
-}
-
-function impactIndicator(impact: EconImpact): { text: string; color: string } {
-  switch (impact) {
-    case "high":
-      return { text: "●●●", color: colors.negative };
-    case "medium":
-      return { text: "●● ", color: colors.warning };
-    case "low":
-      return { text: "●  ", color: colors.textDim };
-  }
-}
-
-function dateKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function dayLabel(d: Date, today: Date): string {
-  const dk = dateKey(d);
-  const todayKey = dateKey(today);
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  const dayName = DAY_NAMES[d.getDay()]!;
-  const monthName = MONTH_NAMES[d.getMonth()]!;
-  const dateNum = d.getDate();
-  const suffix = `${dayName} ${monthName} ${dateNum}`;
-
-  if (dk === todayKey) return `TODAY — ${suffix}`;
-  if (dk === dateKey(tomorrow)) return `TOMORROW — ${suffix}`;
-  if (dk === dateKey(yesterday)) return `YESTERDAY — ${suffix}`;
-  return suffix;
-}
-
-function matchesImpact(event: EconEvent, filter: ImpactFilter): boolean {
-  if (filter === "all") return true;
-  if (filter === "high") return event.impact === "high";
-  if (filter === "medium") return event.impact === "medium" || event.impact === "high";
-  return true; // "low" shows everything
-}
-
-function matchesCountry(event: EconEvent, filter: CountryFilter): boolean {
-  if (filter === "all") return true;
-  if (filter === "US") return event.country === "US";
-  if (filter === "G7") return G7_COUNTRIES.has(event.country);
-  if (filter === "EU") return event.country === "EU";
-  return true;
-}
-
-function formatCountdown(ms: number): string {
-  if (ms <= 60_000) return "in <1m";
-  const totalMin = Math.floor(ms / 60_000);
-  if (totalMin < 60) return `in ${totalMin}m`;
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return m > 0 ? `in ${h}h ${m}m` : `in ${h}h`;
-}
-
-function formatStaleness(fetchedAt: number, now: number): string {
-  const elapsed = now - fetchedAt;
-  if (elapsed < 60_000) return "updated just now";
-  const minutes = Math.floor(elapsed / 60_000);
-  if (minutes < 60) return `updated ${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `updated ${hours}h ago`;
-}
-
-// Module-level cache shared across all pane instances and survives pane close/reopen
-let sharedCache: { data: EconEvent[]; fetchedAt: number } | null = null;
-let activeFetch: Promise<EconEvent[]> | null = null;
-
-async function loadCalendar(force = false): Promise<EconEvent[]> {
-  if (!force && sharedCache && Date.now() - sharedCache.fetchedAt < CACHE_TTL_MS) {
-    return sharedCache.data;
-  }
-  // Deduplicate concurrent fetches
-  if (activeFetch) return activeFetch;
-  activeFetch = fetchEconCalendar().then((data) => {
-    sharedCache = { data, fetchedAt: Date.now() };
-    activeFetch = null;
-    return data;
-  }).catch((err) => {
-    activeFetch = null;
-    throw err;
-  });
-  return activeFetch;
-}
-
-type DisplayRow =
-  | { kind: "separator"; key: string; label: string }
-  | { kind: "now"; key: string }
-  | { kind: "event"; key: string; event: EconEvent; eventIdx: number };
-
-type EconCalendarColumnId =
-  | "time"
-  | "impact"
-  | "country"
-  | "event"
-  | "actual"
-  | "forecast"
-  | "prior";
-type EconCalendarColumn = DataTableColumn & { id: EconCalendarColumnId };
-
-// ---------------------------------------------------------------------------
-// Detail View — drills into a single economic indicator with FRED history
-// ---------------------------------------------------------------------------
-
-interface FredCache {
-  observations: CloudFredObservationPayload[];
-  info: CloudFredSeriesInfoPayload | null;
-}
-
-interface EconDetailViewProps {
-  event: EconEvent;
-  width: number;
-  height: number;
-  focused: boolean;
-}
-
-function EconDetailView({ event, width, height, focused }: EconDetailViewProps) {
-  const { navigateTicker } = usePluginTickerActions();
-  const cacheRef = useRef<Map<string, FredCache>>(new Map());
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<FredCache | null>(null);
-  const scrollRef = useRef<ScrollBoxRenderable>(null);
-
-  const mapping = useMemo(() => resolveFredMapping(event.event, event.country), [event.event, event.country]);
-
-  useEffect(() => {
-    if (!mapping) return;
-
-    const cached = cacheRef.current.get(mapping.seriesId);
-    if (cached) {
-      setData(cached);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    const fiveYearsAgo = new Date();
-    fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
-    const startDate = `${fiveYearsAgo.getFullYear()}-${String(fiveYearsAgo.getMonth() + 1).padStart(2, "0")}-${String(fiveYearsAgo.getDate()).padStart(2, "0")}`;
-
-    apiClient.getCloudFredSeries(mapping.seriesId, { startDate, sortOrder: "asc" })
-      .then(({ observations, info }) => {
-        const entry: FredCache = { observations, info };
-        cacheRef.current.set(mapping.seriesId, entry);
-        setData(entry);
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [mapping?.seriesId]);
-
-  const scrollDetailBy = useCallback((delta: number) => {
-    const scrollBox = scrollRef.current;
-    if (!scrollBox?.viewport) return;
-    const maxScrollTop = Math.max(0, scrollBox.scrollHeight - scrollBox.viewport.height);
-    scrollBox.scrollTop = Math.max(0, Math.min(maxScrollTop, scrollBox.scrollTop + delta));
-  }, []);
-
-  useShortcut((ev) => {
-    if (!focused) return;
-    if (isPlainKey(ev, "j", "down")) {
-      ev.stopPropagation?.();
-      ev.preventDefault?.();
-      scrollDetailBy(1);
-    } else if (isPlainKey(ev, "k", "up")) {
-      ev.stopPropagation?.();
-      ev.preventDefault?.();
-      scrollDetailBy(-1);
-    }
-  });
-
-  // No FRED mapping
-  if (!mapping) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        <Box height={1} paddingX={1} flexDirection="row">
-          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-            {event.event}
-          </Text>
-        </Box>
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Text fg={colors.textMuted}>No historical data available for this indicator</Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  // Loading
-  if (loading) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        <Box height={1} paddingX={1} flexDirection="row">
-          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-            {event.event}
-          </Text>
-          <Box flexGrow={1} />
-          <Text fg={colors.textDim}>{mapping.seriesId}</Text>
-        </Box>
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Text fg={colors.textMuted}>Loading...</Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  // Error
-  if (error) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        <Box height={1} paddingX={1} flexDirection="row">
-          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-            {event.event}
-          </Text>
-          <Box flexGrow={1} />
-          <Text fg={colors.textDim}>{mapping.seriesId}</Text>
-        </Box>
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Text fg={colors.negative}>{error}</Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  if (!data) return null;
-
-  const { observations, info } = data;
-  const chartWidth = Math.max(10, width - 2);
-  const chartHeight = Math.min(18, Math.max(9, Math.floor(height * 0.38)));
-
-  // Build chart points (ascending order for chart), exclude null values
-  const chartPoints: ProjectedChartPoint[] = observations
-    .filter((obs): obs is CloudFredObservationPayload & { value: number } => obs.value != null)
-    .map((obs) => ({
-      date: new Date(obs.date),
-      open: obs.value,
-      high: obs.value,
-      low: obs.value,
-      close: obs.value,
-      volume: 0,
-    }));
-
-  const palette = resolveChartPalette(colors, "positive");
-
-  // Table rows (descending for display, last 12)
-  // For "change" mode, compute m/m or q/q percent change from consecutive observations
-  const descObs = [...observations].reverse();
-  const ascObs = observations; // already ascending from FRED
-  const tableRows = descObs.slice(0, 12).map((obs) => {
-    if (mapping.displayMode !== "change" || obs.value == null) {
-      return { date: obs.date, display: obs.value != null ? obs.value.toLocaleString("en-US", { maximumFractionDigits: 1 }) : "—" };
-    }
-    // Find the prior observation in ascending order
-    const ascIdx = ascObs.findIndex((o) => o.date === obs.date);
-    if (ascIdx > 0 && ascObs[ascIdx - 1]!.value != null) {
-      const prior = ascObs[ascIdx - 1]!.value!;
-      const pct = ((obs.value - prior) / Math.abs(prior)) * 100;
-      return { date: obs.date, display: `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%` };
-    }
-    return { date: obs.date, display: obs.value.toLocaleString("en-US", { maximumFractionDigits: 1 }) };
-  });
-  const units = info?.units ?? "";
-  const title = info?.title ?? event.event;
-
-  // Value color for table rows
-  const valueColor = (display: string): string => {
-    if (display.startsWith("+")) return colors.positive;
-    if (display.startsWith("-")) return colors.negative;
-    return colors.text;
-  };
-
-  const dateColWidth = 14;
-  const valueColWidth = Math.max(14, Math.floor((width - 4) * 0.3));
-  const separatorLine = "─".repeat(Math.max(0, width - 2));
-
-  return (
-    <Box flexDirection="column" width={width} height={height}>
-      {/* Header */}
-      <Box height={1} paddingX={1} flexDirection="row">
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-          {title}
-        </Text>
-        <Box flexGrow={1} />
-        <Text fg={colors.textDim}>{mapping.seriesId}</Text>
-      </Box>
-      <Box height={1} paddingX={1} flexDirection="row">
-        <Text fg={colors.textMuted}>
-          {[units, info?.frequency, info?.seasonalAdjustment].filter(Boolean).join(" · ")}
-        </Text>
-      </Box>
-
-      {/* Event context — scheduled time, forecast, prior */}
-      <Box paddingX={1} flexDirection="row" height={1}>
-        <Text fg={colors.textDim}>Scheduled: </Text>
-        <Text fg={colors.text}>{event.time}</Text>
-        {event.forecast ? (
-          <>
-            <Text fg={colors.textDim}>  Forecast: </Text>
-            <Text fg={colors.text}>{event.forecast}</Text>
-          </>
-        ) : null}
-        {event.prior ? (
-          <>
-            <Text fg={colors.textDim}>  Prior: </Text>
-            <Text fg={colors.text}>{event.prior}</Text>
-          </>
-        ) : null}
-      </Box>
-
-      {/* Scrollable content */}
-      <ScrollBox ref={scrollRef} flexGrow={1} scrollY focusable={false}>
-        <Box flexDirection="column">
-          {/* Chart */}
-          {chartPoints.length >= 2 ? (
-            <Box flexDirection="column" paddingX={1} marginTop={1}>
-              <StaticChartSurface
-                points={chartPoints}
-                width={chartWidth}
-                height={chartHeight}
-                mode="area"
-                colors={palette}
-                timeAxisDates={chartPoints.map((p) => p.date)}
-                showTimeAxis
-                timeAxisColor={colors.textDim}
-                yAxisLabel={units ? `Value (${units})` : "Value"}
-                yAxisColor={colors.textDim}
-                formatYAxisValue={(value) => formatCompactAxisValue(value, units)}
-              />
-            </Box>
-          ) : (
-            <Box paddingX={1} marginTop={1}>
-              <Text fg={colors.textMuted}>Not enough data for chart</Text>
-            </Box>
-          )}
-
-          {/* Separator */}
-          <Box paddingX={1} height={1} marginTop={1}>
-            <Text fg={colors.border}>{separatorLine}</Text>
-          </Box>
-
-          {/* Historical readings */}
-          <Box paddingX={1} height={1}>
-            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>HISTORICAL READINGS</Text>
-          </Box>
-          <Box paddingX={1} flexDirection="row" height={1}>
-            <Box width={dateColWidth}>
-              <Text fg={colors.textDim}>DATE</Text>
-            </Box>
-            <Box width={valueColWidth} justifyContent="flex-end">
-              <Text fg={colors.textDim}>VALUE</Text>
-            </Box>
-          </Box>
-          {tableRows.map((row) => (
-            <Box key={row.date} paddingX={1} flexDirection="row" height={1}>
-              <Box width={dateColWidth}>
-                <Text fg={colors.textDim}>{row.date}</Text>
-              </Box>
-              <Box width={valueColWidth} justifyContent="flex-end">
-                <Text fg={valueColor(row.display)}>{row.display}</Text>
-              </Box>
-            </Box>
-          ))}
-
-          {/* Separator */}
-          {mapping.relatedTickers.length > 0 ? (
-            <Box paddingX={1} height={1} marginTop={1}>
-              <Text fg={colors.border}>{separatorLine}</Text>
-            </Box>
-          ) : null}
-
-          {/* Related tickers */}
-          {mapping.relatedTickers.length > 0 ? (
-            <Box paddingX={1} height={1} flexDirection="row">
-              <Text fg={colors.textDim}>Related: </Text>
-              {mapping.relatedTickers.map((ticker, i) => (
-                <Box
-                  key={ticker}
-                  marginLeft={i > 0 ? 2 : 0}
-                  onMouseDown={() => {
-                    navigateTicker(ticker);
-                  }}
-                >
-                  <Text fg={colors.textBright} attributes={TextAttributes.UNDERLINE}>{ticker}</Text>
-                </Box>
-              ))}
-            </Box>
-          ) : null}
-        </Box>
-      </ScrollBox>
-
-    </Box>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Helpers for actual value beat/miss coloring
-// ---------------------------------------------------------------------------
-
-function parseNumeric(value: string | null): number | null {
-  if (!value) return null;
-  const cleaned = value.replace(/[%,KMBTkmbts]/g, "").trim();
-  const n = parseFloat(cleaned);
-  return isNaN(n) ? null : n;
-}
-
-function actualColor(actual: string | null, forecast: string | null): string {
-  const a = parseNumeric(actual);
-  const f = parseNumeric(forecast);
-  if (a === null || f === null) return colors.text;
-  if (a > f) return colors.positive;
-  if (a < f) return colors.negative;
-  return colors.text;
-}
-
-function formatCompactAxisValue(value: number, units: string): string {
-  const abs = Math.abs(value);
-  const normalizedUnits = units.toLowerCase();
-  if (normalizedUnits.includes("percent")) {
-    return `${value.toFixed(abs >= 10 ? 1 : 2)}%`;
-  }
-  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
-  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${(value / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}K`;
-  return value.toLocaleString("en-US", { maximumFractionDigits: abs >= 10 ? 1 : 2 });
-}
-
-// ---------------------------------------------------------------------------
-// Main Calendar Pane
-// ---------------------------------------------------------------------------
+import type { EconEvent } from "./types";
+import { EconDetailView } from "./detail-view";
+import {
+  COUNTRY_CYCLE,
+  FILTER_CYCLE,
+  actualColor,
+  countryFlag,
+  dateKey,
+  dayLabel,
+  formatCountdown,
+  formatStaleness,
+  getCalendarCache,
+  getFreshCalendarCache,
+  impactIndicator,
+  loadCalendar,
+  matchesCountry,
+  matchesImpact,
+  type CountryFilter,
+  type DisplayRow,
+  type EconCalendarColumn,
+  type ImpactFilter,
+} from "./calendar-model";
 
 function EconCalendarPane({ focused, width, height }: PaneProps) {
-  const [events, setEvents] = useState<EconEvent[]>(sharedCache?.data ?? []);
+  const [events, setEvents] = useState<EconEvent[]>(getFreshCalendarCache()?.data ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -506,8 +61,9 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
   }, []);
 
   useEffect(() => {
-    if (sharedCache && Date.now() - sharedCache.fetchedAt < CACHE_TTL_MS) {
-      setEvents(sharedCache.data);
+    const cached = getFreshCalendarCache();
+    if (cached) {
+      setEvents(cached.data);
       return;
     }
     load();
@@ -651,7 +207,8 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     ];
   }, [width]);
   const separatorBg = blendHex(colors.bg, colors.border, 0.3);
-  const staleness = sharedCache ? formatStaleness(sharedCache.fetchedAt, now) : "";
+  const calendarCache = getCalendarCache();
+  const staleness = calendarCache ? formatStaleness(calendarCache.fetchedAt, now) : "";
   const emptyStateHint = !loading && !error
     ? [
         impactFilter !== "all" ? `impact: ${impactFilter}` : null,

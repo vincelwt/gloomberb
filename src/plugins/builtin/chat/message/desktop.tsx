@@ -1,0 +1,158 @@
+import { memo } from "react";
+import { Box, Span, Text } from "../../../../ui";
+import { hoverBg } from "../../../../theme/colors";
+import { MESSAGE_ACTION_WIDTH, normalizeInlinePreview } from "../layout";
+import { ChatActionChip } from "./action-chip";
+import { ResponsiveTickerBadgeText } from "./inline-tokens";
+import { getChatMessageRenderState } from "./render-state";
+import type { ChatMessageBaseProps } from "./types";
+
+const DESKTOP_MESSAGE_RIGHT_PADDING = 2;
+
+export const DesktopChatMessage = memo(function DesktopChatMessage({
+  msg,
+  index,
+  messages,
+  selectedIdx,
+  hoveredIdx,
+  canSend,
+  catalog,
+  userByUsername,
+  openTicker,
+  onUserHover,
+  onUserHoverEnd,
+  beginReplyTo,
+  jumpToMessage,
+  registerMessageElement,
+}: ChatMessageBaseProps & {
+  registerMessageElement: (messageId: string, node: unknown | null) => void;
+}) {
+  const state = getChatMessageRenderState({ msg, index, messages, selectedIdx, hoveredIdx, canSend });
+  const showInlineReplyAction = !state.grouped && canSend;
+  const showGroupedReplyAction = state.grouped && canSend;
+  const rowProps = {
+    width: "100%",
+    paddingRight: DESKTOP_MESSAGE_RIGHT_PADDING,
+    backgroundColor: state.bgColor,
+    "data-gloom-role": "chat-message-row",
+    "data-selected": state.isSelected ? "true" : "false",
+    style: { minWidth: 0 },
+  };
+
+  return (
+    <Box
+      key={msg.id}
+      ref={(node: unknown | null) => registerMessageElement(msg.id, node)}
+      width="100%"
+      flexDirection="column"
+      data-gloom-role="chat-message"
+      data-gloom-chat-message-id={msg.id}
+      data-selected={state.isSelected ? "true" : "false"}
+      style={{ "--chat-hover-bg": hoverBg(), minWidth: 0 }}
+    >
+      {msg.replyTo && (
+        <Box
+          {...rowProps}
+          flexDirection="row"
+          paddingLeft={2}
+          onMouseDown={() => {
+            if (msg.replyToId) jumpToMessage(msg.replyToId);
+          }}
+          style={{ minWidth: 0, alignItems: "flex-start", cursor: "pointer" }}
+        >
+          <Text
+            fg={state.replyMetaColor}
+            wrapText
+            style={{
+              minWidth: 0,
+              width: "100%",
+              display: "-webkit-box",
+              WebkitBoxOrient: "vertical",
+              WebkitLineClamp: 2,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "normal",
+              overflowWrap: "anywhere",
+            }}
+          >
+            <Span fg={state.replyMetaColor}>reply </Span>
+            <Span fg={state.replyAuthorColor}>{msg.replyTo.user.username}: </Span>
+            <Span fg={state.replyMetaColor}>{normalizeInlinePreview(msg.replyTo.content)}</Span>
+          </Text>
+        </Box>
+      )}
+      {!state.grouped && (
+        <Box
+          {...rowProps}
+          flexDirection="row"
+          height={1}
+          paddingLeft={1}
+        >
+          <Text
+            fg={state.authorColor}
+            attributes={state.authorAttributes}
+            onMouseMove={() => onUserHover(msg.user)}
+            onMouseOut={onUserHoverEnd}
+            style={{ cursor: "default" }}
+          >
+            {msg.user.username ?? "anon"}
+          </Text>
+          <Text fg={state.headerStatusColor}> {state.headerStatus}</Text>
+          {showInlineReplyAction && (
+            <>
+              <Text fg={state.headerStatusColor}> </Text>
+              <Box
+                width={MESSAGE_ACTION_WIDTH}
+                height={1}
+                data-gloom-role="chat-message-reply-action"
+              >
+                <ChatActionChip
+                  label="Reply"
+                  width={MESSAGE_ACTION_WIDTH}
+                  emphasized={state.isSelected}
+                  onPress={() => beginReplyTo(index)}
+                />
+              </Box>
+            </>
+          )}
+        </Box>
+      )}
+      <Box
+        {...rowProps}
+        paddingLeft={3}
+        flexDirection="row"
+        position={state.grouped ? "relative" : undefined}
+        style={{ minWidth: 0, alignItems: "flex-start" }}
+      >
+        <Box flexGrow={1} style={{ minWidth: 0 }}>
+          <ResponsiveTickerBadgeText
+            text={msg.content}
+            catalog={catalog}
+            textColor={state.bodyColor}
+            openTicker={openTicker}
+            userByUsername={userByUsername}
+            onUserHover={onUserHover}
+            onUserHoverEnd={onUserHoverEnd}
+          />
+        </Box>
+        {showGroupedReplyAction && (
+          <Box
+            position="absolute"
+            top={0}
+            right={0}
+            width={MESSAGE_ACTION_WIDTH}
+            height={1}
+            data-gloom-role="chat-message-reply-action"
+          >
+            <ChatActionChip
+              label="Reply"
+              width={MESSAGE_ACTION_WIDTH}
+              emphasized={state.isSelected}
+              onPress={() => beginReplyTo(index)}
+            />
+          </Box>
+        )}
+      </Box>
+    </Box>
+  );
+});

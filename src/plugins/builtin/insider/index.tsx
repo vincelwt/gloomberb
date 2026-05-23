@@ -15,14 +15,14 @@ import { usePluginPaneState } from "../../plugin-runtime";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { formatCompact, formatCurrency } from "../../../utils/format";
 import { parseForm4Xml, type InsiderTransaction } from "./insider-data";
-import { createTickerSurfacePaneTemplate } from "../ticker-surface";
+import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import {
   buildInsiderTransactionDetailBody,
   buildInsiderTransactionTitle,
   formatFilingFormLabel,
   formatFilingShortDate,
   renderFilingNotice,
-} from "../sec-filing-display";
+} from "../sec/filing-display";
 
 const FORM4_LIMIT = 20;
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;

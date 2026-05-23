@@ -67,6 +67,7 @@ function makeChartConfig(symbol: string): AppConfig {
       binding: { kind: "fixed", symbol },
     }],
     floating: [],
+    detached: [],
   };
   config.layouts = [{ name: "Default", layout: cloneLayout(config.layout) }];
   return config;
@@ -163,7 +164,6 @@ function makeProvider(historyBySymbol: Record<string, PricePoint[]>): DataProvid
     }),
     getExchangeRate: async () => 1,
     search: async () => [],
-    getNews: async () => [],
     getArticleSummary: async () => null,
     getPriceHistory: async (symbol) => historyBySymbol[symbol] ?? [],
     getDetailedPriceHistory: async (symbol, _exchange, startDate, endDate) => (

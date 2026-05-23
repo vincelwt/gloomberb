@@ -14,7 +14,8 @@ import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pa
 import { createConfigBackedTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { Box } from "../../../ui";
 import { deserializeAlerts, serializeAlerts } from "./alert-engine";
-import { AlertsPane, alertsPlugin } from "./index";
+import { alertsPlugin } from "./index";
+import { AlertsPane } from "./pane";
 import type { AlertCondition, AlertRule, AlertStatus } from "./types";
 
 const TEST_PANE_ID = "alerts:test";

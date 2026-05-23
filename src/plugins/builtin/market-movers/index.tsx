@@ -1,228 +1,35 @@
 import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes } from "../../../ui";
-import { DataTableView, Tabs, usePaneFooter, type DataTableCell, type DataTableColumn, type DataTableKeyEvent } from "../../../components";
+import { DataTableView, Tabs, usePaneFooter, type DataTableKeyEvent } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
-import { colors, priceColor } from "../../../theme/colors";
-import { formatCurrency, formatCompact, formatPercentRaw } from "../../../utils/format";
+import { priceColor } from "../../../theme/colors";
+import { formatPercentRaw } from "../../../utils/format";
 import { useAssetData, usePluginTickerActions } from "../../plugin-runtime";
 import {
   fetchScreener,
   fetchTrending,
   MARKET_SUMMARY_SYMBOLS,
-  type ScreenerCategory,
   type ScreenerQuote,
   type MarketSummaryQuote,
 } from "./screener";
-
-const CACHE_TTL_MS = 5 * 60 * 1000;
-
-type TabId = "gainers" | "losers" | "actives" | "trending";
-
-const TABS: Array<{ id: TabId; label: string }> = [
-  { id: "gainers", label: "Gainers" },
-  { id: "losers", label: "Losers" },
-  { id: "actives", label: "Most Active" },
-  { id: "trending", label: "Trending" },
-];
-
-const CATEGORY_MAP: Record<Exclude<TabId, "trending">, ScreenerCategory> = {
-  gainers: "day_gainers",
-  losers: "day_losers",
-  actives: "most_actives",
-};
-
-interface TabCache {
-  data: ScreenerQuote[];
-  fetchedAt: number;
-}
-
-type MarketMoverColumnId =
-  | "rank"
-  | "symbol"
-  | "name"
-  | "price"
-  | "changePercent"
-  | "volume"
-  | "volumeRatio"
-  | "range"
-  | "marketCap";
-type MarketMoverColumn = DataTableColumn & { id: MarketMoverColumnId };
-type SortDirection = "asc" | "desc";
-type MarketMoverRow = ScreenerQuote & { rank: number };
-
-interface MarketMoverSortPreference {
-  columnId: MarketMoverColumnId | null;
-  direction: SortDirection;
-}
-
-const DEFAULT_SORT_PREFERENCE: MarketMoverSortPreference = {
-  columnId: null,
-  direction: "asc",
-};
-
-function formatVolRatio(ratio: number): string {
-  if (ratio <= 0) return "—";
-  if (ratio >= 10) return `${Math.round(ratio)}x`;
-  return `${ratio.toFixed(1)}x`;
-}
-
-function volRatioColor(ratio: number): string {
-  if (ratio >= 3) return colors.textBright;
-  if (ratio >= 1.5) return colors.text;
-  return colors.textDim;
-}
-
-function fiftyTwoWeekPositionPercent(price: number, low: number | undefined, high: number | undefined): number | null {
-  if (low == null || high == null || high <= low) return null;
-  return ((price - low) / (high - low)) * 100;
-}
-
-function fiftyTwoWeekPosition(price: number, low: number | undefined, high: number | undefined): string {
-  const pct = fiftyTwoWeekPositionPercent(price, low, high);
-  return pct == null ? "—" : `${Math.round(pct)}%`;
-}
-
-function getSortValue(
-  columnId: MarketMoverColumnId,
-  row: MarketMoverRow,
-): string | number | null {
-  switch (columnId) {
-    case "rank":
-      return row.rank;
-    case "symbol":
-      return row.symbol;
-    case "name":
-      return row.name;
-    case "price":
-      return row.price;
-    case "changePercent":
-      return row.changePercent;
-    case "volume":
-      return row.volume;
-    case "volumeRatio":
-      return row.volumeRatio;
-    case "range":
-      return fiftyTwoWeekPositionPercent(row.price, row.fiftyTwoWeekLow, row.fiftyTwoWeekHigh);
-    case "marketCap":
-      return row.marketCap ?? null;
-  }
-}
-
-function compareSortValues(
-  left: string | number | null,
-  right: string | number | null,
-  direction: SortDirection,
-): number {
-  if (left == null && right == null) return 0;
-  if (left == null) return 1;
-  if (right == null) return -1;
-
-  const comparison = typeof left === "string" && typeof right === "string"
-    ? left.localeCompare(right)
-    : Number(left) - Number(right);
-  return direction === "asc" ? comparison : -comparison;
-}
-
-function sortRows(
-  rows: MarketMoverRow[],
-  sortPreference: MarketMoverSortPreference,
-): MarketMoverRow[] {
-  const sortColumnId = sortPreference.columnId;
-  if (!sortColumnId) return rows;
-  return [...rows].sort((left, right) => compareSortValues(
-    getSortValue(sortColumnId, left),
-    getSortValue(sortColumnId, right),
-    sortPreference.direction,
-  ));
-}
-
-function nextSortPreference(
-  current: MarketMoverSortPreference,
-  columnId: string,
-): MarketMoverSortPreference {
-  const typedColumnId = columnId as MarketMoverColumnId;
-  if (current.columnId !== typedColumnId) {
-    return { columnId: typedColumnId, direction: "asc" };
-  }
-  if (current.direction === "asc") {
-    return { columnId: typedColumnId, direction: "desc" };
-  }
-  return DEFAULT_SORT_PREFERENCE;
-}
-
-function createRows(quotes: ScreenerQuote[]): MarketMoverRow[] {
-  return quotes.map((quote, index) => ({
-    ...quote,
-    rank: index + 1,
-  }));
-}
-
-function summaryQuoteFromQuote(
-  symbol: string,
-  quote: { name?: string; price: number; change: number; changePercent: number },
-): MarketSummaryQuote {
-  return {
-    symbol,
-    name: quote.name ?? symbol,
-    price: quote.price,
-    change: quote.change,
-    changePercent: quote.changePercent,
-  };
-}
-
-function screenerQuoteFromQuote(symbol: string, quote: { name?: string; price?: number; change?: number; changePercent?: number; volume?: number; currency?: string }): ScreenerQuote {
-  return {
-    symbol,
-    name: quote.name ?? symbol,
-    price: quote.price ?? 0,
-    change: quote.change ?? 0,
-    changePercent: quote.changePercent ?? 0,
-    volume: quote.volume ?? 0,
-    avgVolume: 0,
-    volumeRatio: 0,
-    marketCap: undefined,
-    currency: quote.currency ?? "USD",
-    fiftyTwoWeekHigh: undefined,
-    fiftyTwoWeekLow: undefined,
-    dayHigh: undefined,
-    dayLow: undefined,
-    exchange: "",
-  };
-}
-
-function buildColumns(width: number): MarketMoverColumn[] {
-  const rankWidth = 3;
-  const tickerWidth = 8;
-  const priceWidth = 11;
-  const chgWidth = 9;
-  const volWidth = 8;
-  const volRatioWidth = 6;
-  const rangeWidth = 6;
-  const mcapWidth = 8;
-  const columnCount = 9;
-  const fixedWidth = rankWidth + tickerWidth + priceWidth + chgWidth + volWidth + volRatioWidth + rangeWidth + mcapWidth;
-  const nameWidth = Math.max(6, width - 2 - columnCount - fixedWidth);
-
-  return [
-    { id: "rank", label: "#", width: rankWidth, align: "left" },
-    { id: "symbol", label: "TICKER", width: tickerWidth, align: "left" },
-    { id: "name", label: "NAME", width: nameWidth, align: "left" },
-    { id: "price", label: "LAST", width: priceWidth, align: "right" },
-    { id: "changePercent", label: "CHG%", width: chgWidth, align: "right" },
-    { id: "volume", label: "VOL", width: volWidth, align: "right" },
-    { id: "volumeRatio", label: "V/AVG", width: volRatioWidth, align: "right" },
-    { id: "range", label: "52W%", width: rangeWidth, align: "right" },
-    { id: "marketCap", label: "MCAP", width: mcapWidth, align: "right" },
-  ];
-}
-
-const INDEX_SHORT: Record<string, string> = {
-  "^GSPC": "SPX",
-  "^DJI": "DJIA",
-  "^IXIC": "COMP",
-  "^RUT": "RUT",
-};
+import {
+  CACHE_TTL_MS,
+  CATEGORY_MAP,
+  DEFAULT_SORT_PREFERENCE,
+  INDEX_SHORT,
+  TABS,
+  createRows,
+  nextSortPreference,
+  screenerQuoteFromQuote,
+  sortRows,
+  summaryQuoteFromQuote,
+  type MarketMoverColumn,
+  type MarketMoverRow,
+  type MarketMoverSortPreference,
+  type TabCache,
+  type TabId,
+} from "./model";
+import { buildMarketMoverColumns, renderMarketMoverCell } from "./table";
 
 function MarketMoversPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
@@ -238,7 +45,7 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
   const cacheRef = useRef<Map<TabId, TabCache>>(new Map());
   const fetchGenRef = useRef(0);
 
-  const columns = useMemo(() => buildColumns(width), [width]);
+  const columns = useMemo(() => buildMarketMoverColumns(width), [width]);
   const rankedRows = useMemo(() => createRows(quotes), [quotes]);
   const rows = useMemo(() => sortRows(rankedRows, sortPreference), [rankedRows, sortPreference]);
   const selectedIdx = selectedSymbol
@@ -387,52 +194,6 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
     return false;
   }, [activeTab, loadTab]);
 
-  const renderCell = useCallback((
-    row: MarketMoverRow,
-    column: MarketMoverColumn,
-    _index: number,
-    rowState: { selected: boolean },
-  ): DataTableCell => {
-    const selectedColor = rowState.selected ? colors.selectedText : undefined;
-
-    switch (column.id) {
-      case "rank":
-        return { text: String(row.rank), color: selectedColor ?? colors.textDim };
-      case "symbol":
-        return {
-          text: row.symbol,
-          color: selectedColor ?? colors.textBright,
-          attributes: TextAttributes.BOLD,
-        };
-      case "name":
-        return { text: row.name, color: selectedColor };
-      case "price":
-        return { text: formatCurrency(row.price, row.currency), color: selectedColor };
-      case "changePercent":
-        return {
-          text: formatPercentRaw(row.changePercent),
-          color: selectedColor ?? priceColor(row.changePercent),
-        };
-      case "volume":
-        return { text: formatCompact(row.volume), color: selectedColor ?? colors.textDim };
-      case "volumeRatio":
-        return {
-          text: formatVolRatio(row.volumeRatio),
-          color: selectedColor ?? volRatioColor(row.volumeRatio),
-        };
-      case "range":
-        return {
-          text: fiftyTwoWeekPosition(row.price, row.fiftyTwoWeekLow, row.fiftyTwoWeekHigh),
-          color: selectedColor ?? colors.textDim,
-        };
-      case "marketCap":
-        return {
-          text: row.marketCap != null ? formatCompact(row.marketCap) : "—",
-          color: selectedColor ?? colors.textDim,
-        };
-    }
-  }, []);
-
   const refreshActiveTab = useCallback(() => {
     cacheRef.current.delete(activeTab);
     void loadTab(activeTab);
@@ -485,7 +246,7 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
         isSelected={(row) => row.symbol === selectedSymbol}
         onSelect={(row) => setSelectedSymbol(row.symbol)}
         onActivate={(row) => openSymbol(row.symbol)}
-        renderCell={renderCell}
+        renderCell={renderMarketMoverCell}
         emptyStateTitle={loading ? "Loading movers..." : loadError ?? "No data"}
         emptyStateHint={loadError ? "Yahoo Finance did not return market movers." : undefined}
       />

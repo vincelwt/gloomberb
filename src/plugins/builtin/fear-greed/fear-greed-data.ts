@@ -45,7 +45,7 @@ interface NormalizedRawPoint {
   rating: FearGreedRating | null;
 }
 
-export interface FearGreedOverall {
+interface FearGreedOverall {
   score: number;
   rating: FearGreedRating;
   updatedAt: Date | null;
@@ -58,7 +58,7 @@ export interface FearGreedOverall {
 
 export type FearGreedValueFormat = "score" | "number" | "percent" | "ratio";
 
-export interface FearGreedIndicatorDefinition {
+interface FearGreedIndicatorDefinition {
   id: string;
   title: string;
   subtitle: string;

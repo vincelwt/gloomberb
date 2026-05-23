@@ -1,20 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type InputRenderable, type ScrollBoxRenderable } from "../../ui";
-import { useShortcut, useViewport } from "../../react/input";
+import { useViewport } from "../../react/input";
 import { usePaneInstance } from "../../state/app-context";
 import {
   useDebouncedPluginPaneState,
   usePluginPaneState,
   usePluginState,
 } from "../plugin-runtime";
-import { getAdjacentPredictionCategoryId } from "./categories";
 import { usePredictionMarketsDataState } from "./controller-data";
-import { resolvePredictionKeyboardCommand } from "./keyboard";
-import {
-  getAdjacentPredictionVenueScope,
-  parsePredictionSearchShortcut,
-  parsePredictionVenueScope,
-} from "./navigation";
+import { usePredictionControllerEffects } from "./controller-effects";
+import { usePredictionControllerKeyboard } from "./controller-keyboard";
 import { getDefaultPredictionSort, getNextPredictionSort } from "./metrics";
 import {
   getPredictionMarketsPaneSettings,
@@ -142,47 +137,36 @@ export function usePredictionMarketsController({
     watchlistSet,
   });
 
-  useEffect(() => {
-    if (paneSettings.hideTabs && venueScope !== paneSettings.lockedVenueScope) {
-      setVenueScope(paneSettings.lockedVenueScope);
-      return;
-    }
-    if (!paneSettings.hideTabs && effectiveVenueScope !== lastVenueScope) {
-      setLastVenueScope(effectiveVenueScope);
-    }
-  }, [
+  usePredictionControllerEffects({
+    appViewportHeight: appViewport.height,
+    browseTab,
+    categoryId,
+    debouncedSearchQuery: data.debouncedSearchQuery,
+    detailOpen,
     effectiveVenueScope,
-    lastVenueScope,
-    paneSettings.hideTabs,
-    paneSettings.lockedVenueScope,
-    setLastVenueScope,
-    setVenueScope,
-    venueScope,
-  ]);
-
-  useEffect(() => {
-    if (initialParamsApplied) return;
-    const parsedScope = parsePredictionVenueScope(initialParams?.scope);
-    const shortcut = parsePredictionSearchShortcut(initialParams?.query ?? "");
-    if (parsedScope) {
-      setVenueScope(parsedScope);
-      setLastVenueScope(parsedScope);
-    } else if (shortcut.searchQuery || shortcut.venueScope !== "all") {
-      setVenueScope(shortcut.venueScope);
-      setLastVenueScope(shortcut.venueScope);
-    }
-    if (shortcut.searchQuery) {
-      setSearchQuery(shortcut.searchQuery);
-    }
-    setInitialParamsApplied(true);
-  }, [
-    initialParams?.query,
-    initialParams?.scope,
+    headerScrollRef,
+    hideTabs: paneSettings.hideTabs,
+    initialParams,
     initialParamsApplied,
+    lastVenueScope,
+    lockedVenueScope: paneSettings.lockedVenueScope,
+    previousFilterResetKeyRef,
+    scrollRef,
+    searchFocused,
+    searchInputRef,
+    selectedDetailMarketKey,
+    selectedIndex: data.selectedIndex,
+    selectedRow: data.selectedRow,
+    selectedRowKey,
+    setDetailOpen,
+    setInitialParamsApplied,
     setLastVenueScope,
     setSearchQuery,
+    setSelectedDetailMarketKey,
+    setSelectedRowKey,
     setVenueScope,
-  ]);
+    visibleRowsLength: data.visibleRows.length,
+  });
 
   useEffect(() => {
     setSortPreference((current) =>
@@ -192,133 +176,6 @@ export function usePredictionMarketsController({
         : defaultSortPreference,
     );
   }, [defaultSortPreference, setSortPreference]);
-
-  useEffect(() => {
-    const nextFilterResetKey = [
-      browseTab,
-      categoryId,
-      data.debouncedSearchQuery,
-      effectiveVenueScope,
-    ].join("|");
-    if (previousFilterResetKeyRef.current === nextFilterResetKey) {
-      return;
-    }
-    const previousFilterResetKey = previousFilterResetKeyRef.current;
-    previousFilterResetKeyRef.current = nextFilterResetKey;
-    if (previousFilterResetKey == null) {
-      return;
-    }
-    const scrollBox = scrollRef.current;
-    if (scrollBox) {
-      scrollBox.scrollTop = 0;
-      scrollBox.scrollLeft = 0;
-    }
-    const headerScrollBox = headerScrollRef.current;
-    if (headerScrollBox) {
-      headerScrollBox.scrollLeft = 0;
-    }
-    setDetailOpen(false);
-    setSelectedRowKey((current) => (current == null ? current : null));
-    setSelectedDetailMarketKey((current) => (current == null ? current : null));
-  }, [
-    browseTab,
-    categoryId,
-    data.debouncedSearchQuery,
-    effectiveVenueScope,
-    setSelectedDetailMarketKey,
-    setSelectedRowKey,
-  ]);
-
-  useEffect(() => {
-    if (data.visibleRows.length === 0) {
-      if (selectedRowKey !== null) {
-        setSelectedRowKey(null);
-      }
-      if (selectedDetailMarketKey !== null) {
-        setSelectedDetailMarketKey(null);
-      }
-      if (detailOpen) {
-        setDetailOpen(false);
-      }
-    }
-  }, [
-    data.visibleRows.length,
-    detailOpen,
-    selectedDetailMarketKey,
-    selectedRowKey,
-    setSelectedDetailMarketKey,
-    setSelectedRowKey,
-  ]);
-
-  useEffect(() => {
-    if (selectedRowKey == null || data.selectedRow) {
-      return;
-    }
-
-    if (detailOpen) {
-      setDetailOpen(false);
-    }
-    if (selectedDetailMarketKey !== null) {
-      setSelectedDetailMarketKey(null);
-    }
-    setSelectedRowKey(null);
-  }, [
-    data.selectedRow,
-    detailOpen,
-    selectedDetailMarketKey,
-    selectedRowKey,
-    setDetailOpen,
-    setSelectedDetailMarketKey,
-    setSelectedRowKey,
-  ]);
-
-  useEffect(() => {
-    if (!detailOpen || !data.selectedRow) {
-      return;
-    }
-
-    if (
-      selectedDetailMarketKey
-      && data.selectedRow.markets.some(
-        (market) => market.key === selectedDetailMarketKey,
-      )
-    ) {
-      return;
-    }
-
-    setSelectedDetailMarketKey(data.selectedRow.focusMarketKey);
-  }, [
-    data.selectedRow,
-    detailOpen,
-    selectedDetailMarketKey,
-    setSelectedDetailMarketKey,
-  ]);
-
-  useEffect(() => {
-    if (data.selectedIndex < 0) return;
-    const scrollBox = scrollRef.current;
-    if (!scrollBox?.viewport) return;
-    const viewportHeight = Math.max(
-      1,
-      Math.min(scrollBox.viewport.height, Math.ceil(appViewport.height)),
-    );
-    if (data.selectedIndex < scrollBox.scrollTop) {
-      scrollBox.scrollTop = data.selectedIndex;
-    } else if (
-      data.selectedIndex >=
-      scrollBox.scrollTop + viewportHeight
-    ) {
-      scrollBox.scrollTop = Math.max(
-        0,
-        data.selectedIndex - viewportHeight + 1,
-      );
-    }
-  }, [appViewport.height, data.selectedIndex]);
-
-  useEffect(() => {
-    if (!searchFocused) return;
-    searchInputRef.current?.focus?.();
-  }, [searchFocused]);
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
@@ -442,168 +299,26 @@ export function usePredictionMarketsController({
     [setOrderPreviewIntent],
   );
 
-  const cycleDetailOutcome = useCallback(
-    (direction: "previous" | "next") => {
-      if (detailTab !== "overview" || data.sortedOutcomeMarkets.length === 0) {
-        return;
-      }
-      const currentIndex = data.sortedOutcomeMarkets.findIndex(
-        (market) => market.key === data.selectedSummaryKey,
-      );
-      const safeIndex = currentIndex >= 0 ? currentIndex : 0;
-      const nextIndex =
-        direction === "previous"
-          ? Math.max(safeIndex - 1, 0)
-          : Math.min(safeIndex + 1, data.sortedOutcomeMarkets.length - 1);
-      const nextMarket = data.sortedOutcomeMarkets[nextIndex];
-      if (nextMarket) {
-        selectMarket(nextMarket.key);
-      }
-    },
-    [data.selectedSummaryKey, data.sortedOutcomeMarkets, detailTab, selectMarket],
-  );
-
-  const scrollDetailBy = useCallback((delta: number) => {
-    const scrollBox = detailScrollRef.current;
-    if (!scrollBox) return;
-    const maxScrollTop = Math.max(
-      0,
-      scrollBox.scrollHeight - scrollBox.viewport.height,
-    );
-    scrollBox.scrollTop = Math.max(
-      0,
-      Math.min(maxScrollTop, scrollBox.scrollTop + delta),
-    );
-  }, []);
-
-  const handleKeyboard = useCallback(
-    (event: {
-      name?: string;
-      sequence?: string;
-      shift?: boolean;
-      preventDefault?: () => void;
-      stopPropagation?: () => void;
-    }) => {
-      if (!focused) return;
-      const command = resolvePredictionKeyboardCommand(event);
-
-      if (searchFocused) {
-        if (command === "escape") {
-          event.stopPropagation?.();
-          event.preventDefault?.();
-          setSearchFocused(false);
-        }
-        return;
-      }
-
-      if (detailOpen) {
-        if (command === "move-down") {
-          event.stopPropagation?.();
-          event.preventDefault?.();
-          if (detailTab === "overview" && data.sortedOutcomeMarkets.length > 0) {
-            cycleDetailOutcome("next");
-          } else {
-            scrollDetailBy(1);
-          }
-          return;
-        }
-
-        if (command === "move-up") {
-          event.stopPropagation?.();
-          event.preventDefault?.();
-          if (detailTab === "overview" && data.sortedOutcomeMarkets.length > 0) {
-            cycleDetailOutcome("previous");
-          } else {
-            scrollDetailBy(-1);
-          }
-          return;
-        }
-
-        return;
-      }
-
-      if (command === "search") {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        focusSearch();
-        return;
-      }
-
-      if (!paneSettings.hideTabs && command === "previous-venue-tab") {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setVenue(
-          getAdjacentPredictionVenueScope(effectiveVenueScope, "previous"),
-        );
-        return;
-      }
-
-      if (!paneSettings.hideTabs && command === "next-venue-tab") {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        setVenue(getAdjacentPredictionVenueScope(effectiveVenueScope, "next"));
-        return;
-      }
-
-      if (command === "previous-category") {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        selectCategory(getAdjacentPredictionCategoryId(categoryId, "previous"));
-        return;
-      }
-
-      if (command === "next-category") {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        selectCategory(getAdjacentPredictionCategoryId(categoryId, "next"));
-        return;
-      }
-
-      if (command === "toggle-watchlist" && data.selectedRow) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        if (data.selectedRow) toggleWatchlist(data.selectedRow);
-        return;
-      }
-
-      if (command === "browse-top") {
-        selectBrowseTab("top");
-        return;
-      }
-      if (command === "browse-ending") {
-        selectBrowseTab("ending");
-        return;
-      }
-      if (command === "browse-new") {
-        selectBrowseTab("new");
-        return;
-      }
-      if (command === "browse-watchlist") {
-        selectBrowseTab("watchlist");
-      }
-    },
-    [
-      browseTab,
-      categoryId,
-      cycleDetailOutcome,
-      detailOpen,
-      data.selectedRow,
-      data.sortedOutcomeMarkets.length,
-      detailTab,
-      effectiveVenueScope,
-      focusSearch,
-      focused,
-      paneSettings.hideTabs,
-      scrollDetailBy,
-      searchFocused,
-      selectBrowseTab,
-      selectCategory,
-      setVenue,
-      toggleWatchlist,
-    ],
-  );
-
-  useShortcut(handleKeyboard);
+  usePredictionControllerKeyboard({
+    categoryId,
+    detailOpen,
+    detailScrollRef,
+    detailTab,
+    effectiveVenueScope,
+    focused,
+    hideTabs: paneSettings.hideTabs,
+    searchFocused,
+    selectedRow: data.selectedRow,
+    selectedSummaryKey: data.selectedSummaryKey,
+    sortedOutcomeMarkets: data.sortedOutcomeMarkets,
+    blurSearch,
+    focusSearch,
+    selectBrowseTab,
+    selectCategory,
+    selectMarket,
+    setVenue,
+    toggleWatchlist,
+  });
 
   const searchPending = searchQuery.trim() !== data.debouncedSearchQuery.trim();
   const searchLoading =

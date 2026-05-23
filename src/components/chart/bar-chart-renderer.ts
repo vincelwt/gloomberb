@@ -1,6 +1,6 @@
 import type { NativeChartBitmap } from "./native/chart-rasterizer";
 
-export interface BarChartPoint {
+interface BarChartPoint {
   category: string;
   value: number | null;
 }
@@ -24,7 +24,7 @@ export interface BarChartSceneOptions {
   colors: BarChartColors;
 }
 
-export interface BarChartBar {
+interface BarChartBar {
   seriesId: string;
   category: string;
   value: number;

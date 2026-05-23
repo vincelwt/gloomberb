@@ -47,7 +47,7 @@ export interface BrokerPosition {
   brokerContract?: BrokerContractRef;
 }
 
-export interface BrokerConfigFieldOption {
+interface BrokerConfigFieldOption {
   label: string;
   value: string;
   description?: string;

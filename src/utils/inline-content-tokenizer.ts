@@ -1,23 +1,23 @@
 import { tokenizeInlineLinks } from "./link-tokenizer";
 
-export interface InlineContentTextToken {
+interface InlineContentTextToken {
   kind: "text";
   value: string;
 }
 
-export interface InlineContentLinkToken {
+interface InlineContentLinkToken {
   kind: "link";
   value: string;
   url: string;
 }
 
-export interface InlineContentTickerToken {
+interface InlineContentTickerToken {
   kind: "ticker";
   value: string;
   symbol: string;
 }
 
-export interface InlineContentUsernameToken {
+interface InlineContentUsernameToken {
   kind: "username";
   value: string;
   username: string;

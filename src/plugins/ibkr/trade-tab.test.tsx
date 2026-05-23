@@ -10,7 +10,7 @@ import { cloneLayout, createDefaultConfig, type AppConfig, type BrokerInstanceCo
 import type { TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { ibkrGatewayManager } from "./gateway-service";
-import { TradeTab } from "./index";
+import { TradeTab } from "./trade-tab";
 import {
   clearTradingDraft,
   prefillTradeFromTicker,
@@ -42,6 +42,7 @@ function createTradeConfig(symbol: string): AppConfig {
       binding: { kind: "fixed" as const, symbol },
     }],
     floating: [],
+    detached: [],
   };
 
   return {
@@ -171,7 +172,7 @@ test("prefills the only cached IBKR account when the live gateway snapshot is em
     await testSetup!.renderOnce();
   });
 
-  const frame = testSetup.captureCharFrame();
+  const frame = testSetup!.captureCharFrame();
   expect(frame).toContain("Account DU123456");
   expect(frame).toContain("Paper Gateway");
 });

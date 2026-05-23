@@ -1,5 +1,3 @@
-import { Box, ScrollBox, Text } from "../../ui";
-import { TextAttributes } from "../../ui";
 import { usePaneFooter } from "../../components";
 import { useShortcut } from "../../react/input";
 import { useDialog } from "../../ui/dialog";
@@ -12,12 +10,9 @@ import {
   usePaneCollection,
   usePaneInstanceId,
 } from "../../state/app-context";
-import { colors, priceColor } from "../../theme/colors";
 import type { PaneProps } from "../../types/plugin";
-import type { Quote } from "../../types/financials";
-import { formatCurrency, padTo } from "../../utils/format";
+import { formatCurrency } from "../../utils/format";
 import { isPlainKey } from "../../utils/keyboard";
-import { formatMarketPrice, formatMarketQuantity } from "../../utils/market-format";
 import { getBrokerInstance } from "../../utils/broker-instances";
 import { usePluginPaneActions } from "../plugin-runtime";
 import { isGatewayConfigured } from "./config";
@@ -38,6 +33,7 @@ import {
   inferDraftAccountId,
   isMarketDataWarning,
 } from "./trade-utils";
+import { TradingPaneView } from "./trading-pane-view";
 
 export function TradingPane({ focused, width, height }: PaneProps) {
   const dispatch = useAppDispatch();
@@ -330,145 +326,32 @@ export function TradingPane({ focused, width, height }: PaneProps) {
   });
 
   const activeAccount = availableAccounts.find((account) => account.accountId === (tradeState.accountId || ""));
-  const orderPanelWidth = Math.max(36, Math.floor(width * 0.6));
-  const listPanelWidth = Math.max(24, width - orderPanelWidth - 1);
-  const listHeight = Math.max(4, height - 4);
-  const getOrderQuote = useCallback((symbol: string): Quote | null => {
+  const getOrderQuote = useCallback((symbol: string) => {
     const ticker = tickers.get(symbol) ?? null;
     const instrument = instrumentFromTicker(ticker, symbol);
     return instrument ? resolveTickerFinancialsForInstrument(instrument)?.quote ?? null : null;
   }, [tickers]);
 
   return (
-    <Box flexDirection="column" flexGrow={1} paddingX={1}>
-      <Box flexDirection="row" height={1}>
-        <Box flexGrow={1}>
-          <Text fg={
-            displayStatusState === "connected"
-              ? colors.positive
-              : displayStatusState === "error"
-                ? colors.negative
-                : colors.textDim
-          }>
-            {selectedInstance
-              ? `${selectedInstance.label} · ${isGatewayMode ? "Gateway" : "Flex"} · ${displayStatusState}`
-              : "IBKR · no profile selected"}
-          </Text>
-        </Box>
-        {tradeState.busy && <Text fg={colors.textDim}>Working…</Text>}
-      </Box>
-
-      <Box height={1}>
-        <Text fg={colors.textDim}>
-          {activeAccount
-            ? `${selectedInstance?.label || "IBKR"} → ${activeAccount.accountId} · ${formatCurrency(activeAccount.netLiquidation || 0, activeAccount.currency || "USD")} net liq`
-            : isGatewayMode
-              ? lockedBrokerInstanceId
-                ? `Locked to ${selectedInstance?.label || "IBKR"}`
-                : "No account selected"
-              : gatewayInstances.length > 0
-                ? "Choose a Gateway / TWS profile"
-                : "Connect an IBKR profile"}
-        </Text>
-      </Box>
-
-      <Box height={1}>
-        <Text fg={tradeState.lastError ? colors.negative : colors.textDim}>
-          {tradeState.lastError
-            || gatewaySnapshot.status.message
-            || gatewaySnapshot.lastError
-            || tradeState.lastInfo
-            || "Use this console for profile status, accounts, open orders, and executions."}
-        </Text>
-      </Box>
-
-      <Box height={1}>
-        <Text fg={colors.border}>{"─".repeat(Math.max(1, width - 2))}</Text>
-      </Box>
-
-      <Box flexDirection="row" height={listHeight}>
-        <Box width={orderPanelWidth} flexDirection="column">
-          <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>Open Orders</Text>
-          <ScrollBox flexGrow={1} scrollY>
-            {gatewaySnapshot.openOrders.length === 0 ? (
-              <Text fg={colors.textDim}>No open IBKR orders.</Text>
-            ) : (
-              gatewaySnapshot.openOrders.map((order, index) => {
-                const selected = index === tradeState.selectedOpenOrderIndex;
-                const orderSymbol = order.contract.symbol;
-                const orderQuote = getOrderQuote(orderSymbol);
-                const bidStr = orderQuote?.bid != null ? formatMarketPrice(orderQuote.bid, { contractSecType: order.contract.secType, maxWidth: 6 }) : "---";
-                const askStr = orderQuote?.ask != null ? formatMarketPrice(orderQuote.ask, { contractSecType: order.contract.secType, maxWidth: 6 }) : "---";
-                const orderPrice = order.limitPrice != null
-                  ? formatMarketPrice(order.limitPrice, { contractSecType: order.contract.secType, maxWidth: 9 })
-                  : order.stopPrice != null
-                    ? formatMarketPrice(order.stopPrice, { contractSecType: order.contract.secType, maxWidth: 9 })
-                    : "MKT";
-                return (
-                  <Box
-                    key={order.orderId}
-                    backgroundColor={selected ? colors.selected : colors.bg}
-                    onMouseDown={() => {
-                      if (selected) {
-                        openSelectedOrder();
-                      } else {
-                        updateTradingPaneState({ selectedOpenOrderIndex: index });
-                      }
-                    }}
-                  >
-                    <Text fg={selected ? colors.text : colors.textDim}>
-                      {selected ? "▸ " : "  "}
-                      {padTo(String(order.orderId), 6)}
-                      {padTo(order.action, 5)}
-                      {padTo(order.contract.localSymbol || order.contract.symbol, 14)}
-                      {padTo(order.status, 10)}
-                      {padTo(formatMarketQuantity(order.remaining, { contractSecType: order.contract.secType, maxWidth: 5 }), 5, "right")}
-                      {" "}
-                      {padTo(orderPrice, 9)}
-                      {padTo(`B:${bidStr}`, 10)}
-                      {`A:${askStr}`}
-                    </Text>
-                  </Box>
-                );
-              })
-            )}
-          </ScrollBox>
-        </Box>
-
-        <Box width={1}>
-          <Text fg={colors.border}>│</Text>
-        </Box>
-
-        <Box width={listPanelWidth} flexDirection="column">
-          <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>Executions</Text>
-          <ScrollBox flexGrow={1} scrollY>
-            {gatewaySnapshot.executions.length === 0 ? (
-              <Text fg={colors.textDim}>No recent executions.</Text>
-            ) : (
-              gatewaySnapshot.executions.slice(0, 20).map((execution) => (
-                <Box
-                  key={execution.execId}
-                  onMouseDown={() => {
-                    const symbol = execution.contract.symbol;
-                    if (symbol && tickers.has(symbol)) {
-                      selectTicker(symbol, paneId);
-                    }
-                  }}
-                >
-                  <Text fg={priceColor(execution.side.toUpperCase() === "BOT" ? 1 : -1)}>
-                    {padTo(execution.side, 5)}
-                    {padTo(execution.contract.localSymbol || execution.contract.symbol, 18)}
-                    {padTo(formatMarketQuantity(execution.shares, { contractSecType: execution.contract.secType, maxWidth: 6 }), 6, "right")}
-                    {" "}
-                    {formatMarketPrice(execution.price, { contractSecType: execution.contract.secType })}
-                  </Text>
-                </Box>
-              ))
-            )}
-          </ScrollBox>
-        </Box>
-      </Box>
-
-    </Box>
+    <TradingPaneView
+      activeAccount={activeAccount}
+      displayStatusState={displayStatusState}
+      gatewayInstancesCount={gatewayInstances.length}
+      gatewaySnapshot={gatewaySnapshot}
+      getOrderQuote={getOrderQuote}
+      height={height}
+      isGatewayMode={isGatewayMode}
+      lockedBrokerInstanceId={lockedBrokerInstanceId}
+      onOpenSelectedOrder={openSelectedOrder}
+      onSelectExecutionSymbol={(symbol) => {
+        if (tickers.has(symbol)) {
+          selectTicker(symbol, paneId);
+        }
+      }}
+      onSelectOpenOrderIndex={(index) => updateTradingPaneState({ selectedOpenOrderIndex: index })}
+      selectedInstance={selectedInstance}
+      tradeState={tradeState}
+      width={width}
+    />
   );
 }

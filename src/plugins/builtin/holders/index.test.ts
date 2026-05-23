@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
   formatHolderOwnershipPercent,
   resolveHolderOwnershipPercent,
-} from "./index";
+} from "./format";
 
 test("resolves holder ownership from provider percent before value over market cap", () => {
   expect(resolveHolderOwnershipPercent({ percentHeld: 0.085, value: 120 }, 1_000)).toBe(0.085);

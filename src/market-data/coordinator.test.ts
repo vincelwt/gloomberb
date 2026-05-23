@@ -3,9 +3,20 @@ import { MarketDataCoordinator } from "./coordinator";
 import type { DataProvider, QuoteSubscriptionTarget } from "../types/data-provider";
 import type { InstrumentSearchResult } from "../types/instrument";
 import type { PricePoint, Quote, TickerFinancials } from "../types/financials";
+import type { NewsArticle } from "../news/types";
 import { createTestDataProvider } from "../test-support/data-provider";
 
-function createProvider(overrides: Partial<DataProvider> = {}): DataProvider {
+type CoordinatorTestProviderOverrides = Partial<DataProvider> & {
+  getNews?: (query: {
+    feed: "ticker";
+    ticker: string;
+    exchange?: string;
+    tickerTier: "primary";
+    limit?: number;
+  }) => Promise<NewsArticle[]>;
+};
+
+function createProvider(overrides: CoordinatorTestProviderOverrides = {}): DataProvider {
   return createTestDataProvider({
     id: "test-provider",
     getTickerFinancials: async () => ({
@@ -106,12 +117,11 @@ describe("MarketDataCoordinator", () => {
             changePercent: 1,
             lastUpdated: Date.now(),
           },
-          fundamentals: { marketCap: calls },
-          profile: null,
+          fundamentals: { marketCap: calls } as any,
           annualStatements: [],
           quarterlyStatements: [],
           priceHistory: [],
-        };
+        } satisfies TickerFinancials;
       },
     });
     const coordinator = new MarketDataCoordinator(provider);

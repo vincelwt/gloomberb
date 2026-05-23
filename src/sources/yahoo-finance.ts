@@ -1,1086 +1,95 @@
-import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState, OptionContract, OptionsChain, CompanyProfile, HolderData, HolderRecord, AnalystResearchData, AnalystEstimateRecord, CorporateActionsData, DividendAction, EarningsAction, SplitAction } from "../types/financials";
+import type { Quote, PricePoint, TickerFinancials, OptionsChain, CompanyProfile, HolderData, AnalystResearchData, CorporateActionsData } from "../types/financials";
 import type { DataProvider, EarningsEvent, MarketDataRequestContext, NewsItem, SecFilingItem } from "../types/data-provider";
 import type { TimeRange } from "../components/chart/chart-types";
 import {
-  normalizeChartResolutionSupport,
   type ChartResolutionSupport,
   type ManualChartResolution,
 } from "../components/chart/chart-resolution";
 import type { InstrumentSearchResult } from "../types/instrument";
 import { parseOptionSymbol } from "../utils/options";
 import { SecEdgarClient } from "./sec-edgar";
-
-// Exchange suffix mapping for Yahoo Finance ticker symbols
-// Includes both canonical codes and common IBKR listing exchange aliases
-const EXCHANGE_SUFFIX_MAP: Record<string, string> = {
-  // US exchanges
-  NASDAQ: "", NMS: "", NYSE: "", AMEX: "", ARCA: "", NYSEArca: "", BATS: "", BYX: "", IEX: "", PINK: "", OTC: "",
-  // Canada
-  TSX: ".TO", VENTURE: ".V", CSE2: ".CN", CNSX: ".CN",
-  // Japan (note: TSE is ambiguous — handled via EXCHANGE_FALLBACKS)
-  TYO: ".T", JPX: ".T", TSEJ: ".T",
-  // Hong Kong
-  HKEX: ".HK", SEHK: ".HK", HKG: ".HK",
-  // China
-  SSE: ".SS", SHG: ".SS", SZSE: ".SZ", SHE: ".SZ",
-  // Taiwan
-  TWSE: ".TW", TPE: ".TW", TPEX: ".TWO",
-  // Korea
-  KRX: ".KS", KSE: ".KS", KOSDAQ: ".KQ",
-  // Singapore
-  SGX: ".SI", SES: ".SI",
-  // Indonesia
-  IDX: ".JK",
-  // India
-  NSE: ".NS", BSE: ".BO",
-  // Australia & New Zealand
-  ASX: ".AX", NZE: ".NZ",
-  // Thailand, Malaysia, Philippines, Vietnam
-  SET: ".BK", BKK: ".BK", KLSE: ".KL", MYX: ".KL", PSE: ".PS", HOSE: ".VN", HNX: ".VN",
-  // UK
-  LSE: ".L", LSEETF: ".L",
-  // Germany
-  XETRA: ".DE", XETR: ".DE", IBIS: ".DE", IBIS2: ".DE", FWB: ".F", FWB2: ".F", GETTEX: ".DE", TGATE: ".DE", SWB: ".SG",
-  // France, Netherlands, Belgium, Portugal (Euronext)
-  EURONEXT: ".AS", AEB: ".AS", SBF: ".PA", "ENEXT.BE": ".BR", BVL: ".LS",
-  // Italy & Spain
-  BVME: ".MI", BM: ".MC",
-  // Switzerland
-  SIX: ".SW", EBS: ".SW", SWX: ".SW",
-  // Nordics
-  SFB: ".ST", Stockholm: ".ST", OMX: ".ST", CPH: ".CO", HEX: ".HE", OSE: ".OL", OMXNO: ".OL", ICEX: ".IC",
-  // Central/Eastern Europe
-  VSE: ".VI", WSE: ".WA", PRA: ".PR", BUX: ".BD", ATHEX: ".AT", BVB: ".RO", BIST: ".IS",
-  // Israel
-  TASE: ".TA",
-  // South Africa
-  JSE: ".JO",
-  // Brazil & Latin America
-  BVMF: ".SA", MEXI: ".MX", BYMA: ".BA", BCS: ".SN",
-  // Middle East
-  TADAWUL: ".SAU", QSE: ".QA", DFM: ".AE",
-};
-
-const EXCHANGE_FALLBACKS: Record<string, string[]> = {
-  // TSE is ambiguous: Toronto (.TO) vs Tokyo (.T) — try both
-  TSE: [".TO", ".T"],
-  KRX: [".KS", ".KQ"], KSE: [".KS", ".KQ"],
-  TWSE: [".TW", ".TWO"], TPE: [".TW", ".TWO"], TPEX: [".TWO", ".TW"],
-  FWB2: [".F", ".DE"],
-  EURONEXT: [".AS", ".PA", ".BR"], AEB: [".AS", ".PA", ".BR"], SBF: [".PA", ".AS", ".BR"],
-};
-
-const GENERIC_SUFFIX_FALLBACKS = [
-  "", ".HK", ".T", ".TO", ".KS", ".KQ", ".TW", ".TWO", ".SS", ".SZ",
-  ".AS", ".PA", ".BR", ".DE", ".F", ".L", ".MI", ".MC", ".SW", ".AX",
-  ".SI", ".JK", ".OL", ".ST", ".CO", ".HE", ".NS", ".BO", ".SA",
-  ".BK", ".KL", ".NZ", ".JO", ".TA", ".WA", ".VI",
-];
-
-const MAX_RETRIES = 3;
-const RETRY_BASE_MS = 1500;
-const FETCH_TIMEOUT_MS = 20_000;
-const RETRYABLE_ERROR = /429|403|401|Too Many Requests|Forbidden|Unauthorized|ECONNRESET|ETIMEDOUT|ENOTFOUND|fetch failed|Failed to get crumb|socket hang up|503|502|504/i;
-
-const TIMESERIES_TYPES = {
-  annual: [
-    // Income Statement
-    "annualTotalRevenue", "annualCostOfRevenue", "annualGrossProfit",
-    "annualSellingGeneralAndAdministration", "annualResearchAndDevelopment",
-    "annualOperatingExpense", "annualOperatingIncome",
-    "annualOperatingRevenue", "annualTotalExpenses", "annualPretaxIncome",
-    "annualNormalizedIncome", "annualNetIncomeCommonStockholders",
-    "annualNetIncomeContinuousOperations", "annualOtherIncomeExpense",
-    "annualOtherNonOperatingIncomeExpenses",
-    "annualDepreciationAmortizationDepletionIncomeStatement",
-    "annualDepreciationAndAmortizationInIncomeStatement",
-    "annualInterestExpense", "annualTaxProvision",
-    "annualNetIncome", "annualEBITDA",
-    "annualBasicEPS", "annualDilutedEPS",
-    "annualBasicAverageShares", "annualDilutedAverageShares",
-    // Cash Flow
-    "annualOperatingCashFlow", "annualCapitalExpenditure", "annualFreeCashFlow",
-    "annualDepreciationAndAmortization", "annualDeferredIncomeTax",
-    "annualDepreciationAmortizationDepletion", "annualDepreciation",
-    "annualDeferredTax", "annualStockBasedCompensation", "annualOtherNonCashItems",
-    "annualChangeInWorkingCapital",
-    "annualChangeInReceivables", "annualChangeInInventory",
-    "annualChangeInPayable", "annualChangeInAccountPayable",
-    "annualChangeInOtherWorkingCapital", "annualPurchaseOfPPE", "annualSaleOfPPE",
-    "annualNetPPEPurchaseAndSale",
-    "annualInvestingCashFlow", "annualFinancingCashFlow",
-    "annualCashFlowFromContinuingOperatingActivities",
-    "annualInterestPaidSupplementalData", "annualIncomeTaxPaidSupplementalData",
-    "annualCashFlowFromContinuingInvestingActivities",
-    "annualPurchaseOfBusiness", "annualSaleOfBusiness", "annualNetBusinessPurchaseAndSale",
-    "annualPurchaseOfInvestment", "annualSaleOfInvestment", "annualNetInvestmentPurchaseAndSale",
-    "annualNetOtherInvestingChanges", "annualCashFlowFromContinuingFinancingActivities",
-    "annualIssuanceOfDebt", "annualRepaymentOfDebt",
-    "annualNetIssuancePaymentsOfDebt", "annualRepurchaseOfCapitalStock",
-    "annualLongTermDebtIssuance", "annualLongTermDebtPayments", "annualNetLongTermDebtIssuance",
-    "annualShortTermDebtIssuance", "annualShortTermDebtPayments", "annualNetShortTermDebtIssuance",
-    "annualCommonStockIssuance", "annualCommonStockPayments", "annualNetCommonStockIssuance",
-    "annualCashDividendsPaid", "annualCommonStockDividendPaid", "annualNetOtherFinancingCharges",
-    "annualBeginningCashPosition", "annualEndCashPosition",
-    "annualChangesInCash", "annualEffectOfExchangeRateChanges",
-    // Balance Sheet
-    "annualTotalAssets", "annualCurrentAssets", "annualCashAndCashEquivalents",
-    "annualCashCashEquivalentsAndShortTermInvestments", "annualOtherShortTermInvestments",
-    "annualReceivables", "annualAccountsReceivable", "annualInventory",
-    "annualPrepaidAssets", "annualOtherCurrentAssets", "annualTotalNonCurrentAssets",
-    "annualNetPPE", "annualGrossPPE", "annualAccumulatedDepreciation",
-    "annualGoodwill", "annualOtherIntangibleAssets", "annualGoodwillAndOtherIntangibleAssets",
-    "annualInvestmentsAndAdvances", "annualOtherNonCurrentAssets",
-    "annualTotalLiabilitiesNetMinorityInterest", "annualCurrentLiabilities",
-    "annualCurrentDebt", "annualCurrentDebtAndCapitalLeaseObligation",
-    "annualPayablesAndAccruedExpenses", "annualCurrentAccruedExpenses",
-    "annualPayables", "annualAccountsPayable", "annualCurrentDeferredRevenue",
-    "annualCurrentDeferredLiabilities",
-    "annualOtherCurrentLiabilities", "annualTotalNonCurrentLiabilitiesNetMinorityInterest",
-    "annualLongTermDebt", "annualLongTermDebtAndCapitalLeaseObligation",
-    "annualLongTermCapitalLeaseObligation", "annualNonCurrentDeferredLiabilities",
-    "annualNonCurrentDeferredTaxesLiabilities", "annualOtherNonCurrentLiabilities",
-    "annualTotalDebt", "annualCapitalLeaseObligations", "annualTotalCapitalization",
-    "annualStockholdersEquity", "annualTotalEquityGrossMinorityInterest",
-    "annualCommonStockEquity", "annualCommonStock", "annualCapitalStock",
-    "annualAdditionalPaidInCapital", "annualTreasuryStock",
-    "annualGainsLossesNotAffectingRetainedEarnings", "annualOtherEquityAdjustments",
-    "annualRetainedEarnings", "annualLongTermEquityInvestment",
-    "annualWorkingCapital", "annualNetTangibleAssets", "annualInvestedCapital",
-    "annualTangibleBookValue", "annualShareIssued", "annualOrdinarySharesNumber",
-    "annualTreasurySharesNumber",
-  ],
-  quarterly: [
-    // Income Statement
-    "quarterlyTotalRevenue", "quarterlyCostOfRevenue", "quarterlyGrossProfit",
-    "quarterlySellingGeneralAndAdministration", "quarterlyResearchAndDevelopment",
-    "quarterlyOperatingExpense", "quarterlyOperatingIncome",
-    "quarterlyOperatingRevenue", "quarterlyTotalExpenses", "quarterlyPretaxIncome",
-    "quarterlyNormalizedIncome", "quarterlyNetIncomeCommonStockholders",
-    "quarterlyNetIncomeContinuousOperations", "quarterlyOtherIncomeExpense",
-    "quarterlyOtherNonOperatingIncomeExpenses",
-    "quarterlyDepreciationAmortizationDepletionIncomeStatement",
-    "quarterlyDepreciationAndAmortizationInIncomeStatement",
-    "quarterlyInterestExpense", "quarterlyTaxProvision",
-    "quarterlyNetIncome", "quarterlyEBITDA",
-    "quarterlyBasicEPS", "quarterlyDilutedEPS",
-    "quarterlyBasicAverageShares", "quarterlyDilutedAverageShares",
-    // Cash Flow
-    "quarterlyOperatingCashFlow", "quarterlyCapitalExpenditure", "quarterlyFreeCashFlow",
-    "quarterlyDepreciationAndAmortization", "quarterlyDeferredIncomeTax",
-    "quarterlyDepreciationAmortizationDepletion", "quarterlyDepreciation",
-    "quarterlyDeferredTax", "quarterlyStockBasedCompensation", "quarterlyOtherNonCashItems",
-    "quarterlyChangeInWorkingCapital",
-    "quarterlyChangeInReceivables", "quarterlyChangeInInventory",
-    "quarterlyChangeInPayable", "quarterlyChangeInAccountPayable",
-    "quarterlyChangeInOtherWorkingCapital", "quarterlyPurchaseOfPPE", "quarterlySaleOfPPE",
-    "quarterlyNetPPEPurchaseAndSale",
-    "quarterlyInvestingCashFlow", "quarterlyFinancingCashFlow",
-    "quarterlyCashFlowFromContinuingOperatingActivities",
-    "quarterlyInterestPaidSupplementalData", "quarterlyIncomeTaxPaidSupplementalData",
-    "quarterlyCashFlowFromContinuingInvestingActivities",
-    "quarterlyPurchaseOfBusiness", "quarterlySaleOfBusiness", "quarterlyNetBusinessPurchaseAndSale",
-    "quarterlyPurchaseOfInvestment", "quarterlySaleOfInvestment", "quarterlyNetInvestmentPurchaseAndSale",
-    "quarterlyNetOtherInvestingChanges", "quarterlyCashFlowFromContinuingFinancingActivities",
-    "quarterlyIssuanceOfDebt", "quarterlyRepaymentOfDebt",
-    "quarterlyNetIssuancePaymentsOfDebt", "quarterlyRepurchaseOfCapitalStock",
-    "quarterlyLongTermDebtIssuance", "quarterlyLongTermDebtPayments", "quarterlyNetLongTermDebtIssuance",
-    "quarterlyShortTermDebtIssuance", "quarterlyShortTermDebtPayments", "quarterlyNetShortTermDebtIssuance",
-    "quarterlyCommonStockIssuance", "quarterlyCommonStockPayments",
-    "quarterlyNetCommonStockIssuance", "quarterlyCashDividendsPaid",
-    "quarterlyCommonStockDividendPaid", "quarterlyNetOtherFinancingCharges",
-    "quarterlyBeginningCashPosition", "quarterlyEndCashPosition", "quarterlyChangesInCash",
-    "quarterlyEffectOfExchangeRateChanges",
-    // Balance Sheet
-    "quarterlyTotalAssets", "quarterlyCurrentAssets", "quarterlyCashAndCashEquivalents",
-    "quarterlyCashCashEquivalentsAndShortTermInvestments", "quarterlyOtherShortTermInvestments",
-    "quarterlyReceivables", "quarterlyAccountsReceivable", "quarterlyInventory",
-    "quarterlyPrepaidAssets", "quarterlyOtherCurrentAssets", "quarterlyTotalNonCurrentAssets",
-    "quarterlyNetPPE", "quarterlyGrossPPE", "quarterlyAccumulatedDepreciation",
-    "quarterlyGoodwill", "quarterlyOtherIntangibleAssets", "quarterlyGoodwillAndOtherIntangibleAssets",
-    "quarterlyInvestmentsAndAdvances", "quarterlyOtherNonCurrentAssets",
-    "quarterlyTotalLiabilitiesNetMinorityInterest", "quarterlyCurrentLiabilities",
-    "quarterlyCurrentDebt", "quarterlyCurrentDebtAndCapitalLeaseObligation",
-    "quarterlyPayablesAndAccruedExpenses", "quarterlyCurrentAccruedExpenses",
-    "quarterlyPayables", "quarterlyAccountsPayable", "quarterlyCurrentDeferredRevenue",
-    "quarterlyCurrentDeferredLiabilities",
-    "quarterlyOtherCurrentLiabilities", "quarterlyTotalNonCurrentLiabilitiesNetMinorityInterest",
-    "quarterlyLongTermDebt", "quarterlyLongTermDebtAndCapitalLeaseObligation",
-    "quarterlyLongTermCapitalLeaseObligation", "quarterlyNonCurrentDeferredLiabilities",
-    "quarterlyNonCurrentDeferredTaxesLiabilities", "quarterlyOtherNonCurrentLiabilities",
-    "quarterlyTotalDebt", "quarterlyCapitalLeaseObligations", "quarterlyTotalCapitalization",
-    "quarterlyStockholdersEquity", "quarterlyTotalEquityGrossMinorityInterest",
-    "quarterlyCommonStockEquity", "quarterlyCommonStock", "quarterlyCapitalStock",
-    "quarterlyAdditionalPaidInCapital", "quarterlyTreasuryStock",
-    "quarterlyGainsLossesNotAffectingRetainedEarnings", "quarterlyOtherEquityAdjustments",
-    "quarterlyRetainedEarnings", "quarterlyLongTermEquityInvestment",
-    "quarterlyWorkingCapital", "quarterlyNetTangibleAssets", "quarterlyInvestedCapital",
-    "quarterlyTangibleBookValue", "quarterlyShareIssued", "quarterlyOrdinarySharesNumber",
-    "quarterlyTreasurySharesNumber",
-  ],
-  trailing: [
-    "trailingMarketCap", "trailingPeRatio", "trailingForwardPeRatio",
-    "trailingPegRatio", "trailingEnterpriseValue", "trailingOperatingCashFlow",
-    "trailingFreeCashFlow", "trailingDividendYield",
-  ],
-};
-
-type TradingPeriod = { start?: number; end?: number; gmtoffset?: number; timezone?: string };
-
-type ChartResult = {
-  meta?: {
-    currency?: string; longName?: string; shortName?: string;
-    regularMarketPrice?: number; chartPreviousClose?: number;
-    fiftyTwoWeekHigh?: number; fiftyTwoWeekLow?: number;
-    exchangeName?: string; fullExchangeName?: string;
-    regularMarketTime?: number;
-    currentTradingPeriod?: { pre?: TradingPeriod; regular?: TradingPeriod; post?: TradingPeriod };
-    preMarketPrice?: number; postMarketPrice?: number;
-  };
-  timestamp?: number[];
-  indicators?: { quote?: Array<{ open?: (number | null)[]; high?: (number | null)[]; low?: (number | null)[]; close?: (number | null)[]; volume?: (number | null)[] }> };
-  events?: {
-    dividends?: Record<string, { amount?: number; date?: number }>;
-    splits?: Record<string, {
-      date?: number;
-      numerator?: number;
-      denominator?: number;
-      splitRatio?: string;
-    }>;
-  };
-};
-
-type ChartResponse = { chart?: { result?: ChartResult[]; error?: { description?: string } | null } };
-type TimeseriesResponse = { timeseries?: { result?: Array<Record<string, any>>; error?: { description?: string } | null } };
-type QuoteSummaryResponse = {
-  quoteSummary?: {
-    result?: Array<{
-      price?: {
-        symbol?: string;
-        currency?: string;
-        shortName?: string;
-        longName?: string;
-        exchangeName?: string;
-      };
-      quoteType?: {
-        exchange?: string;
-        shortName?: string;
-        longName?: string;
-      };
-      financialData?: {
-        currentPrice?: { raw?: number } | number | null;
-        targetHighPrice?: { raw?: number } | number | null;
-        targetLowPrice?: { raw?: number } | number | null;
-        targetMeanPrice?: { raw?: number } | number | null;
-        targetMedianPrice?: { raw?: number } | number | null;
-        recommendationMean?: { raw?: number } | number | null;
-      };
-      recommendationTrend?: {
-        trend?: Array<{
-          period?: string;
-          strongBuy?: number;
-          buy?: number;
-          hold?: number;
-          sell?: number;
-          strongSell?: number;
-        }>;
-      };
-      upgradeDowngradeHistory?: {
-        history?: Array<{
-          epochGradeDate?: number;
-          firm?: string;
-          action?: string;
-          priceTargetAction?: string;
-          toGrade?: string;
-          fromGrade?: string;
-          currentPriceTarget?: { raw?: number } | number | null;
-          priorPriceTarget?: { raw?: number } | number | null;
-        }>;
-      };
-      earningsTrend?: {
-        trend?: Array<{
-          period?: string;
-          endDate?: string;
-          earningsEstimate?: {
-            avg?: { raw?: number } | number | null;
-            low?: { raw?: number } | number | null;
-            high?: { raw?: number } | number | null;
-            yearAgoEps?: { raw?: number } | number | null;
-            numberOfAnalysts?: { raw?: number } | number | null;
-            growth?: { raw?: number } | number | null;
-          };
-          revenueEstimate?: {
-            avg?: { raw?: number } | number | null;
-            low?: { raw?: number } | number | null;
-            high?: { raw?: number } | number | null;
-            yearAgoRevenue?: { raw?: number } | number | null;
-            numberOfAnalysts?: { raw?: number } | number | null;
-            growth?: { raw?: number } | number | null;
-          };
-        }>;
-      };
-      calendarEvents?: {
-        earnings?: {
-          earningsDate?: Array<{ raw?: number; fmt?: string }>;
-          earningsCallDate?: Array<{ raw?: number; fmt?: string }>;
-          earningsAverage?: { raw?: number } | number | null;
-          isEarningsDateEstimate?: boolean;
-        };
-      };
-      earningsHistory?: {
-        history?: Array<{
-          epsActual?: { raw?: number } | number | null;
-          epsEstimate?: { raw?: number } | number | null;
-          epsDifference?: { raw?: number } | number | null;
-          surprisePercent?: { raw?: number } | number | null;
-          quarter?: { raw?: number; fmt?: string } | number | string | null;
-        }>;
-      };
-      assetProfile?: {
-        longBusinessSummary?: string;
-        sector?: string;
-        industry?: string;
-      };
-      summaryDetail?: {
-        bid?: { raw?: number } | number | null;
-        ask?: { raw?: number } | number | null;
-        bidSize?: { raw?: number } | number | null;
-        askSize?: { raw?: number } | number | null;
-        previousClose?: { raw?: number } | number | null;
-        open?: { raw?: number } | number | null;
-        dayHigh?: { raw?: number } | number | null;
-        dayLow?: { raw?: number } | number | null;
-      };
-      majorHoldersBreakdown?: {
-        insidersPercentHeld?: { raw?: number } | number | null;
-        institutionsPercentHeld?: { raw?: number } | number | null;
-        institutionsFloatPercentHeld?: { raw?: number } | number | null;
-        institutionsCount?: { raw?: number } | number | null;
-      };
-      institutionOwnership?: {
-        ownershipList?: Array<{
-          organization?: string;
-          reportDate?: { raw?: number; fmt?: string } | number | string | null;
-          position?: { raw?: number } | number | null;
-          value?: { raw?: number } | number | null;
-          pctHeld?: { raw?: number } | number | null;
-          pctChange?: { raw?: number } | number | null;
-        }>;
-      };
-    }>;
-    error?: { description?: string } | null;
-  };
-};
-type YahooQuoteSummaryResult = NonNullable<NonNullable<QuoteSummaryResponse["quoteSummary"]>["result"]>[number];
-type YahooEarningsTrend = NonNullable<NonNullable<YahooQuoteSummaryResult["earningsTrend"]>["trend"]>[number];
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/**
- * Sub-unit currency normalization.
- * Yahoo Finance returns prices for some exchanges in sub-units (e.g. pence instead of pounds).
- * IBKR and most brokers report in the main currency unit, so we normalize here to avoid mismatches.
- */
-const SUB_UNIT_CURRENCIES: Record<string, { main: string; divisor: number }> = {
-  GBp: { main: "GBP", divisor: 100 },
-  GBX: { main: "GBP", divisor: 100 },
-  ILA: { main: "ILS", divisor: 100 },
-  ZAc: { main: "ZAR", divisor: 100 },
-};
-
-function normalizeSubUnitCurrency(currency: string): { currency: string; divisor: number } {
-  const sub = SUB_UNIT_CURRENCIES[currency];
-  if (sub) return { currency: sub.main, divisor: sub.divisor };
-  return { currency, divisor: 1 };
-}
-
-function financeRawNumber(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (value && typeof value === "object") {
-    const raw = (value as { raw?: unknown }).raw;
-    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
-  }
-  return undefined;
-}
-
-function financeRawNumberOrNull(value: unknown): number | null {
-  return financeRawNumber(value) ?? null;
-}
-
-function hasAnalystResearchValue(data: AnalystResearchData): boolean {
-  return !!data.priceTarget
-    || data.recommendations.length > 0
-    || data.ratings.length > 0
-    || data.earningsEstimates.length > 0
-    || data.revenueEstimates.length > 0;
-}
-
-function hasCorporateActionsValue(data: CorporateActionsData): boolean {
-  return data.dividends.length > 0
-    || data.splits.length > 0
-    || data.earnings.length > 0;
-}
-
-function normalizeYahooRecommendationPeriod(period?: string): string {
-  switch (period) {
-    case "0m":
-      return "current month";
-    case "-1m":
-      return "previous month";
-    case "-2m":
-      return "previous 2 months";
-    case "-3m":
-      return "previous 3 months";
-    case "0q":
-      return "current quarter";
-    case "+1q":
-      return "next quarter";
-    case "0y":
-      return "current year";
-    case "+1y":
-      return "next year";
-    default:
-      return period ?? "";
-  }
-}
-
-function normalizeYahooRatingAction(action?: string, priceTargetAction?: string): string | undefined {
-  const targetAction = priceTargetAction?.trim();
-  switch ((action ?? "").toLowerCase()) {
-    case "up":
-      return "Upgrade";
-    case "down":
-      return "Downgrade";
-    case "init":
-      return "Initiated";
-    case "reit":
-      return targetAction || "Reiterated";
-    case "main":
-      return targetAction || "Maintained";
-    default:
-      return action?.trim() || undefined;
-  }
-}
-
-function yahooRecommendationMeanToRating(value: number | undefined): number | undefined {
-  if (value == null) return undefined;
-  return Math.max(0, Math.min(10, ((5 - value) / 4) * 10));
-}
-
-function mapYahooEstimate(
-  trend: YahooEarningsTrend,
-  estimate: unknown,
-  yearAgoKey: "yearAgoEps" | "yearAgoRevenue",
-): AnalystEstimateRecord | null {
-  if (!estimate || typeof estimate !== "object") return null;
-  const record = estimate as Record<string, unknown>;
-  const average = financeRawNumber(record.avg);
-  const low = financeRawNumber(record.low);
-  const high = financeRawNumber(record.high);
-  const analysts = financeRawNumber(record.numberOfAnalysts);
-  const yearAgo = financeRawNumber(record[yearAgoKey]);
-  const growth = financeRawNumber(record.growth);
-  if (
-    average == null
-    && low == null
-    && high == null
-    && analysts == null
-    && yearAgo == null
-    && growth == null
-  ) {
-    return null;
-  }
-  return {
-    date: trend.endDate ?? "",
-    period: normalizeYahooRecommendationPeriod(trend.period),
-    analysts,
-    average,
-    low,
-    high,
-    yearAgo,
-    growth,
-  };
-}
-
-function mapYahooAnalystResearchResponse(
-  result: YahooQuoteSummaryResult,
-  fallbackSymbol: string,
-): AnalystResearchData {
-  const financialData = result.financialData;
-  const targetHigh = financeRawNumber(financialData?.targetHighPrice);
-  const targetLow = financeRawNumber(financialData?.targetLowPrice);
-  const targetMean = financeRawNumber(financialData?.targetMeanPrice);
-  const targetMedian = financeRawNumber(financialData?.targetMedianPrice);
-  const currentPrice = financeRawNumber(financialData?.currentPrice);
-  const trend = result.earningsTrend?.trend ?? [];
-
-  return {
-    providerId: "yahoo",
-    symbol: result.price?.symbol ?? fallbackSymbol,
-    name: result.price?.shortName ?? result.price?.longName,
-    currency: result.price?.currency,
-    exchange: result.price?.exchangeName,
-    priceTarget: targetHigh != null || targetLow != null || targetMean != null || targetMedian != null
-      ? {
-          high: targetHigh,
-          median: targetMedian,
-          low: targetLow,
-          average: targetMean,
-          current: currentPrice,
-          currency: result.price?.currency,
-        }
-      : undefined,
-    recommendationRating: yahooRecommendationMeanToRating(financeRawNumber(financialData?.recommendationMean)),
-    recommendations: (result.recommendationTrend?.trend ?? [])
-      .filter((row) => row.period)
-      .map((row) => ({
-        period: normalizeYahooRecommendationPeriod(row.period),
-        strongBuy: row.strongBuy,
-        buy: row.buy,
-        hold: row.hold,
-        sell: row.sell,
-        strongSell: row.strongSell,
-      })),
-    ratings: (result.upgradeDowngradeHistory?.history ?? [])
-      .map((rating): AnalystResearchData["ratings"][number] | null => {
-        const firm = rating.firm?.trim();
-        const date = rating.epochGradeDate
-          ? new Date(rating.epochGradeDate * 1000).toISOString().slice(0, 10)
-          : "";
-        if (!firm || !date) return null;
-        const action = normalizeYahooRatingAction(rating.action, rating.priceTargetAction);
-        const current = rating.toGrade?.trim();
-        const prior = rating.fromGrade?.trim();
-        const currentPriceTarget = financeRawNumber(rating.currentPriceTarget);
-        const priorPriceTarget = financeRawNumber(rating.priorPriceTarget);
-        return {
-          date,
-          firm,
-          ...(action ? { action } : {}),
-          ...(current ? { current } : {}),
-          ...(prior ? { prior } : {}),
-          ...(currentPriceTarget != null ? { currentPriceTarget } : {}),
-          ...(priorPriceTarget != null ? { priorPriceTarget } : {}),
-        };
-      })
-      .filter((rating): rating is AnalystResearchData["ratings"][number] => rating !== null)
-      .sort((left, right) => right.date.localeCompare(left.date))
-      .slice(0, 100),
-    earningsEstimates: trend
-      .map((row) => mapYahooEstimate(row, row.earningsEstimate, "yearAgoEps"))
-      .filter((estimate): estimate is AnalystEstimateRecord => estimate !== null),
-    revenueEstimates: trend
-      .map((row) => mapYahooEstimate(row, row.revenueEstimate, "yearAgoRevenue"))
-      .filter((estimate): estimate is AnalystEstimateRecord => estimate !== null),
-  };
-}
-
-function normalizePositiveMarketValue(value: number | undefined, divisor = 1): number | undefined {
-  if (value == null || !Number.isFinite(value) || value <= 0) return undefined;
-  return value / divisor;
-}
-
-function normalizeMarketValue(value: number | undefined, divisor = 1): number | undefined {
-  if (value == null || !Number.isFinite(value)) return undefined;
-  return value / divisor;
-}
-
-function yahooRawDateTime(value: unknown): Date | null {
-  const raw = financeRawNumber(value);
-  if (raw == null) return null;
-  const date = new Date(raw * 1000);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function yahooTimestampDate(value: number | undefined): string | undefined {
-  if (value == null || !Number.isFinite(value)) return undefined;
-  const date = new Date(value * 1000);
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString().slice(0, 10);
-}
-
-function inferEarningsTiming(date: Date): EarningsEvent["timing"] {
-  const hour = date.getUTCHours();
-  if (hour >= 20) return "AMC";
-  if (hour <= 13) return "BMO";
-  return "";
-}
-
-function yahooRawDate(value: unknown): string | undefined {
-  if (value && typeof value === "object") {
-    const fmt = (value as { fmt?: unknown }).fmt;
-    if (typeof fmt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fmt)) return fmt;
-  }
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const raw = financeRawNumber(value);
-  if (raw == null) return undefined;
-  const date = new Date(raw * 1000);
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString().slice(0, 10);
-}
-
-function deriveShareChange(position: number | undefined, changePercent: number | undefined): number | undefined {
-  if (position == null || changePercent == null || !Number.isFinite(position) || !Number.isFinite(changePercent)) return undefined;
-  const denominator = 1 + changePercent;
-  if (denominator <= 0) return undefined;
-  return Math.round(position - position / denominator);
-}
-
-function mapYahooDividends(events: ChartResult["events"]): DividendAction[] {
-  return Object.values(events?.dividends ?? {})
-    .map((dividend): DividendAction | null => {
-      const date = yahooTimestampDate(dividend.date);
-      if (!date || dividend.amount == null || !Number.isFinite(dividend.amount)) return null;
-      return { exDate: date, amount: dividend.amount };
-    })
-    .filter((dividend): dividend is DividendAction => dividend !== null);
-}
-
-function mapYahooSplits(events: ChartResult["events"]): SplitAction[] {
-  return Object.values(events?.splits ?? {})
-    .map((split): SplitAction | null => {
-      const date = yahooTimestampDate(split.date);
-      if (!date) return null;
-      const numerator = split.numerator;
-      const denominator = split.denominator;
-      return {
-        date,
-        description: split.splitRatio ? `${split.splitRatio} split` : "Split",
-        ratio: numerator != null && denominator ? numerator / denominator : undefined,
-        fromFactor: denominator,
-        toFactor: numerator,
-      };
-    })
-    .filter((split): split is SplitAction => split !== null);
-}
-
-function mapYahooCalendarEarnings(result: YahooQuoteSummaryResult): EarningsAction[] {
-  const rawDate = result.calendarEvents?.earnings?.earningsDate?.[0];
-  const date = yahooRawDate(rawDate);
-  if (!date) return [];
-  const timestamp = yahooRawDateTime(rawDate);
-  return [{
-    date,
-    time: timestamp ? inferEarningsTiming(timestamp) : undefined,
-    epsEstimate: financeRawNumber(result.calendarEvents?.earnings?.earningsAverage),
-  }];
-}
-
-function mapYahooEarningsHistory(result: YahooQuoteSummaryResult): EarningsAction[] {
-  return (result.earningsHistory?.history ?? [])
-    .map((earning): EarningsAction | null => {
-      const date = yahooRawDate(earning.quarter);
-      if (!date) return null;
-      const surprisePercent = financeRawNumber(earning.surprisePercent);
-      return {
-        date,
-        epsEstimate: financeRawNumber(earning.epsEstimate),
-        epsActual: financeRawNumber(earning.epsActual),
-        difference: financeRawNumber(earning.epsDifference),
-        surprisePercent: surprisePercent == null ? undefined : surprisePercent * 100,
-      };
-    })
-    .filter((earning): earning is EarningsAction => earning !== null);
-}
-
-function deriveMarketState(meta: NonNullable<ChartResult["meta"]>): MarketState {
-  const ctp = meta.currentTradingPeriod;
-  if (!ctp) return "CLOSED";
-  const now = Math.floor(Date.now() / 1000);
-  if (ctp.regular?.start && ctp.regular?.end && now >= ctp.regular.start && now < ctp.regular.end) return "REGULAR";
-  if (ctp.pre?.start && ctp.pre?.end && now >= ctp.pre.start && now < ctp.pre.end) return "PRE";
-  if (ctp.post?.start && ctp.post?.end && now >= ctp.post.start && now < ctp.post.end) return "POST";
-  return "CLOSED";
-}
-
-function computeExtendedHoursChange(extPrice: number | undefined, regularPrice: number | undefined): { change?: number; changePct?: number } {
-  if (extPrice == null || regularPrice == null || regularPrice === 0) return {};
-  const change = extPrice - regularPrice;
-  return { change, changePct: (change / regularPrice) * 100 };
-}
-
-type ExtendedHoursData = {
-  preMarketPrice?: number;
-  preMarketChange?: number;
-  preMarketChangePercent?: number;
-  postMarketPrice?: number;
-  postMarketChange?: number;
-  postMarketChangePercent?: number;
-};
-
-/**
- * Extract extended hours prices from a 1d intraday chart with includePrePost=true.
- * Pre/post market data points sit outside the regular trading period timestamps.
- */
-function extractExtendedHoursPrices(
-  meta: NonNullable<ChartResult["meta"]>,
-  timestamps: number[],
-  closes: (number | null)[],
-  marketState: MarketState,
-): ExtendedHoursData {
-  const ctp = meta.currentTradingPeriod;
-  if (!ctp || !timestamps.length) return {};
-
-  const regStart = ctp.regular?.start ?? 0;
-  const regEnd = ctp.regular?.end ?? Infinity;
-  const regularClose = meta.regularMarketPrice ?? meta.chartPreviousClose;
-
-  if (marketState === "PRE") {
-    // Find the last pre-market data point (before regular open)
-    for (let i = timestamps.length - 1; i >= 0; i--) {
-      if (timestamps[i]! < regStart && closes[i] != null) {
-        const ext = computeExtendedHoursChange(closes[i]!, regularClose);
-        return { preMarketPrice: closes[i]!, preMarketChange: ext.change, preMarketChangePercent: ext.changePct };
-      }
-    }
-  } else if (marketState === "POST") {
-    // Find the last post-market data point (after regular close)
-    for (let i = timestamps.length - 1; i >= 0; i--) {
-      if (timestamps[i]! >= regEnd && closes[i] != null) {
-        const ext = computeExtendedHoursChange(closes[i]!, regularClose);
-        return { postMarketPrice: closes[i]!, postMarketChange: ext.change, postMarketChangePercent: ext.changePct };
-      }
-    }
-  }
-  return {};
-}
-
-// Cache TTLs
-const QUOTE_TTL = 5 * 60_000; // 5 min
-const HISTORY_TTL = 24 * 60 * 60_000; // 24 hours
-const INTRADAY_HISTORY_TTL = 5 * 60_000; // 5 min for intraday ranges
-
-// Maps TimeRange → Yahoo API { range, interval } for optimal granularity
-const RANGE_PARAMS: Record<TimeRange, { range: string; interval: string; ttl: number }> = {
-  "1D": { range: "1d", interval: "5m", ttl: INTRADAY_HISTORY_TTL },
-  "1W": { range: "5d", interval: "5m", ttl: INTRADAY_HISTORY_TTL },
-  "1M": { range: "1mo", interval: "15m", ttl: INTRADAY_HISTORY_TTL },
-  "3M": { range: "3mo", interval: "1h", ttl: QUOTE_TTL },
-  "6M": { range: "6mo", interval: "1d", ttl: HISTORY_TTL },
-  "1Y": { range: "1y", interval: "1d", ttl: HISTORY_TTL },
-  "5Y": { range: "5y", interval: "1d", ttl: HISTORY_TTL },
-  "ALL": { range: "max", interval: "1wk", ttl: HISTORY_TTL },
-};
-
-const YAHOO_RESOLUTION_SUPPORT = normalizeChartResolutionSupport([
-  { resolution: "5m", maxRange: "1W" },
-  { resolution: "15m", maxRange: "1M" },
-  { resolution: "1h", maxRange: "3M" },
-  { resolution: "1d", maxRange: "5Y" },
-  { resolution: "1wk", maxRange: "ALL" },
-  { resolution: "1mo", maxRange: "ALL" },
-]);
+import { YahooHttpClient } from "./yahoo-finance/http";
+import {
+  normalizeSubUnitCurrency,
+} from "./yahoo-finance/mappers";
+import { getYahooSymbol, getYahooSymbolsToTry } from "./yahoo-finance/symbols";
+import type { ChartResult } from "./yahoo-finance/types";
+import {
+  fetchYahooAssetProfile,
+  fetchYahooChart,
+  fetchYahooExtendedHoursData,
+  fetchYahooQuoteSupplement,
+  fetchYahooTimeseries,
+} from "./yahoo-finance/requests";
+import {
+  getYahooChartResolutionCapabilities,
+  getYahooChartResolutionSupport,
+  loadYahooPriceHistory,
+  loadYahooPriceHistoryForResolution,
+} from "./yahoo-finance/history";
+import {
+  getYahooOptionQuote,
+  loadYahooOptionsChain,
+} from "./yahoo-finance/options";
+import {
+  loadYahooAnalystResearch,
+  loadYahooCorporateActions,
+  loadYahooEarningsCalendar,
+  loadYahooHolders,
+} from "./yahoo-finance/quote-summary";
+import {
+  loadYahooQuote,
+  loadYahooTickerFinancials,
+} from "./yahoo-finance/snapshots";
 
 export class YahooFinanceClient implements DataProvider {
   readonly id = "yahoo";
   readonly name = "Yahoo Finance";
 
-  private crumb: string | null = null;
-  private cookie: string | null = null;
-  private crumbPromise: Promise<void> | null = null;
   private readonly secClient = new SecEdgarClient();
 
-  constructor() {}
-
-  private defaultHeaders() {
-    return {
-      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-      Accept: "application/json,text/plain,*/*",
-      "Accept-Language": "en-US,en;q=0.9",
-      Referer: "https://finance.yahoo.com/",
-    };
-  }
-
-  /** Fetch a crumb + cookie pair needed by some Yahoo endpoints (e.g. options). */
-  private async ensureCrumb(): Promise<void> {
-    if (this.crumb && this.cookie) return;
-    if (this.crumbPromise) return this.crumbPromise;
-    this.crumbPromise = (async () => {
-      try {
-        // Step 1: get a cookie from Yahoo
-        const cookieResp = await fetch("https://fc.yahoo.com/", {
-          headers: this.defaultHeaders(),
-          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-          redirect: "manual",
-        });
-        const setCookie = cookieResp.headers.get("set-cookie");
-        if (!setCookie) throw new Error("Failed to get Yahoo cookie");
-        // Extract just the cookie key=value pairs
-        this.cookie = setCookie.split(",").map((c) => c.split(";")[0]!.trim()).join("; ");
-
-        // Step 2: get the crumb value
-        const crumbResp = await fetch("https://query2.finance.yahoo.com/v1/test/getcrumb", {
-          headers: { ...this.defaultHeaders(), Cookie: this.cookie },
-          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        });
-        if (!crumbResp.ok) throw new Error(`Failed to get crumb: ${crumbResp.status}`);
-        this.crumb = await crumbResp.text();
-        if (!this.crumb) throw new Error("Empty crumb response");
-      } catch (err) {
-        this.crumb = null;
-        this.cookie = null;
-        throw err;
-      } finally {
-        this.crumbPromise = null;
-      }
-    })();
-    return this.crumbPromise;
-  }
-
-  /** Fetch JSON from a Yahoo endpoint that requires crumb authentication. */
-  private async fetchJsonWithCrumb<T>(url: string): Promise<T> {
-    return this.withRetry(async () => {
-      await this.ensureCrumb();
-      const separator = url.includes("?") ? "&" : "?";
-      const fullUrl = `${url}${separator}crumb=${encodeURIComponent(this.crumb!)}`;
-      const resp = await fetch(fullUrl, {
-        headers: { ...this.defaultHeaders(), Cookie: this.cookie! },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-      if (resp.status === 401) {
-        // Crumb expired — clear and let retry logic re-fetch
-        this.crumb = null;
-        this.cookie = null;
-        throw new Error(`[401] Invalid Crumb`);
-      }
-      if (!resp.ok) throw new Error(`[${resp.status}] ${(await resp.text()).slice(0, 200)}`);
-      return resp.json() as Promise<T>;
-    });
-  }
-
-  private async withRetry<T>(fn: () => Promise<T>): Promise<T> {
-    let lastError: any;
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        return await fn();
-      } catch (error: any) {
-        lastError = error;
-        if (!RETRYABLE_ERROR.test(error?.message || String(error)) || attempt === MAX_RETRIES) throw error;
-        const delay = Math.min(30_000, RETRY_BASE_MS * Math.pow(2, attempt)) + Math.round(Math.random() * 300);
-        await sleep(delay);
-      }
-    }
-    throw lastError;
-  }
-
-  private async fetchJson<T>(url: string): Promise<T> {
-    return this.withRetry(async () => {
-      const resp = await fetch(url, {
-        headers: this.defaultHeaders(),
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-      if (!resp.ok) throw new Error(`[${resp.status}] ${(await resp.text()).slice(0, 200)}`);
-      return resp.json() as Promise<T>;
-    });
-  }
-
-  /** All known Yahoo Finance suffixes — used to detect tickers that already include one */
-  private static KNOWN_SUFFIXES = new Set(
-    Object.values(EXCHANGE_SUFFIX_MAP).filter(Boolean)
-      .concat(GENERIC_SUFFIX_FALLBACKS.filter(Boolean)),
-  );
-
-  /** Check if the ticker already ends with a known Yahoo suffix (e.g. "6324.T") */
-  private tickerHasSuffix(ticker: string): boolean {
-    const dot = ticker.indexOf(".");
-    if (dot < 0) return false;
-    return YahooFinanceClient.KNOWN_SUFFIXES.has(ticker.slice(dot));
-  }
-
-  private isHKExchange(exchange: string): boolean {
-    return exchange === "HKEX" || exchange === "SEHK" || exchange === "HKG";
-  }
-
-  private normalizeTicker(ticker: string, exchange: string): string {
-    // Hong Kong stocks need 4-digit codes with leading zeros
-    if (this.isHKExchange(exchange) && /^\d+$/.test(ticker)) {
-      return ticker.padStart(4, "0");
-    }
-    // Yahoo Finance uses hyphens where IBKR uses spaces (e.g. "HEXA B" → "HEXA-B")
-    return ticker.replace(/ /g, "-");
-  }
-
-  private getSymbol(ticker: string, exchange: string): string {
-    // If ticker already contains a Yahoo suffix, use it as-is
-    if (this.tickerHasSuffix(ticker)) return ticker;
-    const suffix = EXCHANGE_SUFFIX_MAP[exchange] ?? "";
-    return `${this.normalizeTicker(ticker, exchange)}${suffix}`;
-  }
-
-  private getSymbolsToTry(ticker: string, exchange: string): string[] {
-    // If ticker already contains a Yahoo suffix, use it as-is
-    if (this.tickerHasSuffix(ticker)) return [ticker];
-
-    const normalized = this.normalizeTicker(ticker, exchange);
-
-    // For tickers with dots that aren't Yahoo suffixes (e.g. "BTC.USD"),
-    // also try replacing the dot with a hyphen (Yahoo uses "BTC-USD" for crypto pairs)
-    const dotVariant = normalized.includes(".") ? normalized.replace(/\./g, "-") : null;
-
-    const ex = (exchange || "").toUpperCase();
-    if (!ex) {
-      const symbols = new Set<string>();
-      // For numeric tickers with no exchange, also try HK-padded variant
-      const candidates = [normalized];
-      if (dotVariant) candidates.unshift(dotVariant); // Try hyphen variant first
-      if (/^\d+$/.test(normalized) && normalized.length < 4) {
-        candidates.push(normalized.padStart(4, "0"));
-      }
-      for (const candidate of candidates) {
-        for (const suffix of GENERIC_SUFFIX_FALLBACKS) symbols.add(`${candidate}${suffix}`);
-      }
-      return Array.from(symbols);
-    }
-    const fallbacks = EXCHANGE_FALLBACKS[exchange];
-    if (fallbacks) {
-      const results = fallbacks.map((s) => `${normalized}${s}`);
-      if (dotVariant) results.unshift(...fallbacks.map((s) => `${dotVariant}${s}`));
-      return results;
-    }
-    const primary = this.getSymbol(ticker, exchange);
-    if (dotVariant) {
-      const suffix = EXCHANGE_SUFFIX_MAP[exchange] ?? "";
-      return [`${dotVariant}${suffix}`, primary];
-    }
-    return [primary];
-  }
+  constructor(private readonly http = new YahooHttpClient()) {}
 
   private async fetchChart(symbol: string, range: string, interval = "1d", includePrePost = false) {
-    const params = new URLSearchParams({ interval, range, includePrePost: String(includePrePost), events: "div,split" });
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${params}`;
-    const data = await this.fetchJson<ChartResponse>(url);
-    const result = data.chart?.result?.[0];
-    if (!result?.timestamp?.length) throw new Error(data.chart?.error?.description || `No chart data for ${symbol}`);
-    const quote = result.indicators?.quote?.[0];
-    if (!quote) throw new Error(`Missing indicators for ${symbol}`);
-
-    const history: PricePoint[] = [];
-    for (let i = 0; i < result.timestamp.length; i++) {
-      const close = quote.close?.[i];
-      if (close == null || !Number.isFinite(close) || close <= 0) continue;
-      history.push({
-        date: new Date((result.timestamp[i]!) * 1000),
-        open: quote.open?.[i] ?? undefined,
-        high: quote.high?.[i] ?? undefined,
-        low: quote.low?.[i] ?? undefined,
-        close,
-        volume: quote.volume?.[i] ?? undefined,
-      });
-    }
-    return { meta: result.meta || {}, history, events: result.events };
+    return fetchYahooChart(this.http, symbol, range, interval, includePrePost);
   }
 
   /** Fetch extended hours data using 1d intraday chart with pre/post market included */
-  private async fetchExtendedHoursData(symbol: string, meta: NonNullable<ChartResult["meta"]>): Promise<ExtendedHoursData> {
-    const marketState = deriveMarketState(meta);
-    if (marketState !== "PRE" && marketState !== "POST") return {};
-
-    try {
-      const params = new URLSearchParams({ interval: "5m", range: "1d", includePrePost: "true" });
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${params}`;
-      const data = await this.fetchJson<ChartResponse>(url);
-      const result = data.chart?.result?.[0];
-      if (!result?.timestamp?.length) return {};
-      const closes = result.indicators?.quote?.[0]?.close || [];
-      return extractExtendedHoursPrices(meta, result.timestamp, closes, marketState);
-    } catch {
-      return {};
-    }
+  private async fetchExtendedHoursData(symbol: string, meta: NonNullable<ChartResult["meta"]>) {
+    return fetchYahooExtendedHoursData(this.http, symbol, meta);
   }
 
   private async fetchTimeseries(symbol: string, types: string[], period1 = "2010-01-01") {
-    const p1 = Math.floor(new Date(period1).getTime() / 1000);
-    const p2 = Math.floor(Date.now() / 1000);
-    const params = new URLSearchParams({ type: types.join(","), period1: String(p1), period2: String(p2) });
-    const url = `https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}?${params}`;
-    const data = await this.fetchJson<TimeseriesResponse>(url);
-    return data.timeseries?.result || [];
+    return fetchYahooTimeseries(this.http, symbol, types, period1);
   }
 
   private async fetchAssetProfile(symbol: string): Promise<CompanyProfile | undefined> {
-    const params = new URLSearchParams({ modules: "assetProfile" });
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
-    const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(url);
-    const profile = data.quoteSummary?.result?.[0]?.assetProfile;
-    if (!profile) return undefined;
-
-    const normalized: CompanyProfile = {
-      description: profile.longBusinessSummary?.trim() || undefined,
-      sector: profile.sector?.trim() || undefined,
-      industry: profile.industry?.trim() || undefined,
-    };
-
-    return normalized.description || normalized.sector || normalized.industry ? normalized : undefined;
+    return fetchYahooAssetProfile(this.http, symbol);
   }
 
   private async fetchQuoteSupplement(
     symbol: string,
     currencyDivisor = 1,
   ): Promise<Pick<Quote, "bid" | "ask" | "bidSize" | "askSize" | "previousClose" | "open" | "high" | "low">> {
-    try {
-      const params = new URLSearchParams({ modules: "summaryDetail" });
-      const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
-      const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(url);
-      const summaryDetail = data.quoteSummary?.result?.[0]?.summaryDetail;
-      if (!summaryDetail) return {};
-
-      const bid = normalizePositiveMarketValue(financeRawNumber(summaryDetail.bid), currencyDivisor);
-      const ask = normalizePositiveMarketValue(financeRawNumber(summaryDetail.ask), currencyDivisor);
-      const bidSize = financeRawNumber(summaryDetail.bidSize);
-      const askSize = financeRawNumber(summaryDetail.askSize);
-      const previousClose = normalizeMarketValue(financeRawNumber(summaryDetail.previousClose), currencyDivisor);
-      const open = normalizeMarketValue(financeRawNumber(summaryDetail.open), currencyDivisor);
-      const high = normalizeMarketValue(financeRawNumber(summaryDetail.dayHigh), currencyDivisor);
-      const low = normalizeMarketValue(financeRawNumber(summaryDetail.dayLow), currencyDivisor);
-
-      return {
-        bid,
-        ask,
-        bidSize,
-        askSize,
-        previousClose,
-        open,
-        high,
-        low,
-      };
-    } catch {
-      return {};
-    }
-  }
-
-  private parseTimeseries(results: Array<Record<string, any>>) {
-    const parsed: Record<string, Array<{ asOfDate: string; periodType?: string; value: number }>> = {};
-    for (const result of results) {
-      const type = result?.meta?.type?.[0];
-      if (!type) continue;
-      const key = Object.keys(result).find((k) => k !== "meta" && k !== "timestamp");
-      if (!key) continue;
-      parsed[type] = (Array.isArray(result[key]) ? result[key] : [])
-        .map((p: any) => ({ asOfDate: p?.asOfDate, periodType: p?.periodType, value: p?.reportedValue?.raw }))
-        .filter((p: any) => typeof p.asOfDate === "string" && typeof p.value === "number" && Number.isFinite(p.value));
-    }
-    return parsed;
-  }
-
-  private computeReturn(history: PricePoint[], days: number): number | undefined {
-    if (history.length < 2) return undefined;
-    const latest = history[history.length - 1]!;
-    const cutoff = new Date(latest.date.getTime() - days * 86400_000);
-    let baseline = history[0]!;
-    for (const p of history) {
-      if (p.date <= cutoff) baseline = p;
-      else break;
-    }
-    if (!baseline.close) return undefined;
-    return (latest.close - baseline.close) / baseline.close;
+    return fetchYahooQuoteSupplement(this.http, symbol, currencyDivisor);
   }
 
   /** Fetch full financials for a ticker */
   async getTickerFinancials(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<TickerFinancials> {
-    const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
+    const symbolsToTry = getYahooSymbolsToTry(ticker, exchange);
     let lastError: any;
 
     for (const symbol of symbolsToTry) {
       try {
-        const result = await this.fetchFullFinancials(symbol);
+        const result = await loadYahooTickerFinancials(symbol, {
+          fetchAssetProfile: (targetSymbol) => this.fetchAssetProfile(targetSymbol),
+          fetchChart: (targetSymbol, range, interval) => this.fetchChart(targetSymbol, range, interval),
+          fetchExtendedHoursData: (targetSymbol, meta) => this.fetchExtendedHoursData(targetSymbol, meta),
+          fetchQuoteSupplement: (targetSymbol, currencyDivisor) =>
+            this.fetchQuoteSupplement(targetSymbol, currencyDivisor),
+          fetchTimeseries: (targetSymbol, types, period1) => this.fetchTimeseries(targetSymbol, types, period1),
+          providerId: this.id,
+        });
         return result;
       } catch (err) {
         lastError = err;
@@ -1089,379 +98,31 @@ export class YahooFinanceClient implements DataProvider {
     throw lastError || new Error(`No data for ${ticker}`);
   }
 
-  private async fetchFullFinancials(symbol: string): Promise<TickerFinancials> {
-    const [chart, tsRaw, profile] = await Promise.all([
-      this.fetchChart(symbol, "5y"),
-      this.fetchTimeseries(symbol, [
-        ...TIMESERIES_TYPES.annual,
-        ...TIMESERIES_TYPES.quarterly,
-        ...TIMESERIES_TYPES.trailing,
-      ]),
-      this.fetchAssetProfile(symbol).catch(() => undefined),
-    ]);
-
-    const { meta, history } = chart;
-    if (!history.length) throw new Error(`No history for ${symbol}`);
-
-    const metrics = this.parseTimeseries(tsRaw);
-    const latest = (type: string) => {
-      const pts = metrics[type];
-      return pts?.length ? pts[pts.length - 1]!.value : undefined;
-    };
-
-    // Normalize sub-unit currencies (e.g. GBp → GBP, dividing prices by 100)
-    const rawCurrency = meta.currency || "USD";
-    const { currency: normalizedCurrency, divisor: currencyDivisor } = normalizeSubUnitCurrency(rawCurrency);
-
-    if (currencyDivisor !== 1) {
-      // Normalize price history points
-      for (const point of history) {
-        point.close /= currencyDivisor;
-        if (point.open != null) point.open /= currencyDivisor;
-        if (point.high != null) point.high /= currencyDivisor;
-        if (point.low != null) point.low /= currencyDivisor;
-      }
-      // Normalize meta prices
-      if (meta.regularMarketPrice != null) meta.regularMarketPrice /= currencyDivisor;
-      if (meta.chartPreviousClose != null) meta.chartPreviousClose /= currencyDivisor;
-      if (meta.fiftyTwoWeekHigh != null) meta.fiftyTwoWeekHigh /= currencyDivisor;
-      if (meta.fiftyTwoWeekLow != null) meta.fiftyTwoWeekLow /= currencyDivisor;
-    }
-
-    const quoteSupplement = await this.fetchQuoteSupplement(symbol, currencyDivisor);
-
-    const currentPrice = meta.regularMarketPrice ?? history[history.length - 1]!.close;
-    const prev = history.length > 1 ? history[history.length - 2]!.close : meta.chartPreviousClose;
-    const change = prev != null ? currentPrice - prev : 0;
-    const changePct = prev ? (change / prev) * 100 : 0;
-
-    const marketState = deriveMarketState(meta);
-    const extHours = await this.fetchExtendedHoursData(symbol, meta);
-
-    // Normalize extended hours prices too
-    if (currencyDivisor !== 1) {
-      if (extHours.preMarketPrice != null) extHours.preMarketPrice /= currencyDivisor;
-      if (extHours.preMarketChange != null) extHours.preMarketChange /= currencyDivisor;
-      if (extHours.postMarketPrice != null) extHours.postMarketPrice /= currencyDivisor;
-      if (extHours.postMarketChange != null) extHours.postMarketChange /= currencyDivisor;
-    }
-
-    const quote: Quote = {
-      symbol,
-      providerId: this.id,
-      price: currentPrice,
-      currency: normalizedCurrency,
-      change,
-      changePercent: changePct,
-      high52w: meta.fiftyTwoWeekHigh,
-      low52w: meta.fiftyTwoWeekLow,
-      marketCap: latest("trailingMarketCap"),
-      name: meta.shortName || meta.longName,
-      lastUpdated: Date.now(),
-      exchangeName: meta.exchangeName,
-      fullExchangeName: meta.fullExchangeName,
-      listingExchangeName: meta.exchangeName,
-      listingExchangeFullName: meta.fullExchangeName,
-      marketState,
-      sessionConfidence: "derived",
-      dataSource: "delayed",
-      ...quoteSupplement,
-      ...extHours,
-    };
-
-    const revenue = latest("annualTotalRevenue");
-    const netIncome = latest("annualNetIncome");
-
-    const fundamentals: Fundamentals = {
-      trailingPE: latest("trailingPeRatio"),
-      forwardPE: latest("trailingForwardPeRatio"),
-      pegRatio: latest("trailingPegRatio"),
-      enterpriseValue: latest("trailingEnterpriseValue"),
-      operatingCashFlow: latest("trailingOperatingCashFlow"),
-      freeCashFlow: latest("trailingFreeCashFlow"),
-      dividendYield: latest("trailingDividendYield"),
-      revenue,
-      netIncome,
-      eps: latest("annualDilutedEPS"),
-      operatingMargin: revenue && latest("annualEBITDA") != null ? latest("annualEBITDA")! / revenue : undefined,
-      profitMargin: revenue && netIncome != null ? netIncome / revenue : undefined,
-      return1Y: this.computeReturn(history, 365),
-      return3Y: this.computeReturn(history, 3 * 365),
-      sharesOutstanding: latest("annualDilutedAverageShares"),
-    };
-
-    // Build statement arrays
-    const buildStatements = (prefix: "annual" | "quarterly"): FinancialStatement[] => {
-      const byDate = new Map<string, FinancialStatement>();
-      const assign = (type: string, field: keyof FinancialStatement) => {
-        for (const pt of metrics[type] || []) {
-          const row = byDate.get(pt.asOfDate) || { date: pt.asOfDate };
-          (row as any)[field] = pt.value;
-          byDate.set(pt.asOfDate, row);
-        }
-      };
-      // Income Statement
-      assign(`${prefix}TotalRevenue`, "totalRevenue");
-      assign(`${prefix}CostOfRevenue`, "costOfRevenue");
-      assign(`${prefix}GrossProfit`, "grossProfit");
-      assign(`${prefix}SellingGeneralAndAdministration`, "sellingGeneralAndAdministration");
-      assign(`${prefix}ResearchAndDevelopment`, "researchAndDevelopment");
-      assign(`${prefix}OperatingExpense`, "operatingExpense");
-      assign(`${prefix}OperatingIncome`, "operatingIncome");
-      assign(`${prefix}OperatingRevenue`, "operatingRevenue");
-      assign(`${prefix}TotalExpenses`, "totalExpenses");
-      assign(`${prefix}PretaxIncome`, "pretaxIncome");
-      assign(`${prefix}NormalizedIncome`, "normalizedIncome");
-      assign(`${prefix}NetIncomeCommonStockholders`, "netIncomeCommonStockholders");
-      assign(`${prefix}NetIncomeContinuousOperations`, "netIncomeContinuousOperations");
-      assign(`${prefix}OtherIncomeExpense`, "otherIncomeExpense");
-      assign(`${prefix}OtherNonOperatingIncomeExpenses`, "otherNonOperatingIncomeExpenses");
-      assign(`${prefix}DepreciationAmortizationDepletionIncomeStatement`, "depreciationAmortizationDepletionIncomeStatement");
-      assign(`${prefix}DepreciationAndAmortizationInIncomeStatement`, "depreciationAndAmortizationInIncomeStatement");
-      assign(`${prefix}InterestExpense`, "interestExpense");
-      assign(`${prefix}TaxProvision`, "taxProvision");
-      assign(`${prefix}NetIncome`, "netIncome");
-      assign(`${prefix}EBITDA`, "ebitda");
-      assign(`${prefix}BasicEPS`, "basicEps");
-      assign(`${prefix}DilutedEPS`, "eps");
-      assign(`${prefix}BasicAverageShares`, "basicShares");
-      assign(`${prefix}DilutedAverageShares`, "dilutedShares");
-      // Cash Flow
-      assign(`${prefix}OperatingCashFlow`, "operatingCashFlow");
-      assign(`${prefix}DepreciationAndAmortization`, "depreciationAndAmortization");
-      assign(`${prefix}DepreciationAmortizationDepletion`, "depreciationAmortizationDepletion");
-      assign(`${prefix}Depreciation`, "depreciation");
-      assign(`${prefix}DeferredIncomeTax`, "deferredIncomeTax");
-      assign(`${prefix}DeferredTax`, "deferredTax");
-      assign(`${prefix}StockBasedCompensation`, "stockBasedCompensation");
-      assign(`${prefix}OtherNonCashItems`, "otherNonCashItems");
-      assign(`${prefix}ChangeInWorkingCapital`, "changeInWorkingCapital");
-      assign(`${prefix}ChangeInReceivables`, "changeInReceivables");
-      assign(`${prefix}ChangeInInventory`, "changeInInventory");
-      assign(`${prefix}ChangeInPayable`, "changeInPayable");
-      assign(`${prefix}ChangeInAccountPayable`, "changeInAccountPayable");
-      assign(`${prefix}ChangeInOtherWorkingCapital`, "changeInOtherWorkingCapital");
-      assign(`${prefix}CapitalExpenditure`, "capitalExpenditure");
-      assign(`${prefix}CashFlowFromContinuingOperatingActivities`, "cashFlowFromContinuingOperatingActivities");
-      assign(`${prefix}InterestPaidSupplementalData`, "interestPaidSupplementalData");
-      assign(`${prefix}IncomeTaxPaidSupplementalData`, "incomeTaxPaidSupplementalData");
-      assign(`${prefix}PurchaseOfPPE`, "purchaseOfPPE");
-      assign(`${prefix}SaleOfPPE`, "saleOfPPE");
-      assign(`${prefix}NetPPEPurchaseAndSale`, "netPPEPurchaseAndSale");
-      assign(`${prefix}FreeCashFlow`, "freeCashFlow");
-      assign(`${prefix}InvestingCashFlow`, "investingCashFlow");
-      assign(`${prefix}CashFlowFromContinuingInvestingActivities`, "cashFlowFromContinuingInvestingActivities");
-      assign(`${prefix}PurchaseOfBusiness`, "purchaseOfBusiness");
-      assign(`${prefix}SaleOfBusiness`, "saleOfBusiness");
-      assign(`${prefix}NetBusinessPurchaseAndSale`, "netBusinessPurchaseAndSale");
-      assign(`${prefix}PurchaseOfInvestment`, "purchaseOfInvestment");
-      assign(`${prefix}SaleOfInvestment`, "saleOfInvestment");
-      assign(`${prefix}NetInvestmentPurchaseAndSale`, "netInvestmentPurchaseAndSale");
-      assign(`${prefix}NetOtherInvestingChanges`, "netOtherInvestingChanges");
-      assign(`${prefix}FinancingCashFlow`, "financingCashFlow");
-      assign(`${prefix}CashFlowFromContinuingFinancingActivities`, "cashFlowFromContinuingFinancingActivities");
-      assign(`${prefix}IssuanceOfDebt`, "issuanceOfDebt");
-      assign(`${prefix}RepaymentOfDebt`, "repaymentOfDebt");
-      assign(`${prefix}NetIssuancePaymentsOfDebt`, "netIssuancePaymentsOfDebt");
-      assign(`${prefix}LongTermDebtIssuance`, "longTermDebtIssuance");
-      assign(`${prefix}LongTermDebtPayments`, "longTermDebtPayments");
-      assign(`${prefix}NetLongTermDebtIssuance`, "netLongTermDebtIssuance");
-      assign(`${prefix}ShortTermDebtIssuance`, "shortTermDebtIssuance");
-      assign(`${prefix}ShortTermDebtPayments`, "shortTermDebtPayments");
-      assign(`${prefix}NetShortTermDebtIssuance`, "netShortTermDebtIssuance");
-      assign(`${prefix}RepurchaseOfCapitalStock`, "repurchaseOfCapitalStock");
-      assign(`${prefix}CommonStockIssuance`, "commonStockIssuance");
-      assign(`${prefix}CommonStockPayments`, "commonStockPayments");
-      assign(`${prefix}NetCommonStockIssuance`, "netCommonStockIssuance");
-      assign(`${prefix}CashDividendsPaid`, "cashDividendsPaid");
-      assign(`${prefix}CommonStockDividendPaid`, "commonStockDividendPaid");
-      assign(`${prefix}NetOtherFinancingCharges`, "netOtherFinancingCharges");
-      assign(`${prefix}BeginningCashPosition`, "beginningCashPosition");
-      assign(`${prefix}EndCashPosition`, "endCashPosition");
-      assign(`${prefix}ChangesInCash`, "changesInCash");
-      assign(`${prefix}EffectOfExchangeRateChanges`, "effectOfExchangeRateChanges");
-      // Balance Sheet
-      assign(`${prefix}TotalAssets`, "totalAssets");
-      assign(`${prefix}CurrentAssets`, "currentAssets");
-      assign(`${prefix}CashAndCashEquivalents`, "cashAndCashEquivalents");
-      assign(`${prefix}CashCashEquivalentsAndShortTermInvestments`, "cashCashEquivalentsAndShortTermInvestments");
-      assign(`${prefix}OtherShortTermInvestments`, "otherShortTermInvestments");
-      assign(`${prefix}Receivables`, "receivables");
-      assign(`${prefix}AccountsReceivable`, "accountsReceivable");
-      assign(`${prefix}Inventory`, "inventory");
-      assign(`${prefix}PrepaidAssets`, "prepaidAssets");
-      assign(`${prefix}OtherCurrentAssets`, "otherCurrentAssets");
-      assign(`${prefix}TotalNonCurrentAssets`, "totalNonCurrentAssets");
-      assign(`${prefix}NetPPE`, "netPPE");
-      assign(`${prefix}GrossPPE`, "grossPPE");
-      assign(`${prefix}AccumulatedDepreciation`, "accumulatedDepreciation");
-      assign(`${prefix}Goodwill`, "goodwill");
-      assign(`${prefix}OtherIntangibleAssets`, "otherIntangibleAssets");
-      assign(`${prefix}GoodwillAndOtherIntangibleAssets`, "goodwillAndOtherIntangibleAssets");
-      assign(`${prefix}InvestmentsAndAdvances`, "investmentsAndAdvances");
-      assign(`${prefix}OtherNonCurrentAssets`, "otherNonCurrentAssets");
-      assign(`${prefix}TotalLiabilitiesNetMinorityInterest`, "totalLiabilities");
-      assign(`${prefix}CurrentLiabilities`, "currentLiabilities");
-      assign(`${prefix}CurrentDebt`, "currentDebt");
-      assign(`${prefix}CurrentDebtAndCapitalLeaseObligation`, "currentDebtAndCapitalLeaseObligation");
-      assign(`${prefix}PayablesAndAccruedExpenses`, "payablesAndAccruedExpenses");
-      assign(`${prefix}CurrentAccruedExpenses`, "currentAccruedExpenses");
-      assign(`${prefix}Payables`, "payables");
-      assign(`${prefix}AccountsPayable`, "accountsPayable");
-      assign(`${prefix}CurrentDeferredRevenue`, "currentDeferredRevenue");
-      assign(`${prefix}CurrentDeferredLiabilities`, "currentDeferredLiabilities");
-      assign(`${prefix}OtherCurrentLiabilities`, "otherCurrentLiabilities");
-      assign(`${prefix}TotalNonCurrentLiabilitiesNetMinorityInterest`, "totalNonCurrentLiabilities");
-      assign(`${prefix}LongTermDebt`, "longTermDebt");
-      assign(`${prefix}LongTermDebtAndCapitalLeaseObligation`, "longTermDebtAndCapitalLeaseObligation");
-      assign(`${prefix}LongTermCapitalLeaseObligation`, "longTermCapitalLeaseObligation");
-      assign(`${prefix}NonCurrentDeferredLiabilities`, "nonCurrentDeferredLiabilities");
-      assign(`${prefix}NonCurrentDeferredTaxesLiabilities`, "nonCurrentDeferredTaxesLiabilities");
-      assign(`${prefix}OtherNonCurrentLiabilities`, "otherNonCurrentLiabilities");
-      assign(`${prefix}TotalDebt`, "totalDebt");
-      assign(`${prefix}CapitalLeaseObligations`, "capitalLeaseObligations");
-      assign(`${prefix}TotalCapitalization`, "totalCapitalization");
-      assign(`${prefix}StockholdersEquity`, "totalEquity");
-      assign(`${prefix}TotalEquityGrossMinorityInterest`, "totalEquityGrossMinorityInterest");
-      assign(`${prefix}CommonStockEquity`, "commonStockEquity");
-      assign(`${prefix}CommonStock`, "commonStock");
-      assign(`${prefix}CapitalStock`, "capitalStock");
-      assign(`${prefix}AdditionalPaidInCapital`, "additionalPaidInCapital");
-      assign(`${prefix}TreasuryStock`, "treasuryStock");
-      assign(`${prefix}GainsLossesNotAffectingRetainedEarnings`, "gainsLossesNotAffectingRetainedEarnings");
-      assign(`${prefix}OtherEquityAdjustments`, "otherEquityAdjustments");
-      assign(`${prefix}RetainedEarnings`, "retainedEarnings");
-      assign(`${prefix}LongTermEquityInvestment`, "longTermEquityInvestment");
-      assign(`${prefix}WorkingCapital`, "workingCapital");
-      assign(`${prefix}NetTangibleAssets`, "netTangibleAssets");
-      assign(`${prefix}InvestedCapital`, "investedCapital");
-      assign(`${prefix}TangibleBookValue`, "tangibleBookValue");
-      assign(`${prefix}ShareIssued`, "shareIssued");
-      assign(`${prefix}OrdinarySharesNumber`, "ordinarySharesNumber");
-      assign(`${prefix}TreasurySharesNumber`, "treasurySharesNumber");
-      return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
-    };
-
-    return {
-      quote,
-      fundamentals,
-      profile,
-      annualStatements: buildStatements("annual"),
-      quarterlyStatements: buildStatements("quarterly"),
-      priceHistory: history,
-    };
-  }
-
-  private async getOptionQuote(ticker: string, context?: MarketDataRequestContext): Promise<Quote> {
-    const parsed = parseOptionSymbol(ticker);
-    if (!parsed) throw new Error(`Unsupported option symbol ${ticker}`);
-    const chain = await this.getOptionsChain(parsed.underlying, "", parsed.expTs, context);
-    const contracts = parsed.side === "C" ? chain.calls : chain.puts;
-    const contract = contracts.find((candidate) =>
-      Math.abs(candidate.strike - parsed.strike) < 0.001 &&
-      candidate.expiration === parsed.expTs
-    );
-    if (!contract) throw new Error(`No option contract for ${ticker}`);
-
-    const mark = contract.bid > 0 && contract.ask > 0
-      ? (contract.bid + contract.ask) / 2
-      : contract.bid > 0
-        ? contract.bid
-        : contract.ask > 0
-          ? contract.ask
-          : undefined;
-    return {
-      symbol: ticker,
-      providerId: this.id,
-      price: mark ?? contract.lastPrice,
-      currency: contract.currency || "USD",
-      change: contract.change,
-      changePercent: contract.percentChange,
-      volume: contract.volume,
-      bid: contract.bid,
-      ask: contract.ask,
-      mark,
-      name: contract.contractSymbol,
-      lastUpdated: contract.lastTradeDate > 0
-        ? contract.lastTradeDate * 1000
-        : Date.now(),
-      exchangeName: "OPTIONS",
-      fullExchangeName: "OPTIONS",
-      listingExchangeName: "OPTIONS",
-      listingExchangeFullName: "OPTIONS",
-      dataSource: "delayed",
-    };
-  }
-
   /** Fetch just a quote (lighter weight) */
   async getQuote(ticker: string, exchange = "", context?: MarketDataRequestContext): Promise<Quote> {
     if (parseOptionSymbol(ticker)) {
-      return this.getOptionQuote(ticker, context);
+      return getYahooOptionQuote({
+        context,
+        getOptionsChain: (underlying, requestExchange, expirationDate, requestContext) => (
+          this.getOptionsChain(underlying, requestExchange, expirationDate, requestContext)
+        ),
+        providerId: this.id,
+        ticker,
+      });
     }
 
-    const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
+    const symbolsToTry = getYahooSymbolsToTry(ticker, exchange);
     let lastError: any;
 
     for (const symbol of symbolsToTry) {
       try {
-        const { meta, history } = await this.fetchChart(symbol, "1mo");
-
-        // Normalize sub-unit currencies
-        const rawCurrency = meta.currency || "USD";
-        const { currency: normalizedCurrency, divisor: currencyDivisor } = normalizeSubUnitCurrency(rawCurrency);
-
-        if (currencyDivisor !== 1) {
-          for (const point of history) {
-            point.close /= currencyDivisor;
-            if (point.open != null) point.open /= currencyDivisor;
-            if (point.high != null) point.high /= currencyDivisor;
-            if (point.low != null) point.low /= currencyDivisor;
-          }
-          if (meta.regularMarketPrice != null) meta.regularMarketPrice /= currencyDivisor;
-          if (meta.chartPreviousClose != null) meta.chartPreviousClose /= currencyDivisor;
-          if (meta.fiftyTwoWeekHigh != null) meta.fiftyTwoWeekHigh /= currencyDivisor;
-          if (meta.fiftyTwoWeekLow != null) meta.fiftyTwoWeekLow /= currencyDivisor;
-        }
-
-        const quoteSupplement = await this.fetchQuoteSupplement(symbol, currencyDivisor);
-        const latest = history[history.length - 1]!;
-        const prev = history.length > 1 ? history[history.length - 2]!.close : meta.chartPreviousClose;
-        const price = meta.regularMarketPrice ?? latest.close;
-        const change = prev != null ? price - prev : 0;
-
-        const marketState = deriveMarketState(meta);
-        const extHours = await this.fetchExtendedHoursData(symbol, meta);
-
-        if (currencyDivisor !== 1) {
-          if (extHours.preMarketPrice != null) extHours.preMarketPrice /= currencyDivisor;
-          if (extHours.preMarketChange != null) extHours.preMarketChange /= currencyDivisor;
-          if (extHours.postMarketPrice != null) extHours.postMarketPrice /= currencyDivisor;
-          if (extHours.postMarketChange != null) extHours.postMarketChange /= currencyDivisor;
-        }
-
-        const quote: Quote = {
-          symbol,
+        return await loadYahooQuote(symbol, {
+          fetchChart: (targetSymbol, range, interval) => this.fetchChart(targetSymbol, range, interval),
+          fetchExtendedHoursData: (targetSymbol, meta) => this.fetchExtendedHoursData(targetSymbol, meta),
+          fetchQuoteSupplement: (targetSymbol, currencyDivisor) =>
+            this.fetchQuoteSupplement(targetSymbol, currencyDivisor),
           providerId: this.id,
-          price,
-          currency: normalizedCurrency,
-          change,
-          changePercent: prev ? (change / prev) * 100 : 0,
-          high52w: meta.fiftyTwoWeekHigh,
-          low52w: meta.fiftyTwoWeekLow,
-          name: meta.shortName || meta.longName,
-          lastUpdated: Date.now(),
-          exchangeName: meta.exchangeName,
-          fullExchangeName: meta.fullExchangeName,
-          listingExchangeName: meta.exchangeName,
-          listingExchangeFullName: meta.fullExchangeName,
-          marketState,
-          sessionConfidence: "derived",
-          dataSource: "delayed",
-          ...quoteSupplement,
-          ...extHours,
-        };
-
-        return quote;
+        });
       } catch (err) {
         lastError = err;
       }
@@ -1490,7 +151,7 @@ export class YahooFinanceClient implements DataProvider {
     const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0`;
     try {
       const resp = await fetch(url, {
-        headers: this.defaultHeaders(),
+        headers: this.http.defaultHeaders(),
         signal: AbortSignal.timeout(5000),
       });
       if (!resp.ok) return [];
@@ -1510,11 +171,11 @@ export class YahooFinanceClient implements DataProvider {
   /** Fetch news for a ticker */
   async getNews(ticker: string, count = 10, exchange = "", _context?: MarketDataRequestContext): Promise<NewsItem[]> {
     // Use the Yahoo symbol for better search results on international tickers
-    const symbol = this.getSymbol(ticker, exchange);
+    const symbol = getYahooSymbol(ticker, exchange);
     const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}&quotesCount=0&newsCount=${count}`;
     try {
       const resp = await fetch(url, {
-        headers: this.defaultHeaders(),
+        headers: this.http.defaultHeaders(),
         signal: AbortSignal.timeout(5000),
       });
       if (!resp.ok) return [];
@@ -1534,133 +195,31 @@ export class YahooFinanceClient implements DataProvider {
   }
 
   async getHolders(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<HolderData> {
-    const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
-    let lastError: any;
-
-    for (const symbol of symbolsToTry) {
-      try {
-        const params = new URLSearchParams({
-          modules: "price,majorHoldersBreakdown,institutionOwnership",
-        });
-        const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
-        const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(url);
-        const result = data.quoteSummary?.result?.[0];
-        if (!result) throw new Error(`No holder data for ${symbol}`);
-
-        const holders: HolderRecord[] = (result.institutionOwnership?.ownershipList ?? [])
-          .map((item): HolderRecord | null => {
-            const name = item.organization?.trim();
-            if (!name) return null;
-            const shares = financeRawNumber(item.position);
-            const changePercent = financeRawNumber(item.pctChange);
-            return {
-              providerId: this.id,
-              ownerType: "institution",
-              name,
-              reportDate: yahooRawDate(item.reportDate),
-              shares,
-              value: financeRawNumber(item.value),
-              percentHeld: financeRawNumber(item.pctHeld),
-              changePercent,
-              changeShares: deriveShareChange(shares, changePercent),
-            };
-          })
-          .filter((holder): holder is HolderRecord => holder !== null);
-        const asOf = holders
-          .map((holder) => holder.reportDate)
-          .filter((date): date is string => !!date)
-          .sort()
-          .at(-1);
-
-        return {
-          providerId: this.id,
-          symbol: result.price?.symbol ?? symbol,
-          name: result.price?.shortName ?? result.price?.longName,
-          currency: result.price?.currency,
-          exchange: result.price?.exchangeName,
-          asOf,
-          summary: {
-            insidersPercentHeld: financeRawNumber(result.majorHoldersBreakdown?.insidersPercentHeld),
-            institutionsPercentHeld: financeRawNumber(result.majorHoldersBreakdown?.institutionsPercentHeld),
-            institutionsFloatPercentHeld: financeRawNumber(result.majorHoldersBreakdown?.institutionsFloatPercentHeld),
-            institutionsCount: financeRawNumber(result.majorHoldersBreakdown?.institutionsCount),
-          },
-          holders,
-        };
-      } catch (err) {
-        lastError = err;
-      }
-    }
-
-    throw lastError || new Error(`No holder data for ${ticker}`);
+    return loadYahooHolders({
+      exchange,
+      fetchJsonWithCrumb: (url) => this.http.fetchJsonWithCrumb(url),
+      providerId: this.id,
+      ticker,
+    });
   }
 
   async getAnalystResearch(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<AnalystResearchData> {
-    const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
-    let firstEmpty: AnalystResearchData | null = null;
-    let lastError: any;
-
-    for (const symbol of symbolsToTry) {
-      try {
-        const params = new URLSearchParams({
-          modules: "price,financialData,recommendationTrend,upgradeDowngradeHistory,earningsTrend",
-        });
-        const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
-        const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(url);
-        const result = data.quoteSummary?.result?.[0];
-        if (!result) throw new Error(`No analyst data for ${symbol}`);
-
-        const research = mapYahooAnalystResearchResponse(result, symbol);
-        if (hasAnalystResearchValue(research)) return research;
-        firstEmpty ??= research;
-      } catch (err) {
-        lastError = err;
-      }
-    }
-
-    if (firstEmpty) return firstEmpty;
-    throw lastError || new Error(`No analyst data for ${ticker}`);
+    return loadYahooAnalystResearch({
+      exchange,
+      fetchJsonWithCrumb: (url) => this.http.fetchJsonWithCrumb(url),
+      providerId: this.id,
+      ticker,
+    });
   }
 
   async getCorporateActions(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<CorporateActionsData> {
-    const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
-    let firstEmpty: CorporateActionsData | null = null;
-    let lastError: any;
-
-    for (const symbol of symbolsToTry) {
-      try {
-        const chart = await this.fetchChart(symbol, "5y", "1d");
-        const params = new URLSearchParams({
-          modules: "price,quoteType,calendarEvents,earningsHistory",
-        });
-        const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
-        const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(url);
-        const result = data.quoteSummary?.result?.[0];
-        if (!result) throw new Error(`No corporate actions for ${symbol}`);
-
-        const actions: CorporateActionsData = {
-          providerId: this.id,
-          symbol: result.price?.symbol ?? symbol,
-          name: result.price?.shortName ?? result.price?.longName,
-          currency: result.price?.currency ?? chart.meta.currency,
-          exchange: result.price?.exchangeName ?? result.quoteType?.exchange,
-          dividends: mapYahooDividends(chart.events),
-          splits: mapYahooSplits(chart.events),
-          earnings: [
-            ...mapYahooCalendarEarnings(result),
-            ...mapYahooEarningsHistory(result),
-          ],
-        };
-
-        if (hasCorporateActionsValue(actions)) return actions;
-        firstEmpty ??= actions;
-      } catch (err) {
-        lastError = err;
-      }
-    }
-
-    if (firstEmpty) return firstEmpty;
-    throw lastError || new Error(`No corporate actions for ${ticker}`);
+    return loadYahooCorporateActions({
+      exchange,
+      fetchChart: (symbol, range, interval) => this.fetchChart(symbol, range, interval),
+      fetchJsonWithCrumb: (url) => this.http.fetchJsonWithCrumb(url),
+      providerId: this.id,
+      ticker,
+    });
   }
 
   async getSecFilings(ticker: string, count = 10, _exchange = "", _context?: MarketDataRequestContext): Promise<SecFilingItem[]> {
@@ -1676,7 +235,7 @@ export class YahooFinanceClient implements DataProvider {
     try {
       const resp = await fetch(url, {
         headers: {
-          ...this.defaultHeaders(),
+          ...this.http.defaultHeaders(),
           Accept: "text/html",
         },
         signal: AbortSignal.timeout(8000),
@@ -1702,48 +261,20 @@ export class YahooFinanceClient implements DataProvider {
 
   /** Fetch price history with appropriate granularity for the given time range */
   getChartResolutionSupport(): ChartResolutionSupport[] {
-    return YAHOO_RESOLUTION_SUPPORT;
+    return getYahooChartResolutionSupport();
   }
 
   getChartResolutionCapabilities(): ManualChartResolution[] {
-    return YAHOO_RESOLUTION_SUPPORT.map((entry) => entry.resolution);
-  }
-
-  private async loadPriceHistory(
-    ticker: string,
-    exchange: string,
-    range: string,
-    interval: ManualChartResolution,
-  ): Promise<PricePoint[]> {
-    const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
-    let lastError: any;
-
-    for (const symbol of symbolsToTry) {
-      try {
-        const { meta, history } = await this.fetchChart(symbol, range, interval);
-
-        // Normalize sub-unit currencies in price history
-        const { divisor } = normalizeSubUnitCurrency(meta.currency || "USD");
-        if (divisor !== 1) {
-          for (const point of history) {
-            point.close /= divisor;
-            if (point.open != null) point.open /= divisor;
-            if (point.high != null) point.high /= divisor;
-            if (point.low != null) point.low /= divisor;
-          }
-        }
-
-        return history;
-      } catch (err) {
-        lastError = err;
-      }
-    }
-    throw lastError || new Error(`No history for ${ticker}`);
+    return getYahooChartResolutionCapabilities();
   }
 
   async getPriceHistory(ticker: string, exchange = "", range: TimeRange, _context?: MarketDataRequestContext): Promise<PricePoint[]> {
-    const params = RANGE_PARAMS[range];
-    return this.loadPriceHistory(ticker, exchange, params.range, params.interval as ManualChartResolution);
+    return loadYahooPriceHistory({
+      ticker,
+      exchange,
+      range,
+      fetchChart: (symbol, chartRange, interval) => this.fetchChart(symbol, chartRange, interval),
+    });
   }
 
   async getPriceHistoryForResolution(
@@ -1753,196 +284,27 @@ export class YahooFinanceClient implements DataProvider {
     resolution: ManualChartResolution,
     _context?: MarketDataRequestContext,
   ): Promise<PricePoint[]> {
-    const params = RANGE_PARAMS[bufferRange];
-    return this.loadPriceHistory(ticker, exchange, params.range, resolution);
+    return loadYahooPriceHistoryForResolution({
+      ticker,
+      exchange,
+      bufferRange,
+      resolution,
+      fetchChart: (symbol, chartRange, interval) => this.fetchChart(symbol, chartRange, interval),
+    });
   }
 
   // ── Options Chain ──────────────────────────────────────────────────
 
-  private mapContract(raw: Record<string, any>): OptionContract {
-    return {
-      contractSymbol: raw.contractSymbol ?? "",
-      strike: raw.strike ?? 0,
-      currency: raw.currency ?? "USD",
-      lastPrice: raw.lastPrice ?? 0,
-      change: raw.change ?? 0,
-      percentChange: raw.percentChange ?? 0,
-      volume: raw.volume ?? 0,
-      openInterest: raw.openInterest ?? 0,
-      bid: raw.bid ?? 0,
-      ask: raw.ask ?? 0,
-      impliedVolatility: raw.impliedVolatility ?? 0,
-      inTheMoney: raw.inTheMoney ?? false,
-      expiration: raw.expiration ?? 0,
-      lastTradeDate: raw.lastTradeDate ?? 0,
-    };
-  }
-
   async getOptionsChain(ticker: string, exchange = "", expirationDate?: number, _context?: MarketDataRequestContext): Promise<OptionsChain> {
-    const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
-    let lastError: any;
-
-    for (const symbol of symbolsToTry) {
-      try {
-        let url = `https://query1.finance.yahoo.com/v7/finance/options/${encodeURIComponent(symbol)}`;
-        if (expirationDate != null) url += `?date=${expirationDate}`;
-
-        const data = await this.fetchJsonWithCrumb<{
-          optionChain?: {
-            result?: Array<{
-              underlyingSymbol?: string;
-              expirationDates?: number[];
-              options?: Array<{
-                calls?: Array<Record<string, any>>;
-                puts?: Array<Record<string, any>>;
-              }>;
-            }>;
-          };
-        }>(url);
-
-        const result = data.optionChain?.result?.[0];
-        if (!result) throw new Error("No options data");
-
-        const opts = result.options?.[0];
-        const chain: OptionsChain = {
-          underlyingSymbol: result.underlyingSymbol ?? symbol,
-          expirationDates: result.expirationDates ?? [],
-          calls: (opts?.calls ?? []).map((c) => this.mapContract(c)),
-          puts: (opts?.puts ?? []).map((p) => this.mapContract(p)),
-        };
-
-        return chain;
-      } catch (err) {
-        lastError = err;
-      }
-    }
-    throw lastError || new Error(`No options chain for ${ticker}`);
+    return loadYahooOptionsChain({
+      exchange,
+      expirationDate,
+      fetchJsonWithCrumb: (url) => this.http.fetchJsonWithCrumb(url),
+      ticker,
+    });
   }
 
   async getEarningsCalendar(symbols: string[], _context?: MarketDataRequestContext): Promise<EarningsEvent[]> {
-    const results: EarningsEvent[] = [];
-    const BATCH_SIZE = 5;
-
-    for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
-      if (i > 0) await new Promise((r) => setTimeout(r, 200));
-      const batch = symbols.slice(i, i + BATCH_SIZE);
-
-      const settled = await Promise.allSettled(
-        batch.map(async (symbol) => {
-          const params = new URLSearchParams({ modules: "calendarEvents,earningsTrend,quoteType" });
-          const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
-          const data = await this.fetchJsonWithCrumb<{
-            quoteSummary?: {
-              result?: Array<{
-                calendarEvents?: {
-                  earnings?: {
-                    earningsDate?: Array<{ raw: number }>;
-                    earningsCallDate?: Array<{ raw: number }>;
-                    isEarningsDateEstimate?: boolean;
-                    earningsAverage?: { raw: number };
-                    earningsLow?: { raw: number };
-                    earningsHigh?: { raw: number };
-                    revenueAverage?: { raw: number };
-                    revenueLow?: { raw: number };
-                    revenueHigh?: { raw: number };
-                  };
-                };
-                earningsTrend?: {
-                  trend?: Array<{
-                    period: string;
-                    earningsEstimate?: {
-                      avg?: { raw: number };
-                      low?: { raw: number };
-                      high?: { raw: number };
-                      yearAgoEps?: { raw: number };
-                      numberOfAnalysts?: { raw: number };
-                      growth?: { raw: number };
-                    };
-                    revenueEstimate?: {
-                      avg?: { raw: number };
-                      low?: { raw: number };
-                      high?: { raw: number };
-                      yearAgoRevenue?: { raw: number };
-                      numberOfAnalysts?: { raw: number };
-                      growth?: { raw: number };
-                    };
-                    epsTrend?: {
-                      current?: { raw: number };
-                      "7daysAgo"?: { raw: number };
-                      "30daysAgo"?: { raw: number };
-                    };
-                    epsRevisions?: {
-                      upLast7days?: { raw: number };
-                      upLast30days?: { raw: number };
-                      downLast7Days?: { raw: number };
-                      downLast30days?: { raw: number };
-                    };
-                  }>;
-                };
-                quoteType?: {
-                  shortName?: string;
-                  longName?: string;
-                };
-              }>;
-            };
-          }>(url);
-
-          const mod = data.quoteSummary?.result?.[0];
-          if (!mod) return null;
-
-          const cal = mod.calendarEvents?.earnings;
-          if (!cal?.earningsDate?.length) return null;
-
-          const earningsDate = new Date(cal.earningsDate[0]!.raw * 1000);
-          if (isNaN(earningsDate.getTime())) return null;
-
-          const currentQtr = mod.earningsTrend?.trend?.find((t) => t.period === "0q");
-          const earningsEstimate = currentQtr?.earningsEstimate;
-          const revenueEstimate = currentQtr?.revenueEstimate;
-          const epsTrend = currentQtr?.epsTrend;
-          const epsRevisions = currentQtr?.epsRevisions;
-          const name = mod.quoteType?.shortName || mod.quoteType?.longName || symbol;
-
-          return {
-            symbol,
-            name,
-            earningsDate,
-            earningsCallDate: yahooRawDateTime(cal.earningsCallDate?.[0]),
-            isDateEstimate: cal.isEarningsDateEstimate ?? null,
-            epsEstimate: financeRawNumberOrNull(earningsEstimate?.avg ?? cal.earningsAverage),
-            epsLow: financeRawNumberOrNull(earningsEstimate?.low ?? cal.earningsLow),
-            epsHigh: financeRawNumberOrNull(earningsEstimate?.high ?? cal.earningsHigh),
-            epsYearAgo: financeRawNumberOrNull(earningsEstimate?.yearAgoEps),
-            epsGrowth: financeRawNumberOrNull(earningsEstimate?.growth),
-            epsAnalysts: financeRawNumberOrNull(earningsEstimate?.numberOfAnalysts),
-            epsTrend7dAgo: financeRawNumberOrNull(epsTrend?.["7daysAgo"]),
-            epsTrend30dAgo: financeRawNumberOrNull(epsTrend?.["30daysAgo"]),
-            epsRevisionUp7d: financeRawNumberOrNull(epsRevisions?.upLast7days),
-            epsRevisionUp30d: financeRawNumberOrNull(epsRevisions?.upLast30days),
-            epsRevisionDown7d: financeRawNumberOrNull(epsRevisions?.downLast7Days),
-            epsRevisionDown30d: financeRawNumberOrNull(epsRevisions?.downLast30days),
-            epsActual: null,
-            revenueEstimate: financeRawNumberOrNull(revenueEstimate?.avg ?? cal.revenueAverage),
-            revenueLow: financeRawNumberOrNull(revenueEstimate?.low ?? cal.revenueLow),
-            revenueHigh: financeRawNumberOrNull(revenueEstimate?.high ?? cal.revenueHigh),
-            revenueYearAgo: financeRawNumberOrNull(revenueEstimate?.yearAgoRevenue),
-            revenueGrowth: financeRawNumberOrNull(revenueEstimate?.growth),
-            revenueAnalysts: financeRawNumberOrNull(revenueEstimate?.numberOfAnalysts),
-            revenueActual: null,
-            surprise: null,
-            timing: inferEarningsTiming(earningsDate),
-          };
-        }),
-      );
-
-      for (const result of settled) {
-        if (result.status === "fulfilled" && result.value) {
-          results.push(result.value);
-        }
-      }
-    }
-
-    results.sort((a, b) => a.earningsDate.getTime() - b.earningsDate.getTime());
-    return results;
+    return loadYahooEarningsCalendar(symbols, (url) => this.http.fetchJsonWithCrumb(url));
   }
 }

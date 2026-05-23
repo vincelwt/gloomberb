@@ -1,58 +1,54 @@
-import { existsSync, mkdirSync } from "fs";
-import { dirname, join } from "path";
-import { Buffer } from "node:buffer";
-import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils, ContextMenu } from "electrobun/bun";
+import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils } from "electrobun/bun";
 import {
   APP_SESSION_ID,
   APP_SESSION_SCHEMA_VERSION,
   reconcileAppSessionSnapshot,
 } from "../../../core/state/session-persistence";
-import { createAppServices, type AppServices } from "../../../core/app-services";
-import { getDataDir, initDataDir, saveConfig, resetAllData, exportConfig, importConfig, setConfigStoreHost } from "../../../data/config-store";
+import type { AppServices } from "../../../core/app-services";
+import { saveConfig, setConfigStoreHost } from "../../../data/config-store";
 import * as nodeConfigStoreHost from "../../../data/config-store-node";
-import { findPaneInstance, type AppConfig } from "../../../types/config";
+import type { AppConfig } from "../../../types/config";
 import type { AppSessionSnapshot } from "../../../core/state/session-persistence";
 import { syncConfigActiveLayoutState, type PaneRuntimeState } from "../../../core/state/app-state";
-import type { DesktopDockPreviewState, DesktopSharedStateSnapshot, DesktopThemePreviewState } from "../../../types/desktop-window";
-import type { ReleaseInfo, UpdateProgress } from "../../../updater";
-import { buildSoundCommand } from "../../../notifications/app-notifier";
-import { isPaneDetached } from "../../../plugins/pane-manager";
+import type { DesktopSharedStateSnapshot, DesktopThemePreviewState } from "../../../types/desktop-window";
+import type { UpdateProgress } from "../../../updater";
 import { ELECTROBUN_CONTEXT_MENU_ACTION, type DesktopRestartMessage, type ElectrobunDesktopRpcSchema } from "../shared/protocol";
 import { decodeRpcValue, encodeRpcValue } from "../view/rpc-codec";
 import { contextMenuSelectionMessage } from "./context-menu-click";
-import { getContextMenuRequestId, normalizeContextMenuItems } from "./context-menu-normalize";
-import { createDesktopWorkspace, type DesktopWorkspace } from "./desktop-workspace";
+import type { DesktopWorkspace } from "./desktop-workspace";
 import { buildApplicationMenu } from "./application-menu";
 import { applicationMenuCommand } from "./application-menu-click";
 import { registerElectrobunCoreCapabilities } from "./core-capabilities";
 import { setNativeIbkrGatewayModuleLoader } from "../../../plugins/ibkr/gateway-service";
-import { apiClient, type PersistedAuthUser } from "../../../utils/api-client";
 import {
   runElectrobunDesktopUpdate,
 } from "./desktop-update";
+import { DesktopCapabilityBridge } from "./desktop-capability-bridge";
 import {
   DEFAULT_WINDOW_FRAME,
-  DETACHED_WINDOW_MIN_SIZE,
   MAIN_WINDOW_MIN_SIZE,
-  normalizeWindowFrame,
   normalizeWindowFrameWithMinimum,
-  type WindowFrame,
-  type WindowMinimumSize,
 } from "./window-frame";
+import { MAIN_WINDOW_RPC_KEY } from "./window-focus";
+import { handleHttpFetch } from "./desktop-http-fetch";
+import { handleDesktopPluginStateRequest } from "./desktop-plugin-state";
+import { scheduleDesktopRelaunch } from "./desktop-relaunch";
 import {
-  detachedRpcKey,
-  focusWindowForRpcKey,
-  MAIN_WINDOW_RPC_KEY,
-  paneIdFromDetachedRpcKey,
-} from "./window-focus";
+  applyWindowMoveEvent,
+  applyWindowResizeEvent,
+  updateWindowFrameCache,
+  type WindowMoveEvent,
+  type WindowResizeEvent,
+} from "./desktop-window-events";
+import { createDesktopRpcRegistry } from "./desktop-rpc-registry";
+import { DesktopStateBroadcaster } from "./desktop-state-broadcaster";
+import { DesktopDetachedWindowManager } from "./desktop-detached-windows";
+import { handleDesktopHostRequest } from "./desktop-host-requests";
+import { handleDesktopWorkspaceRequest } from "./desktop-workspace-requests";
+import { handleDesktopBackendRequest } from "./desktop-backend-requests";
+import { initializeDesktopBackend } from "./desktop-initialization";
 
 type DesktopRpc = ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>;
-type WindowMoveEvent = { data?: { x?: number; y?: number } };
-type WindowResizeEvent = { data?: Partial<WindowFrame> };
-type PersistedCloudSession = {
-  sessionToken?: string | null;
-  user?: PersistedAuthUser | null;
-};
 
 console.log = (...args) => console.error(...args);
 console.info = (...args) => console.error(...args);
@@ -65,37 +61,13 @@ let currentConfig: AppConfig | null = null;
 let services: AppServices | null = null;
 let mainWindow: BrowserWindow | null = null;
 let desktopWorkspace: DesktopWorkspace | null = null;
-let currentDockPreview: DesktopDockPreviewState = { paneId: null, edge: null };
-let currentThemePreview: DesktopThemePreviewState = { theme: null };
 let desktopRestartInProgress = false;
 
-const detachedWindows = new Map<string, BrowserWindow>();
-const detachedFrameTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const detachedDockTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const detachedClosingPanes = new Set<string>();
-const pendingDetachedMoveFlush = new Set<string>();
-const windowRpcs = new Map<string, DesktopRpc>();
-const readyWindowRpcs = new Set<string>();
-const rpcWindowKeys = new Map<DesktopRpc, string>();
+const windowRpcRegistry = createDesktopRpcRegistry<DesktopRpc>();
 const contextMenuRequestRpcs = new Map<string, DesktopRpc>();
-
-const capabilitySubscriptions = new Map<string, () => void>();
 
 function summarizeError(error: unknown): string {
   return error instanceof Error ? error.stack ?? error.message : String(error);
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
-function findMacAppBundle(execPath: string): string | null {
-  let current = dirname(execPath);
-  while (current && current !== dirname(current)) {
-    if (current.endsWith(".app")) return current;
-    current = dirname(current);
-  }
-  return null;
 }
 
 function requireServices(): AppServices {
@@ -120,42 +92,38 @@ function requireDesktopWorkspace(): DesktopWorkspace {
   return desktopWorkspace;
 }
 
-function registerWindowRpc(key: string, rpc: DesktopRpc): void {
-  windowRpcs.set(key, rpc);
-  rpcWindowKeys.set(rpc, key);
-}
+const {
+  forEachReadyWindowRpc,
+  getRpcWindowKey,
+  getWindowRpc,
+  isWindowRpcReady,
+  markWindowRpcReady,
+  registerWindowRpc,
+  unregisterWindowRpc,
+} = windowRpcRegistry;
 
-function unregisterWindowRpc(key: string): void {
-  const rpc = windowRpcs.get(key);
-  if (rpc) {
-    rpcWindowKeys.delete(rpc);
-  }
-  windowRpcs.delete(key);
-  readyWindowRpcs.delete(key);
-}
-
-function getRpcWindowKey(rpc: DesktopRpc): string | undefined {
-  return rpcWindowKeys.get(rpc);
-}
-
-function markWindowRpcReady(rpc: DesktopRpc): void {
-  const key = getRpcWindowKey(rpc);
-  if (key) readyWindowRpcs.add(key);
-}
-
-function forEachReadyWindowRpc(callback: (rpc: DesktopRpc) => void): void {
-  for (const key of readyWindowRpcs) {
-    const rpc = windowRpcs.get(key);
-    if (rpc) callback(rpc);
-  }
-}
+const capabilityBridge = new DesktopCapabilityBridge<DesktopRpc>({
+  getRegistry: () => requireServices().pluginRegistry.capabilities,
+  getWindowKey: getRpcWindowKey,
+});
+const desktopStateBroadcaster = new DesktopStateBroadcaster<DesktopRpc>({
+  forEachReadyWindowRpc,
+});
+const detachedWindowManager = new DesktopDetachedWindowManager<DesktopRpc>({
+  createRpc: createWindowRpc,
+  getConfig: requireConfig,
+  getCurrentConfig: () => currentConfig,
+  getDesktopWorkspace: requireDesktopWorkspace,
+  getDesktopWorkspaceOrNull: () => desktopWorkspace,
+  getMainWindow: () => mainWindow,
+  commitDesktopSnapshot,
+  disposeWindowScopedResources,
+  unregisterWindowRpc,
+  stateBroadcaster: desktopStateBroadcaster,
+});
 
 function openMainWindowDevTools(): void {
   mainWindow?.webview.openDevTools();
-}
-
-function scopeClientId(rpc: DesktopRpc, id: string): string {
-  return `${getRpcWindowKey(rpc) ?? "window"}:${id}`;
 }
 
 function syncActiveLayout(
@@ -167,117 +135,15 @@ function syncActiveLayout(
   return syncConfigActiveLayoutState(config, paneState, focusedPaneId, activePanel);
 }
 
-function normalizeInitWindowTarget(
-  rpc: DesktopRpc,
-  payload: Record<string, unknown>,
-): { kind: "main" | "detached"; paneId?: string } {
-  const rpcKey = getRpcWindowKey(rpc);
-  if (rpcKey === MAIN_WINDOW_RPC_KEY) {
-    return { kind: "main" };
-  }
-  const detachedPaneId = paneIdFromDetachedRpcKey(rpcKey);
-  if (detachedPaneId) {
-    return {
-      kind: "detached",
-      paneId: detachedPaneId,
-    };
-  }
-  const kind = payload.kind === "detached" ? "detached" : "main";
-  return {
-    kind,
-    paneId: kind === "detached" && typeof payload.paneId === "string" && payload.paneId.length > 0
-      ? payload.paneId
-      : undefined,
-  };
-}
-
-function clearTimer(
-  timers: Map<string, ReturnType<typeof setTimeout>>,
-  key: string,
-): void {
-  const timer = timers.get(key);
-  if (timer) {
-    clearTimeout(timer);
-    timers.delete(key);
-  }
-}
-
-function getWindowFrame(window: BrowserWindow | null): WindowFrame | null {
-  if (!window) return null;
-  return normalizeWindowFrame(window.frame);
-}
-
-function updateWindowFrameCache(
-  window: BrowserWindow | null,
-  patch: Partial<WindowFrame>,
-  minimumSize?: WindowMinimumSize,
-): WindowFrame | null {
-  if (!window) return null;
-  const nextFrame = normalizeWindowFrameWithMinimum(patch, getWindowFrame(window) ?? DEFAULT_WINDOW_FRAME, minimumSize);
-  window.frame = nextFrame;
-  return nextFrame;
-}
-
-function applyWindowMoveEvent(window: BrowserWindow | null, event: WindowMoveEvent): WindowFrame | null {
-  return updateWindowFrameCache(window, {
-    x: event.data?.x,
-    y: event.data?.y,
-  });
-}
-
-function applyWindowResizeEvent(
-  window: BrowserWindow | null,
-  event: WindowResizeEvent,
-  minimumSize?: WindowMinimumSize,
-): WindowFrame | null {
-  if (!window) return null;
-  const previousFrame = getWindowFrame(window) ?? DEFAULT_WINDOW_FRAME;
-  const rawFrame = normalizeWindowFrame(event.data ?? {}, previousFrame);
-  const nextFrame = updateWindowFrameCache(window, rawFrame, minimumSize);
-  if (nextFrame && (nextFrame.width !== rawFrame.width || nextFrame.height !== rawFrame.height)) {
-    window.setFrame(nextFrame.x, nextFrame.y, nextFrame.width, nextFrame.height);
-  }
-  return nextFrame;
-}
-
 function setCurrentConfig(nextConfig: AppConfig): void {
   currentConfig = syncActiveLayout(nextConfig);
   syncConfigAccessors();
 }
 
-function normalizeHttpFetchHeaders(headers: unknown): Record<string, string> {
-  if (!headers || typeof headers !== "object" || Array.isArray(headers)) {
-    return {};
-  }
-  return Object.fromEntries(
-    Object.entries(headers as Record<string, unknown>)
-      .filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-  );
-}
-
-function normalizeText(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function playNotificationSound(sound: string | undefined): void {
-  if (!sound) return;
-  const command = buildSoundCommand(sound);
-  if (!command) return;
-  try {
-    const child = Bun.spawn([command.command, ...command.args], { stdio: ["ignore", "ignore", "ignore"] });
-    child.unref();
-  } catch (error) {
-    console.warn("notification sound failed", {
-      command: command.command,
-      message: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
 function sendUpdateProgress(rpc: DesktopRpc, progress: UpdateProgress): void {
   try {
     rpc.send["update.progress"]({
-      progress: encodeRpcValue(progress),
+      progress: encodeRpcValue(progress) as UpdateProgress,
     });
   } catch (error) {
     console.warn("update progress send failed", summarizeError(error));
@@ -288,84 +154,6 @@ async function runDesktopUpdate(rpc: DesktopRpc, currentVersion: string): Promis
   await runElectrobunDesktopUpdate(currentVersion, (progress) => sendUpdateProgress(rpc, progress));
 }
 
-interface PluginStateBackendSetEntry {
-  pluginId: string;
-  key: string;
-  value: unknown;
-  schemaVersion?: number;
-}
-
-function normalizePluginStateSetEntry(entry: unknown): PluginStateBackendSetEntry | null {
-  if (!entry || typeof entry !== "object") return null;
-  const record = entry as Record<string, unknown>;
-  if (typeof record.pluginId !== "string" || typeof record.key !== "string") return null;
-  return {
-    pluginId: record.pluginId,
-    key: record.key,
-    value: record.value,
-    schemaVersion: typeof record.schemaVersion === "number" ? record.schemaVersion : undefined,
-  };
-}
-
-function syncBackendCloudAuthState(pluginId: string, key: string, value: unknown): void {
-  if (pluginId !== "gloomberb-cloud" || (key !== "session" && key !== "resume:session")) return;
-
-  const session = value && typeof value === "object" ? value as PersistedCloudSession : null;
-  const token = typeof session?.sessionToken === "string" && session.sessionToken.length > 0
-    ? session.sessionToken
-    : null;
-
-  apiClient.setSessionToken(token);
-  apiClient.setWebSocketToken(null);
-  apiClient.restoreCachedUser(token ? session?.user ?? null : null);
-}
-
-async function handleHttpFetch(payload: Record<string, unknown>) {
-  if (typeof payload.url !== "string") {
-    throw new Error("http.fetch requires a URL.");
-  }
-
-  const url = new URL(payload.url);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(`Unsupported http.fetch protocol: ${url.protocol}`);
-  }
-
-  const init =
-    payload.init && typeof payload.init === "object" && !Array.isArray(payload.init)
-      ? payload.init as Record<string, unknown>
-      : {};
-  const method =
-    typeof init.method === "string" && init.method.trim().length > 0
-      ? init.method.trim().toUpperCase()
-      : "GET";
-  const body =
-    typeof init.body === "string" && method !== "GET" && method !== "HEAD"
-      ? init.body
-      : undefined;
-
-  const response = await fetch(url, {
-    method,
-    headers: normalizeHttpFetchHeaders(init.headers),
-    body,
-  });
-  const responseHeaders: Record<string, string> = {};
-  response.headers.forEach((value, key) => {
-    responseHeaders[key] = value;
-  });
-  const setCookieHeaders = [...(response.headers.getSetCookie?.() ?? [])];
-  const fallbackSetCookie = response.headers.get("set-cookie");
-  if (fallbackSetCookie && setCookieHeaders.length === 0) {
-    setCookieHeaders.push(fallbackSetCookie);
-  }
-
-  return {
-    status: response.status,
-    statusText: response.statusText,
-    headers: responseHeaders,
-    setCookie: setCookieHeaders,
-    body: await response.text(),
-  };
-}
 
 function syncConfigAccessors() {
   if (!services || !currentConfig) return;
@@ -405,21 +193,6 @@ function syncConfigAccessors() {
   configurableProvider.setConfigAccessor?.(() => currentConfig!);
 }
 
-function loadPluginState() {
-  const registry = requireServices().pluginRegistry;
-  const state: Record<string, Record<string, unknown>> = {};
-  for (const pluginId of registry.allPlugins.keys()) {
-    const keys = registry.persistence.pluginState.keys(pluginId);
-    if (keys.length === 0) continue;
-    state[pluginId] = {};
-    for (const key of keys) {
-      const record = registry.persistence.pluginState.get(pluginId, key);
-      if (record) state[pluginId]![key] = record.value;
-    }
-  }
-  return state;
-}
-
 function getSessionSnapshot(): AppSessionSnapshot | null {
   if (!currentConfig || !services) return null;
   const persisted = services.persistence.sessions.get<AppSessionSnapshot>(APP_SESSION_ID, APP_SESSION_SCHEMA_VERSION)?.value ?? null;
@@ -431,110 +204,25 @@ function getDesktopSnapshot(): DesktopSharedStateSnapshot | null {
 }
 
 function sendDesktopState(snapshot: DesktopSharedStateSnapshot | null = getDesktopSnapshot()): void {
-  if (!snapshot) return;
-  const encodedSnapshot = encodeRpcValue(snapshot);
-  forEachReadyWindowRpc((rpc) => {
-    rpc.send["desktop.state"]({
-      snapshot: encodedSnapshot,
-    });
-  });
-}
-
-function sendDockPreview(preview: DesktopDockPreviewState): void {
-  if (currentDockPreview.paneId === preview.paneId && currentDockPreview.edge === preview.edge) {
-    return;
-  }
-  currentDockPreview = preview;
-  const encodedPreview = encodeRpcValue(preview);
-  forEachReadyWindowRpc((rpc) => {
-    rpc.send["desktop.dockPreview"]({
-      preview: encodedPreview,
-    });
-  });
+  desktopStateBroadcaster.sendDesktopState(snapshot);
 }
 
 function sendThemePreview(preview: DesktopThemePreviewState): void {
-  if (currentThemePreview.theme === preview.theme) return;
-  currentThemePreview = preview;
-  const encodedPreview = encodeRpcValue(preview) as DesktopThemePreviewState;
-  forEachReadyWindowRpc((rpc) => {
-    rpc.send["desktop.themePreview"]({
-      preview: encodedPreview,
-    });
-  });
+  desktopStateBroadcaster.sendThemePreview(preview);
 }
 
 function clearDockPreview(paneId?: string): void {
-  if (paneId && currentDockPreview.paneId && currentDockPreview.paneId !== paneId) return;
-  sendDockPreview({ paneId: null, edge: null });
-}
-
-function disposeSubscriptionMap(map: Map<string, () => void>): void {
-  for (const unsubscribe of map.values()) {
-    try {
-      unsubscribe();
-    } catch {
-      // ignore teardown failures
-    }
-  }
-  map.clear();
-}
-
-function disposeScopedSubscriptionMap(map: Map<string, () => void>, windowKey: string): void {
-  const scopedPrefix = `${windowKey}:`;
-  for (const [id, unsubscribe] of map) {
-    if (!id.startsWith(scopedPrefix)) continue;
-    try {
-      unsubscribe();
-    } catch {
-      // ignore teardown failures
-    }
-    map.delete(id);
-  }
+  desktopStateBroadcaster.clearDockPreview(paneId);
 }
 
 function disposeWindowScopedResources(windowKey: string): void {
-  disposeScopedSubscriptionMap(capabilitySubscriptions, windowKey);
+  capabilityBridge.disposeWindow(windowKey);
 }
 
 function teardownServices(): void {
-  disposeSubscriptionMap(capabilitySubscriptions);
+  capabilityBridge.disposeAll();
   services?.destroy();
   services = null;
-}
-
-function spawnDetached(command: string[]): void {
-  const child = Bun.spawn(command, {
-    detached: true,
-    stdio: ["ignore", "ignore", "ignore"],
-  } as any);
-  child.unref();
-}
-
-function scheduleDesktopRelaunch(): void {
-  const pid = process.pid;
-  const macAppBundle = process.platform === "darwin" ? findMacAppBundle(process.execPath) : null;
-
-  if (macAppBundle) {
-    spawnDetached([
-      "sh",
-      "-c",
-      `while kill -0 ${pid} 2>/dev/null; do sleep 0.25; done; sleep 0.5; open ${shellQuote(macAppBundle)}`,
-    ]);
-    return;
-  }
-
-  if (process.platform === "win32") {
-    spawnDetached([process.execPath, ...process.argv.slice(1)]);
-    return;
-  }
-
-  const args = process.argv.slice(1).map(shellQuote).join(" ");
-  spawnDetached([
-    "sh",
-    "-c",
-    `while kill -0 ${pid} 2>/dev/null; do sleep 0.25; done; cd ${shellQuote(process.cwd())}; ${shellQuote(process.execPath)}${args ? ` ${args}` : ""}`,
-  ]);
 }
 
 function restartDesktopApp(message: DesktopRestartMessage = {}): void {
@@ -559,60 +247,6 @@ function restartDesktopApp(message: DesktopRestartMessage = {}): void {
   Utils.quit();
 }
 
-function resolveDetachedWindowTitle(instanceId: string): string {
-  const instance = currentConfig ? findPaneInstance(currentConfig.layout, instanceId) : null;
-  if (!instance) return "Gloomberb";
-  return instance.title?.trim() || instance.paneId;
-}
-
-function resolveDetachedWindowFrame(instanceId: string): { x: number; y: number; width: number; height: number } {
-  const detachedEntry = requireConfig().layout.detached.find((entry) => entry.instanceId === instanceId);
-  if (detachedEntry) {
-    return normalizeWindowFrameWithMinimum({
-      x: detachedEntry.x,
-      y: detachedEntry.y,
-      width: detachedEntry.width,
-      height: detachedEntry.height,
-    }, DEFAULT_WINDOW_FRAME, DETACHED_WINDOW_MIN_SIZE);
-  }
-  const remembered = findPaneInstance(requireConfig().layout, instanceId)?.placementMemory?.detached;
-  if (remembered) {
-    return normalizeWindowFrameWithMinimum(remembered, DEFAULT_WINDOW_FRAME, DETACHED_WINDOW_MIN_SIZE);
-  }
-  const mainFrame = getWindowFrame(mainWindow) ?? DEFAULT_WINDOW_FRAME;
-  return normalizeWindowFrameWithMinimum({
-    x: mainFrame.x + 72,
-    y: mainFrame.y + 72,
-    width: Math.max(720, Math.floor(mainFrame.width * 0.45)),
-    height: Math.max(420, Math.floor(mainFrame.height * 0.5)),
-  }, DEFAULT_WINDOW_FRAME, DETACHED_WINDOW_MIN_SIZE);
-}
-
-function resolveDetachedDockEdge(frame: { x: number; y: number; width: number; height: number }): "left" | "right" | "top" | "bottom" | null {
-  const mainFrame = getWindowFrame(mainWindow);
-  if (!mainFrame) return null;
-  const threshold = 72;
-  const headerMidX = frame.x + (frame.width / 2);
-  const headerMidY = frame.y + 16;
-  const overlapsVertically = headerMidY >= mainFrame.y - 32 && headerMidY <= mainFrame.y + mainFrame.height + 32;
-  const overlapsHorizontally = headerMidX >= mainFrame.x - 32 && headerMidX <= mainFrame.x + mainFrame.width + 32;
-
-  if (overlapsVertically && Math.abs(headerMidX - mainFrame.x) <= threshold) return "left";
-  if (overlapsVertically && Math.abs(headerMidX - (mainFrame.x + mainFrame.width)) <= threshold) return "right";
-  if (overlapsHorizontally && Math.abs(headerMidY - mainFrame.y) <= threshold) return "top";
-  if (overlapsHorizontally && Math.abs(headerMidY - (mainFrame.y + mainFrame.height)) <= threshold) return "bottom";
-  return null;
-}
-
-function cleanupDetachedWindowState(instanceId: string): void {
-  disposeWindowScopedResources(detachedRpcKey(instanceId));
-  detachedWindows.delete(instanceId);
-  clearTimer(detachedFrameTimers, instanceId);
-  clearTimer(detachedDockTimers, instanceId);
-  pendingDetachedMoveFlush.delete(instanceId);
-  unregisterWindowRpc(detachedRpcKey(instanceId));
-}
-
 async function commitDesktopSnapshot(
   snapshot: DesktopSharedStateSnapshot,
   options: { persistConfig?: boolean; reconcileWindows?: boolean } = {},
@@ -631,295 +265,40 @@ async function commitDesktopSnapshot(
   return requireDesktopWorkspace().getSnapshot();
 }
 
-function createDetachedWindow(
-  instanceId: string,
-  frame: { x: number; y: number; width: number; height: number },
-): BrowserWindow {
-  const rpc = createWindowRpc(detachedRpcKey(instanceId));
-  const initialFrame = normalizeWindowFrameWithMinimum(frame, DEFAULT_WINDOW_FRAME, DETACHED_WINDOW_MIN_SIZE);
-  const window = new BrowserWindow({
-    title: resolveDetachedWindowTitle(instanceId),
-    frame: initialFrame,
-    url: "views://mainview/index.html",
-    renderer: "native",
-    rpc,
-    titleBarStyle: "hiddenInset",
-    navigationRules: JSON.stringify(["views://*"]),
-    sandbox: false,
-  });
-  updateWindowFrameCache(window, initialFrame, DETACHED_WINDOW_MIN_SIZE);
-  detachedWindows.set(instanceId, window);
-
-  (window as any).on?.("close", () => {
-    const shouldIgnore = detachedClosingPanes.delete(instanceId);
-    cleanupDetachedWindowState(instanceId);
-    if (shouldIgnore || !desktopWorkspace || !currentConfig || !isPaneDetached(currentConfig.layout, instanceId)) {
-      return;
-    }
-    void commitDesktopSnapshot(requireDesktopWorkspace().closeDetachedPane(instanceId));
-  });
-
-  (window as any).on?.("move", (event: WindowMoveEvent) => {
-    applyWindowMoveEvent(window, event);
-    scheduleDetachedWindowMove(instanceId);
-  });
-  (window as any).on?.("resize", (event: WindowResizeEvent) => {
-    applyWindowResizeEvent(window, event, DETACHED_WINDOW_MIN_SIZE);
-    scheduleDetachedWindowMove(instanceId);
-  });
-
-  return window;
-}
-
-function scheduleDetachedWindowMove(instanceId: string): void {
-  if (pendingDetachedMoveFlush.has(instanceId)) return;
-  pendingDetachedMoveFlush.add(instanceId);
-  setTimeout(() => {
-    pendingDetachedMoveFlush.delete(instanceId);
-    handleDetachedWindowMove(instanceId);
-  }, 0);
-}
-
 function reconcileDetachedWindows(): void {
-  const config = currentConfig;
-  if (!config) return;
-
-  const desiredEntries = new Map(config.layout.detached.map((entry) => [entry.instanceId, entry] as const));
-  for (const [instanceId, entry] of desiredEntries) {
-    const existingWindow = detachedWindows.get(instanceId);
-    if (!existingWindow) {
-      createDetachedWindow(instanceId, entry);
-      continue;
-    }
-
-    const currentFrame = getWindowFrame(existingWindow);
-    const hasLiveFrameUpdate = pendingDetachedMoveFlush.has(instanceId)
-      || detachedFrameTimers.has(instanceId)
-      || detachedDockTimers.has(instanceId);
-    const nextFrame = currentFrame
-      ? normalizeWindowFrameWithMinimum(entry, currentFrame, DETACHED_WINDOW_MIN_SIZE)
-      : null;
-    if (!hasLiveFrameUpdate
-      && currentFrame
-      && nextFrame
-      && (currentFrame.x !== nextFrame.x
-        || currentFrame.y !== nextFrame.y
-        || currentFrame.width !== nextFrame.width
-        || currentFrame.height !== nextFrame.height)) {
-      existingWindow.setFrame(nextFrame.x, nextFrame.y, nextFrame.width, nextFrame.height);
-    }
-    (existingWindow as any).setTitle?.(resolveDetachedWindowTitle(instanceId));
-  }
-
-  for (const [instanceId, window] of detachedWindows) {
-    if (desiredEntries.has(instanceId)) continue;
-    detachedClosingPanes.add(instanceId);
-    cleanupDetachedWindowState(instanceId);
-    (window as any).close?.();
-  }
+  detachedWindowManager.reconcile();
 }
 
 function closeAllDetachedWindows(): void {
-  for (const [instanceId, window] of detachedWindows) {
-    detachedClosingPanes.add(instanceId);
-    cleanupDetachedWindowState(instanceId);
-    (window as any).close?.();
-  }
-  currentDockPreview = { paneId: null, edge: null };
-}
-
-function handleDetachedWindowMove(
-  instanceId: string,
-): void {
-  const window = detachedWindows.get(instanceId);
-  if (!window || !desktopWorkspace || !currentConfig || !isPaneDetached(currentConfig.layout, instanceId)) {
-    return;
-  }
-
-  const frame = getWindowFrame(window);
-  if (!frame) return;
-  const edge = resolveDetachedDockEdge(frame);
-
-  clearTimer(detachedFrameTimers, instanceId);
-  detachedFrameTimers.set(instanceId, setTimeout(() => {
-    detachedFrameTimers.delete(instanceId);
-    if (!currentConfig || !desktopWorkspace || !isPaneDetached(currentConfig.layout, instanceId)) return;
-    void commitDesktopSnapshot(
-      requireDesktopWorkspace().updateDetachedFrame(instanceId, frame),
-      { reconcileWindows: false },
-    );
-  }, 120));
-
-  clearTimer(detachedDockTimers, instanceId);
-  if (!edge) {
-    clearDockPreview(instanceId);
-    return;
-  }
-
-  sendDockPreview({ paneId: instanceId, edge });
-  detachedDockTimers.set(instanceId, setTimeout(() => {
-    detachedDockTimers.delete(instanceId);
-    if (!currentConfig || !desktopWorkspace || !isPaneDetached(currentConfig.layout, instanceId)) return;
-    if (currentDockPreview.paneId !== instanceId || currentDockPreview.edge !== edge) return;
-    clearDockPreview(instanceId);
-    void commitDesktopSnapshot(requireDesktopWorkspace().dockDetachedPane(instanceId, edge));
-  }, 120));
+  detachedWindowManager.closeAll();
 }
 
 async function initialize(
   rpc: DesktopRpc,
   payload: Record<string, unknown>,
 ) {
-  const windowTarget = normalizeInitWindowTarget(rpc, payload);
-  markWindowRpcReady(rpc);
-  if (services && currentConfig) {
-    if (!desktopWorkspace) {
-      desktopWorkspace = createDesktopWorkspace(currentConfig, getSessionSnapshot());
-      reconcileDetachedWindows();
-    }
-    return {
-      config: currentConfig,
-      sessionSnapshot: getSessionSnapshot(),
-      desktopSnapshot: getDesktopSnapshot(),
-      pluginState: loadPluginState(),
-      capabilityManifests: requireServices().pluginRegistry.capabilities.manifests({ rendererOnly: true }),
-      windowKind: windowTarget.kind,
-      paneId: windowTarget.paneId,
-    };
-  }
-
-  let dataDir = await getDataDir();
-  if (!dataDir) {
-    dataDir = join(process.env.HOME || "~", ".gloomberb");
-  }
-  if (!existsSync(dataDir)) {
-    mkdirSync(dataDir, { recursive: true });
-  }
-
-  setCurrentConfig(await initDataDir(dataDir));
-  services = createAppServices({ config: requireConfig(), externalPlugins: [] });
-  syncConfigAccessors();
-  registerCoreCapabilities();
-  desktopWorkspace = createDesktopWorkspace(requireConfig(), getSessionSnapshot());
-
-  reconcileDetachedWindows();
-
-  return {
-    config: requireConfig(),
-    sessionSnapshot: getSessionSnapshot(),
-    desktopSnapshot: getDesktopSnapshot(),
-    desktopThemePreview: currentThemePreview,
-    pluginState: loadPluginState(),
-    capabilityManifests: requireServices().pluginRegistry.capabilities.manifests({ rendererOnly: true }),
-    windowKind: windowTarget.kind,
-    paneId: windowTarget.paneId,
-  };
-}
-
-async function handleDesktop(method: string, payload: Record<string, unknown>) {
-  const workspace = requireDesktopWorkspace();
-  switch (method) {
-    case "desktop.syncMainState": {
-      const snapshot = workspace.syncMainState(payload.snapshot as DesktopSharedStateSnapshot);
-      setCurrentConfig(snapshot.config);
-      reconcileDetachedWindows();
-      sendDesktopState(snapshot);
-      return null;
-    }
-    case "desktop.setThemePreview":
-      sendThemePreview((payload.preview ?? { theme: null }) as DesktopThemePreviewState);
-      return null;
-    case "desktop.replaceDetachedPaneState":
-      if (typeof payload.paneId !== "string") {
-        throw new Error("desktop.replaceDetachedPaneState requires paneId.");
-      }
-      sendDesktopState(workspace.replaceDetachedPaneState(payload.paneId, payload.paneState as PaneRuntimeState));
-      return null;
-    case "desktop.popOutPane": {
-      if (typeof payload.paneId !== "string") {
-        throw new Error("desktop.popOutPane requires paneId.");
-      }
-      const snapshot = workspace.popOutPane(payload.paneId, resolveDetachedWindowFrame(payload.paneId));
-      await commitDesktopSnapshot(snapshot);
-      focusWindowForRpcKey(detachedRpcKey(payload.paneId), mainWindow, detachedWindows);
-      return null;
-    }
-    case "desktop.dockDetachedPane": {
-      if (typeof payload.paneId !== "string") {
-        throw new Error("desktop.dockDetachedPane requires paneId.");
-      }
-      clearDockPreview(payload.paneId);
-      await commitDesktopSnapshot(
-        workspace.dockDetachedPane(
-          payload.paneId,
-          payload.edge === "left" || payload.edge === "right" || payload.edge === "top" || payload.edge === "bottom"
-            ? payload.edge
-            : undefined,
-        ),
-      );
-      return null;
-    }
-    case "desktop.closeDetachedPane": {
-      if (typeof payload.paneId !== "string") {
-        throw new Error("desktop.closeDetachedPane requires paneId.");
-      }
-      clearDockPreview(payload.paneId);
-      await commitDesktopSnapshot(workspace.closeDetachedPane(payload.paneId));
-      return null;
-    }
-    case "desktop.focusDetachedPane":
-      if (typeof payload.paneId !== "string") {
-        throw new Error("desktop.focusDetachedPane requires paneId.");
-      }
-      focusWindowForRpcKey(detachedRpcKey(payload.paneId), mainWindow, detachedWindows);
-      return null;
-    default:
-      throw new Error(`Unknown desktop method: ${method}`);
-  }
-}
-
-async function handleCapability(
-  rpc: DesktopRpc,
-  method: string,
-  payload: Record<string, unknown>,
-) {
-  const registry = requireServices().pluginRegistry.capabilities;
-  switch (method) {
-    case "capability.invoke":
-      return registry.invoke(
-        payload.capabilityId as string,
-        payload.operationId as string,
-        payload.payload,
-        { renderer: true },
-      );
-    case "capability.subscribe": {
-      const clientSubscriptionId = payload.subscriptionId as string;
-      const scopedSubscriptionId = scopeClientId(rpc, clientSubscriptionId);
-      capabilitySubscriptions.get(scopedSubscriptionId)?.();
-      await registry.subscribe(
-        payload.capabilityId as string,
-        payload.operationId as string,
-        payload.payload,
-        (event) => {
-          rpc.send["capability.event"]({
-            subscriptionId: clientSubscriptionId,
-            event: encodeRpcValue(event),
-          });
-        },
-        { renderer: true, subscriptionId: scopedSubscriptionId },
-      );
-      capabilitySubscriptions.set(scopedSubscriptionId, () => registry.unsubscribe(scopedSubscriptionId));
-      return null;
-    }
-    case "capability.unsubscribe": {
-      const scopedSubscriptionId = scopeClientId(rpc, payload.subscriptionId as string);
-      capabilitySubscriptions.get(scopedSubscriptionId)?.();
-      capabilitySubscriptions.delete(scopedSubscriptionId);
-      return null;
-    }
-    default:
-      throw new Error(`Unknown capability method: ${method}`);
-  }
+  return initializeDesktopBackend({
+    getCurrentConfig: () => currentConfig,
+    getCurrentServices: () => services,
+    getDesktopSnapshot,
+    getDesktopWorkspace: () => desktopWorkspace,
+    getRpcWindowKey,
+    getSessionSnapshot,
+    getThemePreview: () => desktopStateBroadcaster.currentThemePreview,
+    markWindowRpcReady,
+    payload,
+    reconcileDetachedWindows,
+    registerCoreCapabilities,
+    rpc,
+    setCurrentConfig,
+    setDesktopWorkspace: (workspace) => {
+      desktopWorkspace = workspace;
+    },
+    setServices: (nextServices) => {
+      services = nextServices;
+    },
+    syncConfigAccessors,
+  });
 }
 
 async function handleBackendRequest(
@@ -931,143 +310,76 @@ async function handleBackendRequest(
 
   if (method === "init") return initialize(rpc, payload);
   if (method === "http.fetch") return handleHttpFetch(payload);
-  if (method.startsWith("capability.")) return handleCapability(rpc, method, payload);
-  if (method.startsWith("desktop.")) return handleDesktop(method, payload);
-
-  switch (method) {
-    case "update.check":
-      return checkDesktopUpdate(typeof payload.currentVersion === "string" ? payload.currentVersion : "");
-    case "update.start": {
-      const release = payload.release && typeof payload.release === "object"
-        ? payload.release as Partial<ReleaseInfo>
-        : null;
-      void runDesktopUpdate(
-        rpc,
-        typeof payload.currentVersion === "string" ? payload.currentVersion : release?.version ?? "",
-      );
-      return null;
-    }
-    case "ticker.loadAll":
-      return requireServices().tickerRepository.loadAllTickers();
-    case "ticker.load":
-      return requireServices().tickerRepository.loadTicker(payload.symbol as string);
-    case "ticker.save":
-      return requireServices().tickerRepository.saveTicker(payload.ticker as never);
-    case "ticker.delete":
-      return requireServices().tickerRepository.deleteTicker(payload.symbol as string);
-    case "config.save":
-      setCurrentConfig(payload.config as AppConfig);
-      if (desktopWorkspace) {
-        await commitDesktopSnapshot(desktopWorkspace.replaceConfig(requireConfig(), { layoutChanged: true }));
-        return null;
-      }
-      return saveConfig(requireConfig());
-    case "config.resetAllData":
-      closeAllDetachedWindows();
-      desktopWorkspace = null;
-      teardownServices();
-      currentConfig = null;
-      return resetAllData(payload.dataDir as string);
-    case "config.export":
-      return exportConfig(payload.config as AppConfig, payload.destPath as string);
-    case "config.import":
-      closeAllDetachedWindows();
-      desktopWorkspace = null;
-      teardownServices();
-      setCurrentConfig(await importConfig(payload.dataDir as string, payload.srcPath as string));
-      services = createAppServices({ config: requireConfig(), externalPlugins: [] });
-      syncConfigAccessors();
-      registerCoreCapabilities();
-      desktopWorkspace = createDesktopWorkspace(requireConfig(), getSessionSnapshot());
-      reconcileDetachedWindows();
-      sendDesktopState(requireDesktopWorkspace().getSnapshot());
-      return requireConfig();
-    case "session.set":
-      requireServices().persistence.sessions.set(payload.sessionId as string, payload.value, payload.schemaVersion as number | undefined);
-      return null;
-    case "session.delete":
-      requireServices().persistence.sessions.delete(payload.sessionId as string);
-      return null;
-    case "pluginState.set":
-      requireServices().persistence.pluginState.set(payload.pluginId as string, payload.key as string, payload.value, payload.schemaVersion as number | undefined);
-      syncBackendCloudAuthState(payload.pluginId as string, payload.key as string, payload.value);
-      return null;
-    case "pluginState.setMany": {
-      const entries = Array.isArray(payload.entries)
-        ? payload.entries.flatMap((entry) => {
-            const normalized = normalizePluginStateSetEntry(entry);
-            return normalized ? [normalized] : [];
-          })
-        : [];
-      requireServices().persistence.pluginState.setMany(entries);
-      for (const entry of entries) {
-        syncBackendCloudAuthState(entry.pluginId, entry.key, entry.value);
-      }
-      return null;
-    }
-    case "pluginState.delete":
-      requireServices().persistence.pluginState.delete(payload.pluginId as string, payload.key as string);
-      syncBackendCloudAuthState(payload.pluginId as string, payload.key as string, null);
-      return null;
-    case "host.restart":
-      restartDesktopApp({
-        reason: typeof payload.reason === "string" ? payload.reason : undefined,
-        source: typeof payload.source === "string" ? payload.source : "backend-request",
-      });
-      return null;
-    case "host.exit":
-      closeAllDetachedWindows();
-      teardownServices();
-      if (mainWindow) {
-        mainWindow.close();
-        mainWindow = null;
-        return null;
-      }
-      Utils.quit();
-      return null;
-    case "host.openExternal":
-      if (typeof payload.url !== "string") {
-        throw new Error("host.openExternal requires a URL.");
-      }
-      Utils.openExternal(payload.url);
-      return null;
-    case "host.copyText":
-      Utils.clipboardWriteText(normalizeText(payload.text) ?? "");
-      return null;
-    case "host.focusWindow":
-      focusWindowForRpcKey(getRpcWindowKey(rpc), mainWindow, detachedWindows);
-      return null;
-    case "host.copyPngImage": {
-      const pngBase64 = normalizeText(payload.pngBase64);
-      if (!pngBase64) throw new Error("host.copyPngImage requires PNG data.");
-      Utils.clipboardWriteImage(new Uint8Array(Buffer.from(pngBase64, "base64")));
-      return null;
-    }
-    case "host.readText":
-      return Utils.clipboardReadText() ?? "";
-    case "host.notify":
-      playNotificationSound(normalizeText(payload.sound));
-      Utils.showNotification({
-        title: normalizeText(payload.title) ?? "Gloomberb",
-        body: normalizeText(payload.body),
-        subtitle: normalizeText(payload.subtitle),
-        silent: true,
-      });
-      return null;
-    case "host.showContextMenu": {
-      const menu = normalizeContextMenuItems(payload.menu);
-      if (menu.length === 0) return false;
-      const requestId = getContextMenuRequestId(menu);
-      if (requestId) {
-        contextMenuRequestRpcs.clear();
-        contextMenuRequestRpcs.set(requestId, rpc);
-      }
-      ContextMenu.showContextMenu(menu as never);
-      return true;
-    }
-    default:
-      throw new Error(`Unknown backend method: ${method}`);
+  if (method.startsWith("capability.")) return capabilityBridge.handle(rpc, method, payload);
+  if (method.startsWith("desktop.")) {
+    return handleDesktopWorkspaceRequest({
+      workspace: requireDesktopWorkspace(),
+      method,
+      payload,
+      setCurrentConfig,
+      sendThemePreview,
+      clearDockPreview,
+      sendDesktopState,
+      reconcileDetachedWindows,
+      commitDesktopSnapshot,
+      resolveDetachedFrame: (paneId) => detachedWindowManager.resolveFrame(paneId),
+      focusDetachedPane: (paneId) => detachedWindowManager.focusDetachedPane(paneId),
+    });
   }
+  if (method.startsWith("pluginState.")) {
+    return handleDesktopPluginStateRequest(requireServices().persistence.pluginState, method, payload);
+  }
+  if (method.startsWith("host.")) {
+    return handleDesktopHostRequest({
+      clearMainWindow: () => {
+        mainWindow = null;
+      },
+      closeAllDetachedWindows,
+      focusWindowForRpcKey: (windowKey) => detachedWindowManager.focusWindowForRpcKey(windowKey),
+      getMainWindow: () => mainWindow,
+      getRpcWindowKey,
+      method,
+      payload,
+      restartDesktopApp,
+      rpc,
+      teardownServices,
+      trackContextMenuRequest: (requestId, targetRpc) => {
+        contextMenuRequestRpcs.clear();
+        contextMenuRequestRpcs.set(requestId, targetRpc);
+      },
+    });
+  }
+
+  const backendResult = await handleDesktopBackendRequest({
+    clearCurrentConfig: () => {
+      currentConfig = null;
+    },
+    closeAllDetachedWindows,
+    commitDesktopSnapshot,
+    getConfig: requireConfig,
+    getDesktopWorkspace: () => desktopWorkspace,
+    getServices: requireServices,
+    getSessionSnapshot,
+    method,
+    payload,
+    reconcileDetachedWindows,
+    registerCoreCapabilities,
+    sendDesktopState,
+    setCurrentConfig,
+    setDesktopWorkspace: (workspace) => {
+      desktopWorkspace = workspace;
+    },
+    setServices: (nextServices) => {
+      services = nextServices;
+    },
+    startUpdate: (currentVersion) => {
+      void runDesktopUpdate(rpc, currentVersion);
+    },
+    syncConfigAccessors,
+    teardownServices,
+  });
+  if (backendResult.handled) return backendResult.value;
+  throw new Error(`Unknown backend method: ${method}`);
 }
 
 function installApplicationMenu() {
@@ -1113,8 +425,8 @@ ApplicationMenu.on("application-menu-clicked", (event: unknown) => {
     openMainWindowDevTools();
     return;
   }
-  if (!readyWindowRpcs.has(MAIN_WINDOW_RPC_KEY)) return;
-  windowRpcs.get(MAIN_WINDOW_RPC_KEY)?.send["application-menu.select"]({ command });
+  if (!isWindowRpcReady(MAIN_WINDOW_RPC_KEY)) return;
+  getWindowRpc(MAIN_WINDOW_RPC_KEY)?.send["application-menu.select"]({ command });
 });
 
 installApplicationMenu();
@@ -1132,7 +444,7 @@ mainWindow = new BrowserWindow({
   sandbox: false,
 });
 updateWindowFrameCache(mainWindow, DEFAULT_WINDOW_FRAME, MAIN_WINDOW_MIN_SIZE);
-focusWindowForRpcKey(MAIN_WINDOW_RPC_KEY, mainWindow, detachedWindows);
+detachedWindowManager.focusWindowForRpcKey(MAIN_WINDOW_RPC_KEY);
 (mainWindow as any).on?.("move", (event: WindowMoveEvent) => {
   applyWindowMoveEvent(mainWindow, event);
 });

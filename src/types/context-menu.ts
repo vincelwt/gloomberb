@@ -1,7 +1,7 @@
 import type { TickerFinancials } from "./financials";
 import type { TickerRecord } from "./ticker";
 
-export type ContextMenuRole =
+type ContextMenuRole =
   | "undo"
   | "redo"
   | "cut"

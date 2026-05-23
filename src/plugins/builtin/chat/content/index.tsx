@@ -1,0 +1,406 @@
+import { Box, Text, useUiCapabilities } from "../../../../ui";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { type ScrollBoxRenderable, type TextareaRenderable } from "../../../../ui";
+import { useAppDispatch } from "../../../../state/app-context";
+import { useInlineTickers } from "../../../../state/use-inline-tickers";
+import { blendHex, colors } from "../../../../theme/colors";
+import { chatController } from "../controller";
+import {
+  estimateComposerHeight,
+} from "../layout";
+import {
+  DEFAULT_CHAT_CHANNEL_ID,
+  normalizeChannelId,
+} from "../channels";
+import { ChatComposerArea } from "./composer";
+import { ChatTranscript } from "./transcript";
+import {
+  ChannelSidebar,
+} from "../sidebar";
+import { useChatSnapshotState } from "./snapshot";
+import { useChatContentShortcuts } from "./shortcuts";
+import type { ChatContentController } from "./types";
+import { useChatProfilePopover } from "../profile-popover";
+import { useChatChannelNavigation } from "./channel-navigation";
+import { useChatScrollRuntime, type ChatPrependAnchor } from "./scroll";
+import {
+  resolveChatContentHeightMetrics,
+  resolveChatContentWidthMetrics,
+} from "./layout-metrics";
+import { buildChatUserByUsername } from "./user-map";
+import { useChatComposerRuntime } from "./composer-runtime";
+import { useChatMessageSelection } from "./selection-runtime";
+
+interface ChatContentProps {
+  width: number;
+  height: number;
+  focused: boolean;
+  channelId?: string;
+  onChannelChange?: (channelId: string) => void;
+  controller?: ChatContentController;
+}
+
+export function ChatContent({
+  width,
+  height,
+  focused,
+  channelId: rawChannelId,
+  onChannelChange,
+  controller = chatController,
+}: ChatContentProps) {
+  const dispatch = useAppDispatch();
+  const channelId = normalizeChannelId(rawChannelId);
+  const channelIdRef = useRef(channelId);
+  channelIdRef.current = channelId;
+  const initialSnapshot = controller.getSnapshot(channelId);
+  const { nativePaneChrome } = useUiCapabilities();
+  const [inputFocused, setInputFocused] = useState(false);
+  const [selectedIdx, setSelectedIdx] = useState(-1);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [followMessages, setFollowMessages] = useState(true);
+  const inputRef = useRef<TextareaRenderable>(null);
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const messageElementsRef = useRef(new Map<string, unknown>());
+  const applyingExternalDraftRef = useRef(false);
+  const prependAnchorRef = useRef<ChatPrependAnchor | null>(null);
+  const useDefaultControllerChannel = channelId === DEFAULT_CHAT_CHANNEL_ID && !onChannelChange;
+  const initialWidthMetrics = resolveChatContentWidthMetrics({
+    width,
+    height,
+    channelCount: initialSnapshot.channels.length,
+    nativePaneChrome,
+  });
+  const composerTextWidthRef = useRef(initialWidthMetrics.composerTextWidth);
+  const inputValueRef = useRef(initialSnapshot.draft);
+  const [composerRows, setComposerRows] = useState(() => estimateComposerHeight(initialSnapshot.draft, initialWidthMetrics.composerTextWidth));
+  const updateComposerRows = useCallback((draft: string) => {
+    const nextRows = estimateComposerHeight(draft, composerTextWidthRef.current);
+    setComposerRows((current) => (current === nextRows ? current : nextRows));
+  }, []);
+  const {
+    channels,
+    channelsLoading,
+    channelStates,
+    hasOlderMessages,
+    hasSavedSession,
+    loading,
+    loadingOlderMessages,
+    messages,
+    onlineCount,
+    replyTo,
+    setReplyTo,
+    user,
+  } = useChatSnapshotState({
+    applyingExternalDraftRef,
+    channelId,
+    controller,
+    initialSnapshot,
+    inputRef,
+    inputValueRef,
+    prependAnchorRef,
+    setFollowMessages,
+    setSelectedIdx,
+    updateComposerRows,
+    useDefaultControllerChannel,
+  });
+  const {
+    channelSidebarWidth,
+    chatWidth,
+    composerTextWidth,
+    composerWidth,
+    contentWidth,
+    messageBodyWidth,
+    showChannelSidebar,
+  } = resolveChatContentWidthMetrics({
+    width,
+    height,
+    channelCount: channels.length,
+    nativePaneChrome,
+  });
+  composerTextWidthRef.current = composerTextWidth;
+  const canSend = !!user?.emailVerified;
+  const selectionActive = selectedIdx >= 0 && selectedIdx < messages.length;
+  const stickyTranscript = followMessages && !selectionActive;
+  const latestMessageId = messages[messages.length - 1]?.id ?? null;
+  const {
+    composerHeight,
+    messageAreaHeight,
+  } = resolveChatContentHeightMetrics({
+    canSend,
+    composerRows,
+    height,
+    nativePaneChrome,
+    replyTo,
+  });
+
+  useEffect(() => {
+    updateComposerRows(inputValueRef.current);
+  }, [updateComposerRows]);
+
+  const messageContents = useMemo(() => messages.map((message) => message.content), [messages]);
+  const { catalog, openTicker } = useInlineTickers(messageContents);
+  const userByUsername = useMemo(() => buildChatUserByUsername(channels, messages), [channels, messages]);
+  const {
+    cancelProfilePopoverClose,
+    closeProfilePopover,
+    profilePopoverUser,
+    scheduleProfilePopoverClose,
+    showProfilePopover,
+  } = useChatProfilePopover();
+
+  const blurInput = useCallback(() => {
+    setInputFocused(false);
+    dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
+  }, [dispatch]);
+
+  const {
+    moveMessageSelection,
+    resetTranscriptSelection,
+    shouldLeaveComposerForSelection,
+  } = useChatMessageSelection({
+    inputRef,
+    messageCount: messages.length,
+    selectedIdx,
+    setFollowMessages,
+    setSelectedIdx,
+  });
+
+  const {
+    changeChannel,
+    cycleChannel,
+    directExpanded,
+    focusChannelSidebar,
+    focusChatContent,
+    moveSidebarChannelSelection,
+    openDirectMessage,
+    setDirectExpanded,
+    setSidebarFocused,
+    sidebarFocused,
+    sidebarFocusedRef,
+  } = useChatChannelNavigation({
+    blurInput,
+    channelId,
+    channelIdRef,
+    channels,
+    channelsLoading,
+    closeProfilePopover,
+    controller,
+    focused,
+    inputFocused,
+    onChannelChange,
+    resetTranscriptSelection,
+    showChannelSidebar,
+  });
+
+  const focusInput = useCallback(() => {
+    setSidebarFocused(false);
+    setInputFocused(true);
+    dispatch({ type: "SET_INPUT_CAPTURED", captured: true });
+    inputRef.current?.focus?.();
+  }, [dispatch, setSidebarFocused]);
+
+  const {
+    beginReplyTo,
+    clearReplyTarget,
+    commitLocalDraft,
+    focusComposer,
+    inputPlaceholder,
+    replyPreview,
+    returnToComposer,
+    sendMessage,
+  } = useChatComposerRuntime({
+    applyingExternalDraftRef,
+    blurInput,
+    canSend,
+    channelId,
+    channelIdRef,
+    contentWidth,
+    controller,
+    focusInput,
+    focused,
+    inputFocused,
+    inputRef,
+    inputValueRef,
+    messages,
+    onChannelChange,
+    replyTo,
+    setDirectExpanded,
+    setFollowMessages,
+    setReplyTo,
+    setSelectedIdx,
+    updateComposerRows,
+    useDefaultControllerChannel,
+  });
+
+  const {
+    handleTranscriptScrollActivity,
+    jumpToMessage,
+    registerMessageElement,
+    requestOlderMessages,
+    requestOlderMessagesIfNeeded,
+  } = useChatScrollRuntime({
+    channelId,
+    contentWidth,
+    controller,
+    focused,
+    hasOlderMessages,
+    height,
+    latestMessageId,
+    loadingOlderMessages,
+    messageAreaHeight,
+    messageElementsRef,
+    messages,
+    nativePaneChrome,
+    prependAnchorRef,
+    scrollRef,
+    selectedIdx,
+    selectionActive,
+    setFollowMessages,
+    setSelectedIdx,
+    stickyTranscript,
+    useDefaultControllerChannel,
+  });
+
+  useChatContentShortcuts({
+    beginReplyTo,
+    blurInput,
+    canSend,
+    clearReplyTarget,
+    cycleChannel,
+    focusChannelSidebar,
+    focusChatContent,
+    focusComposer,
+    focused,
+    hasOlderMessages,
+    inputFocused,
+    inputValueRef,
+    loadingOlderMessages,
+    messages,
+    moveMessageSelection,
+    moveSidebarChannelSelection,
+    nativePaneChrome,
+    replyTo,
+    requestOlderMessages,
+    requestOlderMessagesIfNeeded,
+    returnToComposer,
+    scrollRef,
+    selectedIdx,
+    setFollowMessages,
+    setSelectedIdx,
+    shouldLeaveComposerForSelection,
+    showChannelSidebar,
+    sidebarFocusedRef,
+  });
+
+  const chatContentBg = focused && showChannelSidebar && !sidebarFocused
+    ? blendHex(colors.bg, colors.borderFocused, 0.08)
+    : undefined;
+  const chatLayoutHeight = nativePaneChrome ? "100%" : height;
+  const nativeFillStyle = nativePaneChrome ? { minHeight: 0 } : undefined;
+
+  return (
+    <Box
+      flexDirection="row"
+      width={width}
+      height={chatLayoutHeight}
+      flexGrow={nativePaneChrome ? 1 : undefined}
+      style={nativeFillStyle}
+    >
+      {showChannelSidebar && (
+        <ChannelSidebar
+          channels={channels}
+          channelStates={channelStates}
+          activeChannelId={channelId}
+          onlineCount={onlineCount}
+          width={channelSidebarWidth}
+          height={height}
+          focused={focused}
+          keyboardFocused={sidebarFocused}
+          loading={channelsLoading}
+          canManageNotifications={!!user?.emailVerified}
+          directExpanded={directExpanded}
+          onSelect={changeChannel}
+          onFocusRequest={() => setSidebarFocused(true)}
+          onToggleNotifications={(nextChannelId, enabled) => {
+            controller.setChannelNotificationsEnabled(nextChannelId, enabled);
+          }}
+          onToggleDirectExpanded={() => setDirectExpanded((expanded) => !expanded)}
+        />
+      )}
+
+      <Box
+        flexDirection="column"
+        width={chatWidth}
+        height={chatLayoutHeight}
+        flexGrow={nativePaneChrome ? 1 : undefined}
+        backgroundColor={chatContentBg}
+        position="relative"
+        onMouseDown={() => setSidebarFocused(false)}
+        style={nativeFillStyle}
+      >
+      {!nativePaneChrome && (
+        <Box height={1} width={contentWidth}>
+          <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
+        </Box>
+      )}
+
+      <ChatTranscript
+        beginReplyTo={beginReplyTo}
+        canSend={canSend}
+        catalog={catalog}
+        cancelProfilePopoverClose={cancelProfilePopoverClose}
+        chatWidth={chatWidth}
+        contentWidth={contentWidth}
+        handleTranscriptScrollActivity={handleTranscriptScrollActivity}
+        hoveredIdx={hoveredIdx}
+        jumpToMessage={jumpToMessage}
+        loading={loading}
+        loadingOlderMessages={loadingOlderMessages}
+        messageAreaHeight={messageAreaHeight}
+        messageBodyWidth={messageBodyWidth}
+        messages={messages}
+        nativePaneChrome={nativePaneChrome}
+        openDirectMessage={openDirectMessage}
+        openTicker={openTicker}
+        profilePopoverUser={profilePopoverUser}
+        registerMessageElement={registerMessageElement}
+        scheduleProfilePopoverClose={scheduleProfilePopoverClose}
+        scrollRef={scrollRef}
+        selectedIdx={selectedIdx}
+        setHoveredIdx={setHoveredIdx}
+        showProfilePopover={showProfilePopover}
+        stickyTranscript={stickyTranscript}
+        user={user}
+        userByUsername={userByUsername}
+      />
+
+      {!nativePaneChrome && !canSend && (
+        <Box height={1} width={contentWidth}>
+          <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
+        </Box>
+      )}
+
+      <ChatComposerArea
+        canSend={canSend}
+        clearReplyTarget={clearReplyTarget}
+        commitLocalDraft={commitLocalDraft}
+        composerHeight={composerHeight}
+        composerWidth={composerWidth}
+        contentWidth={contentWidth}
+        focused={focused}
+        focusComposer={focusComposer}
+        hasSavedSession={hasSavedSession}
+        inputFocused={inputFocused}
+        inputPlaceholder={inputPlaceholder}
+        inputRef={inputRef}
+        inputValueRef={inputValueRef}
+        nativePaneChrome={nativePaneChrome}
+        replyPreview={replyPreview}
+        replyTo={replyTo}
+        sendMessage={sendMessage}
+        user={user}
+      />
+      </Box>
+    </Box>
+  );
+}

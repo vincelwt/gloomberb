@@ -6,7 +6,8 @@ import {
   getPortfolioPaneSettings,
   resolveCollectionPaneId,
 } from "./settings";
-import { portfolioCliCommand, watchlistCliCommand } from "./cli/commands";
+import { portfolioCliCommand } from "./cli/portfolio-command";
+import { watchlistCliCommand } from "./cli/watchlist-command";
 
 export { shouldToggleCashMarginDrawer };
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { BarSizeSetting, ConnectionState, SecType, type ContractDetails, type TickByTickAllLast } from "@stoqey/ib";
+import { BarSizeSetting, ConnectionState, SecType, type ContractDetails } from "@stoqey/ib";
 import { Subject, of } from "rxjs";
 import {
   setBrokerRemoteClient,
@@ -19,6 +19,7 @@ import {
   parseIbkrHistoricalBarTime,
   resolveGatewayConnection,
   summarizeBrokerAccount,
+  type TickByTickAllLast,
 } from "./gateway-service-native";
 
 function makeTags(input: Record<string, Record<string, string>>) {
@@ -430,13 +431,13 @@ describe("resolveGatewayConnection", () => {
 describe("IbkrGatewayService", () => {
   test("requests fixed-resolution chart history with the mapped IBKR bar size", async () => {
     const service = new IbkrGatewayService("ibkr-test");
-    let requestArgs: { duration: string; barSize: string } | null = null;
+    let requestArgs: { duration: string; barSize: BarSizeSetting } | null = null;
     (service as any).connect = async () => {};
     (service as any).resolveContract = async () => ({ symbol: "AAPL", exchange: "SMART", currency: "USD" });
     (service as any).getPrimaryContractDetails = async () => undefined;
     (service as any).withMarketDataFallback = async (task: () => Promise<unknown>) => task();
     (service as any).api = {
-      getHistoricalData: async (_contract: unknown, _end: string, duration: string, barSize: string) => {
+      getHistoricalData: async (_contract: unknown, _end: string, duration: string, barSize: BarSizeSetting) => {
         requestArgs = { duration, barSize };
         return [{
           time: "20260330",
@@ -457,7 +458,7 @@ describe("IbkrGatewayService", () => {
       "1wk",
     );
 
-    expect(requestArgs).toEqual({
+    expect(requestArgs!).toEqual({
       duration: "1 Y",
       barSize: BarSizeSetting.WEEKS_ONE,
     });

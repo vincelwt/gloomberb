@@ -4,7 +4,7 @@ import {
   nextRatingSortPreference,
   sortRatingRows,
   type RatingSortPreference,
-} from "./index";
+} from "./analyst-pane";
 
 const ratings: AnalystRatingRecord[] = [
   {

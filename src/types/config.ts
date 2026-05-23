@@ -2,8 +2,8 @@ import type { Portfolio, Watchlist } from "./ticker";
 
 export const CURRENT_CONFIG_VERSION = 17;
 
-export type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc" | "hlc";
-export type ChartRendererPreference = "auto" | "kitty" | "braille";
+type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc" | "hlc";
+type ChartRendererPreference = "auto" | "kitty" | "braille";
 
 export interface ChartPreferences {
   defaultRenderMode: DefaultChartRenderMode;
@@ -69,7 +69,7 @@ export interface PaneInstanceConfig {
   placementMemory?: PanePlacementMemory;
 }
 
-export interface DockPaneNode {
+interface DockPaneNode {
   kind: "pane";
   instanceId: string;
 }
@@ -93,7 +93,7 @@ export interface FloatingPaneEntry {
   zIndex?: number;
 }
 
-export interface DetachedPaneEntry {
+interface DetachedPaneEntry {
   instanceId: string;
   x: number;
   y: number;

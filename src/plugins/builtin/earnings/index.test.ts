@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveEarningsMonitorSymbols } from ".";
+import { resolveEarningsMonitorSymbols } from "./model";
 
 describe("earnings monitor scope", () => {
   test("uses explicit EM tickers before collection or app fallback tickers", () => {

@@ -2,7 +2,7 @@
 const PANE_HEADER_ROWS = 1;
 const PANE_FOOTER_ROWS = 1;
 
-export const NATIVE_PANE_BODY_LAYOUT_PROPS = {
+const NATIVE_PANE_BODY_LAYOUT_PROPS = {
   flexGrow: 1,
   flexBasis: 0,
   minHeight: 0,
@@ -12,7 +12,7 @@ export function shouldReservePaneFooter(nativePaneChrome: boolean | undefined, s
   return !nativePaneChrome || showFooter;
 }
 
-export function resolvePaneBodyHeight({
+function resolvePaneBodyHeight({
   height,
   nativePaneChrome,
   reserveFooter = true,
@@ -28,7 +28,7 @@ export function resolvePaneBodyHeight({
   return Math.max(1, normalizedHeight - headerRows - (reserveFooter ? PANE_FOOTER_ROWS : 0));
 }
 
-export function getPaneBodyLayoutProps(nativePaneChrome: boolean | undefined, bodyHeight: number | undefined) {
+function getPaneBodyLayoutProps(nativePaneChrome: boolean | undefined, bodyHeight: number | undefined) {
   if (nativePaneChrome) return NATIVE_PANE_BODY_LAYOUT_PROPS;
   return {
     height: bodyHeight,

@@ -1,8 +1,9 @@
 import type { AppAction } from "../../state/app-context";
+import type { Dispatch } from "react";
 
-export type CommandExecutor = (dispatch: React.Dispatch<AppAction>, context: CommandContext) => void | Promise<void>;
+type CommandExecutor = (dispatch: Dispatch<AppAction>, context: CommandContext) => void | Promise<void>;
 
-export interface CommandContext {
+interface CommandContext {
   activeTicker: string | null;
   activeCollectionId: string | null;
 }
@@ -17,7 +18,7 @@ export interface Command {
   argPlaceholder?: string;
   shortcut?: string;
   category: string;
-  execute: CommandExecutor;
+  execute?: CommandExecutor;
 }
 
 export const commands: Command[] = [
@@ -31,7 +32,6 @@ export const commands: Command[] = [
     hasArg: true,
     argPlaceholder: "ticker",
     category: "Search",
-    execute: () => {}, // handled specially by command bar
   },
   {
     id: "help",
@@ -39,7 +39,6 @@ export const commands: Command[] = [
     label: "Help",
     description: "Open the help window",
     category: "Navigation",
-    execute: () => {}, // handled specially by command bar
   },
 
   // Watchlist/Portfolio management
@@ -51,7 +50,6 @@ export const commands: Command[] = [
     hasArg: true,
     argPlaceholder: "ticker",
     category: "Portfolio",
-    execute: () => {}, // handled by command bar
   },
   {
     id: "add-portfolio",
@@ -61,7 +59,6 @@ export const commands: Command[] = [
     hasArg: true,
     argPlaceholder: "ticker",
     category: "Portfolio",
-    execute: () => {},
   },
   {
     id: "remove-watchlist",
@@ -71,7 +68,6 @@ export const commands: Command[] = [
     hasArg: true,
     argPlaceholder: "ticker",
     category: "Portfolio",
-    execute: () => {},
   },
   {
     id: "remove-portfolio",
@@ -81,7 +77,6 @@ export const commands: Command[] = [
     hasArg: true,
     argPlaceholder: "ticker",
     category: "Portfolio",
-    execute: () => {},
   },
   {
     id: "set-portfolio-position",
@@ -89,7 +84,6 @@ export const commands: Command[] = [
     label: "Set Portfolio Position",
     description: "Create or update a manual position in a portfolio",
     category: "Portfolio",
-    execute: () => {},
   },
 
   // Create / Delete
@@ -99,7 +93,6 @@ export const commands: Command[] = [
     label: "New Portfolio",
     description: "Create a new portfolio",
     category: "Create",
-    execute: () => {},
   },
   {
     id: "new-watchlist",
@@ -107,7 +100,6 @@ export const commands: Command[] = [
     label: "New Watchlist",
     description: "Create a new watchlist",
     category: "Create",
-    execute: () => {},
   },
   {
     id: "delete-portfolio",
@@ -115,7 +107,6 @@ export const commands: Command[] = [
     label: "Delete Portfolio",
     description: "Remove a portfolio and its data",
     category: "Danger",
-    execute: () => {},
   },
   {
     id: "delete-watchlist",
@@ -123,7 +114,6 @@ export const commands: Command[] = [
     label: "Delete Watchlist",
     description: "Remove a watchlist",
     category: "Danger",
-    execute: () => {},
   },
   {
     id: "add-broker-account",
@@ -131,7 +121,6 @@ export const commands: Command[] = [
     label: "Add Broker Account",
     description: "Connect a new broker profile",
     category: "Config",
-    execute: () => {},
   },
   {
     id: "disconnect-broker-account",
@@ -139,7 +128,6 @@ export const commands: Command[] = [
     label: "Disconnect Broker Account",
     description: "Remove one connected broker profile and its imported data",
     category: "Danger",
-    execute: () => {},
   },
 
   {
@@ -148,7 +136,6 @@ export const commands: Command[] = [
     label: "Pane Settings",
     description: "Edit settings for the focused pane",
     category: "Config",
-    execute: () => {}, // handled by command bar
   },
   {
     id: "layout",
@@ -158,7 +145,6 @@ export const commands: Command[] = [
     hasArg: true,
     argPlaceholder: "action",
     category: "Config",
-    execute: () => {}, // handled by command bar
   },
   {
     id: "window-mode",
@@ -169,7 +155,6 @@ export const commands: Command[] = [
     hasArg: true,
     argPlaceholder: "move|resize",
     category: "Config",
-    execute: () => {}, // handled by command bar
   },
   {
     id: "toggle-status-bar",
@@ -187,7 +172,6 @@ export const commands: Command[] = [
     label: "Toggle Value Flashing",
     description: "Turn quote update flashing on or off",
     category: "Config",
-    execute: () => {}, // handled by command bar
   },
   {
     id: "check-for-updates",
@@ -195,7 +179,6 @@ export const commands: Command[] = [
     label: "Check for Updates",
     description: "Check GitHub releases for a newer version",
     category: "Config",
-    execute: () => {}, // handled by command bar
   },
 
   // Theme
@@ -207,7 +190,6 @@ export const commands: Command[] = [
     hasArg: true,
     argPlaceholder: "theme name",
     category: "Config",
-    execute: () => {}, // handled by command bar
   },
   {
     id: "cycle-chart-renderer",
@@ -215,7 +197,6 @@ export const commands: Command[] = [
     label: "Cycle Chart Renderer",
     description: "Cycle chart rendering between Auto, Kitty, and Braille",
     category: "Config",
-    execute: () => {}, // handled specially by command bar
   },
 
   // Plugins
@@ -227,7 +208,6 @@ export const commands: Command[] = [
     hasArg: true,
     argPlaceholder: "plugin name",
     category: "Config",
-    execute: () => {}, // handled by command bar
   },
 
   // Import/Export
@@ -237,7 +217,6 @@ export const commands: Command[] = [
     label: "Export Config",
     description: "Save config to ~/gloomberb-config-backup.json",
     category: "Config",
-    execute: () => {}, // handled by command bar
   },
   {
     id: "import-config",
@@ -245,7 +224,6 @@ export const commands: Command[] = [
     label: "Import Config",
     description: "Load config from ~/gloomberb-config-backup.json",
     category: "Config",
-    execute: () => {}, // handled by command bar
   },
 
   // Danger zone
@@ -255,7 +233,6 @@ export const commands: Command[] = [
     label: "Reset All Data",
     description: "Delete all data and reset to first-run state",
     category: "Danger",
-    execute: () => {}, // handled by command bar (needs confirm dialog)
   },
 ];
 

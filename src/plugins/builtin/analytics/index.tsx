@@ -1,17 +1,9 @@
 import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { TextAttributes } from "../../../ui";
-import { DataTableView, StaticChartSurface, Tabs, type DataTableColumn } from "../../../components";
-import { resolveChartPalette } from "../../../components/chart/chart-renderer";
-import type { ProjectedChartPoint } from "../../../components/chart/chart-data";
+import { Tabs } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
-import type { AppConfig, BrokerInstanceConfig, ColumnConfig } from "../../../types/config";
-import type { TickerFinancials } from "../../../types/financials";
-import type { Portfolio, TickerRecord } from "../../../types/ticker";
-import type { BrokerPortfolioPerformance } from "../../../types/trading";
-import { colors, priceColor } from "../../../theme/colors";
-import { formatCompact, formatNumber, formatPercentRaw } from "../../../utils/format";
-import { formatRelativeAge } from "../../../utils/relative-time";
+import { colors } from "../../../theme/colors";
 import {
   getFocusedCollectionId,
   useAppSelector,
@@ -19,381 +11,44 @@ import {
   usePaneStateValue,
 } from "../../../state/app-context";
 import { useChartQueries, useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
-import { instrumentFromTicker, type ChartRequest } from "../../../market-data/request-types";
-import { buildChartKey } from "../../../market-data/selectors";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
-import { resolvePortfolioAccountMetrics } from "../portfolio-list/account-metrics";
 import { usePortfolioAccountState } from "../portfolio-list/header";
-import { calculatePortfolioSummaryTotals, getSortValue, type ColumnContext } from "../portfolio-list/metrics";
-import { usePluginBrokerActions } from "../../plugin-runtime";
+import { calculatePortfolioSummaryTotals, type ColumnContext } from "../portfolio-list/metrics";
+import {
+  buildPerformanceChartPoints,
+  useBrokerPortfolioPerformance,
+} from "./broker-performance";
 import {
   computeDatedBeta,
-  computeDatedReturns,
   computeSharpeRatio,
-  computeWeightedPortfolioReturns,
   hasPortfolioPosition,
-  type WeightedReturnSeries,
 } from "./metrics";
-
-type SectorColumnId = "sector" | "weight" | "value" | "pnl" | "return" | "bar";
-
-interface SectorTableColumn extends DataTableColumn {
-  id: SectorColumnId;
-}
-
-interface SectorTableRow {
-  id: string;
-  sector: string;
-  weight: number;
-  value: number;
-  pnl: number;
-  returnPct: number | null;
-  costBasis: number;
-}
-
-interface AnalyticsMetricRow {
-  id: string;
-  label: string;
-  value: string;
-  detail?: string;
-  color?: string;
-}
-
-interface SectorSortPreference {
-  columnId: SectorColumnId | null;
-  direction: "asc" | "desc";
-}
-
-interface PortfolioChartTarget {
-  ticker: TickerRecord;
-  request: ChartRequest;
-}
-
-interface BrokerPerformanceState {
-  loading: boolean;
-  performance: BrokerPortfolioPerformance | null;
-  error: string | null;
-}
-
-const DEFAULT_SECTOR_SORT: SectorSortPreference = {
-  columnId: "weight",
-  direction: "desc",
-};
-
-const PORTFOLIO_VALUE_COLUMN: ColumnConfig = { id: "mkt_value", label: "VALUE", width: 10, align: "right" };
-const PORTFOLIO_PNL_COLUMN: ColumnConfig = { id: "pnl", label: "P&L", width: 10, align: "right" };
-const PORTFOLIO_COST_COLUMN: ColumnConfig = { id: "cost_basis", label: "COST", width: 10, align: "right" };
-
-function sharpeColor(sharpe: number): string {
-  if (sharpe > 1) return colors.positive;
-  if (sharpe < 0) return colors.negative;
-  return colors.textDim;
-}
-
-function sharpeLabel(sharpe: number): string {
-  if (sharpe > 1) return "good";
-  if (sharpe >= 0) return "okay";
-  return "poor";
-}
-
-function betaLabel(beta: number): string {
-  if (beta > 1.2) return "high vol";
-  if (beta >= 0.8) return "market";
-  return "defensive";
-}
-
-function betaColor(beta: number): string {
-  if (beta > 1.2) return colors.negative;
-  if (beta >= 0.8) return colors.textMuted ?? colors.text;
-  return colors.positive;
-}
-
-function renderBar(weight: number, maxWidth: number): string {
-  const filled = Math.round(weight * maxWidth);
-  return "█".repeat(Math.min(filled, maxWidth));
-}
-
-function resolvePortfolioId(portfolios: Portfolio[], portfolioId: string | null | undefined): string | null {
-  if (!portfolioId) return null;
-  return portfolios.some((portfolio) => portfolio.id === portfolioId) ? portfolioId : null;
-}
-
-function resolveTemplatePortfolioId(portfolios: Portfolio[], activeCollectionId: string | null): string | null {
-  return resolvePortfolioId(portfolios, activeCollectionId) ?? portfolios[0]?.id ?? null;
-}
-
-function formatSignedCompact(value: number): string {
-  return `${value >= 0 ? "+" : ""}${formatCompact(value)}`;
-}
-
-function formatWeight(weight: number): string {
-  return `${(weight * 100).toFixed(1)}%`;
-}
-
-function formatReturn(value: number): string {
-  const pct = value * 100;
-  return `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
-}
-
-function findBrokerInstance(config: AppConfig, portfolio: Portfolio | null): BrokerInstanceConfig | null {
-  if (!portfolio?.brokerInstanceId) return null;
-  return config.brokerInstances.find((instance) => instance.id === portfolio.brokerInstanceId) ?? null;
-}
-
-function isConfiguredIbkrFlexProfile(instance: BrokerInstanceConfig): boolean {
-  if (instance.brokerType !== "ibkr" || instance.enabled === false) return false;
-  const config = instance.config ?? {};
-  const flex = typeof config.flex === "object" && config.flex
-    ? config.flex as Record<string, unknown>
-    : {};
-  const mode = instance.connectionMode ?? config.connectionMode;
-  return mode === "flex"
-    && typeof flex.token === "string"
-    && flex.token.length > 0
-    && typeof flex.queryId === "string"
-    && flex.queryId.length > 0;
-}
-
-function findBrokerPerformanceCandidates(
-  config: AppConfig,
-  portfolio: Portfolio | null,
-): BrokerInstanceConfig[] {
-  const primary = findBrokerInstance(config, portfolio);
-  if (!primary) return [];
-  if (primary.brokerType !== "ibkr") return [primary];
-
-  const candidates = [primary];
-  for (const instance of config.brokerInstances) {
-    if (instance.id === primary.id) continue;
-    if (!isConfiguredIbkrFlexProfile(instance)) continue;
-    candidates.push(instance);
-  }
-  return candidates;
-}
-
-function resolveBrokerAccountId(portfolio: Portfolio | null): string | null {
-  if (portfolio?.brokerAccountId) return portfolio.brokerAccountId;
-  const parts = portfolio?.id.split(":") ?? [];
-  return parts[0] === "broker" && parts.length >= 3 ? parts.slice(2).join(":") : null;
-}
-
-function performancePointValue(point: BrokerPortfolioPerformance["points"][number]): number | null {
-  if (point.value != null && Number.isFinite(point.value)) return point.value;
-  if (point.cumulativeReturn != null && Number.isFinite(point.cumulativeReturn)) return point.cumulativeReturn;
-  return null;
-}
-
-function buildPerformanceChartPoints(performance: BrokerPortfolioPerformance | null): ProjectedChartPoint[] {
-  if (!performance) return [];
-  return performance.points.flatMap((point) => {
-    const value = performancePointValue(point);
-    const date = new Date(point.date);
-    if (value == null || !Number.isFinite(date.getTime())) return [];
-    return [{
-      date,
-      open: value,
-      high: value,
-      low: value,
-      close: value,
-      volume: 0,
-    }];
-  });
-}
-
-function useBrokerPortfolioPerformance(
-  portfolio: Portfolio | null,
-  config: AppConfig,
-): BrokerPerformanceState {
-  const { getBrokerAdapter } = usePluginBrokerActions();
-  const brokerInstances = useMemo(() => findBrokerPerformanceCandidates(config, portfolio), [config, portfolio]);
-  const accountId = useMemo(() => resolveBrokerAccountId(portfolio), [portfolio]);
-  const [state, setState] = useState<BrokerPerformanceState>({
-    loading: false,
-    performance: null,
-    error: null,
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-    if (brokerInstances.length === 0 || !accountId) {
-      setState({ loading: false, performance: null, error: null });
-      return;
-    }
-
-    setState((current) => ({ ...current, loading: true, error: null }));
-    void (async () => {
-      let lastError: string | null = null;
-      for (const brokerInstance of brokerInstances) {
-        const broker = getBrokerAdapter(brokerInstance.brokerType);
-        if (!broker?.getPortfolioPerformance) continue;
-        try {
-          const performance = await broker.getPortfolioPerformance(brokerInstance, accountId);
-          if (performance && performance.points.length > 0) {
-            if (!cancelled) {
-              setState({ loading: false, performance, error: null });
-            }
-            return;
-          }
-        } catch (error) {
-          lastError = error instanceof Error ? error.message : String(error);
-        }
-      }
-
-      if (!cancelled) {
-        setState({
-          loading: false,
-          performance: null,
-          error: lastError ?? "No IBKR portfolio history returned",
-        });
-      }
-    })()
-      .catch((error) => {
-        if (!cancelled) {
-          setState({
-            loading: false,
-            performance: null,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [accountId, brokerInstances, getBrokerAdapter]);
-
-  return state;
-}
-
-function buildSectorColumns(width: number): SectorTableColumn[] {
-  const sectorWidth = Math.max(12, Math.min(22, Math.floor(width * 0.28)));
-  const weightWidth = 8;
-  const valueWidth = 10;
-  const pnlWidth = 10;
-  const returnWidth = 8;
-  const barWidth = Math.max(8, width - sectorWidth - weightWidth - valueWidth - pnlWidth - returnWidth - 10);
-
-  return [
-    { id: "sector", label: "SECTOR", width: sectorWidth, align: "left" },
-    { id: "weight", label: "WEIGHT", width: weightWidth, align: "right" },
-    { id: "value", label: "VALUE", width: valueWidth, align: "right" },
-    { id: "pnl", label: "P&L", width: pnlWidth, align: "right" },
-    { id: "return", label: "RETURN", width: returnWidth, align: "right" },
-    { id: "bar", label: "ALLOCATION", width: barWidth, align: "left" },
-  ];
-}
-
-function getSectorSortValue(row: SectorTableRow, columnId: SectorColumnId): string | number {
-  switch (columnId) {
-    case "sector":
-      return row.sector;
-    case "value":
-      return row.value;
-    case "pnl":
-      return row.pnl;
-    case "return":
-      return row.returnPct ?? Number.NEGATIVE_INFINITY;
-    case "bar":
-    case "weight":
-      return row.weight;
-  }
-}
-
-function buildTrackedCurrencies(
-  tickers: TickerRecord[],
-  financialsMap: Map<string, TickerFinancials>,
-  baseCurrency: string,
-): string[] {
-  const currencies = new Set<string>([baseCurrency]);
-
-  for (const ticker of tickers) {
-    if (ticker.metadata.currency) {
-      currencies.add(ticker.metadata.currency);
-    }
-    for (const position of ticker.metadata.positions) {
-      if (position.currency) {
-        currencies.add(position.currency);
-      }
-    }
-    const financials = financialsMap.get(ticker.metadata.ticker);
-    if (financials?.quote?.currency) {
-      currencies.add(financials.quote.currency);
-    }
-  }
-
-  return [...currencies];
-}
-
-function buildSectorRowsFromPortfolioColumns(
-  tickers: TickerRecord[],
-  financialsMap: Map<string, TickerFinancials>,
-  columnContext: ColumnContext,
-): SectorTableRow[] {
-  const sectorMap = new Map<string, {
-    sector: string;
-    value: number;
-    pnl: number;
-    costBasis: number;
-  }>();
-
-  for (const ticker of tickers) {
-    const financials = financialsMap.get(ticker.metadata.ticker);
-    const value = getSortValue(PORTFOLIO_VALUE_COLUMN, ticker, financials, columnContext);
-    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) continue;
-
-    const pnl = getSortValue(PORTFOLIO_PNL_COLUMN, ticker, financials, columnContext);
-    const costBasis = getSortValue(PORTFOLIO_COST_COLUMN, ticker, financials, columnContext);
-    const sector = ticker.metadata.sector || financials?.profile?.sector || "Unknown";
-    const current = sectorMap.get(sector) ?? {
-      sector,
-      value: 0,
-      pnl: 0,
-      costBasis: 0,
-    };
-
-    current.value += value;
-    current.pnl += typeof pnl === "number" && Number.isFinite(pnl) ? pnl : 0;
-    current.costBasis += typeof costBasis === "number" && Number.isFinite(costBasis) ? costBasis : 0;
-    sectorMap.set(sector, current);
-  }
-
-  const totalValue = [...sectorMap.values()].reduce((sum, row) => sum + row.value, 0);
-  if (totalValue === 0) return [];
-
-  return [...sectorMap.values()]
-    .map((row) => ({
-      ...row,
-      id: row.sector,
-      weight: row.value / totalValue,
-      returnPct: row.costBasis !== 0 ? (row.pnl / row.costBasis) * 100 : null,
-    }))
-    .sort((left, right) => right.weight - left.weight || left.sector.localeCompare(right.sector));
-}
-
-function sortSectorRows(rows: SectorTableRow[], sort: SectorSortPreference): SectorTableRow[] {
-  const columnId = sort.columnId;
-  if (!columnId) return rows;
-
-  return [...rows].sort((left, right) => {
-    const leftValue = getSectorSortValue(left, columnId);
-    const rightValue = getSectorSortValue(right, columnId);
-    const comparison = typeof leftValue === "string" && typeof rightValue === "string"
-      ? leftValue.localeCompare(rightValue)
-      : (leftValue as number) - (rightValue as number);
-    return sort.direction === "asc" ? comparison : -comparison;
-  });
-}
-
-function nextSectorSortPreference(current: SectorSortPreference, columnId: string): SectorSortPreference {
-  const nextColumnId = columnId as SectorColumnId;
-  if (current.columnId !== nextColumnId) {
-    return { columnId: nextColumnId, direction: "asc" };
-  }
-  if (current.direction === "asc") {
-    return { columnId: nextColumnId, direction: "desc" };
-  }
-  return { columnId: null, direction: "asc" };
-}
+import {
+  buildAnalyticsRiskRows,
+  buildAnalyticsSummaryRows,
+  buildBenchmarkReturnSeries,
+  buildHistoryAxisLabel,
+  buildPortfolioChartTargets,
+  buildPortfolioReturnSeries,
+  formatHistoryAxisValue,
+  resolvePerformancePalette,
+} from "./pane-model";
+import {
+  buildSectorColumns,
+  buildSectorRowsFromPortfolioColumns,
+  buildTrackedCurrencies,
+  DEFAULT_SECTOR_SORT,
+  nextSectorSortPreference,
+  sortSectorRows,
+  type SectorSortPreference,
+  type SectorTableRow,
+} from "./sector-model";
+import { resolvePortfolioId, resolveTemplatePortfolioId } from "./portfolio-selection";
+import {
+  AnalyticsMetricsPanel,
+  PortfolioHistorySection,
+  SectorAllocationTable,
+} from "./view";
 
 function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   const focusedCollectionId = useAppSelector((state) => getFocusedCollectionId(state));
@@ -441,19 +96,8 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
       .filter((ticker) => hasPortfolioPosition(ticker, activePortfolioId));
   }, [activePortfolioId, tickersBySymbol]);
 
-  const chartTargets = useMemo<PortfolioChartTarget[]>(
-    () => portfolioTickers.flatMap((ticker) => {
-      const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
-      if (!instrument) return [];
-      return [{
-        ticker,
-        request: {
-          instrument,
-          bufferRange: "1Y" as const,
-          granularity: "range" as const,
-        },
-      }];
-    }),
+  const chartTargets = useMemo(
+    () => buildPortfolioChartTargets(portfolioTickers),
     [portfolioTickers],
   );
   const chartRequests = useMemo(
@@ -513,38 +157,25 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
     [activePortfolioId, baseCurrency, effectiveExchangeRates, financials, portfolioTickers],
   );
 
-  const portfolioReturnSeries = useMemo(() => {
-    const weightedSeries: WeightedReturnSeries[] = [];
-    for (const { ticker, request } of chartTargets) {
-      const key = buildChartKey(request);
-      const entry = chartEntries.get(key);
-      const history = entry?.data ?? entry?.lastGoodData ?? null;
-      if (!history || history.length < 11) continue;
-
-      const returns = computeDatedReturns(history);
-      if (returns.length < 10) continue;
-
-      const value = getSortValue(PORTFOLIO_VALUE_COLUMN, ticker, financials.get(ticker.metadata.ticker), columnContext);
-      if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) continue;
-      weightedSeries.push({ weight: value, returns });
-    }
-    const returns = computeWeightedPortfolioReturns(weightedSeries);
-    return returns.length > 0 ? returns : null;
-  }, [chartEntries, chartTargets, columnContext, financials]);
+  const portfolioReturnSeries = useMemo(
+    () => buildPortfolioReturnSeries({
+      chartTargets,
+      chartEntries,
+      financials,
+      columnContext,
+    }),
+    [chartEntries, chartTargets, columnContext, financials],
+  );
 
   const portfolioReturns = useMemo(
     () => portfolioReturnSeries?.map((point) => point.value) ?? null,
     [portfolioReturnSeries],
   );
 
-  const spyReturnSeries = useMemo(() => {
-    const spyKey = buildChartKey(spyRequest);
-    const entry = spyChartEntries.get(spyKey);
-    const history = entry?.data ?? entry?.lastGoodData ?? null;
-    if (!history || history.length < 11) return null;
-    const returns = computeDatedReturns(history);
-    return returns.length > 0 ? returns : null;
-  }, [spyChartEntries, spyRequest]);
+  const spyReturnSeries = useMemo(
+    () => buildBenchmarkReturnSeries(spyRequest, spyChartEntries),
+    [spyChartEntries, spyRequest],
+  );
 
   const sharpe = useMemo(
     () => (portfolioReturns ? computeSharpeRatio(portfolioReturns) : null),
@@ -572,186 +203,37 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   const sectorColumns = useMemo(() => buildSectorColumns(width), [width]);
   const hasPositions = portfolioTickers.length > 0;
 
-  const summaryRows = useMemo<AnalyticsMetricRow[]>(() => {
-    const rows: AnalyticsMetricRow[] = [];
-    const account = accountState?.account;
-    const accountMetrics = resolvePortfolioAccountMetrics(portfolioStats, account);
-    const syncedAt = activePortfolio?.lastSyncedAt ?? account?.updatedAt;
+  const summaryRows = useMemo(
+    () => buildAnalyticsSummaryRows({
+      accountState,
+      activePortfolio,
+      brokerPerformance: brokerPerformance.performance,
+      portfolioStats,
+    }),
+    [accountState, activePortfolio, brokerPerformance.performance, portfolioStats],
+  );
 
-    if (account?.netLiquidation != null) {
-      rows.push({
-        id: "net-liquidation",
-        label: "Net Liq",
-        value: formatCompact(account.netLiquidation),
-        color: colors.text,
-      });
-    }
-
-    rows.push({
-      id: "total-value",
-      label: "Val",
-      value: formatCompact(portfolioStats.totalMktValue),
-      color: colors.text,
-    });
-
-    if (account?.totalCashValue != null) {
-      rows.push({
-        id: "cash",
-        label: "Cash",
-        value: formatCompact(account.totalCashValue),
-        color: colors.text,
-      });
-    }
-
-    rows.push({
-      id: "day-pnl",
-      label: "Day",
-      value: formatSignedCompact(accountMetrics.dailyPnl),
-      detail: `(${formatPercentRaw(accountMetrics.dailyPnlPct)})`,
-      color: priceColor(accountMetrics.dailyPnl),
-    });
-    rows.push({
-      id: "pnl",
-      label: "P&L",
-      value: formatSignedCompact(accountMetrics.unrealizedPnl),
-      detail: `(${formatPercentRaw(accountMetrics.unrealizedPnlPct)})`,
-      color: priceColor(accountMetrics.unrealizedPnl),
-    });
-    if (accountMetrics.realizedPnl != null) {
-      rows.push({
-        id: "realized-pnl",
-        label: "Realized",
-        value: formatSignedCompact(accountMetrics.realizedPnl),
-        color: priceColor(accountMetrics.realizedPnl),
-      });
-    }
-
-    const latestPerformancePoint = brokerPerformance.performance?.points.at(-1);
-    if (latestPerformancePoint?.cumulativeReturn != null) {
-      rows.push({
-        id: "historical-return",
-        label: "Hist Ret",
-        value: formatReturn(latestPerformancePoint.cumulativeReturn),
-        detail: brokerPerformance.performance?.period,
-        color: priceColor(latestPerformancePoint.cumulativeReturn),
-      });
-    }
-
-    if (account?.settledCash != null) {
-      rows.push({
-        id: "settled-cash",
-        label: "Settled",
-        value: formatCompact(account.settledCash),
-        color: colors.text,
-      });
-    }
-    if (account?.availableFunds != null) {
-      rows.push({
-        id: "available-funds",
-        label: "Avail",
-        value: formatCompact(account.availableFunds),
-        color: colors.text,
-      });
-    }
-    if (account?.excessLiquidity != null) {
-      rows.push({
-        id: "excess-liquidity",
-        label: "Excess",
-        value: formatCompact(account.excessLiquidity),
-        color: colors.text,
-      });
-    }
-    if (account?.buyingPower != null) {
-      rows.push({
-        id: "buying-power",
-        label: "BP",
-        value: formatCompact(account.buyingPower),
-        color: colors.text,
-      });
-    }
-    if (accountState) {
-      if (syncedAt) {
-        rows.push({
-          id: "last-sync",
-          label: "Synced",
-          value: formatRelativeAge(syncedAt),
-          color: colors.textDim,
-        });
-      }
-      rows.push({
-        id: "account-source",
-        label: "Source",
-        value: accountState.sourceLabel,
-        color: colors.textDim,
-      });
-    }
-
-    return rows;
-  }, [
-    accountState,
-    activePortfolio?.lastSyncedAt,
-    brokerPerformance.performance,
-    portfolioStats.dailyPnl,
-    portfolioStats.dailyPnlPct,
-    portfolioStats.totalCostBasis,
-    portfolioStats.totalMktValue,
-    portfolioStats.unrealizedPnl,
-    portfolioStats.unrealizedPnlPct,
-  ]);
-
-  const riskRows = useMemo<AnalyticsMetricRow[]>(() => [
-    sharpe !== null
-      ? {
-        id: "sharpe",
-        label: "Sharpe Ratio",
-        value: formatNumber(sharpe, 2),
-        detail: sharpeLabel(sharpe),
-        color: sharpeColor(sharpe),
-      }
-      : {
-        id: "sharpe",
-        label: "Sharpe Ratio",
-        value: "—",
-        detail: "insufficient data",
-        color: colors.textMuted,
-      },
-    beta !== null
-      ? {
-        id: "beta",
-        label: "Beta (SPY)",
-        value: formatNumber(beta, 2),
-        detail: betaLabel(beta),
-        color: betaColor(beta),
-      }
-      : {
-        id: "beta",
-        label: "Beta (SPY)",
-        value: "—",
-        detail: "insufficient data",
-        color: colors.textMuted,
-      },
-  ], [beta, sharpe]);
+  const riskRows = useMemo(
+    () => buildAnalyticsRiskRows({ sharpe, beta }),
+    [beta, sharpe],
+  );
   const metricsHeight = summaryRows.length + riskRows.length + 5;
   const availableHistoryChartHeight = height - metricsHeight - 7;
   const historyChartHeight = performanceChartPoints.length >= 2 && availableHistoryChartHeight >= 5
     ? Math.min(8, availableHistoryChartHeight)
     : 0;
   const showHistoryChart = historyChartHeight >= 5;
-  const performancePalette = useMemo(() => {
-    const points = brokerPerformance.performance?.points ?? [];
-    const first = points.find((point) => performancePointValue(point) != null);
-    const last = [...points].reverse().find((point) => performancePointValue(point) != null);
-    const firstValue = first ? performancePointValue(first) : null;
-    const lastValue = last ? performancePointValue(last) : null;
-    return resolveChartPalette(colors, firstValue != null && lastValue != null && lastValue < firstValue ? "negative" : "positive");
-  }, [brokerPerformance.performance]);
-  const historyAxisLabel = brokerPerformance.performance?.points.some((point) => point.value != null)
-    ? `Value (${brokerPerformance.performance.currency ?? activePortfolio?.currency ?? baseCurrency})`
-    : "Return";
+  const performancePalette = useMemo(
+    () => resolvePerformancePalette(brokerPerformance.performance),
+    [brokerPerformance.performance],
+  );
+  const historyAxisLabel = buildHistoryAxisLabel({
+    performance: brokerPerformance.performance,
+    activePortfolio,
+    baseCurrency,
+  });
   const formatHistoryAxis = useCallback((value: number) => (
-    brokerPerformance.performance?.points.some((point) => point.value != null)
-      ? formatCompact(value)
-      : `${(value * 100).toFixed(1)}%`
+    formatHistoryAxisValue(value, brokerPerformance.performance)
   ), [brokerPerformance.performance]);
 
   const handleSectorHeaderClick = useCallback((columnId: string) => {
@@ -792,76 +274,25 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
             </Box>
           ) : (
             <>
-              <Box flexDirection="column" height={metricsHeight} paddingX={1} paddingTop={1}>
-                <Box height={1}>
-                  <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>
-                    Summary
-                  </Text>
-                </Box>
-                {summaryRows.map((row) => (
-                  <Box key={row.id} flexDirection="row" height={1}>
-                    <Box width={14} flexShrink={0}>
-                      <Text fg={colors.textDim}>{row.label}</Text>
-                    </Box>
-                    <Text fg={row.color ?? colors.text} attributes={TextAttributes.BOLD}>
-                      {row.value}
-                    </Text>
-                    {row.detail && <Text fg={colors.textDim}>{`  ${row.detail}`}</Text>}
-                  </Box>
-                ))}
+              <AnalyticsMetricsPanel
+                summaryRows={summaryRows}
+                riskRows={riskRows}
+                height={metricsHeight}
+              />
 
-                <Box height={1} />
-                <Box height={1}>
-                  <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>
-                    Risk / Return
-                  </Text>
-                </Box>
-                {riskRows.map((row) => (
-                  <Box key={row.id} flexDirection="row" height={1}>
-                    <Box width={14} flexShrink={0}>
-                      <Text fg={colors.textDim}>{row.label}</Text>
-                    </Box>
-                    <Text fg={row.color ?? colors.text} attributes={TextAttributes.BOLD}>
-                      {row.value}
-                    </Text>
-                    {row.detail && <Text fg={colors.textDim}>{`  ${row.detail}`}</Text>}
-                  </Box>
-                ))}
-                <Box height={1} />
-              </Box>
-
-              {showHistoryChart ? (
-                <>
-                  <Box height={1} paddingX={1} flexDirection="row">
-                    <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>
-                      Portfolio History
-                    </Text>
-                    <Text fg={colors.textDim}>
-                      {`  Flex ${brokerPerformance.performance?.period ?? ""}${brokerPerformance.performance?.stale ? " - cached" : ""}`}
-                    </Text>
-                  </Box>
-                  <Box paddingX={1} height={historyChartHeight}>
-                    <StaticChartSurface
-                      points={performanceChartPoints}
-                      width={Math.max(10, width - 2)}
-                      height={historyChartHeight}
-                      mode="line"
-                      colors={performancePalette}
-                      yAxisLabel={historyAxisLabel}
-                      yAxisColor={colors.textDim}
-                      formatYAxisValue={formatHistoryAxis}
-                    />
-                  </Box>
-                </>
-              ) : brokerPerformance.loading ? (
-                <Box height={1} paddingX={1}>
-                  <Text fg={colors.textDim}>Loading IBKR history...</Text>
-                </Box>
-              ) : brokerPerformance.error ? (
-                <Box height={1} paddingX={1}>
-                  <Text fg={colors.textDim}>IBKR history unavailable</Text>
-                </Box>
-              ) : null}
+              <PortfolioHistorySection
+                show={showHistoryChart}
+                loading={brokerPerformance.loading}
+                error={brokerPerformance.error}
+                width={width}
+                height={historyChartHeight}
+                points={performanceChartPoints}
+                palette={performancePalette}
+                axisLabel={historyAxisLabel}
+                period={brokerPerformance.performance?.period}
+                stale={brokerPerformance.performance?.stale}
+                formatAxisValue={formatHistoryAxis}
+              />
 
               <Box height={1} paddingX={1}>
                 <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>
@@ -869,45 +300,16 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
                 </Text>
               </Box>
 
-              <DataTableView<SectorTableRow, SectorTableColumn>
+              <SectorAllocationTable
                 focused={focused}
                 selectedIndex={safeSelectedSectorIdx}
                 resetScrollKey={activePortfolioId}
                 columns={sectorColumns}
-                items={sortedSectorRows}
-                sortColumnId={sectorSort.columnId}
-                sortDirection={sectorSort.direction}
+                rows={sortedSectorRows}
+                sort={sectorSort}
+                selectedSectorId={effectiveSelectedSectorId}
                 onHeaderClick={handleSectorHeaderClick}
-                getItemKey={(row) => row.id}
-                isSelected={(row) => effectiveSelectedSectorId === row.id}
-                onSelect={(row) => setSelectedSectorId(row.id)}
-                emptyStateTitle="No sector data available"
-                emptyStateHint="Load profile data or add sectors to the portfolio positions."
-                renderCell={(row, column) => {
-                  switch (column.id) {
-                    case "sector":
-                      return { text: row.sector };
-                    case "weight":
-                      return { text: formatWeight(row.weight) };
-                    case "value":
-                      return { text: formatCompact(row.value) };
-                    case "pnl":
-                      return {
-                        text: formatSignedCompact(row.pnl),
-                        color: priceColor(row.pnl),
-                      };
-                    case "return":
-                      return {
-                        text: row.returnPct == null ? "—" : formatPercentRaw(row.returnPct),
-                        color: row.returnPct == null ? colors.textMuted : priceColor(row.returnPct),
-                      };
-                    case "bar":
-                      return {
-                        text: renderBar(row.weight, column.width),
-                        color: colors.textMuted,
-                      };
-                  }
-                }}
+                onSelectSector={setSelectedSectorId}
               />
             </>
           )}

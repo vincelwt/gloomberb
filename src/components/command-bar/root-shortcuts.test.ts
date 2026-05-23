@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CommandDef, PaneTemplateDef } from "../../types/plugin";
-import { parseRootShortcutIntent } from "./root-shortcuts";
+import { parseRootShortcutIntent } from "./routes/root/root-shortcuts";
 
 function tickerTemplate(id: string, prefix: string): PaneTemplateDef {
   return {
@@ -68,7 +68,7 @@ function parse(query: string, activeTicker: string | null = null) {
   });
 }
 
-describe("Bloomberg-style root shortcuts", () => {
+describe("ticker data root shortcuts", () => {
   test.each([
     ["FA AAPL", "financial-analysis-pane"],
     ["GP AAPL", "graph-price-pane"],

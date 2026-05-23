@@ -2,7 +2,7 @@ import { Box, Text, TextAttributes, useUiHost } from "../../ui";
 import { type ComponentType } from "react";
 import { colors } from "../../theme/colors";
 
-export interface SegmentedControlOption {
+interface SegmentedControlOption {
   label: string;
   value: string;
   disabled?: boolean;

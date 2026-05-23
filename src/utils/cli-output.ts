@@ -1,5 +1,5 @@
 
-export type CliAlign = "left" | "right" | "center";
+type CliAlign = "left" | "right" | "center";
 
 export interface CliTableColumn {
   header: string;

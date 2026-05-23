@@ -7,77 +7,22 @@ import { usePluginAppActions } from "../../plugin-runtime";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
 import { formatMarketPrice } from "../../../utils/market-format";
-import { resolveTickerSearch, upsertTickerFromSearchResult, type ResolvedTickerSearch } from "../../../utils/ticker-search";
-import type { Quote } from "../../../types/financials";
+import { upsertTickerFromSearchResult } from "../../../utils/ticker-search";
 import type { TickerRecord } from "../../../types/ticker";
 import { addTickerToPortfolio, addTickerToWatchlist } from "./mutations";
+import {
+  IDLE_VALIDATION,
+  isPlausibleTickerQuery,
+  normalizeQuickAddQuery,
+  resolveQuickAddValidation,
+  tickerNameFromValidation,
+  type QuickAddCollectionKind,
+  type QuickAddValidation,
+} from "./quick-add-resolution";
 
 const QUICK_ADD_DEBOUNCE_MS = 300;
-const QUICK_ADD_MAX_QUERY_LENGTH = 32;
-const QUICK_ADD_SYMBOL_RE = /^[A-Z0-9][A-Z0-9.\-\s]*$/;
 
-export type QuickAddCollectionKind = "portfolio" | "watchlist";
-
-interface ResolvedQuickAdd {
-  query: string;
-  symbol: string;
-  resolved: ResolvedTickerSearch;
-  ticker: TickerRecord | null;
-  quote: Quote | null;
-}
-
-type QuickAddValidation =
-  | { status: "idle"; query: "" }
-  | { status: "checking"; query: string }
-  | (ResolvedQuickAdd & { status: "ready" | "duplicate" })
-  | { status: "missing" | "error"; query: string; message: string };
-
-const IDLE_VALIDATION: QuickAddValidation = { status: "idle", query: "" };
-
-function normalizeQuickAddQuery(value: string): string {
-  return value.replace(/^\s*\$/, "").trim().toUpperCase().replace(/\s+/g, " ");
-}
-
-function isPlausibleTickerQuery(query: string): boolean {
-  return query.length > 0
-    && query.length <= QUICK_ADD_MAX_QUERY_LENGTH
-    && QUICK_ADD_SYMBOL_RE.test(query);
-}
-
-function tickerBelongsToCollection(
-  ticker: TickerRecord | null,
-  collectionKind: QuickAddCollectionKind,
-  collectionId: string,
-): boolean {
-  if (!ticker) return false;
-  return collectionKind === "portfolio"
-    ? ticker.metadata.portfolios.includes(collectionId)
-    : ticker.metadata.watchlists.includes(collectionId);
-}
-
-function quoteContextFromResolved(resolved: ResolvedTickerSearch) {
-  const instrument = resolved.kind === "provider"
-    ? resolved.result.brokerContract
-    : resolved.ticker.metadata.broker_contracts?.[0];
-  return instrument
-    ? {
-        brokerId: instrument.brokerId,
-        brokerInstanceId: instrument.brokerInstanceId,
-        instrument,
-      }
-    : undefined;
-}
-
-function exchangeFromResolved(resolved: ResolvedTickerSearch): string | undefined {
-  return resolved.kind === "provider"
-    ? resolved.result.exchange
-    : resolved.ticker.metadata.exchange;
-}
-
-function tickerNameFromValidation(validation: Extract<QuickAddValidation, { status: "ready" | "duplicate" }>): string {
-  if (validation.ticker?.metadata.name) return validation.ticker.metadata.name;
-  return validation.resolved.kind === "provider" ? validation.resolved.result.name : "";
-}
+export type { QuickAddCollectionKind } from "./quick-add-resolution";
 
 function QuickAddPreview({
   validation,
@@ -190,55 +135,14 @@ export function QuickAddTickerInput({
     }
   }, [blurInput, focused, inputFocused]);
 
-  const validateQuery = useCallback(async (query: string): Promise<QuickAddValidation> => {
-    if (!query) return IDLE_VALIDATION;
-    if (!isPlausibleTickerQuery(query)) {
-      return { status: "missing", query, message: "Use a ticker symbol" };
-    }
-
-    const registry = getSharedRegistry();
-    if (!registry) {
-      return { status: "error", query, message: "Ticker lookup unavailable" };
-    }
-
-    try {
-      const resolved = await resolveTickerSearch({
-        query,
-        activeTicker: null,
-        tickers,
-        dataProvider: registry.marketData,
-      });
-      if (!resolved) {
-        return { status: "missing", query, message: "No exact ticker match" };
-      }
-
-      const symbol = resolved.symbol;
-      const ticker = resolved.kind === "local" ? resolved.ticker : (tickers.get(symbol) ?? null);
-      const cachedQuote = financials.get(symbol)?.quote ?? null;
-      let quote = cachedQuote;
-      if (!quote) {
-        try {
-          quote = await registry.marketData.getQuote(
-            symbol,
-            exchangeFromResolved(resolved),
-            quoteContextFromResolved(resolved),
-          );
-        } catch {
-          quote = null;
-        }
-      }
-
-      return {
-        status: tickerBelongsToCollection(ticker, collectionKind, collectionId) ? "duplicate" : "ready",
-        query,
-        symbol,
-        resolved,
-        ticker,
-        quote,
-      };
-    } catch {
-      return { status: "error", query, message: "Ticker lookup failed" };
-    }
+  const validateQuery = useCallback((query: string): Promise<QuickAddValidation> => {
+    return resolveQuickAddValidation({
+      query,
+      collectionId,
+      collectionKind,
+      tickers,
+      financials,
+    });
   }, [collectionId, collectionKind, financials, tickers]);
 
   useEffect(() => {

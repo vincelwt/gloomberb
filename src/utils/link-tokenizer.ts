@@ -1,9 +1,9 @@
-export interface InlineLinkTextToken {
+interface InlineLinkTextToken {
   kind: "text";
   value: string;
 }
 
-export interface InlineLinkUrlToken {
+interface InlineLinkUrlToken {
   kind: "link";
   value: string;
   url: string;

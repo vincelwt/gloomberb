@@ -6,13 +6,11 @@ import {
   moveFloatingPane,
   resizeFloatingPaneFromCorner,
   resizeSplitAtPath,
-  simulateDrop,
   type DockGeometryOptions,
   type DockLeafLayout,
   type DockResizeTarget,
   type DropTarget,
   type FloatingResizeCorner,
-  type FloatingRect,
   type LayoutBounds,
 } from "../../plugins/pane-manager";
 import type { WindowEditMode } from "../../plugins/registry";
@@ -36,12 +34,6 @@ export interface WindowEditState {
 }
 
 export type WindowEditDirection = "left" | "right" | "up" | "down";
-
-export interface WindowEditDockMovePreview {
-  targetId: string;
-  position: WindowEditDockMovePosition;
-  rect: LayoutBounds;
-}
 
 const FLOATING_RESIZE_CORNERS: FloatingResizeCorner[] = ["top-left", "bottom-right"];
 const WINDOW_EDIT_MOVE_STEP = { x: 2, y: 1 };
@@ -338,12 +330,13 @@ export function resolveWindowEditCommitLayout(
 ): LayoutConfig {
   if (state.mode !== "move" || state.focus.kind !== "dock-move") return state.previewLayout;
 
+  const focus = state.focus;
   const leaves = getDockLeafLayouts(state.previewLayout, bounds, dockGeometryOptions);
   const selectedDocked = leaves.some((leaf) => leaf.instanceId === state.paneId);
-  const targetDocked = leaves.some((leaf) => leaf.instanceId === state.focus.targetId && leaf.instanceId !== state.paneId);
+  const targetDocked = leaves.some((leaf) => leaf.instanceId === focus.targetId && leaf.instanceId !== state.paneId);
   if (!selectedDocked || !targetDocked) return state.previewLayout;
 
-  return applyDrop(state.previewLayout, state.paneId, leafDropTarget(state.focus.targetId, state.focus.position));
+  return applyDrop(state.previewLayout, state.paneId, leafDropTarget(focus.targetId, focus.position));
 }
 
 export function windowEditHasPendingCommit(
@@ -426,79 +419,4 @@ export function applyWindowEditDirection(
     dirty: state.dirty || nextLayout !== state.previewLayout,
     notice: undefined,
   };
-}
-
-function windowEditLabel(state: WindowEditState, bounds: LayoutBounds, dockGeometryOptions: DockGeometryOptions): string {
-  const focus = normalizeWindowEditFocus(state.focus, state.previewLayout, state.paneId, state.mode, bounds, dockGeometryOptions);
-  if (state.mode === "move") return "WINDOW MOVE";
-  if (focus.kind === "floating-resize") return `WINDOW RESIZE ${focus.corner}`;
-  if (focus.kind === "move") return "WINDOW RESIZE no handles";
-  const targets = getDockResizeTargets(state.previewLayout, state.paneId, bounds, dockGeometryOptions);
-  const index = targets.findIndex((target) => pathKey(target.path) === focus.pathKey);
-  return `WINDOW RESIZE divider ${Math.max(1, index + 1)}/${Math.max(1, targets.length)}`;
-}
-
-export function windowEditStatusLine(
-  state: WindowEditState,
-  title: string,
-  bounds: LayoutBounds,
-  dockGeometryOptions: DockGeometryOptions,
-  targetTitle?: string,
-): string {
-  const target = state.mode === "move" && state.focus.kind === "dock-move" && targetTitle
-    ? ` -> ${targetTitle} ${dockMovePositionLabel(state.focus.position)}`
-    : "";
-  const notice = state.notice ? ` · ${state.notice}` : "";
-  return `${windowEditLabel(state, bounds, dockGeometryOptions)}${notice} · ${title}${target}`;
-}
-
-export function windowEditHelpText(state: WindowEditState): string {
-  if (state.mode === "move") {
-    if (state.focus.kind === "dock-move") {
-      return "arrows/hjkl choose side  m retarget  Tab/w window  d float  r resize  Enter commit  Esc exit/cancel";
-    }
-    return "Tab/w window  d dock/float  r resize  arrows/hjkl target/move  Shift fast  Enter commit  Esc exit/cancel";
-  }
-  if (state.focus.kind === "floating-resize") {
-    return "Tab corner  w window  m move  arrows/hjkl resize  Shift fast  Enter commit  Esc exit/cancel";
-  }
-  return "arrows/hjkl move divider  Tab divider  w window  m move  Shift fast  Enter commit  Esc exit/cancel";
-}
-
-export function resolveWindowEditDockMovePreview(
-  state: WindowEditState | null,
-  bounds: LayoutBounds,
-  dockGeometryOptions: DockGeometryOptions,
-): WindowEditDockMovePreview | null {
-  if (!state || state.mode !== "move" || state.focus.kind !== "dock-move") return null;
-  const leaves = getDockLeafLayouts(state.previewLayout, bounds, dockGeometryOptions);
-  const selectedDocked = leaves.some((leaf) => leaf.instanceId === state.paneId);
-  const targetDocked = leaves.some((leaf) => leaf.instanceId === state.focus.targetId && leaf.instanceId !== state.paneId);
-  if (!selectedDocked || !targetDocked) return null;
-
-  const simulation = simulateDrop(
-    state.previewLayout,
-    state.paneId,
-    leafDropTarget(state.focus.targetId, state.focus.position),
-    bounds,
-  );
-  if (!simulation.previewRect) return null;
-  return {
-    targetId: state.focus.targetId,
-    position: state.focus.position,
-    rect: simulation.previewRect,
-  };
-}
-
-export function getFloatingResizeCornerPosition(rect: FloatingRect, corner: FloatingResizeCorner): { x: number; y: number; marker: string } {
-  switch (corner) {
-    case "top-left":
-      return { x: rect.x, y: rect.y, marker: "◤" };
-    case "top-right":
-      return { x: rect.x + rect.width - 1, y: rect.y, marker: "◥" };
-    case "bottom-left":
-      return { x: rect.x, y: rect.y + rect.height - 1, marker: "◣" };
-    case "bottom-right":
-      return { x: rect.x + rect.width - 1, y: rect.y + rect.height - 1, marker: "◢" };
-  }
 }

@@ -1,5 +1,5 @@
 
-export type ProviderStatus = "success" | "partial" | "empty" | "unsupported" | "retryable_error" | "fatal_error";
+type ProviderStatus = "success" | "partial" | "empty" | "unsupported" | "retryable_error" | "fatal_error";
 
 export type ProviderReasonCode =
   | "NO_DATA"
@@ -19,7 +19,7 @@ export interface ProviderAttempt {
   message?: string;
 }
 
-export interface ProviderResult<T> {
+interface ProviderResult<T> {
   status: ProviderStatus;
   data: T | null;
   providerId: string;
@@ -30,7 +30,7 @@ export interface ProviderResult<T> {
   staleAt?: number;
 }
 
-export type QueryPhase = "idle" | "loading" | "ready" | "refreshing" | "error";
+type QueryPhase = "idle" | "loading" | "ready" | "refreshing" | "error";
 
 export interface QueryEntry<T> {
   phase: QueryPhase;

@@ -4,10 +4,12 @@ import { higherContrast } from "../../theme/color-utils";
 import type { FloatingResizeCorner, FloatingRect, LayoutBounds, DockGeometryOptions } from "../../plugins/pane-manager";
 import {
   windowEditHasPendingCommit,
-  windowEditHelpText,
-  windowEditStatusLine,
   type WindowEditState,
 } from "./window-edit-mode";
+import {
+  windowEditHelpText,
+  windowEditStatusLine,
+} from "./window-edit-presentation";
 
 const NATIVE_WINDOW_EDIT_PANEL_MAX_WIDTH = 78;
 const NATIVE_WINDOW_EDIT_PANEL_HEIGHT = 3;

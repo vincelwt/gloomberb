@@ -3,7 +3,7 @@ import { TextAttributes } from "../ui";
 import { blendHex, colors } from "../theme/colors";
 import { ListView, type ListRowState, type ListViewItem } from "./ui/list-view";
 
-export interface ToggleListItem {
+interface ToggleListItem {
   id: string;
   label: string;
   enabled: boolean;

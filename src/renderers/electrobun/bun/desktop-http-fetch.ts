@@ -1,0 +1,56 @@
+function normalizeHttpFetchHeaders(headers: unknown): Record<string, string> {
+  if (!headers || typeof headers !== "object" || Array.isArray(headers)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(headers as Record<string, unknown>)
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+}
+
+export async function handleHttpFetch(payload: Record<string, unknown>) {
+  if (typeof payload.url !== "string") {
+    throw new Error("http.fetch requires a URL.");
+  }
+
+  const url = new URL(payload.url);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`Unsupported http.fetch protocol: ${url.protocol}`);
+  }
+
+  const init =
+    payload.init && typeof payload.init === "object" && !Array.isArray(payload.init)
+      ? payload.init as Record<string, unknown>
+      : {};
+  const method =
+    typeof init.method === "string" && init.method.trim().length > 0
+      ? init.method.trim().toUpperCase()
+      : "GET";
+  const body =
+    typeof init.body === "string" && method !== "GET" && method !== "HEAD"
+      ? init.body
+      : undefined;
+
+  const response = await fetch(url, {
+    method,
+    headers: normalizeHttpFetchHeaders(init.headers),
+    body,
+  });
+  const responseHeaders: Record<string, string> = {};
+  response.headers.forEach((value, key) => {
+    responseHeaders[key] = value;
+  });
+  const setCookieHeaders = [...(response.headers.getSetCookie?.() ?? [])];
+  const fallbackSetCookie = response.headers.get("set-cookie");
+  if (fallbackSetCookie && setCookieHeaders.length === 0) {
+    setCookieHeaders.push(fallbackSetCookie);
+  }
+
+  return {
+    status: response.status,
+    statusText: response.statusText,
+    headers: responseHeaders,
+    setCookie: setCookieHeaders,
+    body: await response.text(),
+  };
+}

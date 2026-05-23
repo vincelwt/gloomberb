@@ -16,13 +16,12 @@ import type {
   IbkrGatewayConfig,
   IbkrSnapshot,
   ResolvedIbkrGatewayConnection,
-} from "./gateway-types";
+} from "./gateway/types";
 
 export type {
   IbkrGatewayConfig,
-  IbkrSnapshot,
   ResolvedIbkrGatewayConnection,
-} from "./gateway-types";
+} from "./gateway/types";
 
 type NativeGatewayService = any;
 type NativeGatewayManager = any;

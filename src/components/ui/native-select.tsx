@@ -6,7 +6,7 @@ import { blendHex, colors } from "../../theme/colors";
 
 export type NativeSelectElement = HTMLSelectElement & { showPicker?: () => void };
 
-export interface NativeSelectOption {
+interface NativeSelectOption {
   label: string;
   value: string;
   description?: string;

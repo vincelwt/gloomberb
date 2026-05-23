@@ -7,7 +7,7 @@ import { useQuoteStreaming } from "./use-quote-streaming";
 import type { Quote } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
 
-export type InlineTickerStatus = "loading" | "ready" | "missing";
+type InlineTickerStatus = "loading" | "ready" | "missing";
 
 export interface InlineTickerCatalogEntry {
   status: InlineTickerStatus;

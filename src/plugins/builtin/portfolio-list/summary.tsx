@@ -2,13 +2,16 @@ import { Box, Text } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { colors, priceColor } from "../../../theme/colors";
 import type { AppState } from "../../../state/app-context";
+import type { PaneFooterSegment } from "../../../components/layout/pane-footer-model";
 import type { BrokerConnectionStatus } from "../../../types/broker";
-import type { Portfolio } from "../../../types/ticker";
+import type { TickerFinancials } from "../../../types/financials";
+import type { Portfolio, TickerRecord } from "../../../types/ticker";
 import type { BrokerAccount, BrokerCashBalance } from "../../../types/trading";
 import { formatCompact, formatPercentRaw } from "../../../utils/format";
 import { getBrokerInstance } from "../../../utils/broker-instances";
 import { resolvePortfolioAccountMetrics } from "./account-metrics";
-import type { PortfolioSummaryTotals } from "./metrics";
+import { calculatePortfolioSummaryTotals, type PortfolioSummaryTotals } from "./summary-totals";
+import { getMostRecentQuoteUpdate } from "../../../utils/quote-time";
 
 export interface PortfolioSummarySegment {
   id: string;
@@ -251,6 +254,77 @@ export function buildPortfolioSummarySegments({
   }
 
   return fitSummarySegments(candidates, widthBudget);
+}
+
+export function buildPortfolioFooterSegments({
+  accountState,
+  activeCollectionId,
+  baseCurrency,
+  exchangeRates,
+  financialsMap,
+  hideHeader,
+  isPortfolioTab,
+  refreshingSize,
+  sortedTickers,
+  width,
+}: {
+  accountState: PortfolioSummaryAccountState | null;
+  activeCollectionId: string | null;
+  baseCurrency: string;
+  exchangeRates: Map<string, number>;
+  financialsMap: Map<string, TickerFinancials>;
+  hideHeader: boolean;
+  isPortfolioTab: boolean;
+  refreshingSize: number;
+  sortedTickers: TickerRecord[];
+  width: number;
+}): PaneFooterSegment[] {
+  if (hideHeader) return [];
+
+  const lastRefreshTimestamp = getMostRecentQuoteUpdate(
+    sortedTickers.map((ticker) => financialsMap.get(ticker.metadata.ticker)?.quote),
+  );
+  const refreshText = refreshingSize > 0
+    ? "Refreshing..."
+    : lastRefreshTimestamp != null
+      ? new Date(lastRefreshTimestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+      : "-";
+  const totals = calculatePortfolioSummaryTotals(
+    sortedTickers,
+    financialsMap,
+    baseCurrency,
+    exchangeRates,
+    isPortfolioTab,
+    activeCollectionId,
+  );
+
+  if (!isPortfolioTab) {
+    if (totals.watchlistCount === 0) return [];
+    return [
+      {
+        id: "avg-day",
+        parts: [
+          { text: "Avg Day", tone: "label" },
+          { text: formatPercentRaw(totals.avgWatchlistChange), tone: "value", color: priceColor(totals.avgWatchlistChange), bold: true },
+        ],
+      },
+      {
+        id: "refresh",
+        parts: [{ text: refreshText, tone: "muted" }],
+      },
+    ];
+  }
+
+  if (!totals.hasPositions && !accountState) return [];
+  return buildPortfolioSummarySegments({
+    totals,
+    accountState,
+    widthBudget: Math.max(16, width - 14),
+    refreshText,
+  }).map((segment) => ({
+    id: segment.id,
+    parts: segment.parts,
+  }));
 }
 
 export function renderSummarySegments(segments: PortfolioSummarySegment[], width: number) {

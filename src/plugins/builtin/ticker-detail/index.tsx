@@ -1,6 +1,16 @@
 import type { GloomPlugin } from "../../../types/plugin";
 import { normalizeTickerInput } from "../../../utils/ticker-search";
-import { createTickerSurfacePaneTemplate } from "../ticker-surface";
+import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
+import {
+  createGraphPaneTemplate,
+  FundamentalGraphPane,
+  FundamentalGraphsDetailTab,
+} from "./data-panes/fundamental-graph";
+import { HistoricalPricesPane } from "./data-panes/historical-prices";
+import {
+  createProviderSearchPaneTemplate,
+  ProviderSearchPane,
+} from "./data-panes/provider-search";
 import { TickerDetailPane } from "./pane";
 import { QuoteMonitorPane } from "./quote-monitor";
 import {
@@ -11,13 +21,25 @@ import {
 } from "./settings";
 import { formatTickerListInput } from "../../../utils/ticker-list";
 
-export { FinancialsTab } from "./financials-tab";
-export { QuoteMonitorPane } from "./quote-monitor";
-
 export const tickerDetailPlugin: GloomPlugin = {
   id: "ticker-detail",
   name: "Ticker Detail",
   version: "1.0.0",
+
+  setup(ctx) {
+    ctx.registerDetailTab({
+      id: "fundamental-graphs",
+      name: "Graphs",
+      order: 28,
+      component: FundamentalGraphsDetailTab,
+      isVisible: ({ ticker, financials }) => !!ticker && (
+        (financials?.annualStatements.length ?? 0) > 0
+        || (financials?.quarterlyStatements.length ?? 0) > 0
+        || !!financials?.fundamentals
+        || !!financials?.quote?.marketCap
+      ),
+    });
+  },
 
   panes: [
     {
@@ -38,6 +60,33 @@ export const tickerDetailPlugin: GloomPlugin = {
       defaultMode: "floating",
       defaultFloatingSize: { width: 72, height: 10 },
       settings: buildQuoteMonitorSettingsDef(),
+    },
+    {
+      id: "historical-prices",
+      name: "Historical Prices",
+      icon: "H",
+      component: HistoricalPricesPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 92, height: 26 },
+    },
+    {
+      id: "fundamental-graph",
+      name: "Fundamental Graph",
+      icon: "G",
+      component: FundamentalGraphPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 82, height: 22 },
+    },
+    {
+      id: "provider-search-results",
+      name: "Provider Search",
+      icon: "S",
+      component: ProviderSearchPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 86, height: 24 },
     },
   ],
   paneTemplates: [
@@ -96,6 +145,29 @@ export const tickerDetailPlugin: GloomPlugin = {
           : null;
       },
     },
+    createTickerSurfacePaneTemplate({
+      id: "historical-prices-pane",
+      paneId: "historical-prices",
+      label: "Historical Prices",
+      description: "Open a historical OHLCV table for a ticker.",
+      keywords: ["historical", "prices", "hp", "ohlc", "volume"],
+      shortcut: "HP",
+    }),
+    createGraphPaneTemplate({
+      id: "fundamental-graph-pane",
+      label: "Fundamental Graph",
+      description: "Graph statement metrics for one or more tickers.",
+      shortcut: "GF",
+      chartKind: "fundamental",
+    }),
+    createGraphPaneTemplate({
+      id: "valuation-graph-pane",
+      label: "Valuation Graph",
+      description: "Graph valuation multiples for one or more tickers.",
+      shortcut: "GE",
+      chartKind: "valuation",
+    }),
+    createProviderSearchPaneTemplate(),
     createTickerSurfacePaneTemplate({
       id: "financial-analysis-pane",
       paneId: "ticker-detail",

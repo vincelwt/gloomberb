@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { YahooFinanceClient } from "./yahoo-finance";
+import { getYahooSymbolsToTry } from "./yahoo-finance/symbols";
 
 describe("YahooFinanceClient exchange aliases", () => {
   test("maps detailed statement sub-lines from fundamentals timeseries", async () => {
@@ -9,7 +10,6 @@ describe("YahooFinanceClient exchange aliases", () => {
       [type]: [{ asOfDate: "2025-12-31", reportedValue: { raw: value } }],
     });
 
-    provider.getSymbolsToTry = () => ["AMD"];
     provider.fetchChart = async () => ({
       meta: { currency: "USD", regularMarketPrice: 100, shortName: "AMD" },
       history: [{ date: new Date("2025-12-31T00:00:00Z"), close: 100 }],
@@ -53,20 +53,23 @@ describe("YahooFinanceClient exchange aliases", () => {
   });
 
   test("tries the Taipei Exchange suffix for TPEX tickers", () => {
-    const provider = new YahooFinanceClient() as any;
-    expect(provider.getSymbolsToTry("3105", "TPEX")).toEqual(["3105.TWO", "3105.TW"]);
+    expect(getYahooSymbolsToTry("3105", "TPEX")).toEqual(["3105.TWO", "3105.TW"]);
   });
 
   test("prefers Frankfurt-style symbols for FWB2 listings", () => {
-    const provider = new YahooFinanceClient() as any;
-    expect(provider.getSymbolsToTry("HY9H", "FWB2")).toEqual(["HY9H.F", "HY9H.DE"]);
+    expect(getYahooSymbolsToTry("HY9H", "FWB2")).toEqual(["HY9H.F", "HY9H.DE"]);
   });
 
   test("maps manual resolution requests to yahoo chart range plus interval", async () => {
     const provider = new YahooFinanceClient() as any;
-    let request: { symbol: string; range: string; interval: string } | null = null;
+    let requested = false;
     provider.fetchChart = async (symbol: string, range: string, interval: string) => {
-      request = { symbol, range, interval };
+      requested = true;
+      expect({ symbol, range, interval }).toEqual({
+        symbol: "AAPL",
+        range: "1y",
+        interval: "1wk",
+      });
       return {
         meta: { currency: "USD" },
         history: [{ date: new Date("2026-03-30T00:00:00Z"), close: 200 }],
@@ -75,11 +78,7 @@ describe("YahooFinanceClient exchange aliases", () => {
 
     const history = await provider.getPriceHistoryForResolution("AAPL", "NASDAQ", "1Y", "1wk");
 
-    expect(request).toEqual({
-      symbol: "AAPL",
-      range: "1y",
-      interval: "1wk",
-    });
+    expect(requested).toBe(true);
     expect(history[0]?.close).toBe(200);
   });
 
@@ -124,7 +123,7 @@ describe("YahooFinanceClient exchange aliases", () => {
     const provider = new YahooFinanceClient() as any;
     let requestUrl = "";
     provider.getSymbolsToTry = () => ["AMD"];
-    provider.fetchJsonWithCrumb = async (url: string) => {
+    provider.http.fetchJsonWithCrumb = async (url: string) => {
       requestUrl = url;
       return {
         quoteSummary: {
@@ -181,7 +180,7 @@ describe("YahooFinanceClient exchange aliases", () => {
         },
       },
     });
-    provider.fetchJsonWithCrumb = async () => ({
+    provider.http.fetchJsonWithCrumb = async () => ({
       quoteSummary: {
         result: [{
           price: { symbol: "USAU", currency: "USD", shortName: "U.S. Gold Corp.", exchangeName: "NasdaqCM" },

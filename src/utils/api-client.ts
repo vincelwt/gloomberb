@@ -1,656 +1,124 @@
-import type {
-  AnalystResearchData,
-  CompanyProfile,
-  CorporateActionsData,
-  Fundamentals,
-  HolderData,
-  HolderRecord,
-  OptionsChain,
-  PricePoint,
-  Quote,
-  TickerFinancials,
-} from "../types/financials";
+import type { TickerFinancials } from "../types/financials";
 import type { InstrumentSearchResult } from "../types/instrument";
-import { debugLog } from "./debug-log";
-import { canonicalExchange, normalizeSymbol, publicTickerKey } from "./exchanges";
-import { httpFetch } from "./http-transport";
-import { normalizeTimestamp } from "./timestamp";
-
-const DEFAULT_API_URL = "https://api.gloom.sh";
-const SESSION_COOKIE_NAMES = ["__Secure-gloomberb.session_token", "gloomberb.session_token"] as const;
-const QUOTE_SUBSCRIPTION_FLUSH_MS = 25;
-const cloudApiLog = debugLog.createLogger("cloud-api");
-const HARD_SESSION_INVALID_PATTERNS = [
-  /\b(user|account)\b.*\b(not found|deleted|removed|disabled|deactivated|suspended)\b/i,
-  /\b(user|account)\b.*\bdoes(?:\s+not|n't)\s+exist\b/i,
-  /\b(no|unknown|missing)\s+(user|account)\b/i,
-];
-
-type CloudApiResponse = Pick<Response, "ok" | "status" | "headers" | "text">;
-type CloudApiFetchTransport = (url: string, init?: RequestInit) => Promise<CloudApiResponse>;
-
-let cloudApiFetchTransport: CloudApiFetchTransport = httpFetch;
-
-export function setCloudApiFetchTransport(transport: CloudApiFetchTransport | null): void {
-  cloudApiFetchTransport = transport ?? httpFetch;
-}
-
-function getCloudApiBaseUrl(): string {
-  if (typeof process === "undefined") {
-    return DEFAULT_API_URL;
-  }
-  return process.env.GLOOMBERB_API_URL ?? DEFAULT_API_URL;
-}
-
-export interface ChatUserSummary {
-  id: string;
-  username: string | null;
-  displayName: string;
-  bio?: string | null;
-  company?: string | null;
-  title?: string | null;
-  profilePublic?: boolean;
-  acceptUnknownDms?: boolean;
-}
-
-export interface ChatMessage {
-  id: string;
-  channelId: string;
-  content: string;
-  replyToId: string | null;
-  createdAt: string;
-  user: ChatUserSummary;
-  replyTo?: { content: string; user: { id?: string; username: string } } | null;
-  clientStatus?: "sending" | "failed";
-  clientError?: string | null;
-}
-
-export interface ChatChannel {
-  id: string;
-  name: string;
-  kind?: "public" | "direct" | "group";
-  created_at: string;
-  dmUser?: ChatUserSummary | null;
-  members?: ChatUserSummary[];
-}
-
-export interface ChatChannelState {
-  channelId: string;
-  notificationsEnabled: boolean;
-  lastReadMessageId: string | null;
-  unreadCount: number;
-}
-
-export interface ChatNotification {
-  id: string;
-  type: "reply" | "mention" | "channel";
-  channelId: string;
-  messageId: string;
-  createdAt: string;
-  message: ChatMessage;
-}
-
-export interface ChatStateResponse {
-  channels: ChatChannel[];
-  onlineCount: number;
-  channelStates: ChatChannelState[];
-  notifications: ChatNotification[];
-}
-
-export interface AuthUser {
-  id: string;
-  name: string;
-  email: string;
-  username: string | null;
-  emailVerified: boolean;
-  image: string | null;
-  plan?: "free" | "pro";
-  company?: string | null;
-  title?: string | null;
-  bio?: string | null;
-  profilePublic?: boolean;
-  publicEmail?: string | null;
-  xAccount?: string | null;
-  sharedPortfolioId?: string | null;
-  acceptUnknownDms?: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type PersistedAuthUser = Pick<AuthUser, "id" | "emailVerified"> & Partial<AuthUser>;
-
-export interface AccountProfile {
-  id: string;
-  email: string;
-  emailVerified: boolean;
-  plan: "free" | "pro";
-  username: string | null;
-  name: string;
-  company: string | null;
-  title: string | null;
-  bio: string | null;
-  profilePublic: boolean;
-  publicEmail: string | null;
-  xAccount: string | null;
-  sharedPortfolioId: string | null;
-  acceptUnknownDms: boolean;
-  updatedAt: string | null;
-}
-
-export interface BuildoutAccountResponse {
-  user: {
-    id: string;
-    email: string;
-    emailVerified: boolean;
-  };
-  subscription: {
-    product: "buildout";
-    plan: "free" | "pro";
-    active: boolean;
-    billingInterval: "month" | "year" | null;
-    stripeSubscriptionId: string | null;
-    stripeSubscriptionStatus: string | null;
-  };
-  prices: {
-    monthly: {
-      priceId: string;
-      amountUsd: number;
-      interval: "month";
-    };
-    yearly: {
-      priceId: string;
-      amountUsd: number;
-      interval: "year";
-    };
-  };
-}
-
-export interface BuildoutTokenResponse {
-  token: string;
-  expiresAt: string;
-}
-
-export type AccountProfileUpdate = Partial<{
-  username: string;
-  name: string;
-  company: string | null;
-  title: string | null;
-  bio: string | null;
-  profilePublic: boolean;
-  publicEmail: string | null;
-  xAccount: string | null;
-  sharedPortfolioId: string | null;
-  acceptUnknownDms: boolean;
-}>;
-
-export interface CloudQuotePayload extends Quote {
-  providerId: "gloomberb-cloud";
-  dataSource: "live" | "delayed";
-}
-
-export interface CloudOptionsChainPayload extends OptionsChain {
-  providerId: "gloomberb-cloud";
-}
-
-export interface CloudCompanyProfile extends CompanyProfile {}
-
-export interface CloudFundamentals extends Fundamentals {}
-
-export interface CloudHolderPayload extends HolderRecord {
-  providerId: "gloomberb-cloud";
-  ownerType: "institution";
-}
-
-export interface CloudHoldersPayload extends HolderData {
-  providerId: "gloomberb-cloud";
-  holders: CloudHolderPayload[];
-}
-
-export interface CloudAnalystResearchPayload extends AnalystResearchData {
-  providerId: "gloomberb-cloud";
-}
-
-export interface CloudCorporateActionsPayload extends CorporateActionsData {
-  providerId: "gloomberb-cloud";
-}
-
-export interface CloudPricePointPayload {
-  date: string;
-  open?: number;
-  high?: number;
-  low?: number;
-  close: number;
-  volume?: number;
-}
-
-export type CloudEconImpact = "high" | "medium" | "low";
-
-export interface CloudEconEventPayload {
-  id: string;
-  date: string;
-  time: string;
-  country: string;
-  event: string;
-  actual: string | null;
-  forecast: string | null;
-  prior: string | null;
-  impact: CloudEconImpact;
-}
-
-export interface CloudFredObservationPayload {
-  date: string;
-  value: number | null;
-}
-
-export interface CloudFredSeriesInfoPayload {
-  id: string;
-  title: string;
-  units: string;
-  frequency: string;
-  seasonalAdjustment: string;
-  source: string;
-  notes: string;
-}
-
-export interface CloudFredSeriesPayload {
-  observations: CloudFredObservationPayload[];
-  info: CloudFredSeriesInfoPayload | null;
-}
-
-export interface CloudYieldPointPayload {
-  maturity: string;
-  maturityYears: number;
-  yield: number | null;
-}
-
-export type CloudCongressTradeSide = "BUY" | "SELL" | "EXCHANGE" | "OTHER";
-
-export interface CloudCongressTradePayload {
-  id: string;
-  chamber: "house";
-  filingId: string;
-  docId: string;
-  memberName: string;
-  stateDistrict: string;
-  filingDate: string;
-  transactionDate: string | null;
-  notificationDate: string | null;
-  lagDays: number | null;
-  side: CloudCongressTradeSide;
-  transactionType: string;
-  ticker: string | null;
-  assetName: string;
-  assetType: string | null;
-  owner: string;
-  rawOwner: string;
-  amount: string;
-  amountLow: number | null;
-  amountHigh: number | null;
-  capGainsOver200: boolean | null;
-  filingStatus: string | null;
-  subholdingOf: string | null;
-  description: string | null;
-  sourceUrl: string;
-}
-
-export interface CloudCongressMemberPayload {
-  id: string;
-  memberName: string;
-  stateDistrict: string;
-  tradeCount: number;
-  buyCount: number;
-  sellCount: number;
-  exchangeCount: number;
-  otherCount: number;
-  estimatedLow: number | null;
-  estimatedHigh: number | null;
-  lastFilingDate: string | null;
-  avgLagDays: number | null;
-}
-
-export interface CloudCongressHousePayload {
-  asOf: string;
-  chamber: "house";
-  source: "house-clerk";
-  year: number;
-  indexUpdatedAt: string | null;
-  filingsScanned: number;
-  filingCount: number;
-  trades: CloudCongressTradePayload[];
-  members: CloudCongressMemberPayload[];
-}
-
-export interface CloudNewsEntityPayload {
-  id: string;
-  entityType: string;
-  name: string;
-  symbol: string | null;
-  exchange: string | null;
-  canonicalTicker: string | null;
-  role: string | null;
-  confidence: number | null;
-}
-
-export interface CloudNewsTickerLinkPayload {
-  symbol: string;
-  exchange: string;
-  canonicalTicker: string;
-  relationType: string;
-  displayTier: "primary" | "related";
-  confidence: number;
-  relevanceScore: number;
-  impactScore?: number;
-  sentiment?: "positive" | "neutral" | "negative" | null;
-}
-
-export interface CloudNewsStoryItemPayload {
-  id: string;
-  sourceKey: string;
-  sourceName: string;
-  title: string;
-  summary?: string;
-  url: string;
-  publishedAt: string;
-  hasArticleText?: boolean;
-}
-
-export interface CloudNewsPayload {
-  id: string;
-  headline: string;
-  summary: string;
-  topic?: string;
-  topics?: string[];
-  category: string;
-  sentiment: "positive" | "neutral" | "negative";
-  sectors: string[];
-  scope?: string;
-  firstPublishedAt: string;
-  lastPublishedAt: string;
-  firstSeenAt: string;
-  lastSeenAt: string;
-  primaryUrl: string;
-  primarySource: string;
-  scores?: {
-    importance?: number;
-    urgency?: number;
-    marketImpact?: number;
-    novelty?: number;
-    confidence?: number;
-  };
-  flags?: {
-    breaking?: boolean;
-    developing?: boolean;
-    stale?: boolean;
-  };
-  variantCount: number;
-  sourceCount: number;
-  sources: string[];
-  entities: CloudNewsEntityPayload[];
-  tickerLinks: CloudNewsTickerLinkPayload[];
-  items?: CloudNewsStoryItemPayload[];
-}
-
-export interface CloudNewsListResponse {
-  items: CloudNewsPayload[];
-  nextCursor: string | null;
-}
-
-export interface CloudTweetUserPayload {
-  id: string;
-  userName: string;
-  name: string;
-}
-
-export interface CloudTweetMetricsPayload {
-  retweets: number | null;
-  replies: number | null;
-  likes: number | null;
-  quotes: number | null;
-  views: number | null;
-  bookmarks: number | null;
-}
-
-export interface CloudTweetMediaPayload {
-  type?: string;
-  url?: string;
-  mediaUrl?: string;
-  media_url?: string;
-  media_url_https?: string;
-  previewImageUrl?: string;
-  preview_image_url?: string;
-}
-
-export interface CloudTweetPayload {
-  id: string;
-  url: string;
-  text: string;
-  createdAt: string;
-  lang: string;
-  isReply: boolean;
-  author: CloudTweetUserPayload;
-  metrics: CloudTweetMetricsPayload;
-  media?: CloudTweetMediaPayload[];
-  photos?: CloudTweetMediaPayload[];
-  images?: CloudTweetMediaPayload[];
-}
-
-export type CloudTweetQueryType = "Latest" | "Top";
-
-export interface CloudTweetSearchResponse {
-  ticker?: string;
-  cashtag?: string;
-  query: string;
-  queryType: CloudTweetQueryType;
-  since: string;
-  until: string;
-  limit: number;
-  hours: number;
-  includeReplies?: boolean;
-  cached: boolean;
-  cacheTtlMs: number;
-  asOf: string;
-  tweets: CloudTweetPayload[];
-}
-
-export type CloudMarketStatus =
-  | "success"
-  | "partial"
-  | "empty"
-  | "unsupported"
-  | "retryable_error"
-  | "fatal_error";
-
-export interface CloudMarketResponse<T> {
-  status: CloudMarketStatus;
-  data: T | null;
-  reasonCode?: string;
-  asOf?: string;
-  staleAt?: string;
-  stale?: boolean;
-  currency?: string;
-  providerMeta?: {
-    provider?: string;
-    upstream?: string;
-    status?: CloudMarketStatus;
-    reasonCode?: string;
-    normalizedSymbol?: string;
-    normalizedExchange?: string;
-    stale?: boolean;
-    fallbackReason?: string;
-    requestedResolution?: string;
-    servedResolution?: string;
-    latencyMs?: number;
-    range?: string;
-    granularity?: string;
-    timezone?: string;
-    currency?: string;
-    barCount?: number;
-  };
-}
-
-export interface CloudMarketBatchTarget {
-  symbol: string;
-  exchange?: string;
-}
-
-export interface CloudMarketBatchItem<T> {
-  symbol: string;
-  exchange: string;
-  status: CloudMarketStatus;
-  data: T | null;
-  reasonCode?: string;
-}
-
-export interface CloudMarketBatchPayload<T> {
-  items: Array<CloudMarketBatchItem<T>>;
-}
-
-export interface CloudVerificationResponse {
-  sent: boolean;
-  email?: string;
-  alreadyVerified?: boolean;
-}
-
-export interface QuoteStreamTarget {
-  symbol: string;
-  exchange?: string;
-  surface?: "portfolio" | "watchlist" | "detail" | "monitor" | "inline" | "screener" | "unknown";
-  visible?: boolean;
-  selected?: boolean;
-  weight?: number;
-}
-
-function marketKey(symbol: string, exchange?: string): string {
-  const normalizedSymbolValue = normalizeSymbol(symbol);
-  const normalizedExchangeValue = canonicalExchange(exchange);
-  return normalizedExchangeValue ? `${normalizedSymbolValue}:${normalizedExchangeValue}` : normalizedSymbolValue;
-}
-
-function normalizeChatMessage(message: ChatMessage): ChatMessage {
-  return {
-    ...message,
-    createdAt: normalizeTimestamp(message.createdAt),
-  };
-}
-
-function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
-  return messages.map((message) => normalizeChatMessage(message));
-}
-
-function normalizeChatNotification(notification: ChatNotification): ChatNotification {
-  return {
-    ...notification,
-    createdAt: normalizeTimestamp(notification.createdAt),
-    message: normalizeChatMessage(notification.message),
-  };
-}
-
-function normalizeChatState(response: ChatStateResponse): ChatStateResponse {
-  return {
-    ...response,
-    channels: response.channels.map((channel) => ({
-      ...channel,
-      kind: channel.kind ?? "public",
-      created_at: normalizeTimestamp(channel.created_at),
-    })),
-    notifications: response.notifications.map(normalizeChatNotification),
-  };
-}
-
-function normalizeTweet(tweet: CloudTweetPayload): CloudTweetPayload {
-  return {
-    ...tweet,
-    createdAt: normalizeTimestamp(tweet.createdAt),
-  };
-}
-
-function normalizeTweetSearchResponse(response: CloudTweetSearchResponse): CloudTweetSearchResponse {
-  return {
-    ...response,
-    since: normalizeTimestamp(response.since),
-    until: normalizeTimestamp(response.until),
-    asOf: normalizeTimestamp(response.asOf),
-    tweets: response.tweets.map(normalizeTweet),
-  };
-}
-
-type ChannelListener = (message: ChatMessage) => void;
-type ChatNotificationListener = (notification: ChatNotification) => void;
-type ChatPresenceListener = (onlineCount: number) => void;
-type QuoteListener = (target: QuoteStreamTarget, quote: CloudQuotePayload) => void;
-type SessionCookieName = (typeof SESSION_COOKIE_NAMES)[number];
-
-class ApiRequestError extends Error {
-  constructor(message: string, readonly status?: number) {
-    super(message);
-    this.name = "ApiRequestError";
-  }
-}
-
-function parseApiErrorMessage(body: string): string {
-  try {
-    const parsed = JSON.parse(body) as Record<string, unknown>;
-    const parts = [parsed.message, parsed.error, parsed.code, parsed.reason]
-      .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
-    return parts.join(" ") || body;
-  } catch {
-    return body;
-  }
-}
-
-function isHardSessionInvalidMessage(message: string): boolean {
-  const normalized = message.replace(/[_-]+/g, " ");
-  return HARD_SESSION_INVALID_PATTERNS.some((pattern) => pattern.test(normalized));
-}
+import { CloudAuthApi } from "./api-client-auth";
+import { CloudChatApi } from "./api-client-chat";
+import { CloudDataApi } from "./api-client-data";
+import { CloudApiRequestTransport } from "./api-client-request";
+import { CloudApiSocket } from "./api-client-socket";
+import type {
+  CloudCongressHouseParams,
+  CloudFredSeriesParams,
+  CloudHistoryParams,
+  CloudNewsParams,
+  CloudTickerTweetsParams,
+  CloudTweetSearchParams,
+} from "./api-client-paths";
+import type {
+  ChatMessage,
+  ChatChannel,
+  ChatChannelState,
+  ChatNotification,
+  ChatStateResponse,
+  AuthUser,
+  PersistedAuthUser,
+  AccountProfile,
+  BuildoutAccountResponse,
+  BuildoutTokenResponse,
+  AccountProfileUpdate,
+  CloudQuotePayload,
+  CloudOptionsChainPayload,
+  CloudCompanyProfile,
+  CloudFundamentals,
+  CloudHoldersPayload,
+  CloudAnalystResearchPayload,
+  CloudCorporateActionsPayload,
+  CloudPricePointPayload,
+  CloudEconEventPayload,
+  CloudFredSeriesPayload,
+  CloudYieldPointPayload,
+  CloudCongressHousePayload,
+  CloudNewsPayload,
+  CloudNewsListResponse,
+  CloudTweetPayload,
+  CloudTweetQueryType,
+  CloudTweetSearchResponse,
+  CloudMarketResponse,
+  CloudMarketBatchTarget,
+  CloudMarketBatchPayload,
+  CloudVerificationResponse,
+  QuoteStreamTarget,
+} from "./api-client-types";
+
+export type * from "./api-client-types";
+export { setCloudApiFetchTransport } from "./api-client-request";
 
 class GloomApiClient {
-  private sessionToken: string | null = null;
-  private sessionCookieName: SessionCookieName | null = null;
-  private websocketToken: string | null = null;
   private currentUser: AuthUser | null = null;
-  private readonly baseUrl: string;
-
-  private ws: WebSocket | null = null;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private reconnectDelayMs = 1000;
-
-  private readonly channelListeners = new Map<string, Set<ChannelListener>>();
-  private readonly chatNotificationListeners = new Set<ChatNotificationListener>();
-  private readonly chatPresenceListeners = new Set<ChatPresenceListener>();
-  private readonly quoteListeners = new Map<string, Set<QuoteListener>>();
-  private readonly quoteTargets = new Map<string, QuoteStreamTarget>();
-  private readonly pendingQuoteSubscribes = new Map<string, QuoteStreamTarget>();
-  private readonly pendingQuoteUnsubscribes = new Map<string, QuoteStreamTarget>();
-  private quoteSubscriptionFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly transport = new CloudApiRequestTransport();
+  private readonly auth: CloudAuthApi;
+  private readonly socket: CloudApiSocket;
+  private readonly chat: CloudChatApi;
+  private readonly data: CloudDataApi;
 
   constructor() {
-    this.baseUrl = getCloudApiBaseUrl();
+    this.auth = new CloudAuthApi({
+      getCurrentUser: () => this.currentUser,
+      getSessionToken: () => this.transport.getSessionToken(),
+      request: (path, options) => this.request(path, options),
+      requireCapturedSession: (message) => this.requireCapturedSession(message),
+      setCurrentUser: (user) => this.setCurrentUser(user),
+      setSessionToken: (token) => this.setSessionToken(token),
+      updateCurrentUser: (updater) => {
+        if (this.currentUser) {
+          this.currentUser = updater(this.currentUser);
+        }
+      },
+    });
+    this.socket = new CloudApiSocket({
+      getBaseUrl: () => this.transport.baseUrl,
+      getSocketAuthToken: () => this.getSocketAuthToken(),
+      hasVerifiedUser: () => this.currentUser?.emailVerified === true,
+      isUsingWebSocketToken: () => !!this.transport.getWebSocketToken(),
+      clearWebSocketTokenForFallback: () => this.transport.clearWebSocketTokenForFallback(),
+      markCurrentUserUnverified: () => {
+        if (this.currentUser) {
+          this.currentUser = { ...this.currentUser, emailVerified: false };
+        }
+      },
+      updateCurrentUserFromSocket: (user) => {
+        this.currentUser = {
+          ...(this.currentUser ?? {}),
+          ...user,
+        } as AuthUser;
+      },
+    });
+    this.chat = new CloudChatApi({
+      request: (path, options) => this.request(path, options),
+      socket: this.socket,
+    });
+    this.data = new CloudDataApi((path, options) => this.request(path, options));
   }
 
   getSessionToken(): string | null {
-    return this.sessionToken;
+    return this.transport.getSessionToken();
   }
 
   getWebSocketToken(): string | null {
-    return this.websocketToken;
+    return this.transport.getWebSocketToken();
   }
 
   setSessionToken(token: string | null): void {
-    if (this.sessionToken !== token) {
-      this.sessionCookieName = null;
-    }
-    this.sessionToken = token;
+    this.transport.setSessionToken(token);
     if (!token) {
-      this.websocketToken = null;
       this.currentUser = null;
-      this.teardownSocket();
+      this.socket.teardown();
     }
   }
 
   setWebSocketToken(token: string | null): void {
-    this.websocketToken = token;
+    this.transport.setWebSocketToken(token);
     if (!token) {
-      this.teardownSocket();
+      this.socket.teardown();
     }
   }
 
@@ -659,567 +127,121 @@ class GloomApiClient {
   }
 
   restoreCachedUser(user: PersistedAuthUser | null): void {
-    if (!this.sessionToken || !user?.id) {
-      this.setCurrentUser(null);
-      return;
-    }
-    this.setCurrentUser({
-      id: user.id,
-      name: typeof user.name === "string" && user.name.length > 0
-        ? user.name
-        : user.username ?? "User",
-      email: typeof user.email === "string" ? user.email : "",
-      username: typeof user.username === "string" ? user.username : null,
-      emailVerified: user.emailVerified === true,
-      image: typeof user.image === "string" ? user.image : null,
-      createdAt: typeof user.createdAt === "string" ? user.createdAt : "",
-      updatedAt: typeof user.updatedAt === "string" ? user.updatedAt : "",
-    });
+    this.auth.restoreCachedUser(user);
   }
 
   isVerified(): boolean {
-    return !!this.sessionToken && !!this.currentUser?.emailVerified;
+    return !!this.transport.getSessionToken() && !!this.currentUser?.emailVerified;
   }
 
   private setCurrentUser(user: AuthUser | null): void {
     this.currentUser = user;
-    if (!this.shouldKeepSocketOpen()) {
-      this.teardownSocket();
-      return;
-    }
-    this.ensureSocket();
+    this.socket.syncAuthState();
   }
 
   private requireCapturedSession(message: string): void {
-    if (this.sessionToken) return;
-    this.websocketToken = null;
+    if (this.transport.getSessionToken()) return;
+    this.transport.setWebSocketToken(null);
     this.setCurrentUser(null);
     throw new Error(message);
   }
 
-  private extractSessionCookie(res: CloudApiResponse): void {
-    const setCookie = res.headers.getSetCookie?.() ?? [];
-    const fallbackHeader = res.headers.get("set-cookie");
-    if (fallbackHeader) {
-      setCookie.push(fallbackHeader);
-    }
-    for (const cookie of setCookie) {
-      for (const cookieName of SESSION_COOKIE_NAMES) {
-        const escapedCookieName = cookieName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const match = cookie.match(new RegExp(`${escapedCookieName}=([^;]+)`));
-        if (!match) continue;
-        this.sessionToken = match[1] ?? null;
-        this.sessionCookieName = cookieName;
-        return;
-      }
-    }
-  }
-
-  private buildSessionCookieHeader(): string | null {
-    if (!this.sessionToken) return null;
-    const cookieNames = this.sessionCookieName ? [this.sessionCookieName] : SESSION_COOKIE_NAMES;
-    return cookieNames.map((cookieName) => `${cookieName}=${this.sessionToken}`).join("; ");
-  }
-
-  private setSessionCookieHeader(headers: Headers): void {
-    const cookieHeader = this.buildSessionCookieHeader();
-    if (cookieHeader) {
-      headers.set("Cookie", cookieHeader);
-    }
-  }
-
   private async request<T>(path: string, options?: RequestInit): Promise<T> {
-    const headers = new Headers(options?.headers);
-    if (!headers.has("Content-Type") && options?.method && options.method !== "GET") {
-      headers.set("Content-Type", "application/json");
-    }
-    this.setSessionCookieHeader(headers);
-    headers.set("Origin", this.baseUrl);
-
-    const res = await cloudApiFetchTransport(`${this.baseUrl}${path}`, {
-      ...options,
-      headers,
-      credentials: "include",
-    });
-
-    this.extractSessionCookie(res);
-
-    if (!res.ok) {
-      const body = await res.text();
-      const msg = parseApiErrorMessage(body);
-      throw new ApiRequestError(msg, res.status);
-    }
-
-    const text = await res.text();
-    if (!text) return undefined as T;
-    const parsed = JSON.parse(text) as T & { token?: string };
-    if (typeof parsed?.token === "string" && parsed.token.length > 0) {
-      this.websocketToken = parsed.token;
-    }
-    return parsed as T;
-  }
-
-  private getWebSocketBaseUrl(): string {
-    const wsProtocol = this.baseUrl.startsWith("https") ? "wss" : "ws";
-    return this.baseUrl.replace(/^https?/, wsProtocol);
+    return this.transport.request<T>(path, options);
   }
 
   private getSocketAuthToken(): string | null {
-    return this.websocketToken || this.sessionToken;
-  }
-
-  private shouldKeepSocketOpen(): boolean {
-    if (this.quoteTargets.size > 0) return true;
-    return !!this.getSocketAuthToken()
-      && !!this.currentUser?.emailVerified
-      && this.channelListeners.size > 0;
-  }
-
-  private ensureSocket(): void {
-    if (!this.shouldKeepSocketOpen() || this.ws || this.reconnectTimer) return;
-
-    const socketToken = this.getSocketAuthToken();
-    const usingWebSocketToken = !!this.websocketToken;
-    const url = socketToken
-      ? `${this.getWebSocketBaseUrl()}/cloud/ws?token=${encodeURIComponent(socketToken)}`
-      : `${this.getWebSocketBaseUrl()}/cloud/ws`;
-    cloudApiLog.info("open websocket", {
-      hasToken: !!socketToken,
-      tokenSource: usingWebSocketToken ? "websocket" : "session",
-      quoteTargets: this.quoteTargets.size,
-      channelTargets: this.channelListeners.size,
-    });
-    const ws = new WebSocket(url);
-    this.ws = ws;
-
-    ws.onopen = () => {
-      if (this.ws !== ws) return;
-      cloudApiLog.info("websocket open");
-      this.reconnectDelayMs = 1000;
-      this.flushSubscriptions();
-    };
-
-    ws.onmessage = (event) => {
-      void this.handleSocketMessage(String(event.data));
-    };
-
-    ws.onclose = (event) => {
-      const activeSocket = this.ws === ws;
-      if (this.ws === ws) {
-        this.ws = null;
-      }
-      const closeEvent = event as CloseEvent | undefined;
-      cloudApiLog.warn("websocket closed", {
-        quoteTargets: this.quoteTargets.size,
-        channelTargets: this.channelListeners.size,
-        code: closeEvent?.code,
-        reason: closeEvent?.reason,
-        tokenSource: usingWebSocketToken ? "websocket" : "session",
-      });
-      if (activeSocket && usingWebSocketToken && this.sessionToken) {
-        this.websocketToken = null;
-        this.reconnectDelayMs = 1000;
-        cloudApiLog.warn("cleared websocket token after socket close; falling back to session token");
-      }
-      if (!this.shouldKeepSocketOpen()) return;
-      this.scheduleReconnect();
-    };
-
-    ws.onerror = () => {
-      // reconnect is handled by onclose
-    };
-  }
-
-  private teardownSocket(): void {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    const ws = this.ws;
-    this.ws = null;
-    if (ws) {
-      cloudApiLog.info("teardown websocket");
-    }
-    try {
-      ws?.close();
-    } catch {
-      // ignore closed sockets
-    }
-  }
-
-  private scheduleReconnect(): void {
-    if (this.reconnectTimer || !this.shouldKeepSocketOpen()) return;
-    const delay = this.reconnectDelayMs;
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.reconnectDelayMs = Math.min(this.reconnectDelayMs * 2, 10_000);
-      this.ensureSocket();
-    }, delay);
-  }
-
-  private sendSocketMessage(payload: unknown): void {
-    if (this.ws?.readyState !== WebSocket.OPEN) return;
-    if (payload && typeof payload === "object" && "type" in (payload as Record<string, unknown>)) {
-      const type = (payload as Record<string, unknown>).type;
-      if (
-        type === "market.subscribe"
-        || type === "market.unsubscribe"
-        || type === "chat.subscribe"
-        || type === "chat.unsubscribe"
-      ) {
-        cloudApiLog.info("send websocket message", payload);
-      }
-    }
-    this.ws.send(JSON.stringify(payload));
-  }
-
-  private flushSubscriptions(): void {
-    if (this.ws?.readyState !== WebSocket.OPEN) return;
-
-    for (const channelId of this.channelListeners.keys()) {
-      this.sendSocketMessage({ type: "chat.subscribe", channelId });
-    }
-
-    if (this.quoteTargets.size > 0) {
-      this.sendSocketMessage({
-        type: "market.subscribe",
-        symbols: [...this.quoteTargets.values()].map((target) => this.serializeQuoteStreamTarget(target)),
-      });
-    }
-  }
-
-  private scheduleQuoteSubscriptionFlush(): void {
-    if (this.quoteSubscriptionFlushTimer) return;
-    this.quoteSubscriptionFlushTimer = setTimeout(() => {
-      this.quoteSubscriptionFlushTimer = null;
-      this.flushQueuedQuoteSubscriptions();
-    }, QUOTE_SUBSCRIPTION_FLUSH_MS);
-  }
-
-  private queueQuoteSubscribes(targets: QuoteStreamTarget[]): void {
-    for (const target of targets) {
-      const key = marketKey(target.symbol, target.exchange);
-      this.pendingQuoteUnsubscribes.delete(key);
-      this.pendingQuoteSubscribes.set(key, target);
-    }
-    this.scheduleQuoteSubscriptionFlush();
-  }
-
-  private queueQuoteUnsubscribes(targets: QuoteStreamTarget[]): void {
-    for (const target of targets) {
-      const key = marketKey(target.symbol, target.exchange);
-      if (this.pendingQuoteSubscribes.delete(key)) continue;
-      this.pendingQuoteUnsubscribes.set(key, target);
-    }
-    this.scheduleQuoteSubscriptionFlush();
-  }
-
-  private flushQueuedQuoteSubscriptions(): void {
-    if (this.ws?.readyState !== WebSocket.OPEN) {
-      this.pendingQuoteSubscribes.clear();
-      this.pendingQuoteUnsubscribes.clear();
-      return;
-    }
-    const subscribes = [...this.pendingQuoteSubscribes.values()];
-    const unsubscribes = [...this.pendingQuoteUnsubscribes.values()];
-    this.pendingQuoteSubscribes.clear();
-    this.pendingQuoteUnsubscribes.clear();
-    if (subscribes.length > 0) {
-      this.sendSocketMessage({
-        type: "market.subscribe",
-        symbols: subscribes.map((target) => this.serializeQuoteStreamTarget(target)),
-      });
-    }
-    if (unsubscribes.length > 0) {
-      this.sendSocketMessage({
-        type: "market.unsubscribe",
-        symbols: unsubscribes.map((target) => this.serializeQuoteStreamTarget(target)),
-      });
-    }
-  }
-
-  private serializeQuoteStreamTarget(target: QuoteStreamTarget): QuoteStreamTarget {
-    return {
-      symbol: target.symbol,
-      exchange: target.exchange ?? "",
-      ...(target.surface ? { surface: target.surface } : {}),
-      ...(target.visible ? { visible: true } : {}),
-      ...(target.selected ? { selected: true } : {}),
-      ...(Number.isFinite(target.weight) ? { weight: target.weight } : {}),
-    };
+    return this.transport.getSocketAuthToken();
   }
 
   private async handleSocketMessage(raw: string): Promise<void> {
-    let parsed: any;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return;
-    }
-
-    if (parsed?.type === "ready" && parsed.user) {
-      cloudApiLog.info("websocket ready", { emailVerified: parsed.user.emailVerified === true });
-      this.currentUser = {
-        ...(this.currentUser ?? {}),
-        ...parsed.user,
-      };
-      return;
-    }
-
-    if (parsed?.type === "auth.unverified") {
-      cloudApiLog.warn("websocket marked unverified");
-      if (this.websocketToken && this.sessionToken) {
-        this.websocketToken = null;
-        this.reconnectDelayMs = 1000;
-        cloudApiLog.warn("cleared websocket token after auth rejection; falling back to session token");
-        this.teardownSocket();
-        this.scheduleReconnect();
-        return;
-      }
-      if (this.currentUser) {
-        this.currentUser = { ...this.currentUser, emailVerified: false };
-      }
-      if (this.quoteTargets.size > 0) {
-        return;
-      }
-      this.teardownSocket();
-      return;
-    }
-
-    if (parsed?.type === "chat.message" && typeof parsed.channelId === "string" && parsed.data) {
-      const message = normalizeChatMessage(parsed.data as ChatMessage);
-      for (const listener of this.channelListeners.get(parsed.channelId) ?? []) {
-        listener(message);
-      }
-      return;
-    }
-
-    if (parsed?.type === "chat.notification" && parsed.data) {
-      const notification = normalizeChatNotification(parsed.data as ChatNotification);
-      for (const listener of this.chatNotificationListeners) {
-        listener(notification);
-      }
-      return;
-    }
-
-    if (parsed?.type === "chat.presence" && typeof parsed.onlineCount === "number") {
-      for (const listener of this.chatPresenceListeners) {
-        listener(parsed.onlineCount);
-      }
-      return;
-    }
-
-    if (parsed?.type === "market.quote" && parsed.quote && typeof parsed.symbol === "string") {
-      const key = marketKey(parsed.symbol, parsed.exchange);
-      const target = this.quoteTargets.get(key) ?? {
-        symbol: normalizeSymbol(parsed.symbol),
-        exchange: canonicalExchange(parsed.exchange),
-      };
-      for (const listener of this.quoteListeners.get(key) ?? []) {
-        listener(target, parsed.quote as CloudQuotePayload);
-      }
-    }
+    await this.socket.handleSocketMessage(raw);
   }
 
   async ensureVerifiedSession(): Promise<AuthUser | null> {
-    if (!this.sessionToken) return null;
-    if (!this.currentUser) {
-      await this.getSession();
-    }
-    return this.currentUser?.emailVerified ? this.currentUser : null;
+    return this.auth.ensureVerifiedSession();
   }
 
   async signUp(email: string, username: string, name: string, password: string): Promise<AuthUser> {
-    const result = await this.request<{ user: AuthUser }>("/auth/sign-up/email", {
-      method: "POST",
-      body: JSON.stringify({ email, username, name, password }),
-    });
-    this.requireCapturedSession(
-      "Account created, but Gloomberb could not save the login session. Please try logging in again.",
-    );
-    this.setCurrentUser(result.user);
-    return result.user;
+    return this.auth.signUp(email, username, name, password);
   }
 
   async signIn(email: string, password: string): Promise<AuthUser> {
-    const result = await this.request<{ user: AuthUser }>("/auth/sign-in/email", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    });
-    this.requireCapturedSession(
-      "Logged in, but Gloomberb could not save the login session. Please try again.",
-    );
-    this.setCurrentUser(result.user);
-    return result.user;
+    return this.auth.signIn(email, password);
   }
 
   async signOut(): Promise<void> {
-    try {
-      await this.request("/auth/sign-out", { method: "POST" });
-    } finally {
-      this.setSessionToken(null);
-    }
+    return this.auth.signOut();
   }
 
   async getSession(): Promise<AuthUser | null> {
-    try {
-      const result = await this.request<{ user: AuthUser }>("/auth/get-session", {
-        method: "GET",
-      });
-      const user = result?.user ?? null;
-      this.setCurrentUser(user);
-      return user;
-    } catch (error) {
-      if (error instanceof ApiRequestError && isHardSessionInvalidMessage(error.message)) {
-        this.setSessionToken(null);
-        return null;
-      }
-      throw error;
-    }
+    return this.auth.getSession();
   }
 
   async sendVerification(): Promise<CloudVerificationResponse> {
-    return this.request<CloudVerificationResponse>("/cloud/auth/send-verification", {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
+    return this.auth.sendVerification();
   }
 
   async getAccountProfile(): Promise<AccountProfile> {
-    const result = await this.request<{ profile: AccountProfile }>("/account/profile", {
-      method: "GET",
-    });
-    return result.profile;
+    return this.auth.getAccountProfile();
   }
 
   async getBuildoutAccount(): Promise<BuildoutAccountResponse> {
-    return this.request<BuildoutAccountResponse>("/account/buildout", {
-      method: "GET",
-    });
+    return this.auth.getBuildoutAccount();
   }
 
   async getBuildoutToken(): Promise<BuildoutTokenResponse> {
-    return this.request<BuildoutTokenResponse>("/account/buildout/token", {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
+    return this.auth.getBuildoutToken();
   }
 
   async updateAccountProfile(update: AccountProfileUpdate): Promise<AccountProfile> {
-    const result = await this.request<{ profile: AccountProfile }>("/account/profile", {
-      method: "PATCH",
-      body: JSON.stringify(update),
-    });
-    const profile = result.profile;
-    if (this.currentUser?.id === profile.id) {
-      this.currentUser = {
-        ...this.currentUser,
-        name: profile.name,
-        username: profile.username,
-        plan: profile.plan,
-        company: profile.company,
-        title: profile.title,
-        bio: profile.bio,
-        profilePublic: profile.profilePublic,
-        publicEmail: profile.publicEmail,
-        xAccount: profile.xAccount,
-        sharedPortfolioId: profile.sharedPortfolioId,
-        acceptUnknownDms: profile.acceptUnknownDms,
-        updatedAt: profile.updatedAt ?? this.currentUser.updatedAt,
-      };
-    }
-    return profile;
+    return this.auth.updateAccountProfile(update);
   }
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {
-    await this.request("/auth/change-password", {
-      method: "POST",
-      body: JSON.stringify({
-        currentPassword,
-        newPassword,
-        revokeOtherSessions: false,
-      }),
-    });
+    return this.auth.changePassword(currentPassword, newPassword);
   }
 
   async getChannels(): Promise<ChatChannel[]> {
-    const channels = await this.request<ChatChannel[]>("/chat/channels");
-    return channels.map((channel) => ({
-      ...channel,
-      kind: channel.kind ?? "public",
-      created_at: normalizeTimestamp(channel.created_at),
-    }));
+    return this.chat.getChannels();
   }
 
   async getChatPresence(): Promise<{ onlineCount: number }> {
-    return this.request<{ onlineCount: number }>("/chat/presence");
+    return this.chat.getPresence();
   }
 
   async getChatState(): Promise<ChatStateResponse> {
-    const state = await this.request<ChatStateResponse>("/chat/state");
-    return normalizeChatState(state);
+    return this.chat.getState();
   }
 
   async updateChatChannelState(
     channelId: string,
     body: { notificationsEnabled?: boolean; readThroughMessageId?: string },
   ): Promise<ChatChannelState> {
-    return this.request<ChatChannelState>(`/chat/channels/${channelId}/state`, {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    });
+    return this.chat.updateChannelState(channelId, body);
   }
 
   async markChatNotificationsDelivered(notificationIds: string[]): Promise<{ delivered: number }> {
-    return this.request<{ delivered: number }>("/chat/notifications/delivered", {
-      method: "POST",
-      body: JSON.stringify({ notificationIds }),
-    });
+    return this.chat.markNotificationsDelivered(notificationIds);
   }
 
   async openDirectChannel(target: { userId?: string; username?: string }): Promise<ChatChannel> {
-    const channel = await this.request<ChatChannel>("/chat/direct", {
-      method: "POST",
-      body: JSON.stringify(target),
-    });
-    return {
-      ...channel,
-      kind: channel.kind ?? "direct",
-      created_at: normalizeTimestamp(channel.created_at),
-    };
+    return this.chat.openDirectChannel(target);
   }
 
   async openGroupChannel(body: { userIds?: string[]; usernames?: string[]; name?: string }): Promise<ChatChannel> {
-    const channel = await this.request<ChatChannel>("/chat/groups", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-    return {
-      ...channel,
-      kind: channel.kind ?? "group",
-      created_at: normalizeTimestamp(channel.created_at),
-    };
+    return this.chat.openGroupChannel(body);
   }
 
   async getMessages(
     channelId: string,
     opts?: { after?: string; before?: string; limit?: number },
   ): Promise<ChatMessage[]> {
-    const params = new URLSearchParams();
-    if (opts?.after) params.set("after", opts.after);
-    if (opts?.before) params.set("before", opts.before);
-    if (opts?.limit) params.set("limit", String(opts.limit));
-    const qs = params.toString();
-    const messages = await this.request<ChatMessage[]>(`/chat/channels/${channelId}/messages${qs ? `?${qs}` : ""}`);
-    return normalizeChatMessages(messages);
+    return this.chat.getMessages(channelId, opts);
   }
 
   async sendMessage(channelId: string, content: string, replyToId?: string, clientMessageId?: string): Promise<ChatMessage> {
-    const message = await this.request<ChatMessage>(`/chat/channels/${channelId}/messages`, {
-      method: "POST",
-      body: JSON.stringify({ content, replyToId, clientMessageId }),
-    });
-    return normalizeChatMessage(message);
+    return this.chat.sendMessage(channelId, content, replyToId, clientMessageId);
   }
 
   connectChannel(
@@ -1227,187 +249,41 @@ class GloomApiClient {
     onMessage: (msg: ChatMessage) => void,
     onError?: (err: string) => void,
   ): { send: (content: string, replyToId?: string, clientMessageId?: string) => Promise<ChatMessage>; close: () => void } {
-    if (!channelId) {
-      return {
-        send: async () => {
-          throw new Error("Channel id is required");
-        },
-        close: () => {},
-      };
-    }
-
-    const listeners = this.channelListeners.get(channelId) ?? new Set<ChannelListener>();
-    const firstListener = listeners.size === 0;
-    listeners.add(onMessage);
-    this.channelListeners.set(channelId, listeners);
-    this.ensureSocket();
-    if (firstListener) {
-      this.sendSocketMessage({ type: "chat.subscribe", channelId });
-    }
-
-    return {
-      send: async (content: string, replyToId?: string, clientMessageId?: string) => {
-        try {
-          const message = await this.sendMessage(channelId, content, replyToId, clientMessageId);
-          onMessage(message);
-          return message;
-        } catch (error) {
-          onError?.(error instanceof Error ? error.message : String(error));
-          throw error;
-        }
-      },
-      close: () => {
-        const current = this.channelListeners.get(channelId);
-        if (!current) return;
-        current.delete(onMessage);
-        if (current.size === 0) {
-          this.channelListeners.delete(channelId);
-          this.sendSocketMessage({ type: "chat.unsubscribe", channelId });
-        }
-        if (!this.shouldKeepSocketOpen()) {
-          this.teardownSocket();
-        }
-      },
-    };
+    return this.chat.connectChannel(channelId, onMessage, onError);
   }
 
-  subscribeChatNotifications(listener: ChatNotificationListener): () => void {
-    this.chatNotificationListeners.add(listener);
-    return () => {
-      this.chatNotificationListeners.delete(listener);
-    };
+  subscribeChatNotifications(listener: (notification: ChatNotification) => void): () => void {
+    return this.chat.subscribeNotifications(listener);
   }
 
-  subscribeChatPresence(listener: ChatPresenceListener): () => void {
-    this.chatPresenceListeners.add(listener);
-    return () => {
-      this.chatPresenceListeners.delete(listener);
-    };
+  subscribeChatPresence(listener: (onlineCount: number) => void): () => void {
+    return this.chat.subscribePresence(listener);
   }
 
   subscribeQuotes(
     targets: QuoteStreamTarget[],
     onQuote: (target: QuoteStreamTarget, quote: CloudQuotePayload) => void,
   ): () => void {
-    const uniqueTargets = [...new Map(
-      targets
-        .filter((target) => typeof target.symbol === "string" && target.symbol.trim().length > 0)
-        .map((target) => {
-          const normalized = {
-            symbol: normalizeSymbol(target.symbol),
-            exchange: canonicalExchange(target.exchange),
-            surface: target.surface,
-            visible: target.visible,
-            selected: target.selected,
-            weight: target.weight,
-          } satisfies QuoteStreamTarget;
-          return [marketKey(normalized.symbol, normalized.exchange), normalized] as const;
-        }),
-    ).values()];
-
-    const newSubscriptions: QuoteStreamTarget[] = [];
-    const updatedSubscriptions: QuoteStreamTarget[] = [];
-    for (const target of uniqueTargets) {
-      const key = marketKey(target.symbol, target.exchange);
-      const listeners = this.quoteListeners.get(key) ?? new Set<QuoteListener>();
-      if (listeners.size === 0) {
-        newSubscriptions.push(target);
-      } else {
-        const existing = this.quoteTargets.get(key);
-        if (JSON.stringify(this.serializeQuoteStreamTarget(existing ?? target)) !== JSON.stringify(this.serializeQuoteStreamTarget(target))) {
-          updatedSubscriptions.push(target);
-        }
-      }
-      listeners.add(onQuote);
-      this.quoteListeners.set(key, listeners);
-      this.quoteTargets.set(key, target);
-    }
-
-    this.ensureSocket();
-    const subscriptionsToSend = [...newSubscriptions, ...updatedSubscriptions];
-    if (subscriptionsToSend.length > 0) {
-      cloudApiLog.info("register quote listeners", {
-        count: subscriptionsToSend.length,
-        symbols: subscriptionsToSend.map((target) => marketKey(target.symbol, target.exchange)),
-      });
-      this.queueQuoteSubscribes(subscriptionsToSend);
-    }
-
-    return () => {
-      const removedTargets: QuoteStreamTarget[] = [];
-
-      for (const target of uniqueTargets) {
-        const key = marketKey(target.symbol, target.exchange);
-        const listeners = this.quoteListeners.get(key);
-        if (!listeners) continue;
-        listeners.delete(onQuote);
-        if (listeners.size === 0) {
-          this.quoteListeners.delete(key);
-          const storedTarget = this.quoteTargets.get(key);
-          if (storedTarget) {
-            removedTargets.push(storedTarget);
-          }
-          this.quoteTargets.delete(key);
-        }
-      }
-
-      if (removedTargets.length > 0) {
-        cloudApiLog.info("remove quote listeners", {
-          count: removedTargets.length,
-          symbols: removedTargets.map((target) => marketKey(target.symbol, target.exchange)),
-        });
-        this.queueQuoteUnsubscribes(removedTargets);
-      }
-
-      if (!this.shouldKeepSocketOpen()) {
-        this.teardownSocket();
-      }
-    };
+    return this.socket.subscribeQuotes(targets, onQuote);
   }
 
   dispose(): void {
-    cloudApiLog.info("dispose api client", {
-      quoteTargets: this.quoteTargets.size,
-      channelTargets: this.channelListeners.size,
-    });
-    this.channelListeners.clear();
-    this.chatNotificationListeners.clear();
-    this.chatPresenceListeners.clear();
-    this.quoteListeners.clear();
-    this.quoteTargets.clear();
-    this.pendingQuoteSubscribes.clear();
-    this.pendingQuoteUnsubscribes.clear();
-    if (this.quoteSubscriptionFlushTimer) {
-      clearTimeout(this.quoteSubscriptionFlushTimer);
-      this.quoteSubscriptionFlushTimer = null;
-    }
-    this.reconnectDelayMs = 1000;
-    this.teardownSocket();
+    this.socket.dispose();
   }
 
   async searchInstruments(query: string, limit = 10): Promise<InstrumentSearchResult[]> {
-    const params = new URLSearchParams({
-      q: query,
-      limit: String(limit),
-    });
-    const response = await this.request<CloudMarketResponse<InstrumentSearchResult[]>>(`/market/search?${params.toString()}`);
-    return response.data ?? [];
+    return this.data.searchInstruments(query, limit);
   }
 
   async getCloudQuote(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudQuotePayload>> {
-    const params = new URLSearchParams({ symbol });
-    if (exchange) params.set("exchange", exchange);
-    return this.request<CloudMarketResponse<CloudQuotePayload>>(`/market/quote?${params.toString()}`);
+    return this.data.getCloudQuote(symbol, exchange);
   }
 
   async getCloudQuotesBatch(
     targets: CloudMarketBatchTarget[],
     mode: "cache-first" | "refresh" = "cache-first",
   ): Promise<CloudMarketResponse<CloudMarketBatchPayload<CloudQuotePayload>>> {
-    return this.request<CloudMarketResponse<CloudMarketBatchPayload<CloudQuotePayload>>>("/market/quotes/batch", {
-      method: "POST",
-      body: JSON.stringify({ targets, mode }),
-    });
+    return this.data.getCloudQuotesBatch(targets, mode);
   }
 
   async getCloudOptionsChain(
@@ -1415,56 +291,38 @@ class GloomApiClient {
     exchange?: string,
     expirationDate?: number,
   ): Promise<CloudMarketResponse<CloudOptionsChainPayload>> {
-    const params = new URLSearchParams({ symbol });
-    if (exchange) params.set("exchange", exchange);
-    if (expirationDate != null) params.set("expirationDate", String(expirationDate));
-    return this.request<CloudMarketResponse<CloudOptionsChainPayload>>(`/market/options?${params.toString()}`);
+    return this.data.getCloudOptionsChain(symbol, exchange, expirationDate);
   }
 
   async getCloudProfile(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudCompanyProfile>> {
-    const params = new URLSearchParams({ symbol });
-    if (exchange) params.set("exchange", exchange);
-    return this.request<CloudMarketResponse<CloudCompanyProfile>>(`/market/profile?${params.toString()}`);
+    return this.data.getCloudProfile(symbol, exchange);
   }
 
   async getCloudFundamentals(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudFundamentals>> {
-    const params = new URLSearchParams({ symbol });
-    if (exchange) params.set("exchange", exchange);
-    return this.request<CloudMarketResponse<CloudFundamentals>>(`/market/fundamentals?${params.toString()}`);
+    return this.data.getCloudFundamentals(symbol, exchange);
   }
 
   async getCloudFinancials(symbol: string, exchange?: string): Promise<CloudMarketResponse<TickerFinancials>> {
-    const params = new URLSearchParams({ symbol });
-    if (exchange) params.set("exchange", exchange);
-    return this.request<CloudMarketResponse<TickerFinancials>>(`/market/financials?${params.toString()}`);
+    return this.data.getCloudFinancials(symbol, exchange);
   }
 
   async getCloudFinancialsBatch(
     targets: CloudMarketBatchTarget[],
     mode: "cache-first" | "refresh" = "cache-first",
   ): Promise<CloudMarketResponse<CloudMarketBatchPayload<TickerFinancials>>> {
-    return this.request<CloudMarketResponse<CloudMarketBatchPayload<TickerFinancials>>>("/market/financials/batch", {
-      method: "POST",
-      body: JSON.stringify({ targets, mode }),
-    });
+    return this.data.getCloudFinancialsBatch(targets, mode);
   }
 
   async getCloudHolders(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudHoldersPayload>> {
-    const params = new URLSearchParams({ symbol });
-    if (exchange) params.set("exchange", exchange);
-    return this.request<CloudMarketResponse<CloudHoldersPayload>>(`/market/holders?${params.toString()}`);
+    return this.data.getCloudHolders(symbol, exchange);
   }
 
   async getCloudAnalystResearch(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudAnalystResearchPayload>> {
-    const params = new URLSearchParams({ symbol });
-    if (exchange) params.set("exchange", exchange);
-    return this.request<CloudMarketResponse<CloudAnalystResearchPayload>>(`/market/analyst?${params.toString()}`);
+    return this.data.getCloudAnalystResearch(symbol, exchange);
   }
 
   async getCloudCorporateActions(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudCorporateActionsPayload>> {
-    const params = new URLSearchParams({ symbol });
-    if (exchange) params.set("exchange", exchange);
-    return this.request<CloudMarketResponse<CloudCorporateActionsPayload>>(`/market/corporate-actions?${params.toString()}`);
+    return this.data.getCloudCorporateActions(symbol, exchange);
   }
 
   async getCloudStatements(
@@ -1472,162 +330,55 @@ class GloomApiClient {
     exchange?: string,
     period: "annual" | "quarterly" | "both" = "both",
   ): Promise<CloudMarketResponse<Pick<TickerFinancials, "annualStatements" | "quarterlyStatements">>> {
-    const params = new URLSearchParams({ symbol, period });
-    if (exchange) params.set("exchange", exchange);
-    return this.request<CloudMarketResponse<Pick<TickerFinancials, "annualStatements" | "quarterlyStatements">>>(`/market/statements?${params.toString()}`);
+    return this.data.getCloudStatements(symbol, exchange, period);
   }
 
   async getCloudHistory(
     symbol: string,
     exchange: string,
-    params: {
-      interval?: string;
-      outputsize?: number;
-      startDate?: string;
-      endDate?: string;
-      rangeKey?: string;
-    } = {},
+    params: CloudHistoryParams = {},
   ): Promise<CloudMarketResponse<CloudPricePointPayload[]>> {
-    const search = new URLSearchParams({ symbol, exchange });
-    if (params.interval) search.set("interval", params.interval);
-    if (params.outputsize != null) search.set("outputsize", String(params.outputsize));
-    if (params.startDate) search.set("startDate", params.startDate);
-    if (params.endDate) search.set("endDate", params.endDate);
-    if (params.rangeKey) search.set("rangeKey", params.rangeKey);
-    return this.request<CloudMarketResponse<CloudPricePointPayload[]>>(`/market/history?${search.toString()}`);
+    return this.data.getCloudHistory(symbol, exchange, params);
   }
 
   async getCloudExchangeRate(fromCurrency: string): Promise<CloudMarketResponse<{ rate: number }>> {
-    const params = new URLSearchParams({ fromCurrency });
-    return this.request<CloudMarketResponse<{ rate: number }>>(`/market/exchange-rate?${params.toString()}`);
+    return this.data.getCloudExchangeRate(fromCurrency);
   }
 
   async getCloudEconomicCalendar(): Promise<CloudEconEventPayload[]> {
-    return this.request<CloudEconEventPayload[]>("/cloud/econ/calendar");
+    return this.data.getCloudEconomicCalendar();
   }
 
   async getCloudFredSeries(
     seriesId: string,
-    params: {
-      startDate?: string;
-      endDate?: string;
-      limit?: number;
-      sortOrder?: "asc" | "desc";
-    } = {},
+    params: CloudFredSeriesParams = {},
   ): Promise<CloudFredSeriesPayload> {
-    const search = new URLSearchParams();
-    if (params.startDate) search.set("startDate", params.startDate);
-    if (params.endDate) search.set("endDate", params.endDate);
-    if (params.limit != null) search.set("limit", String(params.limit));
-    if (params.sortOrder) search.set("sortOrder", params.sortOrder);
-    const qs = search.toString();
-    return this.request<CloudFredSeriesPayload>(`/cloud/econ/series/${encodeURIComponent(seriesId)}${qs ? `?${qs}` : ""}`);
+    return this.data.getCloudFredSeries(seriesId, params);
   }
 
   async getCloudYieldCurve(): Promise<CloudYieldPointPayload[]> {
-    return this.request<CloudYieldPointPayload[]>("/cloud/econ/yield-curve");
+    return this.data.getCloudYieldCurve();
   }
 
-  async getCloudCongressHouse(params: {
-    year?: number;
-    limit?: number;
-    filingLimit?: number;
-    member?: string;
-    ticker?: string;
-    refresh?: boolean;
-  } = {}): Promise<CloudCongressHousePayload> {
-    const search = new URLSearchParams();
-    if (params.year != null) search.set("year", String(params.year));
-    if (params.limit != null) search.set("limit", String(params.limit));
-    if (params.filingLimit != null) search.set("filingLimit", String(params.filingLimit));
-    if (params.member) search.set("member", params.member);
-    if (params.ticker) search.set("ticker", params.ticker);
-    if (params.refresh != null) search.set("refresh", String(params.refresh));
-    const query = search.toString();
-    return this.request<CloudCongressHousePayload>(`/cloud/congress/house${query ? `?${query}` : ""}`);
+  async getCloudCongressHouse(params: CloudCongressHouseParams = {}): Promise<CloudCongressHousePayload> {
+    return this.data.getCloudCongressHouse(params);
   }
 
-  async getCloudNews(params: {
-    feed?: "latest" | "top" | "breaking" | "ticker" | "sector" | "topic";
-    ticker?: string;
-    exchange?: string;
-    tickerTier?: "primary" | "related" | "any";
-    tickerRelations?: string[];
-    limit?: number;
-    topics?: string[];
-    categories?: string[];
-    sectors?: string[];
-    sources?: string[];
-    excludeSources?: string[];
-    sentiment?: "positive" | "neutral" | "negative";
-    minImportance?: number;
-    minUrgency?: number;
-    breaking?: boolean;
-    since?: Date;
-    until?: Date;
-    cursor?: string;
-  } = {}): Promise<CloudNewsListResponse> {
-    const search = new URLSearchParams();
-    if (params.feed) search.set("feed", params.feed);
-    if (params.ticker) {
-      const tickerFilter = params.exchange
-        ? publicTickerKey(params.ticker, params.exchange)
-        : normalizeSymbol(params.ticker);
-      search.set("tickers", tickerFilter);
-    }
-    if (params.tickerTier) search.set("tickerTier", params.tickerTier);
-    if (params.tickerRelations?.length) search.set("tickerRelations", params.tickerRelations.join(","));
-    if (params.limit != null) search.set("limit", String(params.limit));
-    if (params.topics?.length) search.set("topics", params.topics.join(","));
-    if (params.categories?.length) {
-      search.set("categories", params.categories.join(","));
-    }
-    if (params.sectors?.length) search.set("sectors", params.sectors.join(","));
-    if (params.sources?.length) search.set("sources", params.sources.join(","));
-    if (params.excludeSources?.length) search.set("excludeSources", params.excludeSources.join(","));
-    if (params.sentiment) search.set("sentiment", params.sentiment);
-    if (params.minImportance != null) search.set("minImportance", String(params.minImportance));
-    if (params.minUrgency != null) search.set("minUrgency", String(params.minUrgency));
-    if (params.breaking != null) search.set("breaking", String(params.breaking));
-    if (params.since) search.set("since", params.since.toISOString());
-    if (params.until) search.set("until", params.until.toISOString());
-    if (params.cursor) search.set("cursor", params.cursor);
-    const query = search.toString();
-    return this.request<CloudNewsListResponse>(`/news${query ? `?${query}` : ""}`);
+  async getCloudNews(params: CloudNewsParams = {}): Promise<CloudNewsListResponse> {
+    return this.data.getCloudNews(params);
   }
 
   async getCloudNewsStory(storyId: string): Promise<CloudNewsPayload> {
-    return this.request<CloudNewsPayload>(`/news/${encodeURIComponent(storyId)}`);
+    return this.data.getCloudNewsStory(storyId);
   }
 
-  async getCloudTickerTweets(params: {
-    ticker: string;
-    limit?: number;
-    hours?: number;
-    includeReplies?: boolean;
-  }): Promise<CloudTweetSearchResponse> {
-    const search = new URLSearchParams({ ticker: params.ticker });
-    if (params.limit != null) search.set("limit", String(params.limit));
-    if (params.hours != null) search.set("hours", String(params.hours));
-    if (params.includeReplies != null) search.set("includeReplies", String(params.includeReplies));
-    const response = await this.request<CloudTweetSearchResponse>(`/news/tweets?${search.toString()}`);
-    return normalizeTweetSearchResponse(response);
+  async getCloudTickerTweets(params: CloudTickerTweetsParams): Promise<CloudTweetSearchResponse> {
+    return this.data.getCloudTickerTweets(params);
   }
 
-  async searchCloudTweets(params: {
-    query: string;
-    queryType?: CloudTweetQueryType;
-    limit?: number;
-    hours?: number;
-  }): Promise<CloudTweetSearchResponse> {
-    const search = new URLSearchParams({ query: params.query });
-    if (params.queryType) search.set("queryType", params.queryType);
-    if (params.limit != null) search.set("limit", String(params.limit));
-    if (params.hours != null) search.set("hours", String(params.hours));
-    const response = await this.request<CloudTweetSearchResponse>(`/news/tweets/search?${search.toString()}`);
-    return normalizeTweetSearchResponse(response);
+  async searchCloudTweets(params: CloudTweetSearchParams): Promise<CloudTweetSearchResponse> {
+    return this.data.searchCloudTweets(params);
   }
 }
 
 export const apiClient = new GloomApiClient();
-export type { PricePoint };

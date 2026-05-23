@@ -1,152 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes } from "../../../ui";
-import { DataTableView, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
+import { DataTableView } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
-import type { Quote } from "../../../types/financials";
-import type { MarketState } from "../../../types/financials";
-import { colors, priceColor } from "../../../theme/colors";
-import { formatCurrency, formatPercentRaw } from "../../../utils/format";
 import { useAssetData, usePluginTickerActions } from "../../plugin-runtime";
-import { WORLD_INDICES, REGION_LABELS, REGION_ORDER, getIndicesByRegion, type IndexEntry } from "./indices";
+import { WORLD_INDICES, REGION_LABELS, getIndicesByRegion } from "./indices";
+import { useWorldIndicesFooter } from "./footer";
+import {
+  buildFlatRows,
+  DEFAULT_SORT_PREFERENCE,
+  nextSortPreference,
+  rowIndicesOf,
+  type IndexQuoteState,
+  type QuoteMap,
+  type WorldIndexSortPreference,
+  type WorldIndexTableRow,
+} from "./model";
+import {
+  createWorldIndexColumns,
+  renderWorldIndexCell,
+  type WorldIndexColumn,
+} from "./table";
 
 const REFRESH_INTERVAL_MS = 60_000;
-
-interface IndexQuoteState {
-  quote: Quote | null;
-  loading: boolean;
-  error: string | null;
-}
-
-type QuoteMap = Map<string, IndexQuoteState>;
-type WorldIndexTableRow =
-  | { type: "header"; region: IndexEntry["region"] }
-  | { type: "row"; entry: IndexEntry };
-type WorldIndexColumnId = "status" | "symbol" | "name" | "price" | "changePercent";
-type WorldIndexColumn = DataTableColumn & { id: WorldIndexColumnId };
-type SortDirection = "asc" | "desc";
-
-interface WorldIndexSortPreference {
-  columnId: WorldIndexColumnId | null;
-  direction: SortDirection;
-}
-
-const DEFAULT_SORT_PREFERENCE: WorldIndexSortPreference = {
-  columnId: null,
-  direction: "asc",
-};
-
-const MARKET_STATE_SORT_ORDER: Partial<Record<MarketState, number>> = {
-  REGULAR: 0,
-  PREPRE: 1,
-  PRE: 1,
-  POST: 1,
-  POSTPOST: 1,
-  CLOSED: 2,
-};
-
-function marketStatusDot(state: MarketState | undefined): { char: string; color: string } {
-  switch (state) {
-    case "REGULAR":
-      return { char: "●", color: colors.positive };
-    case "PRE":
-    case "POST":
-    case "PREPRE":
-    case "POSTPOST":
-      return { char: "●", color: colors.warning };
-    case "CLOSED":
-    default:
-      return { char: "●", color: colors.negative };
-  }
-}
-
-function getSortValue(
-  columnId: WorldIndexColumnId,
-  entry: IndexEntry,
-  quotes: QuoteMap,
-): string | number | null {
-  const quote = quotes.get(entry.symbol)?.quote;
-
-  switch (columnId) {
-    case "status":
-      return quote?.marketState ? (MARKET_STATE_SORT_ORDER[quote.marketState] ?? 3) : 3;
-    case "symbol":
-      return entry.shortName;
-    case "name":
-      return entry.name;
-    case "price":
-      return quote?.price ?? null;
-    case "changePercent":
-      return quote?.changePercent ?? null;
-  }
-}
-
-function compareSortValues(
-  left: string | number | null,
-  right: string | number | null,
-  direction: SortDirection,
-): number {
-  if (left == null && right == null) return 0;
-  if (left == null) return 1;
-  if (right == null) return -1;
-
-  const comparison = typeof left === "string" && typeof right === "string"
-    ? left.localeCompare(right)
-    : Number(left) - Number(right);
-  return direction === "asc" ? comparison : -comparison;
-}
-
-function sortEntries(
-  entries: IndexEntry[],
-  sortPreference: WorldIndexSortPreference,
-  quotes: QuoteMap,
-): IndexEntry[] {
-  const sortColumnId = sortPreference.columnId;
-  if (!sortColumnId) return entries;
-  return [...entries].sort((left, right) => compareSortValues(
-    getSortValue(sortColumnId, left, quotes),
-    getSortValue(sortColumnId, right, quotes),
-    sortPreference.direction,
-  ));
-}
-
-function buildFlatRows(
-  indicesByRegion: Map<IndexEntry["region"], IndexEntry[]>,
-  sortPreference: WorldIndexSortPreference,
-  quotes: QuoteMap,
-): WorldIndexTableRow[] {
-  const rows: WorldIndexTableRow[] = [];
-  for (const region of REGION_ORDER) {
-    const entries = sortEntries(indicesByRegion.get(region) ?? [], sortPreference, quotes);
-    if (entries.length === 0) continue;
-    rows.push({ type: "header", region });
-    for (const entry of entries) {
-      rows.push({ type: "row", entry });
-    }
-  }
-  return rows;
-}
-
-// Returns only the row-type indices (for navigation purposes)
-function rowIndicesOf(flatRows: ReturnType<typeof buildFlatRows>): number[] {
-  return flatRows.reduce<number[]>((acc, row, i) => {
-    if (row.type === "row") acc.push(i);
-    return acc;
-  }, []);
-}
-
-function nextSortPreference(
-  current: WorldIndexSortPreference,
-  columnId: string,
-): WorldIndexSortPreference {
-  const typedColumnId = columnId as WorldIndexColumnId;
-  if (current.columnId !== typedColumnId) {
-    return { columnId: typedColumnId, direction: "asc" };
-  }
-  if (current.direction === "asc") {
-    return { columnId: typedColumnId, direction: "desc" };
-  }
-  return DEFAULT_SORT_PREFERENCE;
-}
 
 function WorldIndicesPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
@@ -271,86 +145,18 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
     setSortPreference((current) => nextSortPreference(current, columnId));
   }, []);
 
-  const columns = useMemo<WorldIndexColumn[]>(() => {
-    const statusWidth = 1;
-    const symbolWidth = 8;
-    const priceWidth = 15;
-    const changeWidth = 9;
-    const columnCount = 5;
-    const fixedWidth = statusWidth + symbolWidth + priceWidth + changeWidth;
-    const nameWidth = Math.max(10, width - 2 - columnCount - fixedWidth);
-
-    return [
-      { id: "status", label: "", width: statusWidth, align: "left" },
-      { id: "symbol", label: "INDEX", width: symbolWidth, align: "left" },
-      { id: "name", label: "NAME", width: nameWidth, align: "left" },
-      { id: "price", label: "LAST", width: priceWidth, align: "right" },
-      { id: "changePercent", label: "CHG%", width: changeWidth, align: "right" },
-    ];
-  }, [width]);
+  const columns = useMemo<WorldIndexColumn[]>(() => createWorldIndexColumns(width), [width]);
 
   const renderCell = useCallback((
     row: WorldIndexTableRow,
     column: WorldIndexColumn,
     _index: number,
     rowState: { selected: boolean },
-  ): DataTableCell => {
-    if (row.type === "header") return { text: "" };
-
-    const { entry } = row;
-    const state = quotes.get(entry.symbol);
-    const quote = state?.quote;
-    const selectedColor = rowState.selected ? colors.selectedText : undefined;
-
-    switch (column.id) {
-      case "status": {
-        const dot = marketStatusDot(quote?.marketState);
-        return { text: dot.char, color: dot.color };
-      }
-      case "symbol":
-        return {
-          text: entry.shortName,
-          color: selectedColor ?? colors.textBright,
-          attributes: TextAttributes.BOLD,
-        };
-      case "name":
-        return {
-          text: entry.name,
-          color: selectedColor,
-        };
-      case "price":
-        if (state?.loading && !quote) {
-          return { text: "…", color: rowState.selected ? colors.selectedText : colors.textDim };
-        }
-        if (state?.error || quote?.price === undefined) {
-          return { text: "—", color: rowState.selected ? colors.selectedText : colors.textDim };
-        }
-        return {
-          text: formatCurrency(quote.price, quote.currency ?? "USD"),
-          color: selectedColor,
-        };
-      case "changePercent":
-        if (!quote || quote.changePercent === undefined) {
-          return { text: "—", color: rowState.selected ? colors.selectedText : colors.textDim };
-        }
-        return {
-          text: formatPercentRaw(quote.changePercent),
-          color: selectedColor ?? priceColor(quote.changePercent),
-        };
-    }
+  ) => {
+    return renderWorldIndexCell(row, column, rowState, quotes);
   }, [quotes]);
 
-  const loadingCount = Array.from(quotes.values()).filter((state) => state.loading).length;
-  const latestQuoteTs = Math.max(
-    0,
-    ...Array.from(quotes.values()).map((state) => state.quote?.lastUpdated ?? 0),
-  );
-  usePaneFooter("world-indices", () => ({
-    info: [
-      ...(loadingCount > 0 ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(latestQuoteTs > 0 ? [{ id: "fresh", parts: [{ text: new Date(latestQuoteTs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), tone: "muted" as const }] }] : []),
-    ],
-  }), [latestQuoteTs, loadingCount]);
+  useWorldIndicesFooter(quotes);
 
   return (
     <DataTableView<WorldIndexTableRow, WorldIndexColumn>

@@ -1,0 +1,236 @@
+import type { DataTableColumn } from "../../../components";
+import type { PricePoint } from "../../../types/financials";
+import {
+  getSectorCollection,
+  type SectorCollectionId,
+  type SectorDef,
+} from "./sector-data";
+
+export const REFRESH_INTERVAL_MS = 60_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+export const ONE_MONTH_DAYS = 30;
+export const ONE_YEAR_DAYS = 365;
+export const DEFAULT_COLLECTION_ID: SectorCollectionId = "sectors";
+
+export interface SectorRow extends SectorDef {
+  price: number | null;
+  changePercent: number | null;
+  return1M: number | null;
+  return1Y: number | null;
+  currency: string;
+  loading: boolean;
+}
+
+type SectorColumnId = "name" | "etf" | "price" | "changePercent" | "return1M" | "return1Y" | "bar";
+export type SectorColumn = DataTableColumn & { id: SectorColumnId };
+type SortDirection = "asc" | "desc";
+export type SectorRowsByCollection = Record<SectorCollectionId, SectorRow[]>;
+export type SectorRefreshByCollection = Partial<Record<SectorCollectionId, number>>;
+
+export interface SectorSortPreference {
+  columnId: SectorColumnId;
+  direction: SortDirection;
+}
+
+export const DEFAULT_SORT_PREFERENCE: SectorSortPreference = {
+  columnId: "changePercent",
+  direction: "desc",
+};
+
+export function buildBar(changePercent: number, barWidth: number): string {
+  if (barWidth <= 0) return "";
+  const filled = Math.round(Math.abs(changePercent) / 5 * barWidth);
+  const clamped = Math.min(filled, barWidth);
+  return "━".repeat(clamped);
+}
+
+export function formatTime(date: Date): string {
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function createLoadingRows(sectors: readonly SectorDef[]): SectorRow[] {
+  return sectors.map((sector) => ({
+    ...sector,
+    price: null,
+    changePercent: null,
+    return1M: null,
+    return1Y: null,
+    currency: "USD",
+    loading: true,
+  }));
+}
+
+function createRowsByCollection(): SectorRowsByCollection {
+  return {
+    sectors: createLoadingRows(getSectorCollection("sectors").items),
+    industries: createLoadingRows(getSectorCollection("industries").items),
+  };
+}
+
+export const INITIAL_ROWS_BY_COLLECTION = createRowsByCollection();
+export const INITIAL_REFRESH_BY_COLLECTION: SectorRefreshByCollection = {};
+
+export function normalizeRowsForCollection(
+  rowsByCollection: SectorRowsByCollection,
+  collectionId: SectorCollectionId,
+): SectorRow[] {
+  const collection = getSectorCollection(collectionId);
+  const rows = rowsByCollection[collectionId] ?? [];
+  return collection.items.map((sector) => {
+    const existing = rows.find((row) => row.etf === sector.etf);
+    return {
+      ...sector,
+      price: existing?.price ?? null,
+      changePercent: existing?.changePercent ?? null,
+      return1M: existing?.return1M ?? null,
+      return1Y: existing?.return1Y ?? null,
+      currency: existing?.currency ?? "USD",
+      loading: existing?.loading ?? true,
+    };
+  });
+}
+
+export function updateRowsForCollection(
+  rowsByCollection: SectorRowsByCollection,
+  collectionId: SectorCollectionId,
+  updater: (rows: SectorRow[]) => SectorRow[],
+): SectorRowsByCollection {
+  return {
+    ...rowsByCollection,
+    [collectionId]: updater(normalizeRowsForCollection(rowsByCollection, collectionId)),
+  };
+}
+
+function getPricePointTimestamp(point: PricePoint): number {
+  const value = point.date as Date | string | number | null | undefined;
+  if (value instanceof Date) return value.getTime();
+  if (value == null) return Number.NaN;
+  return new Date(value).getTime();
+}
+
+function getSortedHistory(history: readonly PricePoint[]): Array<{ point: PricePoint; timestamp: number }> {
+  return history
+    .map((point) => ({ point, timestamp: getPricePointTimestamp(point) }))
+    .filter(({ point, timestamp }) => (
+      Number.isFinite(timestamp)
+      && Number.isFinite(point.close)
+      && point.close > 0
+    ))
+    .sort((left, right) => left.timestamp - right.timestamp);
+}
+
+export function latestHistoryClose(history: readonly PricePoint[]): number | null {
+  return getSortedHistory(history).at(-1)?.point.close ?? null;
+}
+
+export function computeTrailingReturn(
+  history: readonly PricePoint[],
+  days: number,
+  latestPrice?: number | null,
+): number | null {
+  const points = getSortedHistory(history);
+  if (points.length < 2) return null;
+
+  const latest = points.at(-1)!;
+  const endPrice = latestPrice != null && Number.isFinite(latestPrice) && latestPrice > 0
+    ? latestPrice
+    : latest.point.close;
+  const targetTimestamp = latest.timestamp - days * DAY_MS;
+  let baseline = points[0]!;
+  for (const point of points) {
+    if (point.timestamp > targetTimestamp) break;
+    baseline = point;
+  }
+  const baselinePrice = baseline.point.close;
+  if (!Number.isFinite(endPrice) || !Number.isFinite(baselinePrice) || baselinePrice <= 0) return null;
+  return (endPrice / baselinePrice - 1) * 100;
+}
+
+export function buildSectorColumns(width: number): SectorColumn[] {
+  const etfWidth = 4;
+  const priceWidth = 8;
+  const changeWidth = 8;
+  const returnWidth = 8;
+  const showBar = width >= 67;
+  const compactBar = width < 82;
+  const barWidth = showBar
+    ? compactBar ? 6 : Math.max(8, Math.min(18, Math.floor(width * 0.16)))
+    : 0;
+  const columnCount = showBar ? 7 : 6;
+  const fixedWidth = etfWidth + priceWidth + changeWidth + returnWidth * 2 + barWidth;
+  const nameWidth = Math.max(12, Math.min(22, width - 2 - columnCount - fixedWidth));
+
+  const columns: SectorColumn[] = [
+    { id: "name", label: "SECTOR", width: nameWidth, align: "left" },
+    { id: "etf", label: "ETF", width: etfWidth, align: "left" },
+    { id: "price", label: "LAST", width: priceWidth, align: "right" },
+    { id: "changePercent", label: "1D", width: changeWidth, align: "right" },
+    { id: "return1M", label: "1M", width: returnWidth, align: "right" },
+    { id: "return1Y", label: "1Y", width: returnWidth, align: "right" },
+  ];
+  if (showBar) {
+    columns.push({ id: "bar", label: "MOVE", width: barWidth, align: "left" });
+  }
+  return columns;
+}
+
+function getSortValue(columnId: SectorColumnId, row: SectorRow): string | number | null {
+  switch (columnId) {
+    case "name":
+      return row.name;
+    case "etf":
+      return row.etf;
+    case "price":
+      return row.price;
+    case "changePercent":
+      return row.changePercent;
+    case "return1M":
+      return row.return1M;
+    case "return1Y":
+      return row.return1Y;
+    case "bar":
+      return row.changePercent;
+  }
+}
+
+function compareSortValues(
+  left: string | number | null,
+  right: string | number | null,
+  direction: SortDirection,
+): number {
+  if (left == null && right == null) return 0;
+  if (left == null) return 1;
+  if (right == null) return -1;
+
+  const comparison = typeof left === "string" && typeof right === "string"
+    ? left.localeCompare(right)
+    : Number(left) - Number(right);
+  return direction === "asc" ? comparison : -comparison;
+}
+
+export function sortRows(rows: SectorRow[], sortPreference: SectorSortPreference): SectorRow[] {
+  return [...rows].sort((left, right) => compareSortValues(
+    getSortValue(sortPreference.columnId, left),
+    getSortValue(sortPreference.columnId, right),
+    sortPreference.direction,
+  ));
+}
+
+export function nextSortPreference(current: SectorSortPreference, columnId: string): SectorSortPreference {
+  const typedColumnId = columnId as SectorColumnId;
+  if (current.columnId !== typedColumnId) {
+    return {
+      columnId: typedColumnId,
+      direction: typedColumnId === "changePercent"
+        || typedColumnId === "return1M"
+        || typedColumnId === "return1Y"
+        || typedColumnId === "bar"
+        ? "desc"
+        : "asc",
+    };
+  }
+  if (current.direction === "desc") {
+    return { columnId: typedColumnId, direction: "asc" };
+  }
+  return DEFAULT_SORT_PREFERENCE;
+}

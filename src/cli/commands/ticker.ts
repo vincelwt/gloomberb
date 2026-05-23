@@ -31,7 +31,7 @@ import {
   formatTimestamp,
   formatWatchlistNames,
 } from "../helpers";
-import { NotesFiles } from "../../plugins/builtin/notes-files";
+import { NotesFiles } from "../../plugins/builtin/notes/files";
 import { isUsEquityTicker } from "../../utils/sec";
 
 const NEWS_ITEM_LIMIT = 5;

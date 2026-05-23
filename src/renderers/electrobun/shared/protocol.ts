@@ -18,7 +18,7 @@ export interface ElectrobunBackendInit {
   paneId?: string;
 }
 
-export interface BackendRequestPayload {
+interface BackendRequestPayload {
   method: string;
   payload?: unknown;
 }

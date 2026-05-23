@@ -1,4 +1,6 @@
 import type { ChartResolution, TimeRange } from "./chart-types";
+import { TIME_RANGES } from "./chart-types";
+import { isDateWindowWithinTimeRange } from "./chart-date-window";
 
 export type ManualChartResolution = Exclude<ChartResolution, "auto">;
 
@@ -7,7 +9,7 @@ export interface ChartResolutionSupport {
   maxRange: TimeRange;
 }
 
-export const TIME_RANGE_ORDER: TimeRange[] = ["1D", "1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"];
+export const TIME_RANGE_ORDER: TimeRange[] = [...TIME_RANGES];
 
 const CHART_RESOLUTION_ORDER: ChartResolution[] = [
   "auto",
@@ -306,13 +308,6 @@ export function getBestSupportedResolutionForPreset(
   return supportedResolutions[supportedResolutions.length - 1] ?? null;
 }
 
-export function getTimeRangeForDateWindow(
-  window: { start: Date | null; end: Date | null } | null,
-): TimeRange {
-  if (!window?.start || !window.end) return "ALL";
-  return TIME_RANGE_ORDER.find((candidate) => isDateWindowWithinTimeRange(window.start!, window.end!, candidate)) ?? "ALL";
-}
-
 export function getBestSupportedResolutionForVisibleWindow(
   window: { start: Date | null; end: Date | null } | null,
   support: readonly ChartResolutionSupport[] | ReadonlyMap<ManualChartResolution, TimeRange>,
@@ -366,40 +361,4 @@ export function getNextFallbackResolution(
 export function getCompatibleBufferRange(presetRange: TimeRange, maxRange: TimeRange | null): TimeRange {
   const preloadRange = getPresetBufferRange(presetRange);
   return maxRange ? clampTimeRangeToMaxRange(preloadRange, maxRange) : preloadRange;
-}
-
-export function subtractTimeRange(endDate: Date, range: TimeRange): Date {
-  const startDate = new Date(endDate);
-  switch (range) {
-    case "1D":
-      startDate.setDate(startDate.getDate() - 1);
-      break;
-    case "1W":
-      startDate.setDate(startDate.getDate() - 7);
-      break;
-    case "1M":
-      startDate.setMonth(startDate.getMonth() - 1);
-      break;
-    case "3M":
-      startDate.setMonth(startDate.getMonth() - 3);
-      break;
-    case "6M":
-      startDate.setMonth(startDate.getMonth() - 6);
-      break;
-    case "1Y":
-      startDate.setFullYear(startDate.getFullYear() - 1);
-      break;
-    case "5Y":
-      startDate.setFullYear(startDate.getFullYear() - 5);
-      break;
-    case "ALL":
-      startDate.setFullYear(startDate.getFullYear() - 50);
-      break;
-  }
-  return startDate;
-}
-
-export function isDateWindowWithinTimeRange(startDate: Date, endDate: Date, maxRange: TimeRange): boolean {
-  if (maxRange === "ALL") return true;
-  return startDate.getTime() >= subtractTimeRange(endDate, maxRange).getTime();
 }

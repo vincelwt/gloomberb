@@ -103,8 +103,10 @@ describe("DesktopContextMenuActionScope", () => {
     );
 
     scope.bind("request-3", new Map([["item", () => { runCount += 1; }]]));
-    listener?.({ requestId: "request-3", itemId: "item" });
-    listener?.({ requestId: "request-3", itemId: "item" });
+    const emitSelection = listener as ((message: DesktopContextMenuSelectMessage) => void) | null;
+    expect(emitSelection).toBeTruthy();
+    emitSelection?.({ requestId: "request-3", itemId: "item" });
+    emitSelection?.({ requestId: "request-3", itemId: "item" });
 
     expect(runCount).toBe(1);
     expect(disposeCount).toBe(1);
@@ -131,8 +133,12 @@ describe("DesktopContextMenuActionScope", () => {
     );
 
     scope.bind("request-4", new Map([["item", () => { runCount += 1; }]]));
-    timeoutCallback?.();
-    listener?.({ requestId: "request-4", itemId: "item" });
+    const expireSelection = timeoutCallback as (() => void) | null;
+    const emitSelection = listener as ((message: DesktopContextMenuSelectMessage) => void) | null;
+    expect(expireSelection).toBeTruthy();
+    expect(emitSelection).toBeTruthy();
+    expireSelection?.();
+    emitSelection?.({ requestId: "request-4", itemId: "item" });
 
     expect(disposeCount).toBe(1);
     expect(runCount).toBe(0);

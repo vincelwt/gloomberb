@@ -86,7 +86,7 @@ export interface Fundamentals {
   sharesOutstanding?: number;
 }
 
-export type HolderOwnerType = "institution" | "fund" | "direct" | "insider";
+type HolderOwnerType = "institution" | "fund" | "direct" | "insider";
 
 export interface HolderRecord {
   providerId?: string;
@@ -100,7 +100,7 @@ export interface HolderRecord {
   changePercent?: number;
 }
 
-export interface HolderSummary {
+interface HolderSummary {
   insidersPercentHeld?: number;
   institutionsPercentHeld?: number;
   institutionsFloatPercentHeld?: number;
@@ -118,7 +118,7 @@ export interface HolderData {
   holders: HolderRecord[];
 }
 
-export interface AnalystPriceTarget {
+interface AnalystPriceTarget {
   high?: number;
   median?: number;
   low?: number;
@@ -127,7 +127,7 @@ export interface AnalystPriceTarget {
   currency?: string;
 }
 
-export interface AnalystRecommendationTrend {
+interface AnalystRecommendationTrend {
   period: string;
   strongBuy?: number;
   buy?: number;

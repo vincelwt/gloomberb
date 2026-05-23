@@ -4,13 +4,19 @@ import { Box, ScrollBox, Text, useUiHost } from "../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import { colors, hoverBg } from "../../theme/colors";
 
-export interface TabItem {
+type TabPointerEvent = {
+  button?: number;
+  preventDefault: () => void;
+  stopPropagation?: () => void;
+};
+
+interface TabItem {
   label: string;
   value: string;
   disabled?: boolean;
   onClose?: (value: string) => void;
   onDoubleClick?: (value: string) => void;
-  onContextMenu?: (value: string, event: any) => void;
+  onContextMenu?: (value: string, event: TabPointerEvent) => void;
 }
 
 export interface TabsProps {
@@ -246,8 +252,8 @@ function OpenTuiTabs({
               onMouseOver={startHover}
               onMouseMove={startHover}
               onMouseOut={endHover}
-              onMouseDown={tab.disabled ? undefined : (event) => {
-                if ((event as any)?.button === 2 && tab.onContextMenu) {
+              onMouseDown={tab.disabled ? undefined : (event: TabPointerEvent) => {
+                if (event.button === 2 && tab.onContextMenu) {
                   event.preventDefault?.();
                   event.stopPropagation?.();
                   tab.onContextMenu(tab.value, event);
@@ -286,7 +292,7 @@ function OpenTuiTabs({
             backgroundColor={hoveredValue === "__add__" ? palette.hoverBg : undefined}
             onMouseMove={() => setHoveredValue((current) => (current === "__add__" ? current : "__add__"))}
             onMouseOut={() => setHoveredValue((current) => (current === "__add__" ? null : current))}
-            onMouseDown={(event) => {
+            onMouseDown={(event: TabPointerEvent) => {
               event.preventDefault();
               onAdd();
             }}

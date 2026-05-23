@@ -7,7 +7,7 @@ import { canonicalExchange, normalizeSymbol } from "../../utils/exchanges";
 export const APP_SESSION_SCHEMA_VERSION = 1;
 export const APP_SESSION_ID = "app";
 
-export interface HydrationTarget {
+interface HydrationTarget {
   symbol: string;
   exchange?: string;
   brokerId?: string;

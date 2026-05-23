@@ -1,11 +1,11 @@
 import { tokenizeInlineContent } from "./inline-content-tokenizer";
 
-export interface InlineTickerTextToken {
+interface InlineTickerTextToken {
   kind: "text";
   value: string;
 }
 
-export interface InlineTickerSymbolToken {
+interface InlineTickerSymbolToken {
   kind: "ticker";
   value: string;
   symbol: string;

@@ -1,7 +1,7 @@
 import type { ContextMenuActionItem, ContextMenuItem, ContextMenuRoleItem } from "../../../types/context-menu";
 import { ELECTROBUN_CONTEXT_MENU_ACTION } from "../shared/protocol";
 
-export type DesktopContextMenuItem =
+type DesktopContextMenuItem =
   | { type: "divider" }
   | {
     type?: "normal";

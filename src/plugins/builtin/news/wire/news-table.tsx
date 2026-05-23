@@ -1,0 +1,270 @@
+import { useCallback, useEffect, useMemo, type ReactNode } from "react";
+import { TextAttributes } from "../../../../ui";
+import {
+  DataTableStackView,
+  TickerBadgeList,
+  activeStackIndex,
+  sortStackItems,
+  type DataTableCell,
+  type DataTableColumn,
+  type StackSortPreference,
+} from "../../../../components";
+import type { MarketNewsItem } from "../../../../types/news-source";
+import { colors } from "../../../../theme/colors";
+import { collectNewsDisplayTickers } from "../../../../news/ticker-symbols";
+import { formatRelativeTime } from "../../../../utils/datetime-format";
+
+export type NewsColumnId = "rank" | "time" | "source" | "title" | "tickers" | "categories" | "importance";
+
+export type NewsSortPreference = StackSortPreference<NewsColumnId>;
+
+type NewsTableColumn = DataTableColumn & { id: NewsColumnId };
+
+interface NewsArticleStackBaseProps {
+  articles: MarketNewsItem[];
+  focused: boolean;
+  width: number;
+  readArticleIds?: ReadonlySet<string>;
+  selectedArticleId: string | null;
+  setSelectedArticleId: (articleId: string | null) => void;
+  sortPreference: NewsSortPreference;
+  setSortPreference: (preference: NewsSortPreference) => void;
+  onOpenArticle: (article: MarketNewsItem) => void;
+  onArticleRead?: (articleId: string) => void;
+  columns: NewsColumnId[];
+  emptyContent?: ReactNode;
+  emptyStateTitle: string;
+  emptyStateHint?: string;
+  titleForArticle?: (article: MarketNewsItem) => string;
+}
+
+function compareText(a: string, b: string): number {
+  return a.localeCompare(b, "en-US", { sensitivity: "base" });
+}
+
+function compareArticle(a: MarketNewsItem, b: MarketNewsItem, columnId: NewsColumnId): number {
+  switch (columnId) {
+    case "rank":
+    case "importance":
+      return a.importance - b.importance;
+    case "time":
+      return a.publishedAt.getTime() - b.publishedAt.getTime();
+    case "source":
+      return compareText(a.source, b.source);
+    case "title":
+      return compareText(a.title, b.title);
+    case "tickers":
+      return compareText(
+        collectNewsDisplayTickers(a.tickers).join(" "),
+        collectNewsDisplayTickers(b.tickers).join(" "),
+      );
+    case "categories":
+      return compareText(a.categories.join(" "), b.categories.join(" "));
+  }
+}
+
+function sortNewsArticles(
+  articles: MarketNewsItem[],
+  preference: NewsSortPreference,
+): MarketNewsItem[] {
+  return sortStackItems(
+    articles,
+    preference,
+    compareArticle,
+    (a, b) => b.publishedAt.getTime() - a.publishedAt.getTime(),
+  );
+}
+
+function nextSortPreference(current: NewsSortPreference, columnId: NewsColumnId): NewsSortPreference {
+  if (current.columnId === columnId) {
+    return {
+      columnId,
+      direction: current.direction === "asc" ? "desc" : "asc",
+    };
+  }
+  return {
+    columnId,
+    direction: columnId === "title" || columnId === "source" || columnId === "categories" ? "asc" : "desc",
+  };
+}
+
+function buildColumns(width: number, columnIds: NewsColumnId[]): NewsTableColumn[] {
+  const fixedWidths: Record<Exclude<NewsColumnId, "title">, number> = {
+    rank: 4,
+    time: 4,
+    source: 10,
+    tickers: 24,
+    categories: 10,
+    importance: 5,
+  };
+  const labels: Record<NewsColumnId, string> = {
+    rank: "#",
+    time: "Time",
+    source: "Source",
+    title: "Headline",
+    tickers: "Tickers",
+    categories: "Category",
+    importance: "Score",
+  };
+
+  const fixedTotal = columnIds
+    .filter((id) => id !== "title")
+    .reduce((sum, id) => sum + fixedWidths[id as Exclude<NewsColumnId, "title">] + 1, 0);
+  const tablePadding = 2;
+  const titleWidth = Math.max(16, width - fixedTotal - tablePadding - 1);
+
+  return columnIds.map((id) => ({
+    id,
+    label: labels[id],
+    width: id === "title" ? titleWidth : fixedWidths[id],
+    align: id === "rank" || id === "importance" ? "right" : "left",
+    flexGrow: id === "title" ? 1 : undefined,
+  }));
+}
+
+interface NewsArticleStackViewProps extends NewsArticleStackBaseProps {
+  detailOpen: boolean;
+  onBack: () => void;
+  detailContent: ReactNode;
+  detailTitle?: string;
+  rootBefore?: ReactNode;
+  rootHeight?: number;
+  onRootKeyDown?: (event: {
+    name?: string;
+    preventDefault?: () => void;
+    stopPropagation?: () => void;
+  }) => boolean | void;
+}
+
+export function NewsArticleStackView({
+  articles,
+  focused,
+  width,
+  readArticleIds,
+  rootHeight,
+  selectedArticleId,
+  setSelectedArticleId,
+  sortPreference,
+  setSortPreference,
+  onOpenArticle,
+  onArticleRead,
+  detailOpen,
+  onBack,
+  detailContent,
+  detailTitle,
+  rootBefore,
+  onRootKeyDown,
+  columns: columnIds,
+  emptyContent,
+  emptyStateTitle,
+  emptyStateHint,
+  titleForArticle,
+}: NewsArticleStackViewProps) {
+  const sortedArticles = useMemo(
+    () => sortNewsArticles(articles, sortPreference),
+    [articles, sortPreference],
+  );
+  const selectedIdx = sortedArticles.findIndex((article) => article.id === selectedArticleId);
+  const activeIdx = activeStackIndex(sortedArticles.length, selectedIdx);
+  const columns = useMemo(() => buildColumns(width, columnIds), [columnIds, width]);
+
+  const selectIndex = useCallback((index: number) => {
+    setSelectedArticleId(sortedArticles[index]?.id ?? null);
+  }, [setSelectedArticleId, sortedArticles]);
+
+  const openArticle = useCallback((article: MarketNewsItem) => {
+    onArticleRead?.(article.id);
+    onOpenArticle(article);
+  }, [onArticleRead, onOpenArticle]);
+
+  const openIndex = useCallback((index: number) => {
+    const article = sortedArticles[index];
+    if (article) openArticle(article);
+  }, [openArticle, sortedArticles]);
+
+  useEffect(() => {
+    if (sortedArticles.length === 0) {
+      if (selectedArticleId !== null) setSelectedArticleId(null);
+      return;
+    }
+    if (selectedArticleId === null || selectedIdx < 0) {
+      setSelectedArticleId(sortedArticles[0]!.id);
+    }
+  }, [selectedArticleId, selectedIdx, setSelectedArticleId, sortedArticles]);
+
+  const renderCell = useCallback((
+    item: MarketNewsItem,
+    column: NewsTableColumn,
+    index: number,
+    rowState: { selected: boolean },
+  ): DataTableCell => {
+    const selectedColor = rowState.selected ? colors.selectedText : undefined;
+    switch (column.id) {
+      case "rank":
+        return { text: String(index + 1), color: selectedColor ?? colors.textDim };
+      case "time":
+        return { text: formatRelativeTime(item.publishedAt), color: selectedColor ?? colors.textDim };
+      case "source":
+        return { text: item.source, color: selectedColor ?? colors.textMuted };
+      case "title":
+        return {
+          text: titleForArticle?.(item) ?? item.title,
+          color: selectedColor ?? colors.text,
+          attributes: readArticleIds?.has(item.id)
+            ? TextAttributes.NONE
+            : TextAttributes.BOLD,
+        };
+      case "tickers": {
+        const tickers = collectNewsDisplayTickers(item.tickers);
+        return {
+          text: tickers.join(" "),
+          content: (
+            <TickerBadgeList
+              symbols={tickers}
+              width={column.width}
+              fallbackColor={selectedColor ?? colors.textBright}
+            />
+          ),
+          color: selectedColor ?? colors.textBright,
+        };
+      }
+      case "categories":
+        return { text: item.categories[0] ?? "—", color: selectedColor ?? colors.textDim };
+      case "importance":
+        return {
+          text: String(item.importance),
+          color: selectedColor ?? (item.importance >= 80 ? colors.positive : colors.textDim),
+        };
+    }
+  }, [readArticleIds, titleForArticle]);
+
+  return (
+    <DataTableStackView<MarketNewsItem, NewsTableColumn>
+      focused={focused}
+      detailOpen={detailOpen}
+      onBack={onBack}
+      detailContent={detailContent}
+      detailTitle={detailTitle}
+      selectedIndex={activeIdx}
+      onSelectIndex={selectIndex}
+      onActivateIndex={openIndex}
+      rootBefore={rootBefore}
+      rootHeight={rootHeight}
+      onRootKeyDown={onRootKeyDown}
+      columns={columns}
+      items={sortedArticles}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={(columnId) => setSortPreference(nextSortPreference(sortPreference, columnId as NewsColumnId))}
+      getItemKey={(item) => item.id}
+      isSelected={(item, index) => item.id === selectedArticleId || (selectedArticleId === null && index === 0)}
+      onSelect={(article) => setSelectedArticleId(article.id)}
+      onActivate={openArticle}
+      renderCell={renderCell}
+      emptyContent={emptyContent}
+      emptyStateTitle={emptyStateTitle}
+      emptyStateHint={emptyStateHint}
+      showHorizontalScrollbar={false}
+    />
+  );
+}

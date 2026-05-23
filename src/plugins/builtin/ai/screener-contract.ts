@@ -1,7 +1,7 @@
 import type { AiProvider } from "./providers";
-import { truncateWithEllipsis } from "./utils";
+import { truncateWithEllipsis } from "../../../utils/text-wrap";
 
-export interface ScreenerCandidate {
+interface ScreenerCandidate {
   symbol: string;
   exchange: string;
   reason: string;

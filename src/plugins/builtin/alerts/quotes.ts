@@ -1,0 +1,57 @@
+import type { DataProvider } from "../../../types/data-provider";
+import type { Quote } from "../../../types/financials";
+import type { AlertRule } from "./types";
+
+export function normalizeAlertSymbol(value: string | null | undefined): string {
+  return value?.trim().toUpperCase() ?? "";
+}
+
+export function createQuoteErrorMessage(
+  symbol: string,
+  error?: unknown,
+): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return `No quote found for "${symbol}".`;
+}
+
+export async function resolveAlertQuote(
+  marketData: Pick<DataProvider, "getQuote">,
+  symbol: string,
+): Promise<Quote> {
+  const quote = await marketData.getQuote(symbol, "");
+  if (!quote || typeof quote.price !== "number" || !Number.isFinite(quote.price)) {
+    throw new Error(`No quote found for "${symbol}".`);
+  }
+  return quote;
+}
+
+export function quoteAlertFields(
+  quote: Quote,
+  checkedAt = Date.now(),
+): Pick<
+  AlertRule,
+  | "lastCheckedPrice"
+  | "lastCheckedAt"
+  | "lastQuoteUpdatedAt"
+  | "lastQuoteSource"
+  | "lastQuoteProviderId"
+> & { lastCheckError?: undefined } {
+  return {
+    lastCheckedPrice: quote.price,
+    lastCheckedAt: checkedAt,
+    lastQuoteUpdatedAt: quote.lastUpdated,
+    lastQuoteSource: quote.dataSource,
+    lastQuoteProviderId: quote.providerId,
+    lastCheckError: undefined,
+  };
+}
+
+export function quoteErrorAlertFields(
+  error: string,
+  checkedAt = Date.now(),
+): Pick<AlertRule, "lastCheckedAt" | "lastCheckError"> {
+  return {
+    lastCheckedAt: checkedAt,
+    lastCheckError: error,
+  };
+}

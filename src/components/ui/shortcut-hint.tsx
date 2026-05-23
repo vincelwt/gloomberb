@@ -1,7 +1,7 @@
 import { StyledText, Text, TextAttributes } from "../../ui";
 import { colors } from "../../theme/colors";
 
-export type ShortcutHintMouseEvent = {
+type ShortcutHintMouseEvent = {
   stopPropagation?: () => void;
   preventDefault?: () => void;
 };

@@ -1,400 +1,110 @@
-import type { CachedFinancialsTarget, DataProvider, QuoteSubscriptionTarget, SecFilingItem } from "../types/data-provider";
+import type { DataProvider, SecFilingItem } from "../types/data-provider";
 import type { NewsArticle } from "../news/types";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { ChartRequest, InstrumentRef, NewsRequest, OptionsRequest, SecFilingsRequest } from "./request-types";
 import { QueryStore } from "./query-store";
-import type { ProviderAttempt, ProviderReasonCode, QueryEntry } from "./result-types";
+import type { QueryEntry } from "./result-types";
 import {
   buildArticleSummaryKey,
   buildChartKey,
   buildFxKey,
-  buildInstrumentKey,
   buildTickerFinancialsSnapshot,
   buildNewsKey,
   buildOptionsKey,
-  buildProfileKey,
-  buildFundamentalsKey,
   buildQuoteKey,
   buildSecContentKey,
   buildSecFilingsKey,
   buildSnapshotKey,
-  buildStatementsKey,
   resolveEntryData,
   toMarketDataContext,
 } from "./selectors";
-import { traceMarketData } from "./trace";
-import { isPriceHistoryStaleForCurrentWindow, normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
-import { hasFreshQuoteForCurrentSession, isQuoteStaleForCurrentSession } from "../utils/quote-freshness";
-import { isIntradayResolution, TIME_RANGE_ORDER } from "../components/chart/chart-resolution";
-import { measurePerf } from "../utils/perf-marks";
-
-const EMPTY_MESSAGE = "No data available";
-const EXPECTED_EMPTY = /no data|not found|delisted|unavailable|unsupported/i;
-const TIME_RANGE_INDEX = new Map(TIME_RANGE_ORDER.map((range, index) => [range, index]));
-const SNAPSHOT_CACHE_TTL_MS = 5 * 60_000;
-const CHART_CACHE_TTL_MS = 10 * 60_000;
-const NEWS_CACHE_TTL_MS = 2 * 60_000;
-const OPTIONS_CACHE_TTL_MS = 10 * 60_000;
-const SEC_FILINGS_CACHE_TTL_MS = 10 * 60_000;
-const SEC_CONTENT_CACHE_TTL_MS = 24 * 60 * 60_000;
-const ARTICLE_SUMMARY_CACHE_TTL_MS = 24 * 60 * 60_000;
-const FX_CACHE_TTL_MS = 30 * 60_000;
-const QUOTE_SUBSCRIPTION_REMOVE_GRACE_MS = 250;
-
-function createBaselineChartRequest(instrument: InstrumentRef): ChartRequest {
-  return {
-    instrument,
-    bufferRange: "5Y",
-    granularity: "range",
-  };
-}
-
-function getChartGranularity(request: ChartRequest): NonNullable<ChartRequest["granularity"]> {
-  return request.granularity ?? "range";
-}
-
-function getTimeRangeIndex(range: ChartRequest["bufferRange"]): number {
-  return TIME_RANGE_INDEX.get(range) ?? 0;
-}
-
-function isCurrentHistoryWindow(endDate?: Date): boolean {
-  if (!endDate) return true;
-  const endMs = endDate.getTime();
-  return Number.isFinite(endMs) && Date.now() - endMs < 60 * 60_000;
-}
-
-function isIntradayChartRequest(request: ChartRequest): boolean {
-  const granularity = getChartGranularity(request);
-  if (granularity === "detail") return isCurrentHistoryWindow(request.endDate);
-  if (granularity === "resolution") {
-    return request.resolution ? isIntradayResolution(request.resolution) : false;
-  }
-  return request.bufferRange === "1D" || request.bufferRange === "1W" || request.bufferRange === "1M" || request.bufferRange === "3M";
-}
-
-function normalizeFreshChartData(points: PricePoint[] | null | undefined, request: ChartRequest): PricePoint[] {
-  const normalized = normalizePriceHistory(points ?? []);
-  if (
-    isIntradayChartRequest(request)
-    && isPriceHistoryStaleForCurrentWindow(normalized, Date.now(), { exchange: request.instrument.exchange })
-  ) {
-    return [];
-  }
-  return normalized;
-}
-
-function isSeedableChartRequest(
-  target: ChartRequest,
-  candidate: ChartRequest,
-): boolean {
-  const targetGranularity = getChartGranularity(target);
-  const candidateGranularity = getChartGranularity(candidate);
-  if (targetGranularity !== candidateGranularity) return false;
-  if (targetGranularity === "detail") return false;
-  if (targetGranularity === "resolution" && target.resolution !== candidate.resolution) return false;
-  if (buildInstrumentKey(target.instrument) !== buildInstrumentKey(candidate.instrument)) return false;
-  return getTimeRangeIndex(candidate.bufferRange) <= getTimeRangeIndex(target.bufferRange);
-}
-
-function classifyError(error: unknown): { reasonCode: ProviderReasonCode; message: string } {
-  const message = error instanceof Error ? error.message : String(error ?? "");
-  if (/timeout/i.test(message)) return { reasonCode: "TIMEOUT", message };
-  if (/unsupported/i.test(message)) return { reasonCode: "UNSUPPORTED_RANGE", message };
-  if (/mapping|symbol/i.test(message)) return { reasonCode: "BAD_MAPPING", message };
-  if (/not found|no data|unavailable|delisted/i.test(message)) return { reasonCode: "NOT_FOUND", message };
-  return { reasonCode: "UPSTREAM_ERROR", message };
-}
-
-function hasFreshEntryData<T>(entry: QueryEntry<T>, ttlMs: number, now = Date.now()): boolean {
-  if (resolveEntryData(entry) == null) return false;
-  return entry.fetchedAt != null && now - entry.fetchedAt < ttlMs;
-}
-
-function hasFreshReadyEntry<T>(entry: QueryEntry<T>, ttlMs: number, now = Date.now()): boolean {
-  return entry.phase === "ready" && entry.fetchedAt != null && now - entry.fetchedAt < ttlMs;
-}
-
-function hasFreshQuoteEntry(
-  entry: QueryEntry<Quote>,
-  instrument: InstrumentRef,
-  ttlMs: number,
-  now = Date.now(),
-): boolean {
-  const quote = resolveEntryData(entry);
-  if (!quote || entry.fetchedAt == null || now - entry.fetchedAt >= ttlMs) return false;
-  const quoteForFreshness = instrument.exchange && !quote.listingExchangeName && !quote.exchangeName
-    ? { ...quote, listingExchangeName: instrument.exchange }
-    : quote;
-  return !isQuoteStaleForCurrentSession(quoteForFreshness, now);
-}
-
-function createAttempt(
-  providerId: string,
-  startedAt: number,
-  status: ProviderAttempt["status"],
-  reasonCode?: ProviderReasonCode,
-  message?: string,
-): ProviderAttempt {
-  const finishedAt = Date.now();
-  return {
-    providerId,
-    status,
-    startedAt,
-    finishedAt,
-    latencyMs: Math.max(0, finishedAt - startedAt),
-    reasonCode,
-    message,
-  };
-}
-
-function loadingEntry<T>(current: QueryEntry<T>): QueryEntry<T> {
-  return {
-    ...current,
-    phase: current.lastGoodData || current.data ? "refreshing" : "loading",
-    error: null,
-    attempts: [],
-  };
-}
-
-function readyEntry<T>(
-  current: QueryEntry<T>,
-  data: T | null,
-  source: string,
-  attempts: ProviderAttempt[],
-  options: { keepLastGoodOnEmpty?: boolean } = {},
-): QueryEntry<T> {
-  const resolvedData = data ?? (options.keepLastGoodOnEmpty ? current.lastGoodData : null);
-  return {
-    phase: "ready",
-    data,
-    lastGoodData: resolvedData,
-    source,
-    fetchedAt: Date.now(),
-    staleAt: null,
-    error: data == null ? { reasonCode: "NO_DATA", message: EMPTY_MESSAGE } : null,
-    attempts,
-  };
-}
-
-function readyQuoteEntry(
-  current: QueryEntry<Quote>,
-  quote: Quote,
-  source: string,
-  attempts: ProviderAttempt[],
-): QueryEntry<Quote> {
-  if (isQuoteStaleForCurrentSession(quote)) {
-    const keepFreshQuote = hasFreshQuoteForCurrentSession([current.data, current.lastGoodData]);
-    return readyEntry(current, null, current.source ?? source, attempts, { keepLastGoodOnEmpty: keepFreshQuote });
-  }
-  return readyEntry(current, quote, source, attempts, { keepLastGoodOnEmpty: true });
-}
-
-const STREAM_QUOTE_FIELDS: Array<keyof Quote> = [
-  "symbol",
-  "providerId",
-  "price",
-  "currency",
-  "change",
-  "changePercent",
-  "previousClose",
-  "high52w",
-  "low52w",
-  "marketCap",
-  "volume",
-  "name",
-  "exchangeName",
-  "fullExchangeName",
-  "listingExchangeName",
-  "listingExchangeFullName",
-  "routingExchangeName",
-  "routingExchangeFullName",
-  "marketState",
-  "sessionConfidence",
-  "preMarketPrice",
-  "preMarketChange",
-  "preMarketChangePercent",
-  "postMarketPrice",
-  "postMarketChange",
-  "postMarketChangePercent",
-  "bid",
-  "ask",
-  "bidSize",
-  "askSize",
-  "open",
-  "high",
-  "low",
-  "mark",
-  "dataSource",
-];
-
-function areStreamQuotesEquivalent(current: Quote | null | undefined, next: Quote): boolean {
-  if (!current) return false;
-  for (const field of STREAM_QUOTE_FIELDS) {
-    if (current[field] !== next[field]) return false;
-  }
-  return current.lastUpdated === next.lastUpdated
-    && JSON.stringify(current.provenance ?? null) === JSON.stringify(next.provenance ?? null);
-}
-
-function hasCachedSnapshotData(financials: TickerFinancials): boolean {
-  return !!financials.profile
-    || Object.keys(financials.fundamentals ?? {}).length > 0
-    || financials.annualStatements.length > 0
-    || financials.quarterlyStatements.length > 0;
-}
-
-type QuoteSubscriptionPriority = Pick<QuoteSubscriptionTarget, "surface" | "visible" | "selected" | "weight">;
-
-interface QuoteSubscriptionEntry {
-  target: QuoteSubscriptionTarget;
-  targets: Map<number, QuoteSubscriptionTarget>;
-  removeTimer: ReturnType<typeof setTimeout> | null;
-}
-
-function quoteSubscriptionPriorityScore(target: QuoteSubscriptionTarget): number {
-  let score = Number.isFinite(target.weight) ? Math.max(0, target.weight ?? 0) : 0;
-  if (target.selected) score += 10_000;
-  if (target.visible) score += 5_000;
-  if (target.surface === "detail" || target.surface === "monitor") score += 4_000;
-  if (target.surface === "portfolio" || target.surface === "watchlist") score += 1_000;
-  if (target.surface === "screener") score += 700;
-  if (target.surface === "inline") score += 200;
-  return score;
-}
-
-function mergeQuoteSubscriptionTargets(targets: Iterable<QuoteSubscriptionTarget>): QuoteSubscriptionTarget | null {
-  let selectedTarget: QuoteSubscriptionTarget | null = null;
-  let selectedScore = -1;
-  let visible = false;
-  let selected = false;
-  let weight = 0;
-
-  for (const target of targets) {
-    const score = quoteSubscriptionPriorityScore(target);
-    if (!selectedTarget || score > selectedScore) {
-      selectedTarget = target;
-      selectedScore = score;
-    }
-    visible ||= target.visible === true;
-    selected ||= target.selected === true;
-    weight = Math.max(weight, Number.isFinite(target.weight) ? Math.max(0, target.weight ?? 0) : 0);
-  }
-
-  return selectedTarget
-    ? {
-      ...selectedTarget,
-      visible,
-      selected,
-      weight,
-    }
-    : null;
-}
-
-function errorEntry<T>(current: QueryEntry<T>, attempt: ProviderAttempt): QueryEntry<T> {
-  return {
-    ...current,
-    phase: current.lastGoodData ? "ready" : "error",
-    data: current.lastGoodData,
-    error: {
-      reasonCode: attempt.reasonCode ?? "UPSTREAM_ERROR",
-      message: attempt.message ?? EMPTY_MESSAGE,
-    },
-    attempts: [attempt],
-  };
-}
+import { normalizePriceHistory } from "../utils/price-history";
+import {
+  createBaselineChartRequest,
+  createChartLoadingEntry,
+  normalizeFreshChartData,
+} from "./coordinator-chart";
+import { MarketDataCoordinatorEvents } from "./coordinator-events";
+import {
+  CHART_CACHE_TTL_MS,
+  EXPECTED_EMPTY,
+  classifyError,
+  createAttempt,
+  errorEntry,
+  hasFreshEntryData,
+  readyEntry,
+  readyQuoteEntry,
+} from "./coordinator-entries";
+import {
+  loadArticleSummaryEntry,
+  loadFxRateEntry,
+  loadNewsEntry,
+  loadOptionsEntry,
+  loadSecFilingContentEntry,
+  loadSecFilingsEntry,
+} from "./coordinator-auxiliary";
+import {
+  loadFinancialsSnapshotBatch,
+  loadFinancialsSnapshotEntry,
+  primeFinancialsCache,
+  type FinancialCacheStores,
+} from "./coordinator-financials";
+import {
+  areStreamQuotesEquivalent,
+  loadQuoteBatchEntries,
+  loadQuoteEntry,
+  QuoteSubscriptionManager,
+  type QuoteSubscriptionPriority,
+} from "./coordinator-quotes";
 
 export class MarketDataCoordinator {
-  private version = 0;
-  private pendingVersionBump = false;
-  private pendingChangedKeys = new Set<string>();
-  private readonly listeners = new Set<() => void>();
-  private readonly keyListeners = new Map<string, Set<() => void>>();
-  private readonly keyVersions = new Map<string, number>();
+  private readonly events = new MarketDataCoordinatorEvents();
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly chartRequests = new Map<string, ChartRequest>();
-  private readonly quoteSubscriptions = new Map<string, QuoteSubscriptionEntry>();
-  private nextQuoteSubscriptionId = 1;
-  private quoteSubscriptionDispose: (() => void) | null = null;
-  private quoteSubscriptionSignature = "";
-  private pendingQuoteSubscriptionKeys = new Set<string>();
+  private readonly quoteSubscriptionManager: QuoteSubscriptionManager;
 
-  private readonly quoteStore = new QueryStore<Quote>((key) => this.bump(key));
-  private readonly snapshotStore = new QueryStore<TickerFinancials>((key) => this.bump(key));
-  private readonly profileStore = new QueryStore<TickerFinancials["profile"]>((key) => this.bump(key));
-  private readonly fundamentalsStore = new QueryStore<TickerFinancials["fundamentals"]>((key) => this.bump(key));
-  private readonly statementsStore = new QueryStore<Pick<TickerFinancials, "annualStatements" | "quarterlyStatements">>((key) => this.bump(key));
-  private readonly chartStore = new QueryStore<PricePoint[]>((key) => this.bump(key));
-  private readonly newsStore = new QueryStore<NewsArticle[]>((key) => this.bump(key));
-  private readonly optionsStore = new QueryStore<OptionsChain>((key) => this.bump(key));
-  private readonly secFilingsStore = new QueryStore<SecFilingItem[]>((key) => this.bump(key));
-  private readonly secContentStore = new QueryStore<string | null>((key) => this.bump(key));
-  private readonly articleSummaryStore = new QueryStore<string | null>((key) => this.bump(key));
-  private readonly fxStore = new QueryStore<number>((key) => this.bump(key));
+  private readonly quoteStore = new QueryStore<Quote>((key) => this.events.bump(key));
+  private readonly snapshotStore = new QueryStore<TickerFinancials>((key) => this.events.bump(key));
+  private readonly profileStore = new QueryStore<TickerFinancials["profile"]>((key) => this.events.bump(key));
+  private readonly fundamentalsStore = new QueryStore<TickerFinancials["fundamentals"]>((key) => this.events.bump(key));
+  private readonly statementsStore = new QueryStore<Pick<TickerFinancials, "annualStatements" | "quarterlyStatements">>((key) => this.events.bump(key));
+  private readonly chartStore = new QueryStore<PricePoint[]>((key) => this.events.bump(key));
+  private readonly newsStore = new QueryStore<NewsArticle[]>((key) => this.events.bump(key));
+  private readonly optionsStore = new QueryStore<OptionsChain>((key) => this.events.bump(key));
+  private readonly secFilingsStore = new QueryStore<SecFilingItem[]>((key) => this.events.bump(key));
+  private readonly secContentStore = new QueryStore<string | null>((key) => this.events.bump(key));
+  private readonly articleSummaryStore = new QueryStore<string | null>((key) => this.events.bump(key));
+  private readonly fxStore = new QueryStore<number>((key) => this.events.bump(key));
+  private readonly financialCacheStores: FinancialCacheStores = {
+    quoteStore: this.quoteStore,
+    snapshotStore: this.snapshotStore,
+    profileStore: this.profileStore,
+    fundamentalsStore: this.fundamentalsStore,
+    statementsStore: this.statementsStore,
+    chartStore: this.chartStore,
+  };
 
-  constructor(private readonly dataProvider: DataProvider) {}
-
-  private bump(changeKey?: string): void {
-    if (changeKey) this.pendingChangedKeys.add(changeKey);
-    if (this.pendingVersionBump) return;
-    this.pendingVersionBump = true;
-    queueMicrotask(() => this.flushBump());
-  }
-
-  private flushBump(): void {
-    this.pendingVersionBump = false;
-    const changedKeys = this.pendingChangedKeys;
-    this.pendingChangedKeys = new Set();
-    measurePerf("market-data.bump", () => {
-      this.version += 1;
-      for (const key of changedKeys) {
-        this.keyVersions.set(key, (this.keyVersions.get(key) ?? 0) + 1);
-      }
-      const keyListeners = new Set<() => void>();
-      for (const key of changedKeys) {
-        for (const listener of this.keyListeners.get(key) ?? []) {
-          keyListeners.add(listener);
-        }
-      }
-
-      for (const listener of this.listeners) listener();
-      for (const listener of keyListeners) listener();
-    }, { changedKeyCount: changedKeys.size });
+  constructor(private readonly dataProvider: DataProvider) {
+    this.quoteSubscriptionManager = new QuoteSubscriptionManager(
+      dataProvider,
+      (instrument, quote) => this.applyStreamQuote(instrument, quote),
+    );
   }
 
   subscribe(listener: () => void): () => void {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
+    return this.events.subscribe(listener);
   }
 
   subscribeKeys(keys: readonly string[], listener: () => void): () => void {
-    const uniqueKeys = [...new Set(keys)];
-    for (const key of uniqueKeys) {
-      if (!this.keyListeners.has(key)) this.keyListeners.set(key, new Set());
-      this.keyListeners.get(key)!.add(listener);
-    }
-    return () => {
-      for (const key of uniqueKeys) {
-        const listeners = this.keyListeners.get(key);
-        listeners?.delete(listener);
-        if (listeners?.size === 0) {
-          this.keyListeners.delete(key);
-        }
-      }
-    };
+    return this.events.subscribeKeys(keys, listener);
   }
 
   getVersion(): number {
-    return this.version;
+    return this.events.getVersion();
   }
 
   getKeysVersion(keys: readonly string[]): number {
-    let version = 0;
-    for (const key of new Set(keys)) {
-      version += this.keyVersions.get(key) ?? 0;
-    }
-    return version;
+    return this.events.getKeysVersion(keys);
   }
 
   getQuoteEntry(instrument: InstrumentRef): QueryEntry<Quote> {
@@ -443,63 +153,7 @@ export class MarketDataCoordinator {
 
   primeCachedFinancials(entries: Array<{ instrument: InstrumentRef; financials: TickerFinancials }>): void {
     for (const { instrument, financials } of entries) {
-      const normalized = normalizeTickerFinancialsPriceHistory(financials);
-      const source = normalized.quote?.providerId ?? this.dataProvider.id;
-      const snapshotKey = buildSnapshotKey(instrument);
-      const quoteKey = buildQuoteKey(instrument);
-      const profileKey = buildProfileKey(instrument);
-      const fundamentalsKey = buildFundamentalsKey(instrument);
-      const statementsKey = buildStatementsKey(instrument);
-
-      if (hasCachedSnapshotData(normalized) && this.snapshotStore.get(snapshotKey).phase === "idle") {
-        this.snapshotStore.set(
-          snapshotKey,
-          readyEntry(this.snapshotStore.get(snapshotKey), normalized, source, [], { keepLastGoodOnEmpty: true }),
-        );
-      }
-      if (normalized.quote && this.quoteStore.get(quoteKey).phase === "idle") {
-        this.quoteStore.set(
-          quoteKey,
-          readyEntry(this.quoteStore.get(quoteKey), normalized.quote, normalized.quote.providerId ?? source, []),
-        );
-      }
-      if (this.profileStore.get(profileKey).phase === "idle") {
-        this.profileStore.set(
-          profileKey,
-          readyEntry(this.profileStore.get(profileKey), normalized.profile ?? null, source, [], { keepLastGoodOnEmpty: true }),
-        );
-      }
-      if (this.fundamentalsStore.get(fundamentalsKey).phase === "idle") {
-        this.fundamentalsStore.set(
-          fundamentalsKey,
-          readyEntry(this.fundamentalsStore.get(fundamentalsKey), normalized.fundamentals ?? null, source, [], { keepLastGoodOnEmpty: true }),
-        );
-      }
-      if (this.statementsStore.get(statementsKey).phase === "idle") {
-        this.statementsStore.set(
-          statementsKey,
-          readyEntry(
-            this.statementsStore.get(statementsKey),
-            {
-              annualStatements: normalized.annualStatements ?? [],
-              quarterlyStatements: normalized.quarterlyStatements ?? [],
-            },
-            source,
-            [],
-            { keepLastGoodOnEmpty: true },
-          ),
-        );
-      }
-      if (normalized.priceHistory.length > 0) {
-        const chartRequest = createBaselineChartRequest(instrument);
-        const chartKey = buildChartKey(chartRequest);
-        if (this.chartStore.get(chartKey).phase === "idle") {
-          this.chartStore.set(
-            chartKey,
-            readyEntry(this.chartStore.get(chartKey), normalized.priceHistory, source, [], { keepLastGoodOnEmpty: true }),
-          );
-        }
-      }
+      primeFinancialsCache(this.financialCacheStores, instrument, financials, this.dataProvider.id);
     }
   }
 
@@ -521,168 +175,16 @@ export class MarketDataCoordinator {
     return promise;
   }
 
-  private cachedFinancialsTargetFromInstrument(instrument: InstrumentRef): CachedFinancialsTarget {
-    return {
-      symbol: instrument.symbol,
-      exchange: instrument.exchange,
-      brokerId: instrument.brokerId,
-      brokerInstanceId: instrument.brokerInstanceId,
-      instrument: instrument.instrument ?? null,
-    };
-  }
-
-  private quoteTargetFromInstrument(
-    instrument: InstrumentRef,
-    priority: QuoteSubscriptionPriority = {},
-  ): QuoteSubscriptionTarget {
-    return {
-      symbol: instrument.symbol,
-      exchange: instrument.exchange ?? "",
-      context: toMarketDataContext(instrument),
-      ...priority,
-    };
-  }
-
-  private storeSnapshotData(
-    instrument: InstrumentRef,
-    data: TickerFinancials,
-    source: string,
-    attempts: ProviderAttempt[],
-  ): QueryEntry<TickerFinancials> {
-    const normalized = normalizeTickerFinancialsPriceHistory(data);
-    const snapshotKey = buildSnapshotKey(instrument);
-    const entry = this.snapshotStore.update(snapshotKey, (current) =>
-      readyEntry(current, normalized, source, attempts, { keepLastGoodOnEmpty: true })
-    );
-    if (normalized.quote) {
-      this.quoteStore.set(buildQuoteKey(instrument), readyEntry(this.getQuoteEntry(instrument), normalized.quote, normalized.quote.providerId ?? source, attempts));
-    }
-    this.profileStore.set(buildProfileKey(instrument), readyEntry(this.profileStore.get(buildProfileKey(instrument)), normalized.profile ?? null, source, attempts, { keepLastGoodOnEmpty: true }));
-    this.fundamentalsStore.set(buildFundamentalsKey(instrument), readyEntry(this.fundamentalsStore.get(buildFundamentalsKey(instrument)), normalized.fundamentals ?? null, source, attempts, { keepLastGoodOnEmpty: true }));
-    this.statementsStore.set(
-      buildStatementsKey(instrument),
-      readyEntry(
-        this.statementsStore.get(buildStatementsKey(instrument)),
-        {
-          annualStatements: normalized.annualStatements ?? [],
-          quarterlyStatements: normalized.quarterlyStatements ?? [],
-        },
-        source,
-        attempts,
-        { keepLastGoodOnEmpty: true },
-      ),
-    );
-    if ((normalized.priceHistory ?? []).length > 0) {
-      const chartRequest = createBaselineChartRequest(instrument);
-      this.chartStore.set(
-        buildChartKey(chartRequest),
-        readyEntry(this.getChartEntry(chartRequest), normalized.priceHistory, source, attempts, { keepLastGoodOnEmpty: true }),
-      );
-    }
-    return entry;
-  }
-
-  private findChartSeedEntry(
-    key: string,
-    request: ChartRequest,
-  ): { entry: QueryEntry<PricePoint[]>; data: PricePoint[]; score: number } | null {
-    let best: { entry: QueryEntry<PricePoint[]>; data: PricePoint[]; score: number } | null = null;
-    for (const [candidateKey, candidateRequest] of this.chartRequests) {
-      if (candidateKey === key) continue;
-      if (!isSeedableChartRequest(request, candidateRequest)) continue;
-      const entry = this.chartStore.get(candidateKey);
-      const data = resolveEntryData(entry);
-      if (!data?.length) continue;
-      const score = getTimeRangeIndex(candidateRequest.bufferRange);
-      if (!best || score > best.score) {
-        best = { entry, data, score };
-      }
-    }
-    return best;
-  }
-
-  private createChartLoadingEntry(
-    key: string,
-    request: ChartRequest,
-    current: QueryEntry<PricePoint[]>,
-  ): QueryEntry<PricePoint[]> {
-    const currentData = normalizeFreshChartData(resolveEntryData(current), request);
-    if (currentData.length) {
-      return loadingEntry({
-        ...current,
-        data: currentData,
-        lastGoodData: currentData,
-      });
-    }
-
-    const seed = this.findChartSeedEntry(key, request);
-    if (!seed) {
-      return loadingEntry({
-        ...current,
-        data: null,
-        lastGoodData: null,
-      });
-    }
-
-    const seedData = normalizeFreshChartData(seed.data, request);
-    if (!seedData.length) {
-      return loadingEntry({
-        ...current,
-        data: null,
-        lastGoodData: null,
-      });
-    }
-
-    return loadingEntry({
-      ...current,
-      data: seedData,
-      lastGoodData: seedData,
-      source: seed.entry.source,
-      fetchedAt: seed.entry.fetchedAt,
-      staleAt: seed.entry.staleAt,
-    });
-  }
-
   async loadSnapshot(
     instrument: InstrumentRef,
     options: { forceRefresh?: boolean } = {},
   ): Promise<QueryEntry<TickerFinancials>> {
-    const key = buildSnapshotKey(instrument);
-    const current = this.snapshotStore.get(key);
-    if (!options.forceRefresh && hasFreshEntryData(current, SNAPSHOT_CACHE_TTL_MS)) {
-      return current;
-    }
-    const flightKey = options.forceRefresh ? `${key}|refresh` : key;
-    return this.runSingleFlight(flightKey, async () => {
-      this.snapshotStore.update(key, loadingEntry);
-      const startedAt = Date.now();
-      traceMarketData("snapshot:start", { key, symbol: instrument.symbol, exchange: instrument.exchange ?? "" });
-      try {
-        const data = await this.dataProvider.getTickerFinancials(
-          instrument.symbol,
-          instrument.exchange ?? "",
-          {
-            ...toMarketDataContext(instrument),
-            cacheMode: options.forceRefresh ? "refresh" : "default",
-          },
-        );
-        const source = data.quote?.providerId ?? this.dataProvider.id;
-        const attempts = [createAttempt(source, startedAt, data ? "success" : "empty")];
-        const entry = this.storeSnapshotData(instrument, data, source, attempts);
-        traceMarketData("snapshot:ready", {
-          key,
-          symbol: instrument.symbol,
-          source,
-          priceHistory: data.priceHistory.length,
-        });
-        return entry;
-      } catch (error) {
-        const classified = classifyError(error);
-        const status = EXPECTED_EMPTY.test(classified.message) ? "empty" : "fatal_error";
-        const attempt = createAttempt(this.dataProvider.id, startedAt, status, classified.reasonCode, classified.message);
-        traceMarketData("snapshot:error", { key, symbol: instrument.symbol, ...classified });
-        return this.snapshotStore.update(key, (current) => errorEntry(current, attempt));
-      }
+    return loadFinancialsSnapshotEntry({
+      dataProvider: this.dataProvider,
+      instrument,
+      options,
+      runSingleFlight: (key, task) => this.runSingleFlight(key, task),
+      stores: this.financialCacheStores,
     });
   }
 
@@ -690,71 +192,25 @@ export class MarketDataCoordinator {
     instruments: InstrumentRef[],
     options: { forceRefresh?: boolean } = {},
   ): Promise<QueryEntry<TickerFinancials>[]> {
-    const uniqueInstruments = [...new Map(instruments.map((instrument) => [buildSnapshotKey(instrument), instrument] as const)).values()];
-    const results = new Map<string, QueryEntry<TickerFinancials>>();
-    const misses: InstrumentRef[] = [];
-
-    for (const instrument of uniqueInstruments) {
-      const key = buildSnapshotKey(instrument);
-      const current = this.snapshotStore.get(key);
-      if (!options.forceRefresh && hasFreshEntryData(current, SNAPSHOT_CACHE_TTL_MS)) {
-        results.set(key, current);
-      } else {
-        misses.push(instrument);
-      }
-    }
-
-    if (misses.length > 0 && this.dataProvider.getTickerFinancialsBatch) {
-      const batchResults = await this.dataProvider.getTickerFinancialsBatch(
-        misses.map((instrument) => this.cachedFinancialsTargetFromInstrument(instrument)),
-        { forceRefresh: options.forceRefresh },
-      );
-      batchResults.forEach((item, index) => {
-        const instrument = misses[index];
-        if (!instrument) return;
-        const key = buildSnapshotKey(instrument);
-        if (!item.financials) return;
-        const source = item.financials.quote?.providerId ?? this.dataProvider.id;
-        const attempts = [createAttempt(source, Date.now(), "success")];
-        results.set(key, this.storeSnapshotData(instrument, item.financials, source, attempts));
-      });
-    }
-
-    await Promise.all(misses.map(async (instrument) => {
-      const key = buildSnapshotKey(instrument);
-      if (results.has(key)) return;
-      results.set(key, await this.loadSnapshot(instrument, options));
-    }));
-
-    return instruments.map((instrument) => results.get(buildSnapshotKey(instrument)) ?? this.getSnapshotEntry(instrument));
+    return loadFinancialsSnapshotBatch({
+      dataProvider: this.dataProvider,
+      instruments,
+      options,
+      runSingleFlight: (key, task) => this.runSingleFlight(key, task),
+      stores: this.financialCacheStores,
+    });
   }
 
   async loadQuote(
     instrument: InstrumentRef,
     options: { forceRefresh?: boolean } = {},
   ): Promise<QueryEntry<Quote>> {
-    const key = buildQuoteKey(instrument);
-    const flightKey = options.forceRefresh ? `${key}|refresh` : key;
-    return this.runSingleFlight(flightKey, async () => {
-      this.quoteStore.update(key, loadingEntry);
-      const startedAt = Date.now();
-      try {
-        const quote = await this.dataProvider.getQuote(
-          instrument.symbol,
-          instrument.exchange ?? "",
-          {
-            ...toMarketDataContext(instrument),
-            cacheMode: options.forceRefresh ? "refresh" : "default",
-          },
-        );
-        const source = quote.providerId ?? this.dataProvider.id;
-        const attempts = [createAttempt(source, startedAt, "success")];
-        return this.quoteStore.update(key, (current) => readyQuoteEntry(current, quote, source, attempts));
-      } catch (error) {
-        const classified = classifyError(error);
-        const attempt = createAttempt(this.dataProvider.id, startedAt, EXPECTED_EMPTY.test(classified.message) ? "empty" : "fatal_error", classified.reasonCode, classified.message);
-        return this.quoteStore.update(key, (current) => errorEntry(current, attempt));
-      }
+    return loadQuoteEntry({
+      dataProvider: this.dataProvider,
+      instrument,
+      options,
+      quoteStore: this.quoteStore,
+      runSingleFlight: (key, task) => this.runSingleFlight(key, task),
     });
   }
 
@@ -762,42 +218,13 @@ export class MarketDataCoordinator {
     instruments: InstrumentRef[],
     options: { forceRefresh?: boolean } = {},
   ): Promise<QueryEntry<Quote>[]> {
-    const uniqueInstruments = [...new Map(instruments.map((instrument) => [buildQuoteKey(instrument), instrument] as const)).values()];
-    const results = new Map<string, QueryEntry<Quote>>();
-    const misses: InstrumentRef[] = [];
-
-    for (const instrument of uniqueInstruments) {
-      const key = buildQuoteKey(instrument);
-      const current = this.quoteStore.get(key);
-      if (!options.forceRefresh && hasFreshQuoteEntry(current, instrument, SNAPSHOT_CACHE_TTL_MS)) {
-        results.set(key, current);
-      } else {
-        misses.push(instrument);
-      }
-    }
-
-    if (misses.length > 0 && this.dataProvider.getQuotesBatch) {
-      const batchResults = await this.dataProvider.getQuotesBatch(
-        misses.map((instrument) => this.quoteTargetFromInstrument(instrument)),
-        { forceRefresh: options.forceRefresh },
-      );
-      batchResults.forEach((item, index) => {
-        const instrument = misses[index];
-        if (!instrument || !item.quote) return;
-        const key = buildQuoteKey(instrument);
-        const source = item.quote.providerId ?? this.dataProvider.id;
-        const attempts = [createAttempt(source, Date.now(), "success")];
-        results.set(key, this.quoteStore.update(key, (current) => readyQuoteEntry(current, item.quote!, source, attempts)));
-      });
-    }
-
-    await Promise.all(misses.map(async (instrument) => {
-      const key = buildQuoteKey(instrument);
-      if (results.has(key)) return;
-      results.set(key, await this.loadQuote(instrument, options));
-    }));
-
-    return instruments.map((instrument) => results.get(buildQuoteKey(instrument)) ?? this.getQuoteEntry(instrument));
+    return loadQuoteBatchEntries({
+      dataProvider: this.dataProvider,
+      instruments,
+      options,
+      quoteStore: this.quoteStore,
+      runSingleFlight: (key, task) => this.runSingleFlight(key, task),
+    });
   }
 
   async loadChart(
@@ -818,7 +245,14 @@ export class MarketDataCoordinator {
     }
     const flightKey = options.forceRefresh ? `${key}|refresh` : key;
     return this.runSingleFlight(flightKey, async () => {
-      this.chartStore.update(key, (current) => this.createChartLoadingEntry(key, request, current));
+      this.chartStore.update(key, (current) => createChartLoadingEntry({
+        key,
+        request,
+        current,
+        chartRequests: this.chartRequests,
+        getEntry: (entryKey) => this.chartStore.get(entryKey),
+        resolveEntryData,
+      }));
       const startedAt = Date.now();
       try {
         const data = normalizePriceHistory(
@@ -867,265 +301,61 @@ export class MarketDataCoordinator {
   }
 
   async loadNews(request: NewsRequest): Promise<QueryEntry<NewsArticle[]>> {
-    const key = buildNewsKey(request);
-    const current = this.newsStore.get(key);
-    if (hasFreshReadyEntry(current, NEWS_CACHE_TTL_MS)) {
-      return current;
-    }
-    return this.runSingleFlight(key, async () => {
-      this.newsStore.update(key, loadingEntry);
-      const startedAt = Date.now();
-      try {
-        const newsProvider = this.dataProvider as DataProvider & {
-          getNews?: (query: {
-            feed: "ticker";
-            ticker: string;
-            exchange?: string;
-            tickerTier: "primary";
-            limit?: number;
-          }) => Promise<NewsArticle[]>;
-        };
-        if (!newsProvider.getNews) throw new Error("No news provider available");
-        const data = await newsProvider.getNews({
-          feed: "ticker",
-          ticker: request.instrument.symbol,
-          exchange: request.instrument.exchange ?? "",
-          tickerTier: "primary",
-          limit: request.count ?? 50,
-        });
-        const attempts = [createAttempt(this.dataProvider.id, startedAt, data.length > 0 ? "success" : "empty", data.length === 0 ? "NO_DATA" : undefined)];
-        return this.newsStore.update(key, (current) => readyEntry(current, data.length > 0 ? data : null, this.dataProvider.id, attempts, { keepLastGoodOnEmpty: true }));
-      } catch (error) {
-        const classified = classifyError(error);
-        const attempt = createAttempt(this.dataProvider.id, startedAt, EXPECTED_EMPTY.test(classified.message) ? "empty" : "fatal_error", classified.reasonCode, classified.message);
-        return this.newsStore.update(key, (current) => errorEntry(current, attempt));
-      }
+    return loadNewsEntry({
+      dataProvider: this.dataProvider,
+      request,
+      store: this.newsStore,
+      runSingleFlight: (key, task) => this.runSingleFlight(key, task),
     });
   }
 
   async loadOptions(request: OptionsRequest): Promise<QueryEntry<OptionsChain>> {
-    const key = buildOptionsKey(request);
-    const current = this.optionsStore.get(key);
-    if (hasFreshReadyEntry(current, OPTIONS_CACHE_TTL_MS)) {
-      return current;
-    }
-    return this.runSingleFlight(key, async () => {
-      this.optionsStore.update(key, loadingEntry);
-      const startedAt = Date.now();
-      try {
-        if (!this.dataProvider.getOptionsChain) {
-          const attempt = createAttempt(this.dataProvider.id, startedAt, "unsupported", "UNSUPPORTED_RANGE", "Options are not available");
-          return this.optionsStore.update(key, (current) => errorEntry(current, attempt));
-        }
-        const data = await this.dataProvider.getOptionsChain(
-          request.instrument.symbol,
-          request.instrument.exchange ?? "",
-          request.expirationDate,
-          toMarketDataContext(request.instrument),
-        );
-        const attempts = [createAttempt(this.dataProvider.id, startedAt, data.expirationDates.length > 0 ? "success" : "empty", data.expirationDates.length === 0 ? "NO_DATA" : undefined)];
-        return this.optionsStore.update(key, (current) => readyEntry(current, data.expirationDates.length > 0 ? data : null, this.dataProvider.id, attempts, { keepLastGoodOnEmpty: true }));
-      } catch (error) {
-        const classified = classifyError(error);
-        const attempt = createAttempt(this.dataProvider.id, startedAt, EXPECTED_EMPTY.test(classified.message) ? "empty" : "fatal_error", classified.reasonCode, classified.message);
-        return this.optionsStore.update(key, (current) => errorEntry(current, attempt));
-      }
+    return loadOptionsEntry({
+      dataProvider: this.dataProvider,
+      request,
+      store: this.optionsStore,
+      runSingleFlight: (key, task) => this.runSingleFlight(key, task),
     });
   }
 
   async loadSecFilings(request: SecFilingsRequest): Promise<QueryEntry<SecFilingItem[]>> {
-    const key = buildSecFilingsKey(request);
-    const current = this.secFilingsStore.get(key);
-    if (hasFreshReadyEntry(current, SEC_FILINGS_CACHE_TTL_MS)) {
-      return current;
-    }
-    return this.runSingleFlight(key, async () => {
-      this.secFilingsStore.update(key, loadingEntry);
-      const startedAt = Date.now();
-      try {
-        if (!this.dataProvider.getSecFilings) {
-          const attempt = createAttempt(this.dataProvider.id, startedAt, "unsupported", "UNSUPPORTED_RANGE", "SEC filings are not available");
-          return this.secFilingsStore.update(key, (current) => errorEntry(current, attempt));
-        }
-        const data = await this.dataProvider.getSecFilings(
-          request.instrument.symbol,
-          request.count ?? 50,
-          request.instrument.exchange ?? "",
-          toMarketDataContext(request.instrument),
-        );
-        const attempts = [createAttempt(this.dataProvider.id, startedAt, data.length > 0 ? "success" : "empty", data.length === 0 ? "NO_DATA" : undefined)];
-        return this.secFilingsStore.update(key, (current) => readyEntry(current, data.length > 0 ? data : null, this.dataProvider.id, attempts, { keepLastGoodOnEmpty: true }));
-      } catch (error) {
-        const classified = classifyError(error);
-        const attempt = createAttempt(this.dataProvider.id, startedAt, EXPECTED_EMPTY.test(classified.message) ? "empty" : "fatal_error", classified.reasonCode, classified.message);
-        return this.secFilingsStore.update(key, (current) => errorEntry(current, attempt));
-      }
+    return loadSecFilingsEntry({
+      dataProvider: this.dataProvider,
+      request,
+      store: this.secFilingsStore,
+      runSingleFlight: (key, task) => this.runSingleFlight(key, task),
     });
   }
 
   async loadSecFilingContent(filing: SecFilingItem): Promise<QueryEntry<string | null>> {
-    const key = buildSecContentKey(filing.accessionNumber);
-    const current = this.secContentStore.get(key);
-    if (hasFreshReadyEntry(current, SEC_CONTENT_CACHE_TTL_MS)) {
-      return current;
-    }
-    return this.runSingleFlight(key, async () => {
-      this.secContentStore.update(key, loadingEntry);
-      const startedAt = Date.now();
-      try {
-        if (!this.dataProvider.getSecFilingContent) {
-          const attempt = createAttempt(this.dataProvider.id, startedAt, "unsupported", "UNSUPPORTED_RANGE", "SEC filing content is not available");
-          return this.secContentStore.update(key, (current) => errorEntry(current, attempt));
-        }
-        const data = await this.dataProvider.getSecFilingContent(filing);
-        const status = data ? "success" : "empty";
-        const attempts = [createAttempt(this.dataProvider.id, startedAt, status, data ? undefined : "NO_DATA")];
-        return this.secContentStore.update(key, (current) => readyEntry(current, data, this.dataProvider.id, attempts, { keepLastGoodOnEmpty: true }));
-      } catch (error) {
-        const classified = classifyError(error);
-        const attempt = createAttempt(this.dataProvider.id, startedAt, EXPECTED_EMPTY.test(classified.message) ? "empty" : "fatal_error", classified.reasonCode, classified.message);
-        return this.secContentStore.update(key, (current) => errorEntry(current, attempt));
-      }
+    return loadSecFilingContentEntry({
+      dataProvider: this.dataProvider,
+      filing,
+      store: this.secContentStore,
+      runSingleFlight: (key, task) => this.runSingleFlight(key, task),
     });
   }
 
   async loadArticleSummary(url: string): Promise<QueryEntry<string | null>> {
-    const key = buildArticleSummaryKey(url);
-    const current = this.articleSummaryStore.get(key);
-    if (hasFreshReadyEntry(current, ARTICLE_SUMMARY_CACHE_TTL_MS)) {
-      return current;
-    }
-    return this.runSingleFlight(key, async () => {
-      this.articleSummaryStore.update(key, loadingEntry);
-      const startedAt = Date.now();
-      try {
-        const data = await this.dataProvider.getArticleSummary(url);
-        const status = data ? "success" : "empty";
-        const attempts = [createAttempt(this.dataProvider.id, startedAt, status, data ? undefined : "NO_DATA")];
-        return this.articleSummaryStore.update(key, (current) => readyEntry(current, data, this.dataProvider.id, attempts, { keepLastGoodOnEmpty: true }));
-      } catch (error) {
-        const classified = classifyError(error);
-        const attempt = createAttempt(this.dataProvider.id, startedAt, EXPECTED_EMPTY.test(classified.message) ? "empty" : "fatal_error", classified.reasonCode, classified.message);
-        return this.articleSummaryStore.update(key, (current) => errorEntry(current, attempt));
-      }
+    return loadArticleSummaryEntry({
+      dataProvider: this.dataProvider,
+      url,
+      store: this.articleSummaryStore,
+      runSingleFlight: (key, task) => this.runSingleFlight(key, task),
     });
   }
 
   async loadFxRate(currency: string): Promise<QueryEntry<number>> {
-    const normalizedCurrency = currency.trim().toUpperCase();
-    const key = buildFxKey(normalizedCurrency);
-    const current = this.fxStore.get(key);
-    if (hasFreshEntryData(current, FX_CACHE_TTL_MS)) {
-      return current;
-    }
-    if (normalizedCurrency === "USD") {
-      const startedAt = Date.now();
-      const attempts = [createAttempt("static", startedAt, "success")];
-      return this.fxStore.update(key, (current) => readyEntry(current, 1, "static", attempts, { keepLastGoodOnEmpty: true }));
-    }
-    return this.runSingleFlight(key, async () => {
-      this.fxStore.update(key, loadingEntry);
-      const startedAt = Date.now();
-      try {
-        const rate = await this.dataProvider.getExchangeRate(normalizedCurrency);
-        const attempts = [createAttempt(this.dataProvider.id, startedAt, "success")];
-        return this.fxStore.update(key, (current) => readyEntry(current, rate, this.dataProvider.id, attempts, { keepLastGoodOnEmpty: true }));
-      } catch (error) {
-        const classified = classifyError(error);
-        const attempt = createAttempt(this.dataProvider.id, startedAt, "fatal_error", classified.reasonCode, classified.message);
-        return this.fxStore.update(key, (current) => errorEntry(current, attempt));
-      }
+    return loadFxRateEntry({
+      dataProvider: this.dataProvider,
+      currency,
+      store: this.fxStore,
+      runSingleFlight: (key, task) => this.runSingleFlight(key, task),
     });
   }
 
   subscribeQuotes(targets: Array<{ instrument: InstrumentRef; priority?: QuoteSubscriptionPriority }>): () => void {
-    if (!this.dataProvider.subscribeQuotes || targets.length === 0) {
-      return () => {};
-    }
-
-    const subscriptionId = this.nextQuoteSubscriptionId++;
-    const subscribedKeys = new Set<string>();
-    for (const { instrument, priority } of targets) {
-      const key = buildQuoteKey(instrument);
-      subscribedKeys.add(key);
-      const target = this.quoteTargetFromInstrument(instrument, priority);
-      const existing = this.quoteSubscriptions.get(key);
-      if (existing) {
-        existing.targets.set(subscriptionId, target);
-        existing.target = mergeQuoteSubscriptionTargets(existing.targets.values()) ?? target;
-        this.pendingQuoteSubscriptionKeys.add(key);
-        if (existing.removeTimer) {
-          clearTimeout(existing.removeTimer);
-          existing.removeTimer = null;
-        }
-        continue;
-      }
-      this.quoteSubscriptions.set(key, {
-        target,
-        targets: new Map([[subscriptionId, target]]),
-        removeTimer: null,
-      });
-      this.pendingQuoteSubscriptionKeys.add(key);
-    }
-    this.flushQuoteSubscriptions();
-
-    return () => {
-      for (const key of subscribedKeys) {
-        const existing = this.quoteSubscriptions.get(key);
-        if (!existing) continue;
-        existing.targets.delete(subscriptionId);
-        const mergedTarget = mergeQuoteSubscriptionTargets(existing.targets.values());
-        if (mergedTarget) {
-          existing.target = mergedTarget;
-          this.pendingQuoteSubscriptionKeys.add(key);
-          this.flushQuoteSubscriptions();
-          continue;
-        }
-        if (existing.removeTimer) continue;
-        existing.removeTimer = setTimeout(() => {
-          const current = this.quoteSubscriptions.get(key);
-          if (!current || current.targets.size > 0) return;
-          this.quoteSubscriptions.delete(key);
-          this.pendingQuoteSubscriptionKeys.delete(key);
-          this.flushQuoteSubscriptions();
-        }, QUOTE_SUBSCRIPTION_REMOVE_GRACE_MS);
-      }
-    };
-  }
-
-  private flushQuoteSubscriptions(): void {
-    if (!this.dataProvider.subscribeQuotes) return;
-    this.pendingQuoteSubscriptionKeys = new Set();
-
-    const activeEntries = [...this.quoteSubscriptions.entries()]
-      .filter(([, entry]) => entry.targets.size > 0 || entry.removeTimer)
-      .sort(([left], [right]) => left.localeCompare(right));
-    const nextSignature = activeEntries.map(([key, entry]) => [
-      key,
-      entry.target.surface ?? "",
-      entry.target.visible ? "visible" : "",
-      entry.target.selected ? "selected" : "",
-      Number.isFinite(entry.target.weight) ? entry.target.weight : "",
-    ].join(":")).join("|");
-    if (nextSignature === this.quoteSubscriptionSignature) return;
-
-    this.quoteSubscriptionDispose?.();
-    this.quoteSubscriptionDispose = null;
-    this.quoteSubscriptionSignature = nextSignature;
-
-    const targets = activeEntries.map(([, entry]) => entry.target);
-    if (targets.length === 0) return;
-
-    this.quoteSubscriptionDispose = this.dataProvider.subscribeQuotes(targets, (target, quote) => {
-      const instrument: InstrumentRef = {
-        symbol: target.symbol,
-        exchange: target.exchange ?? "",
-        brokerId: target.context?.brokerId,
-        brokerInstanceId: target.context?.brokerInstanceId,
-        instrument: target.context?.instrument ?? null,
-      };
-      this.applyStreamQuote(instrument, quote);
-    });
+    return this.quoteSubscriptionManager.subscribe(targets);
   }
 
   private applyStreamQuote(instrument: InstrumentRef, quote: Quote): void {
