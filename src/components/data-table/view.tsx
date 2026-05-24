@@ -99,8 +99,10 @@ export function DataTableView<
     number | null
   >(null);
   const selectedIndexFromPredicate = useMemo(
-    () => tableProps.items.findIndex(tableProps.isSelected),
-    [tableProps.items, tableProps.isSelected],
+    () => selectedIndex == null
+      ? tableProps.items.findIndex(tableProps.isSelected)
+      : -1,
+    [selectedIndex, tableProps.items, tableProps.isSelected],
   );
   const usesFallbackSelection =
     selectedIndex == null && selectedIndexFromPredicate < 0;
@@ -110,9 +112,7 @@ export function DataTableView<
       : fallbackSelectedIndex ?? -1);
 
   const navigableIndices = useMemo(() => {
-    if (!isNavigable) {
-      return tableProps.items.map((_, index) => index);
-    }
+    if (!isNavigable) return null;
     return tableProps.items.reduce<number[]>((indices, item, index) => {
       if (isNavigable(item, index)) indices.push(index);
       return indices;
@@ -125,6 +125,18 @@ export function DataTableView<
       return;
     }
     if (fallbackSelectedIndex == null) return;
+    if (!navigableIndices) {
+      if (
+        fallbackSelectedIndex >= 0
+        && fallbackSelectedIndex < tableProps.items.length
+      ) {
+        return;
+      }
+      setFallbackSelectedIndex(tableProps.items.length > 0
+        ? Math.min(fallbackSelectedIndex, tableProps.items.length - 1)
+        : null);
+      return;
+    }
     if (navigableIndices.includes(fallbackSelectedIndex)) return;
 
     const nextIndex = navigableIndices.find(
@@ -133,7 +145,12 @@ export function DataTableView<
       ?? navigableIndices.at(-1)
       ?? null;
     setFallbackSelectedIndex(nextIndex);
-  }, [fallbackSelectedIndex, navigableIndices, usesFallbackSelection]);
+  }, [
+    fallbackSelectedIndex,
+    navigableIndices,
+    tableProps.items.length,
+    usesFallbackSelection,
+  ]);
 
   const handleBodyScrollActivity = useTableBodyScrollActivity({
     onBodyScrollActivity,
@@ -172,20 +189,53 @@ export function DataTableView<
   }, [isNavigable, onActivateIndex, tableProps]);
 
   const selectByOffset = useCallback((offset: -1 | 1) => {
+    if (!navigableIndices) {
+      if (tableProps.items.length === 0) return;
+      const nextIndex = effectiveSelectedIndex >= 0
+        ? Math.max(
+            0,
+            Math.min(effectiveSelectedIndex + offset, tableProps.items.length - 1),
+          )
+        : 0;
+      selectIndex(nextIndex);
+      return;
+    }
     if (navigableIndices.length === 0) return;
     const currentPosition = navigableIndices.indexOf(effectiveSelectedIndex);
     const nextPosition = currentPosition >= 0
-      ? Math.max(0, Math.min(currentPosition + offset, navigableIndices.length - 1))
+      ? Math.max(
+          0,
+          Math.min(currentPosition + offset, navigableIndices.length - 1),
+        )
       : 0;
     const nextIndex = navigableIndices[nextPosition];
     if (nextIndex !== undefined) selectIndex(nextIndex);
-  }, [effectiveSelectedIndex, navigableIndices, selectIndex]);
+  }, [
+    effectiveSelectedIndex,
+    navigableIndices,
+    selectIndex,
+    tableProps.items.length,
+  ]);
 
   const activateSelection = useCallback(() => {
+    if (!navigableIndices) {
+      if (tableProps.items.length === 0) return;
+      const selectedIndex = effectiveSelectedIndex >= 0
+        && effectiveSelectedIndex < tableProps.items.length
+        ? effectiveSelectedIndex
+        : 0;
+      activateIndex(selectedIndex);
+      return;
+    }
     if (navigableIndices.length === 0) return;
     const selectedIsNavigable = navigableIndices.includes(effectiveSelectedIndex);
     activateIndex(selectedIsNavigable ? effectiveSelectedIndex : navigableIndices[0]!);
-  }, [activateIndex, effectiveSelectedIndex, navigableIndices]);
+  }, [
+    activateIndex,
+    effectiveSelectedIndex,
+    navigableIndices,
+    tableProps.items.length,
+  ]);
 
   useShortcut((event) => {
     if (event.defaultPrevented || event.propagationStopped) return;

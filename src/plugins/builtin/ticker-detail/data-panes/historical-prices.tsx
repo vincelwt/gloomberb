@@ -12,7 +12,11 @@ import type { PaneProps } from "../../../../types/plugin";
 import type { PricePoint } from "../../../../types/financials";
 import { colors, priceColor } from "../../../../theme/colors";
 import { formatCompact, formatNumber, formatPercent } from "../../../../utils/format";
-import { useAssetData, usePluginPaneState } from "../../../runtime";
+import {
+  useAssetData,
+  useDebouncedPluginPaneState,
+  usePluginPaneState,
+} from "../../../runtime";
 import { loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../../shared/table-pane";
 import { formatDateTime, useBoundTicker, useTickerRequest } from "../../shared/ticker-request";
 
@@ -95,7 +99,7 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
   const { symbol, exchange } = useBoundTicker();
   const [range, setRange] = usePluginPaneState<TimeRange>("range", "ALL");
-  const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>("selectedIdx", 0);
+  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
   const loader = useCallback((nextSymbol: string, nextExchange: string, forceRefresh: boolean) => {
     if (!dataProvider) throw new Error("Market data unavailable");
     return dataProvider.getPriceHistory(

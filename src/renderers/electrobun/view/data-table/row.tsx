@@ -38,6 +38,12 @@ function renderHeaderLabel<C extends DataTableColumn>(
   };
 }
 
+function contentJustifyForAlign(align: string | undefined): CSSProperties["justifyContent"] {
+  if (align === "right") return "flex-end";
+  if (align === "center") return "center";
+  return "flex-start";
+}
+
 export function WebDataTableHeader<C extends DataTableColumn>({
   columns,
   focusPane,
@@ -99,11 +105,14 @@ export function WebDataTableHeader<C extends DataTableColumn>({
           >
             <span
               title={text}
-              style={clippedCellTextStyle(
-                column,
-                isSorted ? CSS_TEXT : column.headerColor ?? CSS_TEXT_DIM,
-                TextAttributes.BOLD,
-              )}
+              style={{
+                ...clippedCellTextStyle(
+                  column,
+                  isSorted ? CSS_TEXT : column.headerColor ?? CSS_TEXT_DIM,
+                  TextAttributes.BOLD,
+                ),
+                whiteSpace: "pre",
+              }}
             >
               {text}
             </span>
@@ -293,6 +302,9 @@ function WebDataTableRowInner<
               <div
                 title={cell.text}
                 style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: contentJustifyForAlign(column.align),
                   width: "100%",
                   height: "100%",
                   minWidth: 0,

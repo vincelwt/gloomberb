@@ -149,6 +149,7 @@ export function PriceSparkline({
   area?: boolean;
 }) {
   useThemeColors();
+  const uiHost = useUiHost();
   const sparklineHistory = useMemo(() => resolveSparklineHistory(priceHistory ?? [], period), [period, priceHistory]);
   const values = useMemo(() => sparklineValues(sparklineHistory), [sparklineHistory]);
   if (values.length < 2) {
@@ -156,7 +157,7 @@ export function PriceSparkline({
   }
 
   const color = sparklineColor(values, trend);
-  return useUiHost().kind === "desktop-web"
+  return uiHost.kind === "desktop-web"
     ? <DesktopPriceSparkline values={values} width={width} height={height} color={color} />
     : <TerminalPriceSparkline priceHistory={sparklineHistory} values={values} width={width} height={height} color={color} area={area} />;
 }
