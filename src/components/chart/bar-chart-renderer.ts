@@ -1,4 +1,5 @@
 import type { NativeChartBitmap } from "./native/chart-rasterizer";
+import { fillRect, parseHex } from "./native/raster-primitives";
 
 interface BarChartPoint {
   category: string;
@@ -47,59 +48,6 @@ export interface BarChartScene {
 }
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-
-function parseHex(hex: string, alpha = 1) {
-  const normalized = hex.replace("#", "");
-  return {
-    r: parseInt(normalized.slice(0, 2), 16),
-    g: parseInt(normalized.slice(2, 4), 16),
-    b: parseInt(normalized.slice(4, 6), 16),
-    a: Math.round(clamp(alpha, 0, 1) * 255),
-  };
-}
-
-function blendPixel(
-  data: Uint8Array,
-  width: number,
-  height: number,
-  x: number,
-  y: number,
-  color: ReturnType<typeof parseHex>,
-  opacity = 1,
-) {
-  if (x < 0 || y < 0 || x >= width || y >= height) return;
-  const alpha = clamp((color.a / 255) * opacity, 0, 1);
-  if (alpha <= 0) return;
-
-  const index = (y * width + x) * 4;
-  const dstAlpha = data[index + 3]! / 255;
-  const outAlpha = alpha + dstAlpha * (1 - alpha);
-  if (outAlpha <= 0) return;
-
-  const dstFactor = dstAlpha * (1 - alpha);
-  data[index] = Math.round((color.r * alpha + data[index]! * dstFactor) / outAlpha);
-  data[index + 1] = Math.round((color.g * alpha + data[index + 1]! * dstFactor) / outAlpha);
-  data[index + 2] = Math.round((color.b * alpha + data[index + 2]! * dstFactor) / outAlpha);
-  data[index + 3] = Math.round(outAlpha * 255);
-}
-
-function fillRect(
-  data: Uint8Array,
-  width: number,
-  height: number,
-  left: number,
-  top: number,
-  right: number,
-  bottom: number,
-  color: ReturnType<typeof parseHex>,
-  opacity = 1,
-) {
-  for (let y = Math.max(Math.floor(top), 0); y <= Math.min(Math.ceil(bottom), height - 1); y++) {
-    for (let x = Math.max(Math.floor(left), 0); x <= Math.min(Math.ceil(right), width - 1); x++) {
-      blendPixel(data, width, height, x, y, color, opacity);
-    }
-  }
-}
 
 function collectCategories(series: BarChartSeries[]): string[] {
   const categories: string[] = [];

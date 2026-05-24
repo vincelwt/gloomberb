@@ -1,4 +1,5 @@
 import type { HolderData } from "../../../types/financials";
+import { compareSortValues } from "../../../utils/sort-values";
 import type { HolderColumn, HolderColumnId, HolderRow, SortDirection, SortPreference, ViewMode } from "./types";
 import { resolveHolderOwnershipPercent } from "./format";
 
@@ -58,21 +59,6 @@ function sortValue(row: HolderRow, columnId: HolderColumnId, marketCap?: number)
     case "reportDate":
       return row.reportDate ?? null;
   }
-}
-
-function compareSortValues(
-  left: string | number | null,
-  right: string | number | null,
-  direction: SortDirection,
-): number {
-  if (left == null && right == null) return 0;
-  if (left == null) return 1;
-  if (right == null) return -1;
-
-  const comparison = typeof left === "string" && typeof right === "string"
-    ? left.localeCompare(right)
-    : Number(left) - Number(right);
-  return direction === "asc" ? comparison : -comparison;
 }
 
 export function sortRows(rows: HolderRow[], preference: SortPreference, marketCap?: number): HolderRow[] {

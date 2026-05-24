@@ -1,5 +1,6 @@
 import { colors } from "../../theme/colors";
 import { formatCompact, formatNumber, formatTimeAgo } from "../../utils/format";
+import { compareSortValues } from "../../utils/sort-values";
 import type {
   PredictionBrowseTab,
   PredictionCategoryId,
@@ -213,8 +214,6 @@ export function sortPredictionMarkets(
 ): PredictionListRow[] {
   if (!sortPreference.columnId) return [...markets];
   const columnId = sortPreference.columnId;
-  const direction = sortPreference.direction === "asc" ? 1 : -1;
-
   return markets
     .map((market, index) => ({
       index,
@@ -225,20 +224,11 @@ export function sortPredictionMarkets(
       const leftValue = left.sortValue;
       const rightValue = right.sortValue;
 
-      if (leftValue == null && rightValue == null) {
-        return left.index - right.index;
-      }
-      if (leftValue == null) return 1;
-      if (rightValue == null) return -1;
-
-      const comparison =
-        typeof leftValue === "string" && typeof rightValue === "string"
-          ? leftValue.localeCompare(rightValue)
-          : Number(leftValue) - Number(rightValue);
+      const comparison = compareSortValues(leftValue, rightValue, sortPreference.direction);
 
       return comparison === 0
         ? left.index - right.index
-        : comparison * direction;
+        : comparison;
     })
     .map((entry) => entry.market);
 }

@@ -2,20 +2,11 @@ import type { Dispatch } from "react";
 import type { PluginRegistry } from "../../../plugins/registry";
 import type { AppAction, AppState } from "../../../state/app-context";
 import type { LayoutConfig } from "../../../types/config";
+import type { OpenInlineConfirm } from "../confirm-route";
 import type { CommandBarRoute } from "../workflow/workflow-types";
 
 export type CloseAll = (options?: { revertThemePreview?: boolean }) => void;
-
-export type OpenInlineConfirm = (options: {
-  confirmId: string;
-  title: string;
-  body: string[];
-  confirmLabel: string;
-  cancelLabel?: string;
-  tone?: "default" | "danger";
-  onConfirm: () => void | Promise<void>;
-  successBehavior?: "close" | "back" | "stay";
-}) => void;
+export type { OpenInlineConfirm } from "../confirm-route";
 
 export interface LayoutItemsContext {
   closeAll: CloseAll;

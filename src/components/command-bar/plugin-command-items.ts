@@ -1,5 +1,6 @@
 import type { PluginRegistry } from "../../plugins/registry";
 import type { CommandDef, CommandResultDef } from "../../types/plugin";
+import type { OpenInlineConfirm } from "./confirm-route";
 import type { ResultItem } from "./list-model";
 
 type NotifyFn = (body: string, options?: { type?: "info" | "success" | "error" }) => void;
@@ -10,16 +11,6 @@ interface PluginCommandConfirm {
   confirmLabel?: string;
   cancelLabel?: string;
   tone?: "default" | "danger";
-}
-
-interface InlineConfirmOptions {
-  confirmId: string;
-  title: string;
-  body: string[];
-  confirmLabel: string;
-  cancelLabel?: string;
-  tone?: "default" | "danger";
-  onConfirm: () => void | Promise<void>;
 }
 
 export function getAvailablePluginCommandsForState(
@@ -70,7 +61,7 @@ export function buildPluginCommandItem(options: {
   pluginRegistry: PluginRegistry;
   openPluginCommandWorkflow: (command: CommandDef, options?: { values?: Record<string, string> }) => void;
   resolvePluginCommandConfirm: (command: CommandDef) => PluginCommandConfirm | null;
-  openInlineConfirm: (options: InlineConfirmOptions) => void;
+  openInlineConfirm: OpenInlineConfirm;
   runPluginCommandDirect: (command: CommandDef, values?: Record<string, string>) => void;
   notify: NotifyFn;
 }): ResultItem {

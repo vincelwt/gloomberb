@@ -17,6 +17,7 @@ import {
   activatePaneSettingFieldAction,
   buildPaneSettingResultItems,
 } from "./pane-settings";
+import type { OpenInlineConfirm } from "./confirm-route";
 import type {
   CommandBarRoute,
   CommandBarWorkflowRoute,
@@ -43,16 +44,7 @@ interface UseCommandBarRouteActionsOptions {
   notifyGridlockRevert: () => void;
   openAddToPortfolioWorkflow: (ticker: TickerRecord, preferredPortfolioId?: string | null) => void;
   openBuiltInWorkflow: (actionId: string) => void;
-  openInlineConfirm: (options: {
-    confirmId: string;
-    title: string;
-    body: string[];
-    confirmLabel: string;
-    cancelLabel?: string;
-    tone?: "default" | "danger";
-    onConfirm: () => void | Promise<void>;
-    successBehavior?: "close" | "back" | "stay";
-  }) => void;
+  openInlineConfirm: OpenInlineConfirm;
   openModeRoute: OpenModeRoute;
   openWorkflowRoute: (route: CommandBarWorkflowRoute) => void;
   persistConfig: (nextConfig: AppState["config"]) => void;

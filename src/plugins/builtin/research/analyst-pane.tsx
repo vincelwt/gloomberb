@@ -10,6 +10,7 @@ import {
 import type { AnalystRatingRecord, AnalystResearchData } from "../../../types/financials";
 import { blendHex, colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatNumber, formatPercent } from "../../../utils/format";
+import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import { useAssetData } from "../../plugin-runtime";
 import { useBoundTicker as useSymbolBinding, useTickerRequest } from "../shared/ticker-request";
 
@@ -135,7 +136,6 @@ function AnalystSummary({ data, width }: { data: AnalystResearchData | null; wid
 
 type RatingColumnId = "date" | "firm" | "action" | "current" | "target" | "prior";
 type RatingColumn = DataTableColumn & { id: RatingColumnId };
-type SortDirection = "asc" | "desc";
 
 export interface RatingSortPreference {
   columnId: RatingColumnId;
@@ -189,21 +189,6 @@ function ratingSortValue(row: AnalystRatingRecord, columnId: RatingColumnId): st
     case "prior":
       return normalizedText(row.prior);
   }
-}
-
-function compareSortValues(
-  left: string | number | null,
-  right: string | number | null,
-  direction: SortDirection,
-): number {
-  if (left == null && right == null) return 0;
-  if (left == null) return 1;
-  if (right == null) return -1;
-
-  const comparison = typeof left === "string" && typeof right === "string"
-    ? left.localeCompare(right)
-    : Number(left) - Number(right);
-  return direction === "asc" ? comparison : -comparison;
 }
 
 export function sortRatingRows<T extends AnalystRatingRecord>(

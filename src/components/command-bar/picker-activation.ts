@@ -5,23 +5,13 @@ import type { LayoutConfig } from "../../types/config";
 import type { PaneSettingField } from "../../types/plugin";
 import type { CommandBarCollectionWorkflowActions } from "./workflow/collection-workflow-actions";
 import type { CollectionCommandId } from "./collection-commands";
+import type { OpenInlineConfirm } from "./confirm-route";
 import { isCollectionCommand } from "./helpers";
 import type {
   CommandBarFieldValue,
   CommandBarPickerRoute,
   CommandBarRoute,
 } from "./workflow/workflow-types";
-
-interface InlineConfirmOptions {
-  confirmId: string;
-  title: string;
-  body: string[];
-  confirmLabel: string;
-  cancelLabel?: string;
-  tone?: "default" | "danger";
-  onConfirm: () => void | Promise<void>;
-  successBehavior?: "close" | "back" | "stay";
-}
 
 export function activatePickerSelectionAction({
   closeAll,
@@ -41,7 +31,7 @@ export function activatePickerSelectionAction({
   collectionWorkflowActions: CommandBarCollectionWorkflowActions;
   executeCollectionCommand: (commandId: CollectionCommandId, rawInput?: string, explicitTargetId?: string | null) => Promise<void>;
   layout: LayoutConfig;
-  openInlineConfirm: (options: InlineConfirmOptions) => void;
+  openInlineConfirm: OpenInlineConfirm;
   persistLayoutChange: (nextLayout: LayoutConfig) => void;
   pluginRegistry: PluginRegistry;
   route: CommandBarPickerRoute;

@@ -15,6 +15,7 @@ import type { CollectionCommandId } from "./collection-commands";
 import {
   runDirectCommandAction,
 } from "./direct-commands";
+import type { OpenInlineConfirm } from "./confirm-route";
 import {
   resolveTickerInput,
   type SharedWorkflowDeps,
@@ -36,16 +37,7 @@ interface UseCommandBarDirectCommandRuntimeOptions {
   notify: (body: string, options?: { type?: "info" | "success" | "error" }) => void;
   onCheckForUpdates?: () => void | Promise<void>;
   openBuiltInWorkflow: (actionId: string) => void;
-  openInlineConfirm: (options: {
-    confirmId: string;
-    title: string;
-    body: string[];
-    confirmLabel: string;
-    cancelLabel?: string;
-    tone?: "default" | "danger";
-    onConfirm: () => void | Promise<void>;
-    successBehavior?: "close" | "back" | "stay";
-  }) => void;
+  openInlineConfirm: OpenInlineConfirm;
   openModeRoute: (
     screen: "ticker-search" | "plugins" | "layout",
     initialQuery?: string,

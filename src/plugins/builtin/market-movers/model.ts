@@ -1,4 +1,5 @@
 import type { DataTableColumn } from "../../../components";
+import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import type { MarketSummaryQuote, ScreenerCategory, ScreenerQuote } from "./screener";
 
 export const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -34,7 +35,6 @@ type MarketMoverColumnId =
   | "range"
   | "marketCap";
 export type MarketMoverColumn = DataTableColumn & { id: MarketMoverColumnId };
-type SortDirection = "asc" | "desc";
 export type MarketMoverRow = ScreenerQuote & { rank: number };
 
 export interface MarketMoverSortPreference {
@@ -83,21 +83,6 @@ function getSortValue(
     case "marketCap":
       return row.marketCap ?? null;
   }
-}
-
-function compareSortValues(
-  left: string | number | null,
-  right: string | number | null,
-  direction: SortDirection,
-): number {
-  if (left == null && right == null) return 0;
-  if (left == null) return 1;
-  if (right == null) return -1;
-
-  const comparison = typeof left === "string" && typeof right === "string"
-    ? left.localeCompare(right)
-    : Number(left) - Number(right);
-  return direction === "asc" ? comparison : -comparison;
 }
 
 export function sortRows(

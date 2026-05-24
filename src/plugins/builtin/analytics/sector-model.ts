@@ -2,6 +2,7 @@ import type { DataTableColumn } from "../../../components";
 import type { ColumnConfig } from "../../../types/config";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
+import { compareSortValues } from "../../../utils/sort-values";
 import { getSortValue, type ColumnContext } from "../portfolio-list/metrics";
 
 type SectorColumnId = "sector" | "weight" | "value" | "pnl" | "return" | "bar";
@@ -155,10 +156,7 @@ export function sortSectorRows(rows: SectorTableRow[], sort: SectorSortPreferenc
   return [...rows].sort((left, right) => {
     const leftValue = getSectorSortValue(left, columnId);
     const rightValue = getSectorSortValue(right, columnId);
-    const comparison = typeof leftValue === "string" && typeof rightValue === "string"
-      ? leftValue.localeCompare(rightValue)
-      : (leftValue as number) - (rightValue as number);
-    return sort.direction === "asc" ? comparison : -comparison;
+    return compareSortValues(leftValue, rightValue, sort.direction);
   });
 }
 

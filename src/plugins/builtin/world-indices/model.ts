@@ -1,4 +1,5 @@
 import type { MarketState, Quote } from "../../../types/financials";
+import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import { REGION_ORDER, type IndexEntry } from "./indices";
 
 export interface IndexQuoteState {
@@ -14,7 +15,6 @@ export type WorldIndexTableRow =
   | { type: "row"; entry: IndexEntry };
 
 export type WorldIndexColumnId = "status" | "symbol" | "name" | "price" | "changePercent";
-type SortDirection = "asc" | "desc";
 
 export interface WorldIndexSortPreference {
   columnId: WorldIndexColumnId | null;
@@ -54,21 +54,6 @@ function getSortValue(
     case "changePercent":
       return quote?.changePercent ?? null;
   }
-}
-
-function compareSortValues(
-  left: string | number | null,
-  right: string | number | null,
-  direction: SortDirection,
-): number {
-  if (left == null && right == null) return 0;
-  if (left == null) return 1;
-  if (right == null) return -1;
-
-  const comparison = typeof left === "string" && typeof right === "string"
-    ? left.localeCompare(right)
-    : Number(left) - Number(right);
-  return direction === "asc" ? comparison : -comparison;
 }
 
 function sortEntries(

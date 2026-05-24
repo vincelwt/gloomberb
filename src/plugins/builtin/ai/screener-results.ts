@@ -6,6 +6,7 @@ import type { InstrumentSearchResult } from "../../../types/instrument";
 import type { TickerRecord } from "../../../types/ticker";
 import type { AppAction } from "../../../state/app-context";
 import { canonicalExchange } from "../../../utils/exchanges";
+import { compareSortValues } from "../../../utils/sort-values";
 import { upsertTickerFromSearchResult } from "../../../utils/ticker-search";
 import { getSharedRegistry } from "../../registry";
 import { getSortValue, type ColumnContext } from "../portfolio-list/metrics";
@@ -133,13 +134,6 @@ export function sortScreenerRows(
       ? (resultMap.get(right.metadata.ticker)?.reason ?? "")
       : getSortValue(column, right, financialsMap.get(right.metadata.ticker), columnContext);
 
-    if (leftValue == null && rightValue == null) return 0;
-    if (leftValue == null) return 1;
-    if (rightValue == null) return -1;
-
-    const comparison = typeof leftValue === "string" && typeof rightValue === "string"
-      ? leftValue.localeCompare(rightValue)
-      : (leftValue as number) - (rightValue as number);
-    return sortPreference.direction === "asc" ? comparison : -comparison;
+    return compareSortValues(leftValue, rightValue, sortPreference.direction);
   });
 }

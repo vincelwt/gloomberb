@@ -1,5 +1,6 @@
 import type { DataTableColumn } from "../../../components";
 import type { PricePoint } from "../../../types/financials";
+import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import {
   getSectorCollection,
   type SectorCollectionId,
@@ -23,7 +24,6 @@ export interface SectorRow extends SectorDef {
 
 type SectorColumnId = "name" | "etf" | "price" | "changePercent" | "return1M" | "return1Y" | "bar";
 export type SectorColumn = DataTableColumn & { id: SectorColumnId };
-type SortDirection = "asc" | "desc";
 export type SectorRowsByCollection = Record<SectorCollectionId, SectorRow[]>;
 export type SectorRefreshByCollection = Partial<Record<SectorCollectionId, number>>;
 
@@ -191,21 +191,6 @@ function getSortValue(columnId: SectorColumnId, row: SectorRow): string | number
     case "bar":
       return row.changePercent;
   }
-}
-
-function compareSortValues(
-  left: string | number | null,
-  right: string | number | null,
-  direction: SortDirection,
-): number {
-  if (left == null && right == null) return 0;
-  if (left == null) return 1;
-  if (right == null) return -1;
-
-  const comparison = typeof left === "string" && typeof right === "string"
-    ? left.localeCompare(right)
-    : Number(left) - Number(right);
-  return direction === "asc" ? comparison : -comparison;
 }
 
 export function sortRows(rows: SectorRow[], sortPreference: SectorSortPreference): SectorRow[] {

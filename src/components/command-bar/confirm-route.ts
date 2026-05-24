@@ -9,7 +9,7 @@ interface CloseCommandBarOptions {
   revertThemePreview?: boolean;
 }
 
-interface OpenInlineConfirmOptions {
+export interface CommandBarInlineConfirmOptions {
   confirmId: string;
   title: string;
   body: string[];
@@ -19,6 +19,8 @@ interface OpenInlineConfirmOptions {
   onConfirm: () => void | Promise<void>;
   successBehavior?: "close" | "back" | "stay";
 }
+
+export type OpenInlineConfirm = (options: CommandBarInlineConfirmOptions) => void;
 
 interface UseCommandBarConfirmRouteOptions {
   closeAll: (options?: CloseCommandBarOptions) => void;
@@ -36,9 +38,9 @@ export function useCommandBarConfirmRoute({
   updateTopRoute,
 }: UseCommandBarConfirmRouteOptions): {
   confirmCurrentRoute: () => Promise<void>;
-  openInlineConfirm: (options: OpenInlineConfirmOptions) => void;
+  openInlineConfirm: OpenInlineConfirm;
 } {
-  const openInlineConfirm = useCallback((options: OpenInlineConfirmOptions) => {
+  const openInlineConfirm = useCallback((options: CommandBarInlineConfirmOptions) => {
     pushRoute({
       kind: "confirm",
       confirmId: options.confirmId,

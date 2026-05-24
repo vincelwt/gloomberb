@@ -9,6 +9,7 @@ import type { AppAction, AppState } from "../../state/app-context";
 import { isManualPortfolio } from "../../plugins/builtin/portfolio-list/mutations";
 import { CHART_RENDERER_PREFERENCES } from "../chart/chart-types";
 import type { Command } from "./command-registry";
+import type { OpenInlineConfirm } from "./confirm-route";
 import {
   isRouteCommandId,
   routeCommandIdToScreen,
@@ -18,17 +19,6 @@ import type { CollectionCommandId } from "./collection-commands";
 import type { CommandBarRoute } from "./workflow/workflow-types";
 
 type NotifyFn = (body: string, options?: { type?: "info" | "success" | "error" }) => void;
-
-interface InlineConfirmOptions {
-  confirmId: string;
-  title: string;
-  body: string[];
-  confirmLabel: string;
-  cancelLabel?: string;
-  tone?: "default" | "danger";
-  onConfirm: () => void | Promise<void>;
-  successBehavior?: "close" | "back" | "stay";
-}
 
 function getDefaultConfigBackupPath(): string {
   const home = typeof process !== "undefined" ? process.env.HOME : undefined;
@@ -47,7 +37,7 @@ export function runDirectCommandAction(options: {
   notify: NotifyFn;
   onCheckForUpdates?: () => void | Promise<void>;
   openBuiltInWorkflow: (actionId: string) => void;
-  openInlineConfirm: (options: InlineConfirmOptions) => void;
+  openInlineConfirm: OpenInlineConfirm;
   openModeRoute: (screen: "ticker-search" | "plugins" | "layout", initialQuery?: string) => void;
   openPaneSettingsRoute: (paneId: string) => void;
   pluginRegistry: PluginRegistry;

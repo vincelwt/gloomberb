@@ -24,6 +24,7 @@ import {
   acceptRootShortcutTabAction,
   buildImmediateRootSelection,
 } from "./routes/root/root-selection";
+import type { OpenInlineConfirm } from "./confirm-route";
 import { activatePickerSelectionAction } from "./picker-activation";
 
 type OpenModeRouteFn = (
@@ -37,17 +38,6 @@ type ExecuteCollectionCommandFn = (
   rawInput?: string,
   explicitTargetId?: string | null,
 ) => Promise<void>;
-
-type OpenInlineConfirmFn = (options: {
-  confirmId: string;
-  title: string;
-  body: string[];
-  confirmLabel: string;
-  cancelLabel?: string;
-  tone?: "default" | "danger";
-  onConfirm: () => void | Promise<void>;
-  successBehavior?: "close" | "back" | "stay";
-}) => void;
 
 interface UseCommandBarSelectionRuntimeOptions {
   activeTickerSymbol: string | null;
@@ -67,7 +57,7 @@ interface UseCommandBarSelectionRuntimeOptions {
   executeCollectionCommand: ExecuteCollectionCommandFn;
   getAvailablePaneShortcutTemplates: (query: string) => PaneTemplateDef[];
   getAvailablePluginCommands: () => CommandDef[];
-  openInlineConfirm: OpenInlineConfirmFn;
+  openInlineConfirm: OpenInlineConfirm;
   openModeRoute: OpenModeRouteFn;
   openPaneTemplateWorkflow: (template: PaneTemplateDef, options?: { arg?: string }) => void;
   persistLayoutChange: (nextLayout: AppState["config"]["layout"]) => void;

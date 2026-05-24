@@ -5,6 +5,7 @@ import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import type { CollectionSortPreference } from "../../../state/app-context";
 import { isQuoteStaleForCurrentSession } from "../../../utils/quote-freshness";
+import { compareSortValues } from "../../../utils/sort-values";
 import { getSortValue, type ColumnContext } from "./metrics";
 import type { ResolvedPortfolioAccountState } from "./summary";
 
@@ -165,14 +166,6 @@ export function sortTickers(
     const leftValue = sortValues.get(leftTicker.metadata.ticker) ?? null;
     const rightValue = sortValues.get(rightTicker.metadata.ticker) ?? null;
 
-    if (leftValue == null && rightValue == null) return 0;
-    if (leftValue == null) return 1;
-    if (rightValue == null) return -1;
-
-    const comparison = typeof leftValue === "string" && typeof rightValue === "string"
-      ? leftValue.localeCompare(rightValue)
-      : (leftValue as number) - (rightValue as number);
-
-    return sortPreference.direction === "asc" ? comparison : -comparison;
+    return compareSortValues(leftValue, rightValue, sortPreference.direction);
   });
 }

@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import type { AppState } from "../../state/app-context";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { CommandDef, CommandResultDef } from "../../types/plugin";
+import type { OpenInlineConfirm } from "./confirm-route";
 import {
   getFirstVisibleFieldId,
   looksDestructiveCommand,
@@ -19,24 +20,13 @@ import type { CommandBarWorkflowRoute } from "./workflow/workflow-types";
 type CloseAllFn = (options?: { revertThemePreview?: boolean }) => void;
 type NotifyFn = (body: string, options?: { type?: "info" | "success" | "error" }) => void;
 
-type OpenInlineConfirmFn = (options: {
-  confirmId: string;
-  title: string;
-  body: string[];
-  confirmLabel: string;
-  cancelLabel?: string;
-  tone?: "default" | "danger";
-  onConfirm: () => void | Promise<void>;
-  successBehavior?: "close" | "back" | "stay";
-}) => void;
-
 interface UseCommandBarPluginCommandActionsOptions {
   activeCollectionId: string | null;
   activeTickerSymbol: string | null;
   closeAll: CloseAllFn;
   config: AppState["config"];
   notify: NotifyFn;
-  openInlineConfirm: OpenInlineConfirmFn;
+  openInlineConfirm: OpenInlineConfirm;
   openWorkflowRoute: (route: CommandBarWorkflowRoute) => void;
   pluginRegistry: PluginRegistry;
 }
