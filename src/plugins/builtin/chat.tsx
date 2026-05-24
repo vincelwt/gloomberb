@@ -13,7 +13,6 @@ import { formatTimeAgo } from "../../utils/format";
 import { tokenizeInlineContent } from "../../utils/inline-content-tokenizer";
 import { isPlainKey } from "../../utils/keyboard";
 import { truncateWithEllipsis } from "../../utils/text-wrap";
-import { getSharedRegistry } from "../../plugins/registry";
 import { usePluginAppActions } from "../../plugins/plugin-runtime";
 import { setPaneSetting } from "../../pane-settings";
 import { scheduleConfigSave } from "../../state/config-save-scheduler";
@@ -2617,21 +2616,6 @@ export const gloomberbCloudPlugin: GloomPlugin = {
       },
       execute: (values) => {
         openTwitterFeed(ctx, values?.query ?? values?.shortcut ?? "");
-      },
-    });
-
-    ctx.registerShortcut({
-      id: "toggle-chat",
-      key: "c",
-      shift: true,
-      description: "Toggle chat",
-      execute: () => {
-        const registry = getSharedRegistry();
-        if (registry?.isPaneFloating("chat")) {
-          ctx.hidePane("chat");
-        } else {
-          ctx.showPane("chat");
-        }
       },
     });
 
