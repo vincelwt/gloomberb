@@ -1,6 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
-import { getSharedRegistry } from "../../registry";
 import { apiClient } from "../../../api-client";
 import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../../sources/gloomberb-cloud";
 import { chatController } from "../chat/controller";
@@ -140,21 +139,6 @@ export function createGloomberbCloudPlugin({
       });
 
       registerTwitterFeedFeature(ctx);
-
-      ctx.registerShortcut({
-        id: "toggle-chat",
-        key: "c",
-        shift: true,
-        description: "Toggle chat",
-        execute: () => {
-          const registry = getSharedRegistry();
-          if (registry?.isPaneFloating("chat")) {
-            ctx.hidePane("chat");
-          } else {
-            ctx.showPane("chat");
-          }
-        },
-      });
 
       ctx.registerCommand({
         id: "open-chat",

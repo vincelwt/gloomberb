@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Box, Text } from "../../../../ui";
 import { usePaneFooter } from "../../../../components";
-import { useShortcut } from "../../../../react/input";
+import { useShortcut, type KeyEventLike } from "../../../../react/input";
 import { StaticMultiLineChartSurface } from "../../../../components/chart/static/multi-line-chart-surface";
 import { StaticScatterChartSurface } from "../../../../components/chart/static/scatter-chart-surface";
 import { resolveChartPalette } from "../../../../components/chart/core/renderer";
@@ -36,6 +36,27 @@ import {
 } from "./view-model";
 
 export { buildRelationshipAnalysis } from "./model";
+
+type RelationshipGraphShortcut = "range" | "window" | "correlation" | "regression";
+
+export function resolveRelationshipGraphShortcut(
+  event: Pick<KeyEventLike, "name" | "key" | "ctrl" | "shift" | "alt" | "meta" | "super">,
+): RelationshipGraphShortcut | null {
+  if (event.ctrl || event.shift || event.alt || event.meta || event.super) return null;
+
+  switch ((event.name ?? event.key ?? "").toLowerCase()) {
+    case "t":
+      return "range";
+    case "p":
+      return "window";
+    case "c":
+      return "correlation";
+    case "g":
+      return "regression";
+    default:
+      return null;
+  }
+}
 
 export function RelationshipGraphPane({ focused, width, height }: PaneProps) {
   const pane = usePaneInstance();
@@ -155,23 +176,23 @@ export function RelationshipGraphPane({ focused, width, height }: PaneProps) {
 
   useShortcut((event) => {
     if (!focused) return;
-    switch (event.name) {
-      case "t":
+    switch (resolveRelationshipGraphShortcut(event)) {
+      case "range":
         event.preventDefault();
         event.stopPropagation();
         cycleRange();
         return;
-      case "w":
+      case "window":
         event.preventDefault();
         event.stopPropagation();
         cycleWindow();
         return;
-      case "c":
+      case "correlation":
         event.preventDefault();
         event.stopPropagation();
         toggleCorrelation();
         return;
-      case "g":
+      case "regression":
         event.preventDefault();
         event.stopPropagation();
         toggleRegression();
@@ -187,8 +208,8 @@ export function RelationshipGraphPane({ focused, width, height }: PaneProps) {
     ],
     hints: [
       { id: "range", key: "t", label: "range", onPress: cycleRange },
-      { id: "window", key: "w", label: "win", onPress: cycleWindow },
-      { id: "correlation", key: "c", label: "corr", onPress: toggleCorrelation },
+      { id: "window", key: "p", label: "eriod", onPress: cycleWindow },
+      { id: "correlation", key: "c", label: "orr", onPress: toggleCorrelation },
       { id: "regression", key: "g", label: "reg", onPress: toggleRegression },
     ],
   }), [
