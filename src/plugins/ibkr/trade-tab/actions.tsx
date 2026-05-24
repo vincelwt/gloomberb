@@ -7,12 +7,12 @@ import type {
   BrokerAccount,
   BrokerOrderType,
 } from "../../../types/trading";
-import { formatCurrency } from "../../../utils/format";
 import { getBrokerInstance } from "../../../utils/broker-instances";
 import { isGatewayConfigured, type IbkrConfig } from "../config";
 import { ChoiceDialog, InputDialog } from "../dialogs";
 import type { ibkrGatewayManager } from "../gateway-service";
 import { refreshGatewayData } from "../gateway-helpers";
+import { promptIbkrAccountChoice, promptIbkrProfileChoice } from "../trade-dialogs";
 import {
   getTradeTicketState,
   setTradeTicketBusy,
@@ -141,19 +141,7 @@ export function useTradeTabActions({
       return;
     }
 
-    const selected = await dialog.prompt<string>({
-      content: (ctx: PromptContext<string>) => (
-        <ChoiceDialog
-          {...ctx}
-          title="Choose IBKR Profile"
-          choices={gatewayInstances.map((instance) => ({
-            id: instance.id,
-            label: instance.label,
-            description: "Gateway / TWS",
-          }))}
-        />
-      ),
-    });
+    const selected = await promptIbkrProfileChoice(dialog, gatewayInstances);
     if (!selected) return;
 
     const instance = getBrokerInstance(config.brokerInstances, selected);
@@ -258,19 +246,7 @@ export function useTradeTabActions({
       return;
     }
 
-    const selected = await dialog.prompt<string>({
-      content: (ctx: PromptContext<string>) => (
-        <ChoiceDialog
-          {...ctx}
-          title="Choose Account"
-          choices={nextAccounts.map((account) => ({
-            id: account.accountId,
-            label: `${selectedInstance.label} → ${account.accountId}`,
-            description: `${formatCurrency(account.netLiquidation || 0, account.currency || "USD")} net liq`,
-          }))}
-        />
-      ),
-    });
+    const selected = await promptIbkrAccountChoice(dialog, selectedInstance, nextAccounts);
     if (!selected) return;
     updateTradingPaneState({ accountId: selected });
     setTradeTicketDraft(symbol, { brokerInstanceId: selectedInstance.id, accountId: selected }, ticker);

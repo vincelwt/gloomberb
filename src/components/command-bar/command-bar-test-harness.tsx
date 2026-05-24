@@ -18,6 +18,7 @@ import type { TickerRecord } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { PaneSettingField } from "../../types/plugin";
 import { useShortcut } from "../../react/input";
+import { Text } from "../../ui";
 
 export async function emitKeypress(
   renderer: Awaited<ReturnType<typeof testRender>>,
@@ -286,7 +287,7 @@ export function makeQuoteMonitorPaneSettingsDescriptor(
 }
 
 function ThemeProbe() {
-  return <text>{`theme:${useThemeId()}`}</text>;
+  return <Text>{`theme:${useThemeId()}`}</Text>;
 }
 
 function UnhandledEnterProbe({ onEnter }: { onEnter: () => void }) {
@@ -384,7 +385,7 @@ export function CommandBarHarness({
       <AppContext value={{ state: currentState, dispatch: currentDispatch }}>
         <TestDialogProvider>
           {live && <ThemeProbe />}
-          {showQueryState && <text>{`query:${currentState.commandBarQuery}`}</text>}
+          {showQueryState && <Text>{`query:${currentState.commandBarQuery}`}</Text>}
           {currentState.commandBarOpen && (
             <CommandBar
               dataProvider={dataProvider}

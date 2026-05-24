@@ -147,6 +147,18 @@ export function getNextBufferRange(range: TimeRange): TimeRange {
   return RANGE_PRELOAD_BUFFER[range];
 }
 
+export function getExpandedBufferRange(
+  bufferRange: TimeRange,
+  resolution: ChartResolution,
+  supportMap: ReadonlyMap<ManualChartResolution, TimeRange>,
+): TimeRange | null {
+  const nextCandidate = getNextBufferRange(bufferRange);
+  const nextBufferRange = resolution === "auto"
+    ? nextCandidate
+    : clampTimeRangeToMaxRange(nextCandidate, supportMap.get(resolution) ?? bufferRange);
+  return nextBufferRange === bufferRange ? null : nextBufferRange;
+}
+
 export function sortChartResolutions<T extends ChartResolution>(resolutions: readonly T[]): T[] {
   return [...resolutions].sort((left, right) => (
     CHART_RESOLUTION_ORDER.indexOf(left) - CHART_RESOLUTION_ORDER.indexOf(right)

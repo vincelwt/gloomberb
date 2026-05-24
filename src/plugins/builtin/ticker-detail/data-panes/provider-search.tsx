@@ -12,6 +12,7 @@ import type { InstrumentSearchResult } from "../../../../types/instrument";
 import { usePaneInstance } from "../../../../state/app-context";
 import { colors } from "../../../../theme/colors";
 import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../../plugin-runtime";
+import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../../shared/table-pane";
 import type { LoadState } from "../../shared/ticker-request";
 
 function resultSymbol(result: InstrumentSearchResult): string {
@@ -83,15 +84,10 @@ export function ProviderSearchPane({ focused, width, height }: PaneProps) {
     pinTicker(resultSymbol(row), { floating: true, paneType: "ticker-detail" });
   }, [pinTicker]);
 
-  useEffect(() => {
-    if (rows.length > 0 && selectedIdx >= rows.length) setSelectedIdx(rows.length - 1);
-  }, [rows.length, selectedIdx, setSelectedIdx]);
+  useClampSelectedIndex(rows.length, selectedIdx, setSelectedIdx);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name !== "r") return false;
-    event.preventDefault?.();
-    load(true);
-    return true;
+    return handleRefreshKey(event, () => load(true));
   }, [load]);
 
   const renderCell = useCallback((
@@ -116,10 +112,9 @@ export function ProviderSearchPane({ focused, width, height }: PaneProps) {
   usePaneFooter("provider-search", () => ({
     info: [
       ...(query ? [{ id: "query", parts: [{ text: query, tone: "muted" as const }] }] : []),
-      ...(state.loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(state.error ? [{ id: "error", parts: [{ text: state.error, tone: "warning" as const }] }] : []),
+      ...loadingErrorFooterInfo(state.loading, state.error),
     ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: () => load(true) }],
+    hints: [refreshFooterHint(() => load(true))],
   }), [load, query, state.error, state.loading]);
 
   return (

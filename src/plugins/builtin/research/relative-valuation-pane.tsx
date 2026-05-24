@@ -13,6 +13,7 @@ import { usePaneInstance } from "../../../state/app-context";
 import { blendHex, colors, priceColor } from "../../../theme/colors";
 import { formatCompact, formatCurrency, formatNumber, formatPercent, formatPercentRaw } from "../../../utils/format";
 import { useAssetData, usePluginTickerActions } from "../../plugin-runtime";
+import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../shared/table-pane";
 import { useBoundTicker as useSymbolBinding } from "../shared/ticker-request";
 
 type RelativeColumnId = "symbol" | "price" | "change" | "marketCap" | "pe" | "forwardPe" | "evSales" | "fcfYield" | "revenueGrowth" | "margin";
@@ -119,9 +120,7 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
     reload(false);
   }, [reload]);
 
-  useEffect(() => {
-    if (selectedIdx >= rows.length) setSelectedIdx(Math.max(0, rows.length - 1));
-  }, [rows.length, selectedIdx]);
+  useClampSelectedIndex(rows.length, selectedIdx, setSelectedIdx);
 
   const renderCell = useCallback((row: RelativeRow, column: RelativeColumn, _index: number, rowState: { selected: boolean }): DataTableCell => {
     const selectedColor = rowState.selected ? colors.selectedText : undefined;
@@ -152,20 +151,15 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
   }, []);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name !== "r") return false;
-    event.preventDefault?.();
-    event.stopPropagation?.();
-    reload(true);
-    return true;
+    return handleRefreshKey(event, () => reload(true), { stopPropagation: true });
   }, [reload]);
 
   usePaneFooter("relative-valuation", () => ({
     info: [
       { id: "tickers", parts: [{ text: `${symbols.length} tickers`, tone: symbols.length > 0 ? "value" as const : "muted" as const }] },
-      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
+      ...loadingErrorFooterInfo(loading, error),
     ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: () => reload(true) }],
+    hints: [refreshFooterHint(() => reload(true))],
   }), [error, loading, reload, symbols.length]);
 
   return (

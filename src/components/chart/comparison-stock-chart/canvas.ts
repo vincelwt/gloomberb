@@ -10,7 +10,7 @@ import {
   renderNativeComparisonChartBase,
   type NativeCrosshairOverlay,
 } from "../native/chart-rasterizer";
-import { useNativeCanvasBitmaps } from "../native/canvas-bitmaps";
+import { resolveCanvasBitmapSize, useNativeCanvasBitmaps } from "../native/canvas-bitmaps";
 import {
   buildComparisonChartScene,
 } from "../comparison-chart-renderer";
@@ -63,14 +63,14 @@ export function useComparisonChartCanvasBitmaps({
   series: ComparisonChartSeries[];
   symbolCount: number;
 }) {
-  const canvasBitmapSize = useMemo(() => {
-    if (!canvasCharts) return null;
-    const resolutionScale = Math.max(1, pixelRatio);
-    return {
-      pixelWidth: Math.max(1, Math.round(chartWidth * cellWidthPx * resolutionScale)),
-      pixelHeight: Math.max(1, Math.round(chartHeight * cellHeightPx * resolutionScale)),
-    };
-  }, [canvasCharts, cellHeightPx, cellWidthPx, chartHeight, chartWidth, pixelRatio]);
+  const canvasBitmapSize = useMemo(() => resolveCanvasBitmapSize({
+    enabled: canvasCharts,
+    cellHeightPx,
+    cellWidthPx,
+    chartHeight,
+    chartWidth,
+    pixelRatio,
+  }), [canvasCharts, cellHeightPx, cellWidthPx, chartHeight, chartWidth, pixelRatio]);
 
   const canvasProjection = useMemo(() => (
     canvasBitmapSize

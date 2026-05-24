@@ -16,8 +16,7 @@ import {
   resolveVisibleActivePreset,
 } from "../chart-controller";
 import {
-  clampTimeRangeToMaxRange,
-  getNextBufferRange,
+  getExpandedBufferRange,
   getPresetResolution,
   getSupportMaxRange,
   isRangePresetSupported,
@@ -154,11 +153,8 @@ export function useComparisonChartViewportRuntime({
   ]);
 
   const expandBufferRange = useCallback((action: PendingExpansionAction): boolean => {
-    const nextCandidate = getNextBufferRange(viewState.bufferRange);
-    const nextBufferRange = effectiveResolution === "auto"
-      ? nextCandidate
-      : clampTimeRangeToMaxRange(nextCandidate, supportMap.get(effectiveResolution) ?? viewState.bufferRange);
-    if (nextBufferRange === viewState.bufferRange) return false;
+    const nextBufferRange = getExpandedBufferRange(viewState.bufferRange, effectiveResolution, supportMap);
+    if (!nextBufferRange) return false;
     pendingExpansionRef.current = action;
     setViewState((current) => applyBufferedPanExpansion(current, nextBufferRange));
     return true;

@@ -11,6 +11,7 @@ import type { CorporateActionsData } from "../../../types/financials";
 import { blendHex, colors } from "../../../theme/colors";
 import { formatCurrency, formatNumber, formatPercentRaw } from "../../../utils/format";
 import { useAssetData } from "../../plugin-runtime";
+import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint } from "../shared/table-pane";
 import { useBoundTicker as useSymbolBinding, useTickerRequest } from "../shared/ticker-request";
 
 type ActionRow = {
@@ -160,19 +161,12 @@ export function CorporateActionsView({ focused, width, height }: { focused: bool
   }, []);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name !== "r") return false;
-    event.preventDefault?.();
-    event.stopPropagation?.();
-    reload();
-    return true;
+    return handleRefreshKey(event, reload, { stopPropagation: true });
   }, [reload]);
 
   usePaneFooter("corporate-actions", () => ({
-    info: [
-      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
-    ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: reload }],
+    info: loadingErrorFooterInfo(loading, error),
+    hints: [refreshFooterHint(reload)],
   }), [error, loading, reload]);
 
   return (

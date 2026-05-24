@@ -11,14 +11,13 @@ import {
   usePaneInstanceId,
 } from "../../state/app-context";
 import type { PaneProps } from "../../types/plugin";
-import { formatCurrency } from "../../utils/format";
 import { isPlainKey } from "../../utils/keyboard";
 import { getBrokerInstance } from "../../utils/broker-instances";
 import { usePluginPaneActions } from "../plugin-runtime";
 import { isGatewayConfigured } from "./config";
-import { ChoiceDialog } from "./dialogs";
 import { useIbkrGatewaySelection } from "./gateway-selection";
 import { refreshGatewayData } from "./gateway-helpers";
+import { promptIbkrAccountChoice, promptIbkrProfileChoice } from "./trade-dialogs";
 import {
   getTradingPaneState,
   loadOrderIntoDraft,
@@ -165,19 +164,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
       setTradingMessage(undefined, "Connect a Gateway / TWS IBKR profile first.");
       return;
     }
-    const selected = await dialog.prompt<string>({
-      content: (ctx) => (
-        <ChoiceDialog
-          {...ctx}
-          title="Choose IBKR Profile"
-          choices={gatewayInstances.map((instance) => ({
-            id: instance.id,
-            label: instance.label,
-            description: "Gateway / TWS",
-          }))}
-        />
-      ),
-    });
+    const selected = await promptIbkrProfileChoice(dialog, gatewayInstances);
     if (!selected) return;
     const instance = getBrokerInstance(config.brokerInstances, selected);
     if (!instance) return;
@@ -207,19 +194,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
       return;
     }
 
-    const selected = await dialog.prompt<string>({
-      content: (ctx) => (
-        <ChoiceDialog
-          {...ctx}
-          title="Choose Account"
-          choices={nextAccounts.map((account) => ({
-            id: account.accountId,
-            label: `${selectedInstance.label} → ${account.accountId}`,
-            description: `${formatCurrency(account.netLiquidation || 0, account.currency || "USD")} net liq`,
-          }))}
-        />
-      ),
-    });
+    const selected = await promptIbkrAccountChoice(dialog, selectedInstance, nextAccounts);
     if (!selected) return;
     updateTradingPaneState({ accountId: selected });
   }, [availableAccounts, brokerAccounts, dialog, gatewayService, isGatewayMode, normalizedConfig, refresh, selectedInstance]);

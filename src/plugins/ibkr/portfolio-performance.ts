@@ -5,6 +5,7 @@ import type { BrokerPortfolioPerformance } from "../../types/trading";
 import { debugLog } from "../../utils/debug-log";
 import { loadFlexStatement, parseFlexPortfolioPerformance } from "./flex";
 import { normalizeIbkrConfig } from "./config";
+import { fnv1aHashString } from "./hash";
 
 const PERFORMANCE_LOG = debugLog.createLogger("ibkr-performance");
 const PERFORMANCE_CACHE_KIND = "portfolio-performance";
@@ -20,22 +21,13 @@ export function setIbkrPortfolioPerformanceResourceStore(store: ResourceStore | 
   resourceStore = store;
 }
 
-function hashString(input: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `fnv1a:${(hash >>> 0).toString(16).padStart(8, "0")}`;
-}
-
 function cacheKey(instance: BrokerInstanceConfig, accountId: string): string {
   return `${instance.id}:${accountId}`;
 }
 
 function cacheSourceKey(instance: BrokerInstanceConfig): string {
   const config = normalizeIbkrConfig(instance.config);
-  return hashString(JSON.stringify({
+  return fnv1aHashString(JSON.stringify({
     connectionMode: config.connectionMode,
     flexQueryId: config.flex.queryId,
     flexEndpoint: config.flex.endpoint,
@@ -64,7 +56,7 @@ function readCachedPerformance(
     schemaVersion: PERFORMANCE_CACHE_SCHEMA_VERSION,
     allowExpired,
   });
-  return normalizeCachedPerformance(record?.value, !!record && (record.stale || record.expired));
+  return normalizeCachedPerformance(record?.value, Boolean(record && (record.stale || record.expired)));
 }
 
 function readAnyCachedPerformance(

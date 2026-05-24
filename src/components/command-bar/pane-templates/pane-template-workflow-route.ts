@@ -3,7 +3,6 @@ import type {
 } from "../../../types/plugin";
 import {
   buildGeneratedTemplateField,
-  getFirstVisibleFieldId,
   normalizeWizardFields,
 } from "../helpers";
 import type {
@@ -11,6 +10,7 @@ import type {
   CommandBarWorkflowField,
   CommandBarWorkflowRoute,
 } from "../workflow/workflow-types";
+import { buildCommandBarWorkflowRoute } from "../workflow/workflow-route-builder";
 import {
   canPromptForPaneTemplateArg,
   getPaneTemplateDisplayLabel,
@@ -57,22 +57,16 @@ export function buildPaneTemplateWorkflowRoute({
     values[template.shortcut.argPlaceholder] = arg;
   }
 
-  return {
-    kind: "workflow",
+  return buildCommandBarWorkflowRoute({
     workflowId: `pane-template:${template.id}`,
     title: displayLabel,
     subtitle: template.description,
     description: normalized.description,
     fields,
     values,
-    activeFieldId: getFirstVisibleFieldId(fields, values),
     submitLabel: "Create Pane",
-    cancelLabel: "Back",
     pendingLabel: normalized.pendingLabel ?? `Creating ${displayLabel.toLowerCase()}...`,
     successLabel: normalized.successLabel,
-    pending: false,
-    error: null,
-    successBehavior: "close",
     payload: {
       kind: "pane-template",
       actionId: template.id,
@@ -80,5 +74,5 @@ export function buildPaneTemplateWorkflowRoute({
     payloadMeta: {
       argPlaceholder: template.shortcut?.argPlaceholder,
     },
-  };
+  });
 }

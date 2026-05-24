@@ -8,7 +8,7 @@ import {
   type DateWindowRange,
 } from "../chart-controller";
 import {
-  clampTimeRangeToMaxRange,
+  getExpandedBufferRange,
   getNextBufferRange,
   getPresetResolution,
   getSupportMaxRange,
@@ -171,11 +171,8 @@ export function useStockChartViewportRuntime({
 
   const expandBufferRange = useCallback((action: PendingExpansionAction): boolean => {
     if (compact) return false;
-    const nextCandidate = getNextBufferRange(viewState.bufferRange);
-    const nextBufferRange = effectiveResolution === "auto"
-      ? nextCandidate
-      : clampTimeRangeToMaxRange(nextCandidate, supportMap.get(effectiveResolution) ?? viewState.bufferRange);
-    if (nextBufferRange === viewState.bufferRange) return false;
+    const nextBufferRange = getExpandedBufferRange(viewState.bufferRange, effectiveResolution, supportMap);
+    if (!nextBufferRange) return false;
     pendingExpansionRef.current = action;
     setViewState((current) => applyBufferedPanExpansion(current, nextBufferRange));
     return true;

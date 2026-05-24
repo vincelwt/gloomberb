@@ -22,6 +22,12 @@ import {
   isAnalystResearchMissingRatingTargets,
 } from "./provider-router-financials";
 import type { ProviderRouterCoreDeps, SourceResult } from "./provider-router-route-types";
+import {
+  firstProviderResult,
+  makeRouterRevalidationKey,
+  resolveProviderBySourceKey,
+  scheduleRouterRevalidation,
+} from "./provider-router-routing";
 
 export class ProviderRouterSupplementalRoutes {
   private readonly revalidationInFlight = new Map<string, Promise<unknown>>();
@@ -43,13 +49,13 @@ export class ProviderRouterSupplementalRoutes {
 
     const cached = this.readCachedExchangeRate(normalizedCurrency, false);
     if (cached != null) {
-      this.scheduleRevalidation(`exchange-rate:${normalizedCurrency}`, async () => {
+      scheduleRouterRevalidation(this.revalidationInFlight, `exchange-rate:${normalizedCurrency}`, async () => {
         await this.revalidateExchangeRate(normalizedCurrency);
       });
       return cached;
     }
 
-    const result = await this.firstProvider(async (provider) => {
+    const result = await firstProviderResult(this.deps, async (provider) => {
       const rate = await provider.getExchangeRate(normalizedCurrency);
       return { provider, rate };
     });
@@ -66,7 +72,7 @@ export class ProviderRouterSupplementalRoutes {
     const cached = selectCachedResource<HolderData>(this.deps.resources, "holders", entityKey, variantKeys, this.deps.getProviderSourceKeys(), false);
     const forceRefresh = context?.cacheMode === "refresh";
     if (cached && !forceRefresh) {
-      this.scheduleRevalidation(this.makeRevalidationKey("holders", ticker, context), async () => {
+      scheduleRouterRevalidation(this.revalidationInFlight, makeRouterRevalidationKey(this.deps, "holders", ticker, context), async () => {
         await this.revalidateHolders(ticker, exchange, context);
       });
       return cached.value;
@@ -84,7 +90,7 @@ export class ProviderRouterSupplementalRoutes {
     const cached = this.selectCachedAnalystResearch(entityKey, variantKeys, this.deps.getProviderSourceKeys(), false);
     const forceRefresh = context?.cacheMode === "refresh";
     if (cached && !forceRefresh && !isAnalystResearchMissingRatingTargets(cached.value)) {
-      this.scheduleRevalidation(this.makeRevalidationKey("analystResearch", ticker, context), async () => {
+      scheduleRouterRevalidation(this.revalidationInFlight, makeRouterRevalidationKey(this.deps, "analystResearch", ticker, context), async () => {
         await this.revalidateAnalystResearch(ticker, exchange, context);
       });
       return cached.value;
@@ -102,7 +108,7 @@ export class ProviderRouterSupplementalRoutes {
     const cached = selectCachedResource<CorporateActionsData>(this.deps.resources, "corporateActions", entityKey, variantKeys, this.deps.getProviderSourceKeys(), false);
     const forceRefresh = context?.cacheMode === "refresh";
     if (cached && !forceRefresh) {
-      this.scheduleRevalidation(this.makeRevalidationKey("corporateActions", ticker, context), async () => {
+      scheduleRouterRevalidation(this.revalidationInFlight, makeRouterRevalidationKey(this.deps, "corporateActions", ticker, context), async () => {
         await this.revalidateCorporateActions(ticker, exchange, context);
       });
       return cached.value;
@@ -127,7 +133,7 @@ export class ProviderRouterSupplementalRoutes {
     ];
     const cached = selectCachedResource<OptionsChain>(this.deps.resources, "options-chain", entityKey, variantKeys, sourceKeys, false);
     if (cached) {
-      this.scheduleRevalidation(this.makeRevalidationKey("options-chain", ticker, context, expirationDate ?? "default"), async () => {
+      scheduleRouterRevalidation(this.revalidationInFlight, makeRouterRevalidationKey(this.deps, "options-chain", ticker, context, expirationDate ?? "default"), async () => {
         await this.revalidateOptionsChain(ticker, exchange, expirationDate, context);
       });
       return cached.value;
@@ -141,24 +147,6 @@ export class ProviderRouterSupplementalRoutes {
       throw new Error(`No options provider available for ${ticker}`);
     }
     return providerChain.value;
-  }
-
-  private makeRevalidationKey(kind: string, ticker: string, context?: MarketDataRequestContext, extra?: string | number): string {
-    return [
-      kind,
-      this.deps.getEntityKey(ticker, context?.instrument),
-      extra != null ? String(extra) : "",
-    ].join("|");
-  }
-
-  private scheduleRevalidation(key: string, task: () => Promise<void>): void {
-    if (this.revalidationInFlight.has(key)) return;
-    const promise = task()
-      .catch(() => {})
-      .finally(() => {
-        this.revalidationInFlight.delete(key);
-      });
-    this.revalidationInFlight.set(key, promise);
   }
 
   private selectCachedAnalystResearch(
@@ -190,20 +178,6 @@ export class ProviderRouterSupplementalRoutes {
       { rate },
       this.deps.resolveProviderPolicy("exchangeRate", provider),
     );
-  }
-
-  private async firstProvider<T>(fn: (provider: DataProvider) => Promise<T | null | undefined>): Promise<SourceResult<T> | null> {
-    for (const provider of this.deps.providersInPriorityOrder()) {
-      try {
-        const result = await fn(provider);
-        if (result != null) return { sourceKey: this.deps.providerSourceKey(provider), value: result };
-      } catch (err) {
-        if (shouldLogProviderError(err)) {
-          this.deps.logProviderError(`${provider.id} failed: ${err}`);
-        }
-      }
-    }
-    return null;
   }
 
   private async fetchBrokerOptionsChain(
@@ -248,12 +222,12 @@ export class ProviderRouterSupplementalRoutes {
   ): Promise<SourceResult<OptionsChain> | null> {
     const entityKey = this.deps.getEntityKey(ticker, context?.instrument);
     const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["expiration", expirationDate ?? "default"]]);
-    const result = await this.firstProvider(async (provider) => {
+    const result = await firstProviderResult(this.deps, async (provider) => {
       if (!provider.getOptionsChain) return null;
       return provider.getOptionsChain(ticker, exchange, expirationDate, context);
     });
     if (!result) return null;
-    const provider = this.resolveProviderBySourceKey(result.sourceKey);
+    const provider = resolveProviderBySourceKey(this.deps, result.sourceKey);
     if (provider) {
       this.deps.cacheResource("options-chain", entityKey, variantKey, result.sourceKey, result.value, this.deps.resolveProviderPolicy("optionsChain", provider));
     }
@@ -361,18 +335,11 @@ export class ProviderRouterSupplementalRoutes {
     return null;
   }
 
-  private resolveProviderBySourceKey(sourceKey: string): DataProvider | null {
-    for (const provider of this.deps.providersInPriorityOrder()) {
-      if (this.deps.providerSourceKey(provider) === sourceKey) return provider;
-    }
-    return null;
-  }
-
   private async revalidateExchangeRate(fromCurrency: string): Promise<void> {
     const normalizedCurrency = fromCurrency.trim().toUpperCase();
     if (normalizedCurrency === "USD") return;
 
-    const result = await this.firstProvider(async (provider) => {
+    const result = await firstProviderResult(this.deps, async (provider) => {
       const rate = await provider.getExchangeRate(normalizedCurrency);
       return { provider, rate };
     });

@@ -16,6 +16,29 @@ interface CanvasBitmapSize {
   pixelHeight: number;
 }
 
+export function resolveCanvasBitmapSize({
+  enabled,
+  cellHeightPx,
+  cellWidthPx,
+  chartHeight,
+  chartWidth,
+  pixelRatio,
+}: {
+  enabled: boolean;
+  cellHeightPx: number;
+  cellWidthPx: number;
+  chartHeight: number;
+  chartWidth: number;
+  pixelRatio: number;
+}): CanvasBitmapSize | null {
+  if (!enabled) return null;
+  const resolutionScale = Math.max(1, pixelRatio);
+  return {
+    pixelWidth: Math.max(1, Math.round(chartWidth * cellWidthPx * resolutionScale)),
+    pixelHeight: Math.max(1, Math.round(chartHeight * cellHeightPx * resolutionScale)),
+  };
+}
+
 export function useNativeCanvasBitmaps<TScene>({
   bitmapKey,
   bitmapSize,

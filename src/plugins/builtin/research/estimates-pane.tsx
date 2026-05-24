@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { TextAttributes } from "../../../ui";
 import {
   DataTableView,
@@ -12,6 +12,7 @@ import type { PaneProps } from "../../../types/plugin";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCompact, formatNumber, formatPercent } from "../../../utils/format";
 import { useAssetData, usePluginPaneState } from "../../plugin-runtime";
+import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../shared/table-pane";
 import { useBoundTicker, useTickerRequest } from "../shared/ticker-request";
 
 type EstimateColumnId = "type" | "date" | "period" | "analysts" | "average" | "low" | "high" | "yearAgo" | "growth";
@@ -86,15 +87,10 @@ export function EarningsEstimatesPane({ focused, width, height }: PaneProps) {
   const columns = useMemo(() => buildEstimateColumns(width), [width]);
   const boundedSelectedIdx = rows.length > 0 ? Math.min(selectedIdx, rows.length - 1) : -1;
 
-  useEffect(() => {
-    if (rows.length > 0 && selectedIdx >= rows.length) setSelectedIdx(rows.length - 1);
-  }, [rows.length, selectedIdx, setSelectedIdx]);
+  useClampSelectedIndex(rows.length, selectedIdx, setSelectedIdx);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name !== "r") return false;
-    event.preventDefault?.();
-    reload();
-    return true;
+    return handleRefreshKey(event, reload);
   }, [reload]);
 
   const renderCell = useCallback((
@@ -127,11 +123,8 @@ export function EarningsEstimatesPane({ focused, width, height }: PaneProps) {
   }, []);
 
   usePaneFooter("earnings-estimates", () => ({
-    info: [
-      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
-    ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: reload }],
+    info: loadingErrorFooterInfo(loading, error),
+    hints: [refreshFooterHint(reload)],
   }), [error, loading, reload]);
 
   return (

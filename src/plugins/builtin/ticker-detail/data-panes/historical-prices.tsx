@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { TextAttributes } from "../../../../ui";
 import {
   DataTableView,
@@ -13,6 +13,7 @@ import type { PricePoint } from "../../../../types/financials";
 import { colors, priceColor } from "../../../../theme/colors";
 import { formatCompact, formatNumber, formatPercent } from "../../../../utils/format";
 import { useAssetData, usePluginPaneState } from "../../../plugin-runtime";
+import { loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../../shared/table-pane";
 import { formatDateTime, useBoundTicker, useTickerRequest } from "../../shared/ticker-request";
 
 type HistoryColumnId = "date" | "open" | "high" | "low" | "close" | "change" | "changePercent" | "volume";
@@ -110,9 +111,7 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
   const boundedSelectedIdx = rows.length > 0 ? Math.min(selectedIdx, rows.length - 1) : -1;
   const cycleRange = useCallback(() => setRange((current) => nextHistoryRange(current)), [setRange]);
 
-  useEffect(() => {
-    if (rows.length > 0 && selectedIdx >= rows.length) setSelectedIdx(rows.length - 1);
-  }, [rows.length, selectedIdx, setSelectedIdx]);
+  useClampSelectedIndex(rows.length, selectedIdx, setSelectedIdx);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (event.name === "r") {
@@ -158,12 +157,11 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
   usePaneFooter("historical-prices", () => ({
     info: [
       { id: "range", parts: [{ text: range, tone: "muted" as const }] },
-      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
+      ...loadingErrorFooterInfo(loading, error),
     ],
     hints: [
       { id: "range", key: "t", label: "oggle range", onPress: cycleRange },
-      { id: "refresh", key: "r", label: "efresh", onPress: reload },
+      refreshFooterHint(reload),
     ],
   }), [cycleRange, error, loading, range, reload]);
 

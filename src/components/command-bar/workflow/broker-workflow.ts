@@ -1,7 +1,6 @@
 import type { BrokerAdapter } from "../../../types/broker";
 import {
   coerceFieldString,
-  getFirstVisibleFieldId,
   normalizeFieldOptions,
 } from "../helpers";
 import type {
@@ -10,6 +9,7 @@ import type {
   CommandBarWorkflowField,
   CommandBarWorkflowRoute,
 } from "./workflow-types";
+import { buildCommandBarWorkflowRoute } from "./workflow-route-builder";
 
 export type WorkflowStringValues = Record<string, string>;
 
@@ -128,25 +128,19 @@ export function buildBrokerWorkflowRoute({
     }
   }
 
-  return {
-    kind: "workflow",
+  return buildCommandBarWorkflowRoute({
     workflowId: `builtin:${title.toLowerCase().replace(/\s+/g, "-")}`,
     title,
     subtitle,
     fields,
     values,
-    activeFieldId: getFirstVisibleFieldId(fields, values),
     submitLabel,
-    cancelLabel: "Back",
     pendingLabel: "Connecting broker…",
-    pending: false,
-    error: null,
-    successBehavior: "close",
     payload: {
       kind: "builtin",
       actionId: includeManualOption ? "new-portfolio" : "add-broker-account",
     },
-  };
+  });
 }
 
 export function extractBrokerWorkflowValues(

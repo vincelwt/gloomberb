@@ -12,6 +12,7 @@ import { blendHex, colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatNumber, formatPercent } from "../../../utils/format";
 import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import { useAssetData } from "../../plugin-runtime";
+import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint } from "../shared/table-pane";
 import { useBoundTicker as useSymbolBinding, useTickerRequest } from "../shared/ticker-request";
 
 function compactPeriod(period: string): string {
@@ -280,22 +281,15 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
   }, [ratingCurrency]);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name !== "r") return false;
-    event.preventDefault?.();
-    event.stopPropagation?.();
-    reload();
-    return true;
+    return handleRefreshKey(event, reload, { stopPropagation: true });
   }, [reload]);
   const handleHeaderClick = useCallback((columnId: string) => {
     setSortPreference((current) => nextRatingSortPreference(current, columnId));
   }, []);
 
   usePaneFooter("analyst-research", () => ({
-    info: [
-      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
-    ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: reload }],
+    info: loadingErrorFooterInfo(loading, error),
+    hints: [refreshFooterHint(reload)],
   }), [error, loading, reload]);
 
   return (

@@ -3,8 +3,8 @@ import type { TickerRecord } from "../../../types/ticker";
 import {
   buildSetPortfolioPositionWorkflow,
 } from "../../../plugins/builtin/portfolio-list/command-bar";
-import { getFirstVisibleFieldId } from "../helpers";
 import type { CommandBarWorkflowRoute } from "./workflow-types";
+import { buildCommandBarWorkflowRoute } from "./workflow-route-builder";
 
 type BrokerWorkflowBuilder = (
   selectorKey: "brokerType" | "source",
@@ -38,8 +38,7 @@ export function buildBuiltInWorkflowRoute(options: {
     case "new-watchlist":
       return {
         kind: "route",
-        route: {
-          kind: "workflow",
+        route: buildCommandBarWorkflowRoute({
           workflowId: "builtin:new-watchlist",
           title: "New Watchlist",
           subtitle: "Create a new watchlist inside the command bar.",
@@ -51,23 +50,17 @@ export function buildBuiltInWorkflowRoute(options: {
             required: true,
           }],
           values: { name: "" },
-          activeFieldId: "name",
           submitLabel: "Create Watchlist",
-          cancelLabel: "Back",
           pendingLabel: "Creating watchlist…",
-          pending: false,
-          error: null,
-          successBehavior: "close",
           payload: { kind: "builtin", actionId },
-        },
+        }),
       };
 
     case "new-layout":
     case "rename-layout":
       return {
         kind: "route",
-        route: {
-          kind: "workflow",
+        route: buildCommandBarWorkflowRoute({
           workflowId: `builtin:${actionId}`,
           title: actionId === "new-layout" ? "New Layout" : "Rename Layout",
           fields: [{
@@ -80,15 +73,10 @@ export function buildBuiltInWorkflowRoute(options: {
             required: true,
           }],
           values: { name: "" },
-          activeFieldId: "name",
           submitLabel: actionId === "new-layout" ? "Create Layout" : "Rename Layout",
-          cancelLabel: "Back",
           pendingLabel: actionId === "new-layout" ? "Creating layout…" : "Renaming layout…",
-          pending: false,
-          error: null,
-          successBehavior: "close",
           payload: { kind: "builtin", actionId },
-        },
+        }),
       };
 
     case "new-portfolio": {
@@ -114,22 +102,16 @@ export function buildBuiltInWorkflowRoute(options: {
       }
       return {
         kind: "route",
-        route: {
-          kind: "workflow",
+        route: buildCommandBarWorkflowRoute({
           workflowId: "builtin:set-portfolio-position",
           title: "Set Portfolio Position",
           subtitle: "Create or update a manual position without leaving the command bar.",
           fields: workflow.fields,
           values: workflow.values,
-          activeFieldId: getFirstVisibleFieldId(workflow.fields, workflow.values),
           submitLabel: "Save Position",
-          cancelLabel: "Back",
           pendingLabel: workflow.pendingLabel,
-          pending: false,
-          error: null,
-          successBehavior: "close",
           payload: { kind: "builtin", actionId },
-        },
+        }),
       };
     }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { Box, TextAttributes } from "../../../../../ui";
 import {
   DataTableView,
@@ -9,6 +9,7 @@ import {
 import { StaticBarChartSurface } from "../../../../../components/chart/static-bar-chart-surface";
 import { colors, priceColor } from "../../../../../theme/colors";
 import { usePluginPaneState } from "../../../../plugin-runtime";
+import { loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../../../shared/table-pane";
 import {
   buildFundamentalColumns,
   buildGraphBarSeries,
@@ -71,9 +72,7 @@ export function FundamentalGraphContent({
     setMetric((current) => isMetricForKind(nextKind, current) ? current : defaultMetric(nextKind));
   }, [chartKind, setChartKind, setMetric]);
 
-  useEffect(() => {
-    if (rows.length > 0 && selectedIdx >= rows.length) setSelectedIdx(rows.length - 1);
-  }, [rows.length, selectedIdx, setSelectedIdx]);
+  useClampSelectedIndex(rows.length, selectedIdx, setSelectedIdx);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (event.name === "r") {
@@ -123,14 +122,13 @@ export function FundamentalGraphContent({
       { id: "metric", parts: [{ text: definition.label, tone: "muted" as const }] },
       { id: "kind", parts: [{ text: chartKind === "valuation" ? "valuation" : "fundamental", tone: "muted" as const }] },
       { id: "period", parts: [{ text: period, tone: "muted" as const }] },
-      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
+      ...loadingErrorFooterInfo(loading, error),
     ],
     hints: [
       { id: "metric", key: "m", label: "etric", onPress: cycleMetric },
       { id: "kind", key: "g", label: "raph", onPress: toggleGraphKind },
       { id: "period", key: "p", label: "eriod", onPress: togglePeriod },
-      { id: "refresh", key: "r", label: "efresh", onPress: reload },
+      refreshFooterHint(reload),
     ],
   }), [chartKind, cycleMetric, definition.label, error, loading, period, reload, toggleGraphKind, togglePeriod]);
 

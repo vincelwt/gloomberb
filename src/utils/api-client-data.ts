@@ -46,23 +46,35 @@ type CloudApiRequest = <T>(path: string, options?: RequestInit) => Promise<T>;
 export class CloudDataApi {
   constructor(private readonly request: CloudApiRequest) {}
 
+  private requestMarketSymbol<T>(path: string, symbol: string, exchange?: string): Promise<CloudMarketResponse<T>> {
+    return this.request<CloudMarketResponse<T>>(cloudMarketSymbolPath(path, symbol, exchange));
+  }
+
+  private postMarketBatch<T>(
+    path: string,
+    targets: CloudMarketBatchTarget[],
+    mode: "cache-first" | "refresh",
+  ): Promise<CloudMarketResponse<CloudMarketBatchPayload<T>>> {
+    return this.request<CloudMarketResponse<CloudMarketBatchPayload<T>>>(path, {
+      method: "POST",
+      body: JSON.stringify({ targets, mode }),
+    });
+  }
+
   async searchInstruments(query: string, limit = 10): Promise<InstrumentSearchResult[]> {
     const response = await this.request<CloudMarketResponse<InstrumentSearchResult[]>>(cloudMarketSearchPath(query, limit));
     return response.data ?? [];
   }
 
   async getCloudQuote(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudQuotePayload>> {
-    return this.request<CloudMarketResponse<CloudQuotePayload>>(cloudMarketSymbolPath("/market/quote", symbol, exchange));
+    return this.requestMarketSymbol("/market/quote", symbol, exchange);
   }
 
   async getCloudQuotesBatch(
     targets: CloudMarketBatchTarget[],
     mode: "cache-first" | "refresh" = "cache-first",
   ): Promise<CloudMarketResponse<CloudMarketBatchPayload<CloudQuotePayload>>> {
-    return this.request<CloudMarketResponse<CloudMarketBatchPayload<CloudQuotePayload>>>("/market/quotes/batch", {
-      method: "POST",
-      body: JSON.stringify({ targets, mode }),
-    });
+    return this.postMarketBatch("/market/quotes/batch", targets, mode);
   }
 
   async getCloudOptionsChain(
@@ -74,37 +86,34 @@ export class CloudDataApi {
   }
 
   async getCloudProfile(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudCompanyProfile>> {
-    return this.request<CloudMarketResponse<CloudCompanyProfile>>(cloudMarketSymbolPath("/market/profile", symbol, exchange));
+    return this.requestMarketSymbol("/market/profile", symbol, exchange);
   }
 
   async getCloudFundamentals(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudFundamentals>> {
-    return this.request<CloudMarketResponse<CloudFundamentals>>(cloudMarketSymbolPath("/market/fundamentals", symbol, exchange));
+    return this.requestMarketSymbol("/market/fundamentals", symbol, exchange);
   }
 
   async getCloudFinancials(symbol: string, exchange?: string): Promise<CloudMarketResponse<TickerFinancials>> {
-    return this.request<CloudMarketResponse<TickerFinancials>>(cloudMarketSymbolPath("/market/financials", symbol, exchange));
+    return this.requestMarketSymbol("/market/financials", symbol, exchange);
   }
 
   async getCloudFinancialsBatch(
     targets: CloudMarketBatchTarget[],
     mode: "cache-first" | "refresh" = "cache-first",
   ): Promise<CloudMarketResponse<CloudMarketBatchPayload<TickerFinancials>>> {
-    return this.request<CloudMarketResponse<CloudMarketBatchPayload<TickerFinancials>>>("/market/financials/batch", {
-      method: "POST",
-      body: JSON.stringify({ targets, mode }),
-    });
+    return this.postMarketBatch("/market/financials/batch", targets, mode);
   }
 
   async getCloudHolders(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudHoldersPayload>> {
-    return this.request<CloudMarketResponse<CloudHoldersPayload>>(cloudMarketSymbolPath("/market/holders", symbol, exchange));
+    return this.requestMarketSymbol("/market/holders", symbol, exchange);
   }
 
   async getCloudAnalystResearch(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudAnalystResearchPayload>> {
-    return this.request<CloudMarketResponse<CloudAnalystResearchPayload>>(cloudMarketSymbolPath("/market/analyst", symbol, exchange));
+    return this.requestMarketSymbol("/market/analyst", symbol, exchange);
   }
 
   async getCloudCorporateActions(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudCorporateActionsPayload>> {
-    return this.request<CloudMarketResponse<CloudCorporateActionsPayload>>(cloudMarketSymbolPath("/market/corporate-actions", symbol, exchange));
+    return this.requestMarketSymbol("/market/corporate-actions", symbol, exchange);
   }
 
   async getCloudStatements(

@@ -6,7 +6,7 @@ import {
   formatComparisonCursorAxisValue,
   renderComparisonChart,
 } from "../comparison-chart-renderer";
-import { resolveChartAxisWidth } from "../chart-renderer";
+import { resolveIterativeChartAxisWidth } from "../chart-axis-measure";
 import type {
   ChartAxisMode,
   ComparisonChartSeries,
@@ -52,47 +52,48 @@ export function resolveComparisonChartAxisWidth({
   viewState,
   width,
 }: ResolveComparisonChartAxisWidthOptions): number {
-  const measureAxisWidth = (targetWidth: number) => {
-    const measuredProjection = projectComparisonChartData(series, targetWidth, viewState, axisMode);
-    const measuredResult = renderComparisonChart(measuredProjection, {
-      width: targetWidth,
-      height: chartHeight,
-      cursorX: null,
-      cursorY: null,
-      selectedSymbol,
-      colors: chartColors,
-    });
-    const measuredScene = buildComparisonChartScene(measuredProjection, {
-      width: targetWidth,
-      height: chartHeight,
-      cursorX: null,
-      cursorY: null,
-      selectedSymbol,
-      colors: chartColors,
-    });
-    const cursorSamples = measuredScene
-      ? [
-        formatComparisonCursorAxisValue(
-          measuredScene.min,
-          measuredProjection.effectiveAxisMode,
-          measuredResult.priceRange ?? undefined,
-        ),
-        formatComparisonCursorAxisValue(
-          measuredScene.max,
-          measuredProjection.effectiveAxisMode,
-          measuredResult.priceRange ?? undefined,
-        ),
-      ]
-      : [];
+  return resolveIterativeChartAxisWidth({
+    axisGap,
+    axisRightPadding,
+    axisSectionWidthBudget,
+    measurementChartWidth,
+    minChartWidth,
+    minimumAxisWidth,
+    width,
+    measureLabels: (targetWidth) => {
+      const measuredProjection = projectComparisonChartData(series, targetWidth, viewState, axisMode);
+      const measuredResult = renderComparisonChart(measuredProjection, {
+        width: targetWidth,
+        height: chartHeight,
+        cursorX: null,
+        cursorY: null,
+        selectedSymbol,
+        colors: chartColors,
+      });
+      const measuredScene = buildComparisonChartScene(measuredProjection, {
+        width: targetWidth,
+        height: chartHeight,
+        cursorX: null,
+        cursorY: null,
+        selectedSymbol,
+        colors: chartColors,
+      });
+      const cursorSamples = measuredScene
+        ? [
+          formatComparisonCursorAxisValue(
+            measuredScene.min,
+            measuredProjection.effectiveAxisMode,
+            measuredResult.priceRange ?? undefined,
+          ),
+          formatComparisonCursorAxisValue(
+            measuredScene.max,
+            measuredProjection.effectiveAxisMode,
+            measuredResult.priceRange ?? undefined,
+          ),
+        ]
+        : [];
 
-    return resolveChartAxisWidth(
-      [...measuredResult.axisLabels.map((entry) => entry.label), ...cursorSamples],
-      minimumAxisWidth,
-      Math.max(axisSectionWidthBudget - axisRightPadding, minimumAxisWidth),
-    );
-  };
-
-  const firstPassWidth = measureAxisWidth(measurementChartWidth);
-  const refinedChartWidth = Math.max(width - firstPassWidth - axisRightPadding - axisGap, minChartWidth);
-  return refinedChartWidth === measurementChartWidth ? firstPassWidth : measureAxisWidth(refinedChartWidth);
+      return [...measuredResult.axisLabels.map((entry) => entry.label), ...cursorSamples];
+    },
+  });
 }

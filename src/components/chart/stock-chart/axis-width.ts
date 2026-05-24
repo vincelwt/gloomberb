@@ -12,10 +12,10 @@ import {
   buildChartScene,
   formatCursorAxisValue,
   renderChart,
-  resolveChartAxisWidth,
   resolveChartPalette,
 } from "../chart-renderer";
 import type { ChartAxisMode, ChartRenderMode } from "../chart-types";
+import { resolveIterativeChartAxisWidth } from "../chart-axis-measure";
 
 const AXIS_MEASURE_PALETTE = resolveChartPalette({
   bg: colors.bg,
@@ -73,73 +73,74 @@ export function resolveStockChartAxisWidth({
   volumeHeight,
   width,
 }: ResolveStockChartAxisWidthOptions): number {
-  const measureAxisWidth = (targetWidth: number) => {
-    const measuredWindow = historyOverride || !displayedDateWindow?.start || !displayedDateWindow.end
-      ? { points: history, startIdx: 0, endIdx: history.length }
-      : getVisibleWindowForDateRange(history, displayedDateWindow, 0);
-    const measuredTimeAxisDates = measuredWindow.points.map((point) => point.date);
-    const measuredProjection = projectChartData(
-      measuredWindow.points,
-      targetWidth,
-      renderMode,
-      !!compact,
-      resolveOhlcProjectionOptions(measuredWindow.points.length, measuredWindow.startIdx),
-    );
-    const measuredResult = renderChart(measuredProjection.points, {
-      width: targetWidth,
-      height: chartHeight,
-      showVolume: showVolume && !compact,
-      volumeHeight,
-      cursorX: null,
-      cursorY: null,
-      mode: measuredProjection.effectiveMode,
-      axisMode,
-      currency: chartCurrency,
-      assetCategory: chartAssetCategory,
-      colors: AXIS_MEASURE_PALETTE,
-      timeAxisDates: measuredTimeAxisDates,
-    });
-    const measuredScene = buildChartScene(measuredProjection.points, {
-      width: targetWidth,
-      height: chartHeight,
-      showVolume: showVolume && !compact,
-      volumeHeight,
-      cursorX: null,
-      cursorY: null,
-      mode: measuredProjection.effectiveMode,
-      axisMode,
-      colors: AXIS_MEASURE_PALETTE,
-      timeAxisDates: measuredTimeAxisDates,
-    });
-    const cursorSamples = !compact && measuredScene
-      ? [
-        formatCursorAxisValue(
-          measuredScene.min,
-          axisMode,
-          measuredProjection.points[0]?.close ?? 0,
-          chartCurrency,
-          chartAssetCategory,
-          measuredResult.priceRange ?? undefined,
-        ),
-        formatCursorAxisValue(
-          measuredScene.max,
-          axisMode,
-          measuredProjection.points[0]?.close ?? 0,
-          chartCurrency,
-          chartAssetCategory,
-          measuredResult.priceRange ?? undefined,
-        ),
-      ]
-      : [];
+  return resolveIterativeChartAxisWidth({
+    axisGap,
+    axisRightPadding,
+    axisSectionWidthBudget,
+    measurementChartWidth,
+    minChartWidth,
+    minimumAxisWidth,
+    width,
+    measureLabels: (targetWidth) => {
+      const measuredWindow = historyOverride || !displayedDateWindow?.start || !displayedDateWindow.end
+        ? { points: history, startIdx: 0, endIdx: history.length }
+        : getVisibleWindowForDateRange(history, displayedDateWindow, 0);
+      const measuredTimeAxisDates = measuredWindow.points.map((point) => point.date);
+      const measuredProjection = projectChartData(
+        measuredWindow.points,
+        targetWidth,
+        renderMode,
+        !!compact,
+        resolveOhlcProjectionOptions(measuredWindow.points.length, measuredWindow.startIdx),
+      );
+      const measuredResult = renderChart(measuredProjection.points, {
+        width: targetWidth,
+        height: chartHeight,
+        showVolume: showVolume && !compact,
+        volumeHeight,
+        cursorX: null,
+        cursorY: null,
+        mode: measuredProjection.effectiveMode,
+        axisMode,
+        currency: chartCurrency,
+        assetCategory: chartAssetCategory,
+        colors: AXIS_MEASURE_PALETTE,
+        timeAxisDates: measuredTimeAxisDates,
+      });
+      const measuredScene = buildChartScene(measuredProjection.points, {
+        width: targetWidth,
+        height: chartHeight,
+        showVolume: showVolume && !compact,
+        volumeHeight,
+        cursorX: null,
+        cursorY: null,
+        mode: measuredProjection.effectiveMode,
+        axisMode,
+        colors: AXIS_MEASURE_PALETTE,
+        timeAxisDates: measuredTimeAxisDates,
+      });
+      const cursorSamples = !compact && measuredScene
+        ? [
+          formatCursorAxisValue(
+            measuredScene.min,
+            axisMode,
+            measuredProjection.points[0]?.close ?? 0,
+            chartCurrency,
+            chartAssetCategory,
+            measuredResult.priceRange ?? undefined,
+          ),
+          formatCursorAxisValue(
+            measuredScene.max,
+            axisMode,
+            measuredProjection.points[0]?.close ?? 0,
+            chartCurrency,
+            chartAssetCategory,
+            measuredResult.priceRange ?? undefined,
+          ),
+        ]
+        : [];
 
-    return resolveChartAxisWidth(
-      [...measuredResult.axisLabels.map((entry) => entry.label), ...cursorSamples],
-      minimumAxisWidth,
-      Math.max(axisSectionWidthBudget - axisRightPadding, minimumAxisWidth),
-    );
-  };
-
-  const firstPassWidth = measureAxisWidth(measurementChartWidth);
-  const refinedChartWidth = Math.max(width - firstPassWidth - axisRightPadding - axisGap, minChartWidth);
-  return refinedChartWidth === measurementChartWidth ? firstPassWidth : measureAxisWidth(refinedChartWidth);
+      return [...measuredResult.axisLabels.map((entry) => entry.label), ...cursorSamples];
+    },
+  });
 }
