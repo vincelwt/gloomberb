@@ -1,4 +1,4 @@
-import type { PluginRuntimeAccess } from "../plugins/plugin-runtime";
+import type { PluginRuntimeAccess } from "../plugins/runtime";
 import type { AppConfig } from "../types/config";
 
 interface TestConfigAccess {

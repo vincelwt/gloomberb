@@ -1,7 +1,7 @@
 import type { GloomPlugin } from "../../../types/plugin";
 import { detectProviders } from "./providers";
 import { AskAiDetailTab } from "./ask-ai-detail-tab";
-import { AiScreenerPane } from "./screener-pane";
+import { AiScreenerPane } from "./screener/pane";
 import { buildAiScreenerPaneSettingsDef, getAiScreenerPaneSettings } from "./settings";
 
 export const aiPlugin: GloomPlugin = {

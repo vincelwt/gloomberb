@@ -3,7 +3,7 @@ import { act } from "react";
 import { testRender } from "../../../renderers/opentui/test-utils";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { setSharedRegistryForTests } from "../../registry";
-import { PluginRenderProvider } from "../../plugin-runtime";
+import { PluginRenderProvider } from "../../runtime";
 import { HelpPane } from ".";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;

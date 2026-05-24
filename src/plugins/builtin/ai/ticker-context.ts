@@ -1,5 +1,5 @@
 import { convertCurrency, formatCompact, formatCompactCurrency, formatCurrency, formatPercent } from "../../../utils/format";
-import { formatMarketPriceWithCurrency } from "../../../utils/market-format";
+import { formatMarketPriceWithCurrency } from "../../../market-data/market/format";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 

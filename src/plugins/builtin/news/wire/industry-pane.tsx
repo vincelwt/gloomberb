@@ -4,11 +4,11 @@ import type { PaneProps } from "../../../../types/plugin";
 import type { MarketNewsItem } from "../../../../types/news-source";
 import { useLoadNewsStory, useNewsArticles } from "../../../../news/hooks";
 import type { NewsQueryPhase } from "../../../../news/types";
-import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../plugin-runtime";
+import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../runtime";
 import { Spinner, Tabs } from "../../../../components";
-import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
-import { NewsArticleStackView, type NewsSortPreference } from "./news-table";
-import { useNewsArticleFooter } from "./news-footer";
+import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
+import { NewsArticleStackView, type NewsSortPreference } from "./news/table";
+import { useNewsArticleFooter } from "./news/footer";
 import { useNewsReadState } from "./read-state";
 import { usePersistedNewsArticles } from "./persisted-articles";
 import {
@@ -16,7 +16,7 @@ import {
   SECTOR_NEWS_SECTORS,
   type SectorNewsSelection,
   sectorNewsLabel,
-} from "./news-query-presets";
+} from "./news/query-presets";
 
 const SECTOR_TABS = ["all", ...SECTOR_NEWS_SECTORS] as const;
 

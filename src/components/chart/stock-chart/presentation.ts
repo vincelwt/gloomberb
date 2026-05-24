@@ -4,15 +4,15 @@ import type { TickerRecord } from "../../../types/ticker";
 import {
   resolveChartPalette,
   type ResolvedChartPalette,
-} from "../chart-renderer";
+} from "../core/renderer";
 import type {
   ChartMarketSession,
-} from "../chart-types";
+} from "../core/types";
 import {
   getChartMarketSessionKey,
   resolveChartMarketSession,
 } from "../market-session";
-import type { ProjectedChartPoint } from "../chart-data";
+import type { ProjectedChartPoint } from "../core/data";
 
 export function useStockChartPresentation({
   chartWindowPoints,

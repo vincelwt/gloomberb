@@ -3,18 +3,18 @@ import type { BoxRenderable, ChartSurfaceProps, NativeRendererHost } from "../..
 import {
   buildBlankPlotLines,
   type DisplayCursorState,
-} from "../chart-pointer";
-import type { StyledContent } from "../chart-renderer";
-import type { ComparisonChartProjection } from "../comparison-chart-data";
-import type { ComparisonChartScene } from "../comparison-chart-renderer";
+} from "../core/pointer";
+import type { StyledContent } from "../core/renderer";
+import type { ComparisonChartProjection } from "../comparison/data";
+import type { ComparisonChartScene } from "../comparison/renderer";
 import type {
   ChartAxisMode,
   ChartMarketSession,
   ComparisonChartSeries,
   ComparisonChartViewState,
   ResolvedChartRenderer,
-} from "../chart-types";
-import type { NativeSurfaceManager } from "../native/surface-manager";
+} from "../core/types";
+import type { NativeSurfaceManager } from "../native/surface/manager";
 import { useComparisonChartCanvasBitmaps } from "./canvas";
 import { useComparisonChartNativeSurfaces } from "./native-surfaces";
 import type { ComparisonChartColors } from "./types";

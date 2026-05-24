@@ -1,9 +1,9 @@
 import type { PricePoint } from "../../../types/financials";
-import type { LocalPlotPointer } from "../chart-pointer";
-import type { ComparisonChartRenderMode } from "../chart-types";
-import type { projectComparisonChartData } from "../comparison-chart-data";
+import type { LocalPlotPointer } from "../core/pointer";
+import type { ComparisonChartRenderMode } from "../core/types";
+import type { projectComparisonChartData } from "../comparison/data";
 import { formatPercentRaw } from "../../../utils/format";
-import { formatMarketPriceWithCurrency } from "../../../utils/market-format";
+import { formatMarketPriceWithCurrency } from "../../../market-data/market/format";
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));

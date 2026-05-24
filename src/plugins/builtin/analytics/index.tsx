@@ -9,7 +9,7 @@ import {
   useAppSelector,
   usePaneInstance,
   usePaneStateValue,
-} from "../../../state/app-context";
+} from "../../../state/app/context";
 import { useChartQueries, useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
 import { usePortfolioAccountState } from "../portfolio-list/header";

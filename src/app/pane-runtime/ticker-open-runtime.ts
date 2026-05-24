@@ -8,7 +8,7 @@ import {
 } from "../../plugins/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
 import { findFixedTickerPaneForSymbol } from "../../plugins/ticker-navigation";
-import type { AppAction, AppState } from "../../state/app-context";
+import type { AppAction, AppState } from "../../state/app/context";
 import type {
   LayoutConfig,
   PaneBinding,
@@ -19,7 +19,7 @@ import type { PinTickerOptions } from "../../types/plugin";
 import {
   resolveTickerOpenTarget,
   type TickerOpenTarget,
-} from "../../utils/ticker-open-target";
+} from "../../tickers/open-target";
 
 interface UseAppTickerOpenRuntimeOptions {
   activatePane: (paneId: string, layout?: LayoutConfig) => void;

@@ -4,7 +4,7 @@ import {
   formatNumber,
   formatPercentRaw,
 } from "../utils/format";
-import { formatMarketPriceWithCurrency } from "../utils/market-format";
+import { formatMarketPriceWithCurrency } from "../market-data/market/format";
 
 export { slugifyName } from "../utils/slugify";
 import type { AppConfig } from "../types/config";

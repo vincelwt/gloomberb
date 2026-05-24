@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import type { PaneProps, PaneTemplateDef } from "../../../../types/plugin";
-import { formatTickerListInput } from "../../../../utils/ticker-list";
-import { usePaneInstance, usePaneTicker } from "../../../../state/app-context";
-import { usePluginPaneState } from "../../../plugin-runtime";
+import { formatTickerListInput } from "../../../../tickers/list";
+import { usePaneInstance, usePaneTicker } from "../../../../state/app/context";
+import { usePluginPaneState } from "../../../runtime";
 import { useBoundTicker } from "../../shared/ticker-request";
 import { FundamentalGraphContent } from "./fundamental-graph/content";
 import { useSymbolFinancials } from "./fundamental-graph/data";

@@ -1,9 +1,9 @@
 import { Box, Span, Text } from "../ui";
 import { useState } from "react";
 import { TextAttributes } from "../ui";
-import { TickerBadge } from "./ticker-badge";
-import { tokenizeTickerText } from "../utils/ticker-tokenizer";
-import type { InlineTickerCatalogEntry } from "../state/use-inline-tickers";
+import { TickerBadge } from "./ticker/badge";
+import { tokenizeTickerText } from "../tickers/tokenizer";
+import type { InlineTickerCatalogEntry } from "../state/hooks/inline-tickers";
 import { colors } from "../theme/colors";
 
 export interface MarkdownTextProps {

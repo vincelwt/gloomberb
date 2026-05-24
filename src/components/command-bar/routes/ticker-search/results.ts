@@ -1,0 +1,94 @@
+import type { TickerRecord } from "../../../../types/ticker";
+import {
+  createLocalTickerSearchCandidates,
+  rankTickerSearchItems,
+  type TickerSearchCandidate,
+} from "../../../../tickers/search";
+import type { ResultItem } from "../../list/model";
+
+export const QUICK_LOOK_TICKER_SEARCH_OPTIONS = { includeOptionContracts: false } as const;
+
+export function buildTickerSearchCacheKey(
+  query: string,
+  brokerId?: string | null,
+  brokerInstanceId?: string | null,
+): string {
+  return [query.trim().toUpperCase(), brokerId || "", brokerInstanceId || ""].join("|");
+}
+
+export function createQuickLookTickerCandidates(tickers: Iterable<TickerRecord>): TickerSearchCandidate[] {
+  return createLocalTickerSearchCandidates(tickers, new Map(), QUICK_LOOK_TICKER_SEARCH_OPTIONS);
+}
+
+export function normalizeCommandTickerSearchText(value: string): string {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
+}
+
+export function isLikelyPlainTickerSearch(query: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed || /\s/.test(trimmed)) return false;
+  if (!/^[A-Za-z0-9.^=\-/]+$/.test(trimmed)) return false;
+
+  const compact = normalizeCommandTickerSearchText(trimmed);
+  if (compact.length < 2) return false;
+  if (compact.length <= 6) return true;
+  return /[.^=\-/]/.test(trimmed) && compact.length <= 10;
+}
+
+function isExactTickerResultMatch(item: ResultItem, query: string): boolean {
+  if (item.kind !== "ticker" && item.kind !== "search") return false;
+  const normalizedQuery = normalizeCommandTickerSearchText(query);
+  if (!normalizedQuery) return false;
+  return normalizeCommandTickerSearchText(item.label) === normalizedQuery;
+}
+
+export function mergeTickerSearchResultItems(
+  query: string,
+  preferredItems: ResultItem[],
+  fallbackItems: ResultItem[],
+): ResultItem[] {
+  const merged: ResultItem[] = [];
+  const seen = new Set<string>();
+  const addItem = (item: ResultItem) => {
+    if (item.kind === "info") return;
+    const key = `${item.label.trim().toUpperCase()}:${(item.right || "").trim().toUpperCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(item);
+  };
+  preferredItems.forEach(addItem);
+  fallbackItems.forEach(addItem);
+  if (merged.length === 0) return fallbackItems;
+
+  return rankTickerSearchItems(merged, query)
+    .map((item) => isExactTickerResultMatch(item, query) && item.category !== "Saved"
+      ? { ...item, category: "Exact Match" }
+      : item);
+}
+
+export function mergePlainRootTickerResults(
+  query: string,
+  providerItems: ResultItem[],
+  rootItems: ResultItem[],
+): ResultItem[] {
+  const merged: ResultItem[] = [];
+  const seen = new Set<string>();
+  const addItem = (item: ResultItem, options?: { skipInfo?: boolean }) => {
+    if (options?.skipInfo && item.kind === "info") return;
+    const key = (item.kind === "ticker" || item.kind === "search")
+      ? `${item.kind}:${item.label.trim().toUpperCase()}:${(item.right || "").trim().toUpperCase()}`
+      : `${item.kind}:${item.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(item);
+  };
+
+  providerItems
+    .filter((item) => item.category === "Exact Match" || isExactTickerResultMatch(item, query))
+    .forEach((item) => addItem(item, { skipInfo: true }));
+  rootItems.forEach((item) => addItem(item));
+  providerItems
+    .filter((item) => item.category !== "Exact Match" && !isExactTickerResultMatch(item, query))
+    .forEach((item) => addItem(item, { skipInfo: true }));
+  return merged.length > 0 ? merged : rootItems;
+}

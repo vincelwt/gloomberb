@@ -7,8 +7,8 @@ import type {
   OptionsChain,
   HolderData,
 } from "./financials";
-import type { TimeRange } from "../components/chart/chart-types";
-import type { ChartResolutionSupport, ManualChartResolution } from "../components/chart/chart-resolution";
+import type { TimeRange } from "../components/chart/core/types";
+import type { ChartResolutionSupport, ManualChartResolution } from "../components/chart/core/resolution";
 import type { BrokerContractRef, InstrumentSearchResult } from "./instrument";
 import type { CachePolicyMap } from "./persistence";
 

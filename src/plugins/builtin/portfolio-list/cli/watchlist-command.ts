@@ -1,4 +1,4 @@
-import { saveConfig } from "../../../../data/config-store";
+import { saveConfig } from "../../../../data/config/store";
 import { countCollectionTickers, findWatchlist, slugifyName } from "../../../../cli/helpers";
 import { resolveTickerForCli } from "../../../../cli/ticker-resolution";
 import {

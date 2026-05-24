@@ -5,7 +5,7 @@ import {
   removePane,
 } from "../../../plugins/pane-manager";
 import { findPaneInstance } from "../../../types/config";
-import type { ResultItem } from "../list-model";
+import type { ResultItem } from "../list/model";
 import type { LayoutItemsContext } from "./types";
 import { WINDOW_MODE_COMMAND_OPTIONS } from "./window-mode";
 

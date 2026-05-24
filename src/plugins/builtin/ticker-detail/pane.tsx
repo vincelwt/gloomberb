@@ -10,14 +10,14 @@ import {
   usePaneInstance,
   usePaneStateValue,
   usePaneTicker,
-} from "../../../state/app-context";
-import { useQuoteStreaming } from "../../../state/use-quote-streaming";
+} from "../../../state/app/context";
+import { useQuoteStreaming } from "../../../state/hooks/quote-streaming";
 import { getCollectionName, getCollectionTickerCount } from "../../../state/selectors";
 import { getSharedRegistry } from "../../registry";
 import { EmptyState, PaneFooterScope, Tabs } from "../../../components";
 import { resolveOptionsTarget } from "../../../utils/options";
 import { ChartTab } from "./chart-tab";
-import { ResolvedFinancialsTab } from "./financials-tab";
+import { ResolvedFinancialsTab } from "./financials/tab";
 import { OverviewTab } from "./overview-tab";
 import {
   buildVisibleDetailTabs,

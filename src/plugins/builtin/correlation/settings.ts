@@ -1,6 +1,6 @@
-import type { TimeRange } from "../../../components/chart/chart-types";
+import type { TimeRange } from "../../../components/chart/core/types";
 import type { PaneSettingsDef } from "../../../types/plugin";
-import { formatTickerListInput, MAX_TICKER_LIST_SIZE, parseTickerListInput } from "../../../utils/ticker-list";
+import { formatTickerListInput, MAX_TICKER_LIST_SIZE, parseTickerListInput } from "../../../tickers/list";
 
 export const MAX_CORRELATION_TICKERS = MAX_TICKER_LIST_SIZE;
 const DEFAULT_CORRELATION_RANGE: CorrelationRangePreset = "1Y";

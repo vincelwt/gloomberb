@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { AppPersistence } from "./data/app-persistence";
-import { loadConfig, saveConfig } from "./data/config-store";
+import { loadConfig, saveConfig } from "./data/config/store";
 import {
   buildSearchReport,
   buildTickerReport,

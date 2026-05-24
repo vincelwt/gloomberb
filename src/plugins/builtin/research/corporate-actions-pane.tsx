@@ -10,7 +10,7 @@ import {
 import type { CorporateActionsData } from "../../../types/financials";
 import { blendHex, colors } from "../../../theme/colors";
 import { formatCurrency, formatNumber, formatPercentRaw } from "../../../utils/format";
-import { useAssetData } from "../../plugin-runtime";
+import { useAssetData } from "../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint } from "../shared/table-pane";
 import { useBoundTicker as useSymbolBinding, useTickerRequest } from "../shared/ticker-request";
 

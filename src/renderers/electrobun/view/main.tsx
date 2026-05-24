@@ -21,8 +21,8 @@ import { webNativeRenderer } from "./native-renderer";
 import { WebToastHostProvider } from "./toast-host";
 import { webRendererHost, webUiHost } from "./ui-host";
 import { createApplicationMenuBridge } from "./application-menu-bridge";
-import { createDesktopWindowBridge } from "./desktop-window-bridge";
-import { prepareDetachedSnapshot } from "./desktop-window-snapshot";
+import { createDesktopWindowBridge } from "./desktop/window/bridge";
+import { prepareDetachedSnapshot } from "./desktop/window/snapshot";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {

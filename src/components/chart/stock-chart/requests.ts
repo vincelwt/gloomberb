@@ -7,7 +7,7 @@ import {
   getPointDates,
   subtractTimeRange,
   type DateWindowRange,
-} from "../chart-controller";
+} from "../core/controller";
 import {
   CHART_RESOLUTION_STEP_MS,
   clampTimeRangeToMaxRange,
@@ -18,8 +18,8 @@ import {
   maxTimeRange,
   TIME_RANGE_ORDER,
   type ManualChartResolution,
-} from "../chart-resolution";
-import type { ChartResolution, TimeRange } from "../chart-types";
+} from "../core/resolution";
+import type { ChartResolution, TimeRange } from "../core/types";
 
 export interface ResolvedChartRequestPlan {
   effectiveResolution: ManualChartResolution | null;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import type { TextareaRenderable } from "../../../../ui";
-import type { ChatMessage } from "../../../../utils/api-client";
+import type { ChatMessage } from "../../../../api-client";
 import {
   COMPOSER_ACTION_WIDTH,
   formatInlinePreview,

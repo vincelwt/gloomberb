@@ -1,15 +1,15 @@
 import { Box, ScrollBox, Text } from "../../../ui";
 import { useEffect, useMemo, useState } from "react";
 import { TextAttributes } from "../../../ui";
-import type { AppState } from "../../../state/app-context";
+import type { AppState } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import type { BrokerConnectionStatus } from "../../../types/broker";
 import type { Portfolio } from "../../../types/ticker";
 import type { BrokerAccount } from "../../../types/trading";
 import { formatCompact, padTo } from "../../../utils/format";
-import { formatMarketQuantity } from "../../../utils/market-format";
+import { formatMarketQuantity } from "../../../market-data/market/format";
 import { getBrokerInstance } from "../../../utils/broker-instances";
-import { usePluginBrokerActions } from "../../plugin-runtime";
+import { usePluginBrokerActions } from "../../runtime";
 import {
   buildDrawerMetricSegments,
   renderSummarySegments,

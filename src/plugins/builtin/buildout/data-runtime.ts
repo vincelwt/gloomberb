@@ -4,7 +4,7 @@ import type {
   BuildoutList,
   BuildoutLoadState,
   BuildoutTabId,
-} from "./model-types";
+} from "./model/types";
 import {
   PAGE_SIZE,
   emptyPage,

@@ -1,7 +1,7 @@
 import { Box, useUiCapabilities } from "../../../ui";
 import { useViewport } from "../../../react/input";
 import { useCallback, useMemo } from "react";
-import { ChartIndicatorSelector } from "../../../components/chart/chart-indicator-selector";
+import { ChartIndicatorSelector } from "../../../components/chart/core/indicator-selector";
 import {
   buildIndicatorConfigFromSelection,
   CHART_INDICATORS_PLUGIN_CONFIG_VERSION_KEY,
@@ -11,11 +11,11 @@ import {
   normalizeChartIndicatorSelection,
   type ChartIndicatorId,
 } from "../../../components/chart/indicators/options";
-import type { ChartAxisMode } from "../../../components/chart/chart-types";
+import type { ChartAxisMode } from "../../../components/chart/core/types";
 import { ResolvedStockChart } from "../../../components/chart/stock-chart";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
-import { usePluginConfigState, useSetPluginConfigStates } from "../../plugin-runtime";
+import { usePluginConfigState, useSetPluginConfigStates } from "../../runtime";
 
 export function ChartTab({
   width,

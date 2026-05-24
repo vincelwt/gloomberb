@@ -1,12 +1,12 @@
 import type { Dispatch } from "react";
 import type { PluginRegistry } from "../../../plugins/registry";
-import type { AppAction, AppState } from "../../../state/app-context";
+import type { AppAction, AppState } from "../../../state/app/context";
 import type { LayoutConfig } from "../../../types/config";
-import type { OpenInlineConfirm } from "../confirm-route";
-import type { CommandBarRoute } from "../workflow/workflow-types";
+import type { OpenInlineConfirm } from "../routing/confirm";
+import type { CommandBarRoute } from "../workflow/types";
 
 export type CloseAll = (options?: { revertThemePreview?: boolean }) => void;
-export type { OpenInlineConfirm } from "../confirm-route";
+export type { OpenInlineConfirm } from "../routing/confirm";
 
 export interface LayoutItemsContext {
   closeAll: CloseAll;

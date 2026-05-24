@@ -4,7 +4,7 @@ import type {
   PaneTemplateDef,
   PaneTemplateInstanceConfig,
 } from "../../../types/plugin";
-import { normalizeTickerInput } from "../../../utils/ticker-search";
+import { normalizeTickerInput } from "../../../tickers/search";
 
 export interface TickerSurfacePaneTemplateOptions {
   id: string;

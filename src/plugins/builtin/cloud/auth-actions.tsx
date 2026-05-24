@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Box, Text } from "../../../ui";
 import { Button } from "../../../components";
-import { usePluginAppActions } from "../../plugin-runtime";
+import { usePluginAppActions } from "../../runtime";
 import { colors, hoverBg } from "../../../theme/colors";
 
 function openAuthCommand(

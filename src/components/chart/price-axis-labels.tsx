@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Box, Text, useUiCapabilities } from "../../ui";
 import { colors } from "../../theme/colors";
-import { formatAxisCell } from "./chart-renderer";
+import { formatAxisCell } from "./core/renderer";
 
 interface PriceAxisLabelsProps {
   axisLabels: ReadonlyMap<number, string>;

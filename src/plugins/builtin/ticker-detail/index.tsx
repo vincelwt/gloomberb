@@ -1,5 +1,5 @@
 import type { GloomPlugin } from "../../../types/plugin";
-import { normalizeTickerInput } from "../../../utils/ticker-search";
+import { normalizeTickerInput } from "../../../tickers/search";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import {
   createGraphPaneTemplate,
@@ -19,7 +19,7 @@ import {
   buildTickerDetailSettingsDef,
   getTickerDetailPaneSettings,
 } from "./settings";
-import { formatTickerListInput } from "../../../utils/ticker-list";
+import { formatTickerListInput } from "../../../tickers/list";
 
 export const tickerDetailPlugin: GloomPlugin = {
   id: "ticker-detail",

@@ -4,14 +4,14 @@ import {
   formatNumber,
   formatPercent,
 } from "../../utils/format";
-import { formatMarketCostWithCurrency, formatMarketPriceWithCurrency, formatMarketQuantity } from "../../utils/market-format";
+import { formatMarketCostWithCurrency, formatMarketPriceWithCurrency, formatMarketQuantity } from "../../market-data/market/format";
 import {
   cliStyles,
   colorBySign,
   renderSection,
   renderStat,
 } from "../../utils/cli-output";
-import { exchangeShortName, marketStateLabel } from "../../utils/market-status";
+import { exchangeShortName, marketStateLabel } from "../../market-data/market/status";
 import type { AppConfig } from "../../types/config";
 import type { FinancialStatement, TickerFinancials } from "../../types/financials";
 import type { SecFilingItem } from "../../types/data-provider";

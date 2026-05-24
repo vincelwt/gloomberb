@@ -1,4 +1,4 @@
-import type { ChartAxisMode, ResolvedChartRenderer } from "../chart-types";
+import type { ChartAxisMode, ResolvedChartRenderer } from "../core/types";
 
 export interface StockChartLayoutMetrics {
   axisGap: number;

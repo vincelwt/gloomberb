@@ -3,11 +3,11 @@ import { useShortcut } from "../react/input";
 import { useNativeRenderer, useRendererHost } from "../ui";
 import { useDialogState } from "../ui/dialog";
 import type { PluginRegistry } from "../plugins/registry";
-import type { AppAction, AppState } from "../state/app-context";
+import type { AppAction, AppState } from "../state/app/context";
 import type { TickerRecord } from "../types/ticker";
 import type { ReleaseInfo } from "../updater";
 import { canSelfUpdate } from "../updater";
-import { getVisiblePaneCycleOrder } from "../components/layout/pane-cycle-order";
+import { getVisiblePaneCycleOrder } from "../components/layout/pane/cycle-order";
 import {
   copyActiveSelection,
   isCopyShortcut,

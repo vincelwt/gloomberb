@@ -6,7 +6,7 @@ import { ChoiceDialog } from "./choice-dialog";
 import { DataTable, type DataTableColumn } from "./data-table";
 import { TextField } from "./fields";
 import { ListView } from "./list-view";
-import { MultiSelectDialogButton } from "./multi-select-dialog";
+import { MultiSelectDialogButton } from "./multi-select/dialog";
 import {
   getMultiSelectDisplayValues,
   moveMultiSelectDisplayValue,
@@ -16,9 +16,9 @@ import {
   toggleOrderedMultiSelectValue,
 } from "./multi-select";
 import { Tabs } from "./tabs";
-import { AppContext, PaneInstanceProvider, createInitialState } from "../../state/app-context";
+import { AppContext, PaneInstanceProvider, createInitialState } from "../../state/app/context";
 import { createDefaultConfig } from "../../types/config";
-import { DataTableView } from "../data-table-view";
+import { DataTableView } from "../data-table/view";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let setListSelection: ((index: number) => void) | null = null;

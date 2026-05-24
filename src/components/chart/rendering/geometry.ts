@@ -1,4 +1,4 @@
-import type { ChartRenderMode } from "../chart-types";
+import type { ChartRenderMode } from "../core/types";
 
 function getSeriesPosition(
   index: number,

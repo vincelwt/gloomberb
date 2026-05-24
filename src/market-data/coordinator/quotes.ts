@@ -1,0 +1,329 @@
+import type { DataProvider, QuoteSubscriptionTarget } from "../../types/data-provider";
+import type { Quote } from "../../types/financials";
+import type { InstrumentRef } from "../request-types";
+import { QueryStore } from "../query-store";
+import type { QueryEntry } from "../result-types";
+import { buildQuoteKey, toMarketDataContext } from "../selectors";
+import {
+  EXPECTED_EMPTY,
+  SNAPSHOT_CACHE_TTL_MS,
+  classifyError,
+  createAttempt,
+  errorEntry,
+  hasFreshQuoteEntry,
+  loadingEntry,
+  readyQuoteEntry,
+} from "./entries";
+
+export type QuoteSubscriptionPriority = Pick<QuoteSubscriptionTarget, "surface" | "visible" | "selected" | "weight">;
+
+export interface QuoteSubscriptionEntry {
+  target: QuoteSubscriptionTarget;
+  targets: Map<number, QuoteSubscriptionTarget>;
+  removeTimer: ReturnType<typeof setTimeout> | null;
+}
+
+const QUOTE_SUBSCRIPTION_REMOVE_GRACE_MS = 250;
+
+const STREAM_QUOTE_FIELDS: Array<keyof Quote> = [
+  "symbol",
+  "providerId",
+  "price",
+  "currency",
+  "change",
+  "changePercent",
+  "previousClose",
+  "high52w",
+  "low52w",
+  "marketCap",
+  "volume",
+  "name",
+  "exchangeName",
+  "fullExchangeName",
+  "listingExchangeName",
+  "listingExchangeFullName",
+  "routingExchangeName",
+  "routingExchangeFullName",
+  "marketState",
+  "sessionConfidence",
+  "preMarketPrice",
+  "preMarketChange",
+  "preMarketChangePercent",
+  "postMarketPrice",
+  "postMarketChange",
+  "postMarketChangePercent",
+  "bid",
+  "ask",
+  "bidSize",
+  "askSize",
+  "open",
+  "high",
+  "low",
+  "mark",
+  "dataSource",
+];
+
+function quoteSubscriptionPriorityScore(target: QuoteSubscriptionTarget): number {
+  let score = Number.isFinite(target.weight) ? Math.max(0, target.weight ?? 0) : 0;
+  if (target.selected) score += 10_000;
+  if (target.visible) score += 5_000;
+  if (target.surface === "detail" || target.surface === "monitor") score += 4_000;
+  if (target.surface === "portfolio" || target.surface === "watchlist") score += 1_000;
+  if (target.surface === "screener") score += 700;
+  if (target.surface === "inline") score += 200;
+  return score;
+}
+
+function mergeQuoteSubscriptionTargets(targets: Iterable<QuoteSubscriptionTarget>): QuoteSubscriptionTarget | null {
+  let selectedTarget: QuoteSubscriptionTarget | null = null;
+  let selectedScore = -1;
+  let visible = false;
+  let selected = false;
+  let weight = 0;
+
+  for (const target of targets) {
+    const score = quoteSubscriptionPriorityScore(target);
+    if (!selectedTarget || score > selectedScore) {
+      selectedTarget = target;
+      selectedScore = score;
+    }
+    visible ||= target.visible === true;
+    selected ||= target.selected === true;
+    weight = Math.max(weight, Number.isFinite(target.weight) ? Math.max(0, target.weight ?? 0) : 0);
+  }
+
+  return selectedTarget
+    ? {
+      ...selectedTarget,
+      visible,
+      selected,
+      weight,
+    }
+    : null;
+}
+
+function quoteTargetFromInstrument(
+  instrument: InstrumentRef,
+  priority: QuoteSubscriptionPriority = {},
+): QuoteSubscriptionTarget {
+  return {
+    symbol: instrument.symbol,
+    exchange: instrument.exchange ?? "",
+    context: toMarketDataContext(instrument),
+    ...priority,
+  };
+}
+
+type CoordinatorSingleFlight = <T>(key: string, task: () => Promise<T>) => Promise<T>;
+type CoordinatorLoadOptions = { forceRefresh?: boolean };
+
+interface LoadQuoteEntryOptions {
+  dataProvider: DataProvider;
+  instrument: InstrumentRef;
+  options?: CoordinatorLoadOptions;
+  quoteStore: QueryStore<Quote>;
+  runSingleFlight: CoordinatorSingleFlight;
+}
+
+export async function loadQuoteEntry({
+  dataProvider,
+  instrument,
+  options = {},
+  quoteStore,
+  runSingleFlight,
+}: LoadQuoteEntryOptions): Promise<QueryEntry<Quote>> {
+  const key = buildQuoteKey(instrument);
+  const flightKey = options.forceRefresh ? `${key}|refresh` : key;
+  return runSingleFlight(flightKey, async () => {
+    quoteStore.update(key, loadingEntry);
+    const startedAt = Date.now();
+    try {
+      const quote = await dataProvider.getQuote(
+        instrument.symbol,
+        instrument.exchange ?? "",
+        {
+          ...toMarketDataContext(instrument),
+          cacheMode: options.forceRefresh ? "refresh" : "default",
+        },
+      );
+      const source = quote.providerId ?? dataProvider.id;
+      const attempts = [createAttempt(source, startedAt, "success")];
+      return quoteStore.update(key, (current) => readyQuoteEntry(current, quote, source, attempts));
+    } catch (error) {
+      const classified = classifyError(error);
+      const attempt = createAttempt(dataProvider.id, startedAt, EXPECTED_EMPTY.test(classified.message) ? "empty" : "fatal_error", classified.reasonCode, classified.message);
+      return quoteStore.update(key, (current) => errorEntry(current, attempt));
+    }
+  });
+}
+
+interface LoadQuoteBatchEntriesOptions {
+  dataProvider: DataProvider;
+  instruments: InstrumentRef[];
+  options?: CoordinatorLoadOptions;
+  quoteStore: QueryStore<Quote>;
+  runSingleFlight: CoordinatorSingleFlight;
+}
+
+export async function loadQuoteBatchEntries({
+  dataProvider,
+  instruments,
+  options = {},
+  quoteStore,
+  runSingleFlight,
+}: LoadQuoteBatchEntriesOptions): Promise<QueryEntry<Quote>[]> {
+  const uniqueInstruments = [...new Map(instruments.map((instrument) => [buildQuoteKey(instrument), instrument] as const)).values()];
+  const results = new Map<string, QueryEntry<Quote>>();
+  const misses: InstrumentRef[] = [];
+
+  for (const instrument of uniqueInstruments) {
+    const key = buildQuoteKey(instrument);
+    const current = quoteStore.get(key);
+    if (!options.forceRefresh && hasFreshQuoteEntry(current, instrument, SNAPSHOT_CACHE_TTL_MS)) {
+      results.set(key, current);
+    } else {
+      misses.push(instrument);
+    }
+  }
+
+  if (misses.length > 0 && dataProvider.getQuotesBatch) {
+    const batchResults = await dataProvider.getQuotesBatch(
+      misses.map((instrument) => quoteTargetFromInstrument(instrument)),
+      { forceRefresh: options.forceRefresh },
+    );
+    batchResults.forEach((item, index) => {
+      const instrument = misses[index];
+      if (!instrument || !item.quote) return;
+      const key = buildQuoteKey(instrument);
+      const source = item.quote.providerId ?? dataProvider.id;
+      const attempts = [createAttempt(source, Date.now(), "success")];
+      results.set(key, quoteStore.update(key, (current) => readyQuoteEntry(current, item.quote!, source, attempts)));
+    });
+  }
+
+  await Promise.all(misses.map(async (instrument) => {
+    const key = buildQuoteKey(instrument);
+    if (results.has(key)) return;
+    results.set(key, await loadQuoteEntry({
+      dataProvider,
+      instrument,
+      options,
+      quoteStore,
+      runSingleFlight,
+    }));
+  }));
+
+  return instruments.map((instrument) => results.get(buildQuoteKey(instrument)) ?? quoteStore.get(buildQuoteKey(instrument)));
+}
+
+export class QuoteSubscriptionManager {
+  private readonly quoteSubscriptions = new Map<string, QuoteSubscriptionEntry>();
+  private nextQuoteSubscriptionId = 1;
+  private quoteSubscriptionDispose: (() => void) | null = null;
+  private quoteSubscriptionSignature = "";
+  private pendingQuoteSubscriptionKeys = new Set<string>();
+
+  constructor(
+    private readonly dataProvider: DataProvider,
+    private readonly applyQuote: (instrument: InstrumentRef, quote: Quote) => void,
+  ) {}
+
+  subscribe(targets: Array<{ instrument: InstrumentRef; priority?: QuoteSubscriptionPriority }>): () => void {
+    if (!this.dataProvider.subscribeQuotes || targets.length === 0) {
+      return () => {};
+    }
+
+    const subscriptionId = this.nextQuoteSubscriptionId++;
+    const subscribedKeys = new Set<string>();
+    for (const { instrument, priority } of targets) {
+      const key = buildQuoteKey(instrument);
+      subscribedKeys.add(key);
+      const target = quoteTargetFromInstrument(instrument, priority);
+      const existing = this.quoteSubscriptions.get(key);
+      if (existing) {
+        existing.targets.set(subscriptionId, target);
+        existing.target = mergeQuoteSubscriptionTargets(existing.targets.values()) ?? target;
+        this.pendingQuoteSubscriptionKeys.add(key);
+        if (existing.removeTimer) {
+          clearTimeout(existing.removeTimer);
+          existing.removeTimer = null;
+        }
+        continue;
+      }
+      this.quoteSubscriptions.set(key, {
+        target,
+        targets: new Map([[subscriptionId, target]]),
+        removeTimer: null,
+      });
+      this.pendingQuoteSubscriptionKeys.add(key);
+    }
+    this.flush();
+
+    return () => {
+      for (const key of subscribedKeys) {
+        const existing = this.quoteSubscriptions.get(key);
+        if (!existing) continue;
+        existing.targets.delete(subscriptionId);
+        const mergedTarget = mergeQuoteSubscriptionTargets(existing.targets.values());
+        if (mergedTarget) {
+          existing.target = mergedTarget;
+          this.pendingQuoteSubscriptionKeys.add(key);
+          this.flush();
+          continue;
+        }
+        if (existing.removeTimer) continue;
+        existing.removeTimer = setTimeout(() => {
+          const current = this.quoteSubscriptions.get(key);
+          if (!current || current.targets.size > 0) return;
+          this.quoteSubscriptions.delete(key);
+          this.pendingQuoteSubscriptionKeys.delete(key);
+          this.flush();
+        }, QUOTE_SUBSCRIPTION_REMOVE_GRACE_MS);
+      }
+    };
+  }
+
+  private flush(): void {
+    if (!this.dataProvider.subscribeQuotes) return;
+    this.pendingQuoteSubscriptionKeys = new Set();
+
+    const activeEntries = [...this.quoteSubscriptions.entries()]
+      .filter(([, entry]) => entry.targets.size > 0 || entry.removeTimer)
+      .sort(([left], [right]) => left.localeCompare(right));
+    const nextSignature = activeEntries.map(([key, entry]) => [
+      key,
+      entry.target.surface ?? "",
+      entry.target.visible ? "visible" : "",
+      entry.target.selected ? "selected" : "",
+      Number.isFinite(entry.target.weight) ? entry.target.weight : "",
+    ].join(":")).join("|");
+    if (nextSignature === this.quoteSubscriptionSignature) return;
+
+    this.quoteSubscriptionDispose?.();
+    this.quoteSubscriptionDispose = null;
+    this.quoteSubscriptionSignature = nextSignature;
+
+    const targets = activeEntries.map(([, entry]) => entry.target);
+    if (targets.length === 0) return;
+
+    this.quoteSubscriptionDispose = this.dataProvider.subscribeQuotes(targets, (target, quote) => {
+      const instrument: InstrumentRef = {
+        symbol: target.symbol,
+        exchange: target.exchange ?? "",
+        brokerId: target.context?.brokerId,
+        brokerInstanceId: target.context?.brokerInstanceId,
+        instrument: target.context?.instrument ?? null,
+      };
+      this.applyQuote(instrument, quote);
+    });
+  }
+}
+
+export function areStreamQuotesEquivalent(current: Quote | null | undefined, next: Quote): boolean {
+  if (!current) return false;
+  for (const field of STREAM_QUOTE_FIELDS) {
+    if (current[field] !== next[field]) return false;
+  }
+  return current.lastUpdated === next.lastUpdated
+    && JSON.stringify(current.provenance ?? null) === JSON.stringify(next.provenance ?? null);
+}

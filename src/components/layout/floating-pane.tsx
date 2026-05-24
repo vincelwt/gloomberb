@@ -1,10 +1,10 @@
 import { Box, Text, useUiCapabilities } from "../../ui";
 import type { ReactNode } from "react";
 import { colors, floatingPaneBg } from "../../theme/colors";
-import { PaneBodyFrame, getPaneWindowAttributes } from "./pane-frame";
-import { PaneHeader } from "./pane-header";
-import { hasPaneFooterContent, PaneFooterBar, type CombinedPaneFooter } from "./pane-footer";
-import { resolvePaneBodyFrame, shouldReservePaneFooter } from "./pane-sizing";
+import { PaneBodyFrame, getPaneWindowAttributes } from "./pane/frame";
+import { PaneHeader } from "./pane/header";
+import { hasPaneFooterContent, PaneFooterBar, type CombinedPaneFooter } from "./pane/footer";
+import { resolvePaneBodyFrame, shouldReservePaneFooter } from "./pane/sizing";
 
 interface FloatingPaneWrapperProps {
   paneId?: string;

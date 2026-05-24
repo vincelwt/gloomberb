@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Box, Text, type TextareaRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import type { DetailTabProps } from "../../../types/plugin";
-import { usePaneTicker } from "../../../state/app-context";
+import { usePaneTicker } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import { MarkdownEditor } from "../../../components/markdown-editor";
 import { usePaneFooter } from "../../../components";

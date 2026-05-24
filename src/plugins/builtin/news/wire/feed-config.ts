@@ -1,7 +1,7 @@
 import type { PluginConfigState } from "../../../../types/plugin";
 import { DEFAULT_FEEDS } from "./default-feeds";
 import { hashString } from "./hash";
-import type { RssFeedConfig } from "./rss-parser";
+import type { RssFeedConfig } from "./rss/parser";
 
 const USER_FEEDS_KEY = "feeds";
 const DISABLED_DEFAULT_FEED_IDS_KEY = "disabledDefaultFeedIds";

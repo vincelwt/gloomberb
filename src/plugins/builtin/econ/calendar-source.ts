@@ -1,4 +1,4 @@
-import { apiClient, type CloudEconEventPayload } from "../../../utils/api-client";
+import { apiClient, type CloudEconEventPayload } from "../../../api-client";
 import type { EconEvent } from "./types";
 
 function toEconEvent(event: CloudEconEventPayload): EconEvent {

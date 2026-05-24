@@ -12,7 +12,7 @@ import {
   addPaneToLayout,
 } from "../../plugins/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
-import type { AppAction, AppState } from "../../state/app-context";
+import type { AppAction, AppState } from "../../state/app/context";
 
 interface CommandBarPaneActionsOptions {
   dispatch: Dispatch<AppAction>;

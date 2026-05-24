@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { useAppSelector } from "../../../state/app-context";
+import { useAppSelector } from "../../../state/app/context";
 import { colors, hoverBg } from "../../../theme/colors";
 import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../../ui";
-import { usePluginAppActions } from "../../plugin-runtime";
+import { usePluginAppActions } from "../../runtime";
 import { InlineAuthActions } from "../cloud/auth-actions";
 import { chatController, type ChatController } from "./controller";
 

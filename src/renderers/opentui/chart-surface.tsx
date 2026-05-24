@@ -5,14 +5,14 @@ import {
   type CellRect,
   type NativeChartBitmap,
 } from "../../components/chart/native/chart-rasterizer";
-import { getCachedKittySupport, ensureKittySupport } from "../../components/chart/native/kitty-support";
-import { getNativeSurfaceManager } from "../../components/chart/native/surface-manager";
+import { getCachedKittySupport, ensureKittySupport } from "../../components/chart/native/kitty/support";
+import { getNativeSurfaceManager } from "../../components/chart/native/surface/manager";
 import {
   getRenderableCellRect,
   resolveNativeSurfaceVisibleRect,
   type NativeSurfaceRenderableNode,
-} from "../../components/chart/native/surface-visibility";
-import { useOptionalPaneInstanceId } from "../../state/app-context";
+} from "../../components/chart/native/surface/visibility";
+import { useOptionalPaneInstanceId } from "../../state/app/context";
 import { useNativeRenderer, type BoxRenderable, type ChartSurfaceProps } from "../../ui";
 
 interface NativeRenderableNode extends BoxRenderable, NativeSurfaceRenderableNode {

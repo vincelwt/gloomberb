@@ -4,27 +4,27 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from "react";
-import type { AppState } from "../../state/app-context";
+import type { AppState } from "../../state/app/context";
 import type { PluginRegistry } from "../../plugins/registry";
-import type { Command } from "./command-registry";
+import type { Command } from "./commands/registry";
 import type {
   CommandDef,
   PaneTemplateCreateOptions,
   PaneTemplateDef,
 } from "../../types/plugin";
 import { resolveCommandBarMode, type CommandBarMode } from "./view-model";
-import type { ListScreenState, ResultItem } from "./list-model";
+import type { ListScreenState, ResultItem } from "./list/model";
 import type {
   CommandBarFieldValue,
   CommandBarRoute,
-} from "./workflow/workflow-types";
-import type { CollectionCommandId } from "./collection-commands";
-import type { CommandBarCollectionWorkflowActions } from "./workflow/collection-workflow-actions";
+} from "./workflow/types";
+import type { CollectionCommandId } from "./commands/collection";
+import type { CommandBarCollectionWorkflowActions } from "./workflow/collection-actions";
 import {
   acceptRootShortcutTabAction,
   buildImmediateRootSelection,
-} from "./routes/root/root-selection";
-import type { OpenInlineConfirm } from "./confirm-route";
+} from "./routes/root/selection";
+import type { OpenInlineConfirm } from "./routing/confirm";
 import { activatePickerSelectionAction } from "./picker-activation";
 
 type OpenModeRouteFn = (

@@ -1,8 +1,8 @@
 import type { PaneSettingField } from "../../types/plugin";
 import type { PluginRegistry } from "../../plugins/registry";
 import { fuzzyFilter } from "../../utils/fuzzy-search";
-import type { ResultItem } from "./list-model";
-import type { CommandBarRoute, CommandBarWorkflowRoute } from "./workflow/workflow-types";
+import type { ResultItem } from "./list/model";
+import type { CommandBarRoute, CommandBarWorkflowRoute } from "./workflow/types";
 import { summarizePaneSettingValue } from "./helpers";
 
 type NotifyFn = (body: string, options?: { type?: "info" | "success" | "error" }) => void;

@@ -1,7 +1,7 @@
 import { Box, Text, TextAttributes, type TextareaRenderable } from "../../../../ui";
 import { getMessageComposerBlockHeight, MessageComposer } from "../../../../components/ui";
 import { colors } from "../../../../theme/colors";
-import type { ChatMessage } from "../../../../utils/api-client";
+import type { ChatMessage } from "../../../../api-client";
 import { InlineAuthActions } from "../../cloud/auth-actions";
 import { ChatActionChip } from "../message/action-chip";
 import { COMPOSER_ACTION_WIDTH } from "../layout";

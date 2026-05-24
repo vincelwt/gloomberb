@@ -7,10 +7,10 @@ import {
   appReducer,
   createInitialState,
   type AppState,
-} from "../../../state/app-context";
+} from "../../../state/app/context";
 import { cloneLayout, createDefaultConfig, type AppConfig } from "../../../types/config";
-import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugin-runtime";
-import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane-footer";
+import { PluginRenderProvider, type PluginRuntimeAccess } from "../../runtime";
+import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane/footer";
 import { createConfigBackedTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { Box } from "../../../ui";
 import { deserializeAlerts, serializeAlerts } from "./alert-engine";

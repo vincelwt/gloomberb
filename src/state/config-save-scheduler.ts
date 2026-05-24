@@ -1,4 +1,4 @@
-import { saveConfig } from "../data/config-store";
+import { saveConfig } from "../data/config/store";
 import type { AppConfig } from "../types/config";
 import { debugLog } from "../utils/debug-log";
 import { measurePerfAsync } from "../utils/perf-marks";

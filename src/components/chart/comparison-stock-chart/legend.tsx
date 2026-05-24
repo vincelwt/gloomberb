@@ -1,6 +1,6 @@
 import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import { blendHex, colors } from "../../../theme/colors";
-import type { ComparisonChartProjection } from "../comparison-chart-data";
+import type { ComparisonChartProjection } from "../comparison/data";
 import { clipText, formatLegendSummary } from "./helpers";
 
 interface ComparisonChartLegendProps {

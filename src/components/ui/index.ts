@@ -8,7 +8,7 @@ export type { DataTableCell, DataTableColumn, DataTableProps } from "./data-tabl
 export { Button } from "./button";
 export { ShortcutHint } from "./shortcut-hint";
 
-export { MultiSelectDialogButton, MultiSelectDialogContent } from "./multi-select-dialog";
+export { MultiSelectDialogButton, MultiSelectDialogContent } from "./multi-select/dialog";
 
 export { TextField, NumberField } from "./fields";
 

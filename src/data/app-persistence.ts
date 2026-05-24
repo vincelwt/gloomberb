@@ -1,7 +1,7 @@
 import { PluginStateStore } from "./plugin-state-store";
 import { ResourceStore } from "./resource-store";
 import { SessionStore } from "./session-store";
-import { SqliteDatabase } from "./sqlite-database";
+import { SqliteDatabase } from "./sqlite/database";
 import { TickerStore } from "./ticker-store";
 
 export class AppPersistence {

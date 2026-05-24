@@ -1,13 +1,13 @@
 import { act } from "react";
-import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane-footer";
+import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane/footer";
 import { testRender } from "../../../renderers/opentui/test-utils";
-import { AppContext, createInitialState } from "../../../state/app-context";
+import { AppContext, createInitialState } from "../../../state/app/context";
 import { MemoryPluginPersistence } from "../../../test-support/plugin-persistence";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { createDefaultConfig } from "../../../types/config";
 import { Box } from "../../../ui";
-import { apiClient, type ChatChannel, type ChatMessage } from "../../../utils/api-client";
-import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugin-runtime";
+import { apiClient, type ChatChannel, type ChatMessage } from "../../../api-client";
+import { PluginRenderProvider, type PluginRuntimeAccess } from "../../runtime";
 import { setSharedMarketDataForTests, setSharedRegistryForTests } from "../../registry";
 import { ChatContent } from "../chat";
 import { ChatController } from "./controller";

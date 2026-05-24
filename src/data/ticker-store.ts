@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
-import { serializeJson } from "./sqlite-json";
-import { withSqliteBusyRetry } from "./sqlite-retry";
+import { serializeJson } from "./sqlite/json";
+import { withSqliteBusyRetry } from "./sqlite/retry";
 
 export interface StoredTickerRecord {
   symbol: string;

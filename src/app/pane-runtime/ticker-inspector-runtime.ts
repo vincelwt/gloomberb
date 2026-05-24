@@ -9,7 +9,7 @@ import type { PluginRegistry } from "../../plugins/registry";
 import type {
   AppAction,
   AppState,
-} from "../../state/app-context";
+} from "../../state/app/context";
 import {
   createPaneInstance,
   findPaneInstance,

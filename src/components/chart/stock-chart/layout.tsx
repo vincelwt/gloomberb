@@ -3,8 +3,8 @@ import { Box, ChartSurface, Text, type BoxRenderable, type ChartSurfaceProps } f
 import { colors } from "../../../theme/colors";
 import { PriceAxisLabels } from "../price-axis-labels";
 import { TimeAxisLabel } from "../time-axis-label";
-import type { ChartMouseEvent } from "../chart-pointer";
-import type { ResolvedChartPalette, StyledContent } from "../chart-renderer";
+import type { ChartMouseEvent } from "../core/pointer";
+import type { ResolvedChartPalette, StyledContent } from "../core/renderer";
 
 interface StockChartLayoutProps {
   axisGap: number;

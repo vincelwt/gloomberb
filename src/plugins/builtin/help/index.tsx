@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { getSharedRegistry } from "../../registry";
-import { usePluginAppActions } from "../../plugin-runtime";
+import { usePluginAppActions } from "../../runtime";
 import { detectShortcutPlatform, formatPrimaryShortcut, getShortcutDisplayMode } from "../../../utils/shortcut-labels";
 import {
   ActionButton,

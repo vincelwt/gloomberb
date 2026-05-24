@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { usePluginState } from "../../../plugin-runtime";
+import { usePluginState } from "../../../runtime";
 
 export interface NewsReadState {
   articleIds: string[];

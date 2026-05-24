@@ -1,4 +1,4 @@
-import type { ChartAxisMode, ChartColors } from "../chart-types";
+import type { ChartAxisMode, ChartColors } from "../core/types";
 
 export interface ComparisonStockChartProps {
   paneId: string;

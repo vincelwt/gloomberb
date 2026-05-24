@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { getKeyboardPanCellCount } from "../chart-scroll";
+import { getKeyboardPanCellCount } from "../core/scroll";
 import {
   resolveStockChartAxisWidth,
   type ResolveStockChartAxisWidthOptions,

@@ -4,7 +4,7 @@ import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types
 import type { TickerRecord } from "../types/ticker";
 import type { ChartRequest, InstrumentRef, OptionsRequest, SecFilingsRequest } from "./request-types";
 import { instrumentFromTicker } from "./request-types";
-import { useAppActive } from "../state/app-activity";
+import { useAppActive } from "../state/app/activity";
 import {
   getSharedMarketDataCoordinator,
   resolveEntryValue,

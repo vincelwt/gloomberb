@@ -11,7 +11,7 @@ import type { AnalystEstimateRecord, AnalystResearchData } from "../../../types/
 import type { PaneProps } from "../../../types/plugin";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCompact, formatNumber, formatPercent } from "../../../utils/format";
-import { useAssetData, usePluginPaneState } from "../../plugin-runtime";
+import { useAssetData, usePluginPaneState } from "../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../shared/table-pane";
 import { useBoundTicker, useTickerRequest } from "../shared/ticker-request";
 

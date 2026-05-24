@@ -4,14 +4,14 @@ import {
   clearActivePreset,
   shiftDateWindow,
   type DateWindowRange,
-} from "../chart-controller";
-import type { ManualChartResolution } from "../chart-resolution";
-import { RIGHT_EDGE_ANCHOR_RATIO } from "../chart-viewport";
-import type { ProjectedChartPoint } from "../chart-data";
+} from "../core/controller";
+import type { ManualChartResolution } from "../core/resolution";
+import { RIGHT_EDGE_ANCHOR_RATIO } from "../core/viewport";
+import type { ProjectedChartPoint } from "../core/data";
 import {
   getActivePointIndex,
   getPointTerminalColumn,
-} from "../chart-renderer";
+} from "../core/renderer";
 import { resolveAutoZoomWindow, type AutoRenderedView } from "./auto";
 import {
   applyZoomAroundAnchor,
@@ -28,11 +28,11 @@ import {
   type ChartRenderMode,
   type ChartResolution,
   type TimeRange,
-} from "../chart-types";
+} from "../core/types";
 import {
   EMPTY_DISPLAY_CURSOR,
   type DisplayCursorState,
-} from "../chart-pointer";
+} from "../core/pointer";
 import type { ChartCursorMotionKind } from "../cursor-motion";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 

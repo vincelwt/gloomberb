@@ -1,0 +1,196 @@
+import type { AppPersistence } from "../../data/app-persistence";
+import type { TickerRepository } from "../../data/ticker-repository";
+import type { BrokerInstanceConfig, LayoutConfig } from "../../types/config";
+import type { DataProvider } from "../../types/data-provider";
+import type { TickerFinancials } from "../../types/financials";
+import type { TickerRecord } from "../../types/ticker";
+import type {
+  AppNotificationRequest,
+  BrokerInstanceUpdateOptions,
+  GloomPluginContext,
+  PaneTemplateCreateOptions,
+  PinTickerOptions,
+  PluginCapability,
+} from "../../types/plugin";
+import type { PaneRuntimeState } from "../../core/state/app/state";
+import type { NewsQuery, NewsQueryState } from "../../types/news-source";
+import { debugLog } from "../../utils/debug-log";
+import { createPluginPersistence } from "../plugin-persistence";
+import type { PluginEvents } from "../event-bus";
+import type { PluginItems, RegistryContributions } from "./contributions";
+import {
+  createPluginPaneSettingsState,
+  createPluginResumeState,
+} from "./plugin-state";
+
+export interface RegistryPluginContextOptions {
+  pluginId: string;
+  items: PluginItems;
+  contributions: RegistryContributions;
+  enableCapabilityHandlers: boolean;
+  marketData: DataProvider;
+  tickerRepository: TickerRepository;
+  persistence: AppPersistence;
+  getLayout: () => LayoutConfig;
+  updateLayout: (layout: LayoutConfig) => void;
+  resolvePaneTarget: (paneId: string) => string | undefined;
+  registerCapabilityForPlugin: (pluginId: string, capability: PluginCapability, items: PluginItems) => void;
+  watchNewsQuery: (query: NewsQuery, listener: (state: NewsQueryState) => void) => () => void;
+  getData: (ticker: string) => TickerFinancials | null;
+  getTicker: (symbol: string) => TickerRecord | null;
+  getConfig: () => import("../../types/config").AppConfig;
+  getResumeState: <T = unknown>(key: string, schemaVersion?: number) => T | null;
+  setResumeState: (key: string, value: unknown, schemaVersion?: number) => void;
+  deleteResumeState: (key: string) => void;
+  getPaneRuntimeState: (paneId: string) => PaneRuntimeState | null;
+  updatePaneRuntimeState: (paneId: string, patch: Partial<PaneRuntimeState>) => void;
+  getConfigState: <T = unknown>(key: string) => T | null;
+  setConfigState: (key: string, value: unknown) => Promise<void>;
+  deleteConfigState: (key: string) => Promise<void>;
+  getConfigStateKeys: () => string[];
+  createBrokerInstance: (brokerType: string, label: string, values: Record<string, unknown>) => Promise<BrokerInstanceConfig>;
+  updateBrokerInstance: (instanceId: string, values: Record<string, unknown>, options?: BrokerInstanceUpdateOptions) => Promise<void>;
+  syncBrokerInstance: (instanceId: string) => Promise<void>;
+  removeBrokerInstance: (instanceId: string) => Promise<void>;
+  selectTicker: (symbol: string, paneId?: string) => void;
+  switchPanel: (panel: "left" | "right") => void;
+  switchTab: (tabId: string, paneId?: string) => void;
+  openCommandBar: (query?: string) => void;
+  showPane: (paneId: string) => void;
+  createPaneFromTemplate: (templateId: string, options?: PaneTemplateCreateOptions) => void;
+  hidePane: (paneId: string) => void;
+  focusPane: (paneId: string) => void;
+  pinTicker: (symbol: string, options?: PinTickerOptions) => void;
+  navigateTicker: (symbol: string, options?: { sourcePaneId?: string | null }) => void;
+  openPaneSettings: (paneId?: string) => void;
+  events: {
+    on: <K extends keyof PluginEvents>(event: K, handler: (payload: PluginEvents[K]) => void) => () => void;
+    emit: <K extends keyof PluginEvents>(event: K, payload: PluginEvents[K]) => void;
+  };
+  notify: (notification: AppNotificationRequest) => void;
+}
+
+export function createRegistryPluginContext({
+  pluginId,
+  items,
+  contributions,
+  enableCapabilityHandlers,
+  marketData,
+  tickerRepository,
+  persistence,
+  getLayout,
+  updateLayout,
+  resolvePaneTarget,
+  registerCapabilityForPlugin,
+  watchNewsQuery,
+  getData,
+  getTicker,
+  getConfig,
+  getResumeState,
+  setResumeState,
+  deleteResumeState,
+  getPaneRuntimeState,
+  updatePaneRuntimeState,
+  getConfigState,
+  setConfigState,
+  deleteConfigState,
+  getConfigStateKeys,
+  createBrokerInstance,
+  updateBrokerInstance,
+  syncBrokerInstance,
+  removeBrokerInstance,
+  selectTicker,
+  switchPanel,
+  switchTab,
+  openCommandBar,
+  showPane,
+  createPaneFromTemplate,
+  hidePane,
+  focusPane,
+  pinTicker,
+  navigateTicker,
+  openPaneSettings,
+  events,
+  notify,
+}: RegistryPluginContextOptions): GloomPluginContext {
+  const pluginNamespace = `plugin:${pluginId}`;
+  const pluginPersistence = createPluginPersistence(persistence.pluginState, persistence.resources, pluginNamespace, pluginId);
+  const log = debugLog.createLogger(pluginId);
+  const resume = createPluginResumeState({
+    pluginId,
+    getResumeState,
+    setResumeState,
+    deleteResumeState,
+    getPaneRuntimeState,
+    updatePaneRuntimeState,
+  });
+  const paneSettings = createPluginPaneSettingsState({
+    getLayout,
+    resolvePaneTarget,
+    updateLayout,
+  });
+
+  return {
+    registerPane: (pane) => contributions.registerPane(pluginId, pane, items),
+    registerPaneTemplate: (template) => contributions.registerPaneTemplate(pluginId, template, items),
+    registerCommand: (command) => contributions.registerCommand(pluginId, command, items),
+    registerColumn: (column) => contributions.registerColumn(pluginId, column, items),
+    registerBroker: (broker) => contributions.registerBroker(pluginId, broker, items),
+    registerCapability: (capability) => {
+      if (enableCapabilityHandlers) registerCapabilityForPlugin(pluginId, capability, items);
+    },
+    registerDetailTab: (tab) => contributions.registerDetailTab(pluginId, tab, items),
+    registerShortcut: (shortcut) => contributions.registerShortcut(pluginId, shortcut, items),
+    registerTickerAction: (action) => contributions.registerTickerAction(pluginId, action, items),
+    registerContextMenuProvider: (provider) => contributions.registerContextMenuProvider(pluginId, provider, items),
+    watchNewsQuery: (query, listener) => {
+      const dispose = watchNewsQuery(query, listener);
+      items.newsQueryWatchDisposers.push(dispose);
+      return dispose;
+    },
+
+    getData,
+    getTicker,
+    getConfig,
+    getPaneDef: (paneId) => contributions.panesMap.get(paneId),
+
+    marketData,
+    tickerRepository,
+    persistence: pluginPersistence,
+    log,
+    resume,
+    paneSettings,
+    configState: {
+      get: getConfigState,
+      set: setConfigState,
+      delete: deleteConfigState,
+      keys: getConfigStateKeys,
+    },
+
+    createBrokerInstance,
+    updateBrokerInstance,
+    syncBrokerInstance,
+    removeBrokerInstance,
+
+    selectTicker,
+    switchPanel,
+    switchTab,
+    openCommandBar,
+    showPane,
+    createPaneFromTemplate,
+    hidePane,
+    focusPane,
+    pinTicker,
+    navigateTicker,
+    openPaneSettings,
+
+    on: (event, handler) => {
+      const dispose = events.on(event, handler);
+      items.eventDisposers.push(dispose);
+      return dispose;
+    },
+    emit: (event, payload) => events.emit(event, payload),
+
+    notify,
+  };
+}

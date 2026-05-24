@@ -6,21 +6,21 @@ import {
 } from "react";
 import type { TickerRepository } from "../../data/ticker-repository";
 import type { PluginRegistry } from "../../plugins/registry";
-import type { AppAction, AppState } from "../../state/app-context";
+import type { AppAction, AppState } from "../../state/app/context";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import type { ThemePickerHandle } from "./theme-picker";
-import { useCommandBarTickerSearchActions } from "./routes/ticker-search/ticker-search-actions";
-import { useCommandBarPluginCommandActions } from "./plugin-command-actions";
-import { useCommandBarPaneTemplateActions } from "./pane-templates/pane-template-workflow";
-import { useCommandBarDirectCommandRuntime } from "./direct-command-runtime";
-import { useCommandBarConfirmRoute } from "./confirm-route";
+import { useCommandBarTickerSearchActions } from "./routes/ticker-search/actions";
+import { useCommandBarPluginCommandActions } from "./commands/plugin/actions";
+import { useCommandBarPaneTemplateActions } from "./pane-templates/workflow";
+import { useCommandBarDirectCommandRuntime } from "./commands/direct/runtime";
+import { useCommandBarConfirmRoute } from "./routing/confirm";
 import { useCommandBarPaneActions } from "./pane-actions";
-import { useCommandBarWorkflowCoordinator } from "./workflow/workflow-coordinator";
-import { useCommandBarRouteActions } from "./route-actions";
-import { useCommandBarLaunchRequest } from "./launch-request";
-import type { CommandBarRoute } from "./workflow/workflow-types";
+import { useCommandBarWorkflowCoordinator } from "./workflow/coordinator";
+import { useCommandBarRouteActions } from "./routing/actions";
+import { useCommandBarLaunchRequest } from "./routing/launch-request";
+import type { CommandBarRoute } from "./workflow/types";
 
 interface UseCommandBarActionRuntimeOptions {
   activeCollectionId: string | null;

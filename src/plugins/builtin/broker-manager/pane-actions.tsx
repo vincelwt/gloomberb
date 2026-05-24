@@ -8,7 +8,7 @@ import {
 } from "../../../brokers/profile-form";
 import type { BrokerProfileAction } from "../../../types/broker";
 import { useDialog, type PromptContext } from "../../../ui/dialog";
-import { usePluginAppActions, usePluginBrokerActions } from "../../plugin-runtime";
+import { usePluginAppActions, usePluginBrokerActions } from "../../runtime";
 import type { BrokerEditKey } from "./detail";
 import type { BrokerProfileRow } from "./model";
 

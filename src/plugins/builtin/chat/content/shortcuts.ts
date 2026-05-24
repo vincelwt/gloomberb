@@ -1,7 +1,7 @@
 import type { MutableRefObject } from "react";
 import { useShortcut } from "../../../../react/input";
 import type { ScrollBoxRenderable } from "../../../../ui";
-import type { ChatMessage } from "../../../../utils/api-client";
+import type { ChatMessage } from "../../../../api-client";
 import { isPlainKey } from "../../../../utils/keyboard";
 import { scrollToBottom } from "../layout";
 

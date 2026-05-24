@@ -1,7 +1,7 @@
-import { saveConfig } from "../../../../data/config-store";
+import { saveConfig } from "../../../../data/config/store";
 import { resolveTickerForCli } from "../../../../cli/ticker-resolution";
 import { cliStyles, renderStat } from "../../../../utils/cli-output";
-import { formatMarketCostWithCurrency, formatMarketQuantity } from "../../../../utils/market-format";
+import { formatMarketCostWithCurrency, formatMarketQuantity } from "../../../../market-data/market/format";
 import type { CliCommandContext, CliCommandDef } from "../../../../types/plugin";
 import {
   addTickerToPortfolio,

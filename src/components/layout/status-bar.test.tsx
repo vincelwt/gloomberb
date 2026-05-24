@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "../../renderers/opentui/test-utils";
-import { AppContext, createInitialState } from "../../state/app-context";
+import { AppContext, createInitialState } from "../../state/app/context";
 import { cloneLayout, createDefaultConfig, type LayoutConfig } from "../../types/config";
 import type { AppNotificationRequest } from "../../types/plugin";
 import { StatusBar } from "./status-bar";

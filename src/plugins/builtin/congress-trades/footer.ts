@@ -3,7 +3,7 @@ import { formatTimeAgo } from "../../../utils/format";
 import type {
   CloudCongressHousePayload,
   CloudCongressTradePayload,
-} from "../../../utils/api-client";
+} from "../../../api-client";
 import {
   CONGRESS_TRADES_PANE_ID,
   type CongressTab,

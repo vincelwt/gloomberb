@@ -1,8 +1,8 @@
 import { Box, Text, useUiCapabilities } from "../../../../ui";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { type ScrollBoxRenderable, type TextareaRenderable } from "../../../../ui";
-import { useAppDispatch } from "../../../../state/app-context";
-import { useInlineTickers } from "../../../../state/use-inline-tickers";
+import { useAppDispatch } from "../../../../state/app/context";
+import { useInlineTickers } from "../../../../state/hooks/inline-tickers";
 import { blendHex, colors } from "../../../../theme/colors";
 import { chatController } from "../controller";
 import {

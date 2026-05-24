@@ -1,11 +1,11 @@
 import type { PluginRegistry } from "../../plugins/registry";
 import { getLayoutPreview } from "../../plugins/pane-manager";
-import type { AppAction, AppState } from "../../state/app-context";
+import type { AppAction, AppState } from "../../state/app/context";
 import type { LayoutConfig } from "../../types/config";
 import { fuzzyFilter } from "../../utils/fuzzy-search";
 import type { Dispatch } from "react";
-import type { ResultItem } from "./list-model";
-import type { CommandBarRoute } from "./workflow/workflow-types";
+import type { ResultItem } from "./list/model";
+import type { CommandBarRoute } from "./workflow/types";
 import { buildCurrentLayoutItems } from "./layout-items/current-layout";
 import { buildFocusedPaneLayoutItems } from "./layout-items/focused-pane";
 import type { CloseAll, LayoutItemsContext, OpenInlineConfirm } from "./layout-items/types";

@@ -6,14 +6,14 @@ import {
   getVisibleWorkflowFields,
   isWorkflowTextField,
 } from "./helpers";
-import type { ListScreenState } from "./list-model";
+import type { ListScreenState } from "./list/model";
 import type { ThemePickerHandle } from "./theme-picker";
 import type {
   CommandBarFieldValue,
   CommandBarRoute,
   CommandBarWorkflowField,
   CommandBarWorkflowRoute,
-} from "./workflow/workflow-types";
+} from "./workflow/types";
 
 export type RefLike<T> = { current: T };
 

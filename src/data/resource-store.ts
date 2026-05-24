@@ -1,8 +1,8 @@
 import type { Database } from "bun:sqlite";
 import type { CachePolicy, PersistedResourceValue } from "../types/persistence";
-import type { JsonValue } from "./sqlite-json";
-import { safeParseJson, serializeJson } from "./sqlite-json";
-import { trySqliteBusyOperation, withSqliteBusyRetry } from "./sqlite-retry";
+import type { JsonValue } from "./sqlite/json";
+import { safeParseJson, serializeJson } from "./sqlite/json";
+import { trySqliteBusyOperation, withSqliteBusyRetry } from "./sqlite/retry";
 
 const RESOURCE_CACHE_SOFT_ROW_LIMIT = 25_000;
 const RESOURCE_CACHE_SOFT_SIZE_LIMIT = 100 * 1024 * 1024;

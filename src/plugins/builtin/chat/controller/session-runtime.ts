@@ -1,4 +1,4 @@
-import { apiClient } from "../../../../utils/api-client";
+import { apiClient } from "../../../../api-client";
 import {
   DEFAULT_CHAT_CHANNEL_ID,
   type ChannelRuntimeState,

@@ -1,14 +1,14 @@
 import { Box, Text, TextAttributes, useUiHost } from "../../../ui";
 import { StaticChartSurface } from "../../../components";
 import { colors, blendHex } from "../../../theme/colors";
-import { resolveChartPalette } from "../../../components/chart/chart-renderer";
-import type { ChartIndicatorOverlays } from "../../../components/chart/chart-types";
+import { resolveChartPalette } from "../../../components/chart/core/renderer";
+import type { ChartIndicatorOverlays } from "../../../components/chart/core/types";
 import type {
   FearGreedData,
   FearGreedIndicator,
   FearGreedRating,
   FearGreedValueFormat,
-} from "./fear-greed-data";
+} from "./data";
 import {
   formatAxisValue,
   formatIndicatorValue,

@@ -1,4 +1,4 @@
-import type { ChatChannel, ChatMessage, ChatUserSummary } from "../../../../utils/api-client";
+import type { ChatChannel, ChatMessage, ChatUserSummary } from "../../../../api-client";
 
 export function buildChatUserByUsername(
   channels: ChatChannel[],

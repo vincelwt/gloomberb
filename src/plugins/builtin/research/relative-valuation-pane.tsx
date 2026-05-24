@@ -9,10 +9,10 @@ import {
 } from "../../../components";
 import type { TickerFinancials } from "../../../types/financials";
 import type { PaneProps } from "../../../types/plugin";
-import { usePaneInstance } from "../../../state/app-context";
+import { usePaneInstance } from "../../../state/app/context";
 import { blendHex, colors, priceColor } from "../../../theme/colors";
 import { formatCompact, formatCurrency, formatNumber, formatPercent, formatPercentRaw } from "../../../utils/format";
-import { useAssetData, usePluginTickerActions } from "../../plugin-runtime";
+import { useAssetData, usePluginTickerActions } from "../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../shared/table-pane";
 import { useBoundTicker as useSymbolBinding } from "../shared/ticker-request";
 

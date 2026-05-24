@@ -2,15 +2,15 @@ import type { PaneSettingsDef, DetailTabDef } from "../../../types/plugin";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import type { AppConfig } from "../../../types/config";
-import type { ChartAxisMode, TimeRange } from "../../../components/chart/chart-types";
+import type { ChartAxisMode, TimeRange } from "../../../components/chart/core/types";
 import {
   DEFAULT_TICKER_CHART_RANGE_PRESET,
   DEFAULT_TICKER_CHART_RESOLUTION,
   normalizeChartResolution,
-} from "../../../components/chart/chart-resolution";
-import type { PriceSparklinePeriod } from "../../../components/price-sparkline-view";
+} from "../../../components/chart/core/resolution";
+import type { PriceSparklinePeriod } from "../../../components/price-sparkline/view";
 import { getSharedRegistry } from "../../registry";
-import { formatTickerListInput, MAX_TICKER_LIST_SIZE, parseTickerListInput } from "../../../utils/ticker-list";
+import { formatTickerListInput, MAX_TICKER_LIST_SIZE, parseTickerListInput } from "../../../tickers/list";
 
 type DetailTabSummary = { id: string; name: string; order: number };
 

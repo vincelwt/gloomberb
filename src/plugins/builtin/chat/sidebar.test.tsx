@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act, type ReactElement, useCallback, useMemo, useRef, useState } from "react";
 import { testRender } from "../../../renderers/opentui/test-utils";
-import { AppContext, appReducer, createInitialState, PaneInstanceProvider } from "../../../state/app-context";
+import { AppContext, appReducer, createInitialState, PaneInstanceProvider } from "../../../state/app/context";
 import { createConfigBackedTestPluginRuntime, createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { createDefaultConfig, findPaneInstance, type PaneInstanceConfig } from "../../../types/config";
 import { TextAttributes } from "../../../ui";
-import { PluginRenderProvider } from "../../plugin-runtime";
+import { PluginRenderProvider } from "../../runtime";
 import { gloomberbCloudPlugin } from "../cloud";
 import { ChatContent } from "../chat";
 import { chatController } from "./controller";

@@ -1,17 +1,17 @@
 import type { GloomPlugin, GloomPluginContext } from "../../types/plugin";
 import { ibkrBroker } from "./broker-adapter";
 import { buildPersistedIbkrGatewayConfig } from "./config";
-import { ibkrGatewayManager, setResolvedIbkrGatewayListener } from "./gateway-service";
+import { ibkrGatewayManager, setResolvedIbkrGatewayListener } from "./gateway/service";
 import {
   getTradeTicketState,
   getTradingPaneState,
   prefillTradeFromTicker,
   removeBrokerInstanceFromTradingState,
-} from "./trading-state";
+} from "./trading/state";
 import { getConfiguredIbkrGatewayInstances } from "./instance-selection";
-import { hasIbkrTradingProfiles } from "./trade-utils";
-import { TradeTab } from "./trade-tab";
-import { TradingPane } from "./trading-pane";
+import { hasIbkrTradingProfiles } from "./trade/utils";
+import { TradeTab } from "./trade/tab";
+import { TradingPane } from "./trading/pane";
 
 let lastSelectedTickerSymbol: string | null = null;
 

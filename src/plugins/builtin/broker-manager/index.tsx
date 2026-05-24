@@ -8,11 +8,11 @@ import {
 import {
   useAppDispatch,
   useAppSelector,
-} from "../../../state/app-context";
+} from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import type { BrokerAdapter } from "../../../types/broker";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
-import { usePluginBrokerActions } from "../../plugin-runtime";
+import { usePluginBrokerActions } from "../../runtime";
 import {
   buildBrokerProfileRows,
   type BrokerProfileRow,

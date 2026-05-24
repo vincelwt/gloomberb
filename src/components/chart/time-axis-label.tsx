@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Box, Span, Text, useUiCapabilities } from "../../ui";
 import { colors } from "../../theme/colors";
-import { buildCursorTimeAxisSegments } from "./chart-renderer";
+import { buildCursorTimeAxisSegments } from "./core/renderer";
 
 interface TimeAxisLabelProps {
   timeLabels: string;

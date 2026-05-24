@@ -5,7 +5,7 @@ import { pathToFileURL } from "url";
 import type { AppConfig } from "../types/config";
 import type { TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
-import type { PaneRuntimeState } from "../core/state/app-state";
+import type { PaneRuntimeState } from "../core/state/app/state";
 import {
   electrobunViewPath,
   writeElectrobunViewPage,

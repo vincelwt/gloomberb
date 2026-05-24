@@ -1,9 +1,9 @@
 import { useCallback, type Dispatch } from "react";
-import { getPaneTemplateDisplayLabel } from "../../components/command-bar/pane-templates/pane-template-items";
-import { createPaneTemplateOrThrow } from "../../components/command-bar/workflow/workflow-ops";
+import { getPaneTemplateDisplayLabel } from "../../components/command-bar/pane-templates/items";
+import { createPaneTemplateOrThrow } from "../../components/command-bar/workflow/ops";
 import type { TickerRepository } from "../../data/ticker-repository";
 import type { PluginRegistry } from "../../plugins/registry";
-import type { AppAction, AppState } from "../../state/app-context";
+import type { AppAction, AppState } from "../../state/app/context";
 import type { PaneBinding, PaneInstanceConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type {

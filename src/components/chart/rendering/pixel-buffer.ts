@@ -1,6 +1,6 @@
 import { RGBA } from "../../../ui";
-import type { Pixel, PixelBuffer } from "../chart-types";
-import { normalizeCount } from "../chart-render-utils";
+import type { Pixel, PixelBuffer } from "../core/types";
+import { normalizeCount } from "../core/render-utils";
 
 interface StyledChunk {
   __isChunk: true;

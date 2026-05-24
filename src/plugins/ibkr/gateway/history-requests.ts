@@ -4,8 +4,8 @@ import {
   type ContractDetails,
   type IBApiNext,
 } from "@stoqey/ib";
-import type { TimeRange } from "../../../components/chart/chart-types";
-import type { ManualChartResolution } from "../../../components/chart/chart-resolution";
+import type { TimeRange } from "../../../components/chart/core/types";
+import type { ManualChartResolution } from "../../../components/chart/core/resolution";
 import type { PricePoint } from "../../../types/financials";
 import type { BrokerContractRef } from "../../../types/instrument";
 import {

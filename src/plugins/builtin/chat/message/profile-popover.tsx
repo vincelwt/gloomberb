@@ -1,7 +1,7 @@
 import { Box, Text } from "../../../../ui";
 import { TextAttributes } from "../../../../ui";
 import { colors } from "../../../../theme/colors";
-import type { ChatUserSummary } from "../../../../utils/api-client";
+import type { ChatUserSummary } from "../../../../api-client";
 import { truncateChannelLabel } from "../channels";
 import { ChatActionChip } from "./action-chip";
 

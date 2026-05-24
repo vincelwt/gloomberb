@@ -1,6 +1,6 @@
 import type { PricePoint, TickerFinancials } from "../types/financials";
 import { resolveExchangeTimeZone } from "./exchanges";
-import { isTimestampStaleForExchangeSession } from "./market-freshness";
+import { isTimestampStaleForExchangeSession } from "../market-data/market/freshness";
 
 const MAX_CURRENT_INTRADAY_HISTORY_LAG_MS = 18 * 60 * 60 * 1000;
 

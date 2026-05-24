@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { TestDialogProvider, testRender } from "../renderers/opentui/test-utils";
 import { createDefaultConfig } from "../types/config";
-import { createInitialState, type AppAction, type AppState } from "../state/app-context";
+import { createInitialState, type AppAction, type AppState } from "../state/app/context";
 import type { PluginRegistry } from "../plugins/registry";
 import { useAppGlobalShortcuts } from "./global-shortcuts";
 

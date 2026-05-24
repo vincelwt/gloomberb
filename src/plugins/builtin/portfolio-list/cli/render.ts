@@ -12,8 +12,8 @@ import {
   renderTable,
 } from "../../../../utils/cli-output";
 import { formatCompact } from "../../../../utils/format";
-import { formatMarketCostWithCurrency, formatMarketPriceWithCurrency, formatMarketQuantity } from "../../../../utils/market-format";
-import { exchangeShortName } from "../../../../utils/market-status";
+import { formatMarketCostWithCurrency, formatMarketPriceWithCurrency, formatMarketQuantity } from "../../../../market-data/market/format";
+import { exchangeShortName } from "../../../../market-data/market/status";
 import type { AppConfig } from "../../../../types/config";
 import type { CliCommandContext } from "../../../../types/plugin";
 import type { TickerRecord } from "../../../../types/ticker";

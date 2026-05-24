@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Box, Span, Text, useUiCapabilities } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { blendHex, colors, hoverBg } from "../../../theme/colors";
-import type { ChatChannel } from "../../../utils/api-client";
+import type { ChatChannel } from "../../../api-client";
 import type { ChatController } from "./controller";
 import {
   channelPrefix,

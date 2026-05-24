@@ -3,7 +3,7 @@ import type { PaneTemplateDef, WizardStep } from "../../types/plugin";
 import type {
   CommandBarRoute,
   CommandBarWorkflowField,
-} from "./workflow/workflow-types";
+} from "./workflow/types";
 import {
   buildGeneratedTemplateField,
   getCollectionCommandAction,

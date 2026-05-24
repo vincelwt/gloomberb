@@ -6,14 +6,14 @@ import {
   appReducer,
   createInitialState,
   PaneInstanceProvider,
-} from "../../../state/app-context";
+} from "../../../state/app/context";
 import { setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { cloneLayout, createDefaultConfig, type AppConfig } from "../../../types/config";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import type { BrokerAccount } from "../../../types/trading";
-import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugin-runtime";
+import { PluginRenderProvider, type PluginRuntimeAccess } from "../../runtime";
 import { analyticsPlugin } from "./index";
 
 const TEST_PANE_ID = "analytics:test";

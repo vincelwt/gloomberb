@@ -1,4 +1,4 @@
-import type { ChatMessage } from "../../../../utils/api-client";
+import type { ChatMessage } from "../../../../api-client";
 import {
   DEFAULT_CHAT_CHANNEL_ID,
   normalizeChannelId,

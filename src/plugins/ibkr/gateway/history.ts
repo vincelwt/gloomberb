@@ -1,10 +1,10 @@
 import { BarSizeSetting } from "@stoqey/ib";
-import type { TimeRange } from "../../../components/chart/chart-types";
+import type { TimeRange } from "../../../components/chart/core/types";
 import {
   normalizeChartResolutionSupport,
   type ChartResolutionSupport,
   type ManualChartResolution,
-} from "../../../components/chart/chart-resolution";
+} from "../../../components/chart/core/resolution";
 import type { PricePoint } from "../../../types/financials";
 import { normalizeIbkrPriceValue } from "./price-normalization";
 

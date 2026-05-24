@@ -1,5 +1,5 @@
 import type { AppNotificationRequest } from "../../../../types/plugin";
-import { apiClient, type ChatMessage, type ChatNotification } from "../../../../utils/api-client";
+import { apiClient, type ChatMessage, type ChatNotification } from "../../../../api-client";
 import type { ChannelRuntimeState, MergeMessagesOptions } from "./state";
 import {
   formatChannelToast,

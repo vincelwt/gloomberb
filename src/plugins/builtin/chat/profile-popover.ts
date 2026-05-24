@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatUserSummary } from "../../../utils/api-client";
+import type { ChatUserSummary } from "../../../api-client";
 import {
   PROFILE_POPOVER_CLOSE_DELAY_MS,
   hasPublicChatProfileInfo,

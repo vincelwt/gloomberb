@@ -9,9 +9,9 @@ import {
 } from "../../../../components";
 import type { PaneProps, PaneTemplateDef } from "../../../../types/plugin";
 import type { InstrumentSearchResult } from "../../../../types/instrument";
-import { usePaneInstance } from "../../../../state/app-context";
+import { usePaneInstance } from "../../../../state/app/context";
 import { colors } from "../../../../theme/colors";
-import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../../plugin-runtime";
+import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../../shared/table-pane";
 import type { LoadState } from "../../shared/ticker-request";
 

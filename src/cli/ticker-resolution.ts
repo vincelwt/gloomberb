@@ -1,7 +1,7 @@
 import type { DataProvider } from "../types/data-provider";
 import type { TickerRecord } from "../types/ticker";
 import type { TickerRepository } from "../data/ticker-repository";
-import { resolveTickerSearch, upsertTickerFromSearchResult } from "../utils/ticker-search";
+import { resolveTickerSearch, upsertTickerFromSearchResult } from "../tickers/search";
 
 export async function resolveTickerForCli(
   symbol: string,

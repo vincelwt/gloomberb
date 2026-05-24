@@ -1,4 +1,4 @@
-import { apiClient } from "../../../utils/api-client";
+import { apiClient } from "../../../api-client";
 
 export interface YieldPoint {
   maturity: string;      // "1M", "3M", "6M", "1Y", "2Y", "5Y", "7Y", "10Y", "20Y", "30Y"

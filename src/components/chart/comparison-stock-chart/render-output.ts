@@ -1,14 +1,14 @@
 import { useMemo } from "react";
-import type { DisplayCursorState } from "../chart-pointer";
-import type { ComparisonChartProjection } from "../comparison-chart-data";
+import type { DisplayCursorState } from "../core/pointer";
+import type { ComparisonChartProjection } from "../comparison/data";
 import {
   buildComparisonChartScene,
   formatComparisonCursorAxisValue,
   renderComparisonChart,
   type ComparisonChartScene,
   type RenderComparisonChartResult,
-} from "../comparison-chart-renderer";
-import type { ChartAxisMode, ChartMarketSession, ResolvedChartRenderer } from "../chart-types";
+} from "../comparison/renderer";
+import type { ChartAxisMode, ChartMarketSession, ResolvedChartRenderer } from "../core/types";
 
 type ComparisonChartColors = Parameters<typeof buildComparisonChartScene>[1]["colors"];
 

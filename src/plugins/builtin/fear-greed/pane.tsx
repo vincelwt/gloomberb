@@ -4,7 +4,7 @@ import { useShortcut } from "../../../react/input";
 import { SpeedometerGauge, usePaneFooter } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
-import type { FearGreedData } from "./fear-greed-data";
+import type { FearGreedData } from "./data";
 import { getCachedFearGreedData, loadFearGreed } from "./cache";
 import { IndicatorChart, IndexHistoryChart, PreviousScoreGrid } from "./charts";
 import {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataTableView } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
-import { useAssetData, usePluginTickerActions } from "../../plugin-runtime";
+import { useAssetData, usePluginTickerActions } from "../../runtime";
 import { WORLD_INDICES, REGION_LABELS, getIndicesByRegion } from "./indices";
 import { useWorldIndicesFooter } from "./footer";
 import {

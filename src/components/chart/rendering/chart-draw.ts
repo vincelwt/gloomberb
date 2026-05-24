@@ -1,12 +1,12 @@
-import type { ProjectedChartPoint } from "../chart-data";
+import type { ProjectedChartPoint } from "../core/data";
 import type {
   ChartColors,
   ChartIndicatorOverlays,
   ChartRenderMode,
   ChartSessionBackgroundSpan,
   PixelBuffer,
-} from "../chart-types";
-import type { ResolvedChartPalette } from "../chart-palette";
+} from "../core/types";
+import type { ResolvedChartPalette } from "../core/palette";
 import {
   drawLine,
   fillBackgroundRect,

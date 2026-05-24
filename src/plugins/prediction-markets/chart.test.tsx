@@ -8,9 +8,9 @@ import {
   PaneInstanceProvider,
   appReducer,
   createInitialState,
-} from "../../state/app-context";
+} from "../../state/app/context";
 import { createDefaultConfig } from "../../types/config";
-import { getNativeSurfaceManager } from "../../components/chart/native/surface-manager";
+import { getNativeSurfaceManager } from "../../components/chart/native/surface/manager";
 import { PredictionMarketChart } from "./chart";
 
 const TEST_PANE_ID = "prediction-scroll:test";

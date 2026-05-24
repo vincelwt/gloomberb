@@ -1,0 +1,176 @@
+import type { AppState } from "../../../../state/app/context";
+import type { TickerRecord } from "../../../../types/ticker";
+import { isManualPortfolio } from "../../../../plugins/builtin/portfolio-list/mutations";
+import type { Command } from "../../commands/registry";
+import type { ResultItem } from "../../list/model";
+
+interface RootCommandItemBuilderOptions {
+  activeCollectionId: string | null;
+  activeTickerData: TickerRecord | null | undefined;
+  activeTickerSymbol: string | null;
+  hasPaneSettings: (paneId: string) => boolean;
+  runDirectCommand: (command: Command, arg: string) => void;
+  state: AppState;
+}
+
+export function createRootCommandItemBuilder({
+  activeCollectionId,
+  activeTickerData,
+  activeTickerSymbol,
+  hasPaneSettings,
+  runDirectCommand,
+  state,
+}: RootCommandItemBuilderOptions): (command: Command) => ResultItem | null {
+  const isWatchlistTab = state.config.watchlists.some(
+    (entry) => entry.id === activeCollectionId,
+  );
+  const isPortfolioTab = state.config.portfolios.some(
+    (entry) => entry.id === activeCollectionId,
+  );
+  const manualPortfolios = state.config.portfolios.filter(isManualPortfolio);
+  const tickerData = activeTickerData;
+  const focusedPaneHasSettings =
+    !!state.focusedPaneId && hasPaneSettings(state.focusedPaneId);
+
+  const targetWatchlistId = isWatchlistTab
+    ? activeCollectionId
+    : state.config.watchlists[0]?.id ?? null;
+  const targetPortfolioId = isPortfolioTab
+    ? manualPortfolios.find((entry) => entry.id === activeCollectionId)?.id ?? null
+    : manualPortfolios[0]?.id ?? null;
+
+  function shouldShow(command: Command): boolean {
+    switch (command.id) {
+      case "add-watchlist":
+        return (
+          !!tickerData &&
+          !!targetWatchlistId &&
+          !tickerData.metadata.watchlists.includes(targetWatchlistId)
+        );
+      case "remove-watchlist":
+        return !!tickerData && tickerData.metadata.watchlists.length > 0;
+      case "add-portfolio":
+        return !!tickerData && manualPortfolios.length > 0;
+      case "remove-portfolio":
+        return !!tickerData && tickerData.metadata.portfolios.some((id) =>
+          state.config.portfolios.some(
+            (entry) => entry.id === id && isManualPortfolio(entry),
+          ),
+        );
+      case "set-portfolio-position":
+        return manualPortfolios.length > 0;
+      case "disconnect-broker-account":
+        return state.config.brokerInstances.length > 0;
+      case "delete-watchlist":
+        return state.config.watchlists.length > 0;
+      case "delete-portfolio":
+        return manualPortfolios.length > 0;
+      case "pane-settings":
+        return focusedPaneHasSettings;
+      default:
+        return true;
+    }
+  }
+
+  function smartLabel(command: Command): string {
+    switch (command.id) {
+      case "add-watchlist":
+        return activeTickerSymbol ? `Add ${activeTickerSymbol} to Watchlist` : command.label;
+      case "remove-watchlist":
+        return activeTickerSymbol ? `Remove ${activeTickerSymbol} from Watchlist` : command.label;
+      case "add-portfolio":
+        return activeTickerSymbol ? `Add ${activeTickerSymbol} to Portfolio` : command.label;
+      case "remove-portfolio":
+        return activeTickerSymbol ? `Remove ${activeTickerSymbol} from Portfolio` : command.label;
+      case "set-portfolio-position":
+        return activeTickerSymbol ? `Set Position for ${activeTickerSymbol}` : command.label;
+      default:
+        return command.label;
+    }
+  }
+
+  function smartDetail(command: Command): string {
+    switch (command.id) {
+      case "add-watchlist": {
+        const name = state.config.watchlists.find(
+          (entry) => entry.id === targetWatchlistId,
+        )?.name;
+        return name ? `in "${name}"` : command.description;
+      }
+      case "remove-watchlist": {
+        const names = tickerData?.metadata.watchlists
+          .map((id) => state.config.watchlists.find((entry) => entry.id === id)?.name)
+          .filter(Boolean);
+        return names?.length ? `from "${names.join(", ")}"` : command.description;
+      }
+      case "add-portfolio": {
+        const name = state.config.portfolios.find(
+          (entry) => entry.id === targetPortfolioId,
+        )?.name;
+        return name ? `in "${name}"` : command.description;
+      }
+      case "remove-portfolio": {
+        const names = tickerData?.metadata.portfolios
+          .map((id) => state.config.portfolios.find(
+            (entry) => entry.id === id && isManualPortfolio(entry),
+          )?.name)
+          .filter(Boolean);
+        return names?.length ? `from "${names.join(", ")}"` : command.description;
+      }
+      case "set-portfolio-position": {
+        const name = state.config.portfolios.find(
+          (entry) => entry.id === targetPortfolioId,
+        )?.name;
+        return name ? `in "${name}"` : command.description;
+      }
+      case "check-for-updates":
+        if (state.updateProgress?.phase === "downloading") {
+          return `Downloading v${state.updateAvailable?.version}: ${state.updateProgress.percent ?? 0}%`;
+        }
+        if (state.updateProgress?.phase === "replacing") return "Installing update";
+        if (state.updateProgress?.phase === "done") {
+          return state.updateProgress.message ?? "Update installed - restart to apply";
+        }
+        if (state.updateProgress?.phase === "error") {
+          return `Update failed: ${state.updateProgress.error}`;
+        }
+        if (state.updateCheckInProgress) return "Checking releases now";
+        if (state.updateAvailable) {
+          return `Latest available: v${state.updateAvailable.version}`;
+        }
+        if (state.updateNotice) return state.updateNotice;
+        return command.description;
+      case "toggle-value-flashing":
+        return state.config.valueFlashingEnabled ? "Currently on" : "Currently off";
+      default:
+        return command.description;
+    }
+  }
+
+  function smartSearchText(command: Command): string {
+    switch (command.id) {
+      case "set-portfolio-position":
+        return "edit position update position modify position manual position portfolio position";
+      default:
+        return "";
+    }
+  }
+
+  return (command) => {
+    if (!shouldShow(command)) return null;
+    return {
+      id: command.id,
+      label: smartLabel(command),
+      detail: smartDetail(command),
+      category: command.category,
+      kind: "command",
+      right: command.prefix || undefined,
+      shortcutQuery: command.prefix || undefined,
+      searchText: smartSearchText(command),
+      disabled:
+        command.id === "check-for-updates" &&
+        (state.updateCheckInProgress || !!state.updateProgress),
+      action: () => runDirectCommand(command, ""),
+    };
+  };
+}

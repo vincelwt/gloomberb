@@ -3,26 +3,26 @@ import { Text } from "../../../ui";
 import { useNativeRenderer, useUiCapabilities } from "../../../ui";
 import { blendHex, colors } from "../../../theme/colors";
 import { useThemeColors } from "../../../theme/theme-context";
-import { usePaneSettingValue } from "../../../state/app-context";
-import { useQuoteStreaming } from "../../../state/use-quote-streaming";
+import { usePaneSettingValue } from "../../../state/app/context";
+import { useQuoteStreaming } from "../../../state/hooks/quote-streaming";
 import type { QuoteSubscriptionTarget } from "../../../types/data-provider";
 import {
   type ChartRendererPreference,
   type ChartResolution,
   type ComparisonChartViewState,
   type ResolvedChartRenderer,
-} from "../chart-types";
-import { usePersistChartControlSelection } from "../chart-pane-settings";
+} from "../core/types";
+import { usePersistChartControlSelection } from "../core/pane-settings";
 import {
   DEFAULT_COMPARISON_CHART_RANGE_PRESET,
   DEFAULT_COMPARISON_CHART_RESOLUTION,
-} from "../chart-resolution";
+} from "../core/resolution";
 import {
   getChartMarketSessionKey,
   resolveChartMarketSession,
 } from "../market-session";
 import { useResolvedChartRendererState } from "../native/renderer-selection";
-import { getNativeSurfaceManager } from "../native/surface-manager";
+import { getNativeSurfaceManager } from "../native/surface/manager";
 import { resolveComparisonChartAxisWidth } from "./axis-width";
 import {
   useComparisonChartRenderData,

@@ -4,7 +4,7 @@ import type { InstrumentRef, NewsRequest, OptionsRequest, SecFilingsRequest, Cha
 import type { QueryEntry } from "./result-types";
 import { hasLikelyQuoteUnitMismatch } from "../utils/currency-units";
 import { normalizePriceHistory } from "../utils/price-history";
-import { resolveTickerFinancialsQuoteState } from "../utils/quote-resolution";
+import { resolveTickerFinancialsQuoteState } from "./quotes/resolution";
 
 export function buildInstrumentKey(instrument: InstrumentRef): string {
   const contractKey = instrument.instrument?.conId

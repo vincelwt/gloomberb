@@ -2,7 +2,7 @@ import type { ColumnConfig } from "../../../types/config";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import { priceColor } from "../../../theme/colors";
-import { formatQuoteAgeWithSource, resolveQuoteAgeTimestamp } from "../../../utils/quote-time";
+import { formatQuoteAgeWithSource, resolveQuoteAgeTimestamp } from "../../../market-data/quotes/time";
 import { convertCurrency, formatCompact, formatNumber, formatPercentRaw } from "../../../utils/format";
 import {
   formatMarketCost,
@@ -10,10 +10,10 @@ import {
   formatMarketQuantity,
   formatSignedMarketPrice,
   type MarketFormatOptions,
-} from "../../../utils/market-format";
-import { getActiveQuoteDisplay, marketStateDot, type ActiveQuoteDisplay } from "../../../utils/market-status";
+} from "../../../market-data/market/format";
+import { getActiveQuoteDisplay, marketStateDot, type ActiveQuoteDisplay } from "../../../market-data/market/status";
 import { formatOptionTicker } from "../../../utils/options";
-import { PRICE_SPARKLINE_COLUMN_ID } from "../../../components/price-sparkline-view";
+import { PRICE_SPARKLINE_COLUMN_ID } from "../../../components/price-sparkline/view";
 import {
   getPortfolioPositionMetrics,
   resolveBrokerFallbackMarketValue,

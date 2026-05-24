@@ -1,29 +1,29 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useShortcut } from "../../../react/input";
-import { usePaneFooter, type PaneHint } from "../../layout/pane-footer";
+import { usePaneFooter, type PaneHint } from "../../layout/pane/footer";
 import {
   applyComparisonZoomAroundAnchor,
   getMaxComparisonPanOffset,
-} from "../comparison-chart-data";
+} from "../comparison/data";
 import {
   clearActivePreset,
   resolveResolutionSelection,
   type DateWindowRange,
-} from "../chart-controller";
-import type { ManualChartResolution } from "../chart-resolution";
-import { getKeyboardPanCellCount } from "../chart-scroll";
-import { RIGHT_EDGE_ANCHOR_RATIO } from "../chart-viewport";
+} from "../core/controller";
+import type { ManualChartResolution } from "../core/resolution";
+import { getKeyboardPanCellCount } from "../core/scroll";
+import { RIGHT_EDGE_ANCHOR_RATIO } from "../core/viewport";
 import {
   EMPTY_DISPLAY_CURSOR,
   type DisplayCursorState,
-} from "../chart-pointer";
+} from "../core/pointer";
 import {
   TIME_RANGES,
   type ChartResolution,
   type ComparisonChartSeries,
   type ComparisonChartViewState,
   type TimeRange,
-} from "../chart-types";
+} from "../core/types";
 import type { ChartCursorMotionKind } from "../cursor-motion";
 import { clamp } from "./helpers";
 import type { PendingExpansionAction } from "./types";

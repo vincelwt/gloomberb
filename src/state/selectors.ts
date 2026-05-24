@@ -1,4 +1,4 @@
-import type { AppState } from "./app-context";
+import type { AppState } from "./app/context";
 import type { TickerRecord } from "../types/ticker";
 
 function getCollectionMembershipKey(state: AppState, collectionId: string | null): "portfolios" | "watchlists" | null {

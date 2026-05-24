@@ -1,14 +1,14 @@
 import { useCallback, useMemo, type RefObject } from "react";
 import type { BoxRenderable, NativeRendererHost } from "../../../ui";
-import type { ComparisonChartProjection } from "../comparison-chart-data";
-import type { ComparisonChartScene } from "../comparison-chart-renderer";
-import type { ResolvedChartRenderer } from "../chart-types";
+import type { ComparisonChartProjection } from "../comparison/data";
+import type { ComparisonChartScene } from "../comparison/renderer";
+import type { ResolvedChartRenderer } from "../core/types";
 import {
   renderNativeComparisonChartBase,
   type NativeCrosshairOverlay,
 } from "../native/chart-rasterizer";
-import { useNativeChartSurfaces } from "../native/surface-rendering";
-import type { NativeSurfaceManager } from "../native/surface-manager";
+import { useNativeChartSurfaces } from "../native/surface/rendering";
+import type { NativeSurfaceManager } from "../native/surface/manager";
 import { buildComparisonNativeBitmapKey } from "./helpers";
 import type { ComparisonChartColors } from "./types";
 

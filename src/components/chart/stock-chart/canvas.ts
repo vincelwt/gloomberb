@@ -4,14 +4,14 @@ import type { PricePoint } from "../../../types/financials";
 import {
   projectChartData,
   resolveStableOhlcProjectionOptions,
-} from "../chart-data";
-import { buildChartScene, type ResolvedChartPalette } from "../chart-renderer";
+} from "../core/data";
+import { buildChartScene, type ResolvedChartPalette } from "../core/renderer";
 import type {
   ChartAxisMode,
   ChartIndicatorOverlays,
   ChartMarketSession,
   ChartRenderMode,
-} from "../chart-types";
+} from "../core/types";
 import {
   renderNativeChartBase,
   type NativeCrosshairOverlay,

@@ -1,16 +1,16 @@
 import { getChartIndicatorColor } from "../../../theme/colors";
 import type { PricePoint } from "../../../types/financials";
-import type { ChartIndicatorOverlays } from "../chart-types";
-import { RANGE_DAYS, type ChartRenderMode, type TimeRange } from "../chart-types";
+import type { ChartIndicatorOverlays } from "../core/types";
+import { RANGE_DAYS, type ChartRenderMode, type TimeRange } from "../core/types";
 import { computeBollingerBands } from "../indicators/bands";
 import { computeSMA, computeEMA } from "../indicators/moving-averages";
 import { computeRSI, computeMACD } from "../indicators/oscillators";
 import type { IndicatorConfig, MacdResult, OscillatorPoint, OverlayPoint } from "../indicators/types";
-import type { ProjectedChartPoint } from "../chart-data";
+import type { ProjectedChartPoint } from "../core/data";
 import {
   maxTimeRange,
   TIME_RANGE_ORDER,
-} from "../chart-resolution";
+} from "../core/resolution";
 
 function coerceChartDate(value: Date | string | number): Date {
   return value instanceof Date ? value : new Date(value);

@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
-import { safeParseJson, serializeJson } from "./sqlite-json";
-import { withSqliteBusyRetry } from "./sqlite-retry";
+import { safeParseJson, serializeJson } from "./sqlite/json";
+import { withSqliteBusyRetry } from "./sqlite/retry";
 
 const DEFAULT_SESSION_SCHEMA_VERSION = 1;
 

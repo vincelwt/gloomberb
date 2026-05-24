@@ -2,7 +2,7 @@ import { Box, Span, Text, TextAttributes, contextMenuDivider, useContextMenu, us
 import { useCallback, useEffect, useState } from "react";
 import { blendHex, colors, hoverBg } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
-import { useAppDispatch, useAppSelector } from "../../state/app-context";
+import { useAppDispatch, useAppSelector } from "../../state/app/context";
 import {
   selectActiveLayoutIndex,
   selectGridlockTipSequence,

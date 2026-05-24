@@ -17,7 +17,7 @@ import type {
   CommandBarPickerOption,
   CommandBarPickerRoute,
   CommandBarRoute,
-} from "./workflow/workflow-types";
+} from "./workflow/types";
 
 export type CommandBarMultiSelectPickerRoute = CommandBarPickerRoute & {
   pickerId: "field-multi-select";

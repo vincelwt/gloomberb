@@ -5,7 +5,7 @@ import {
   DEFAULT_LAYOUT,
   cloneLayout,
 } from "../../../types/config";
-import type { ResultItem } from "../list-model";
+import type { ResultItem } from "../list/model";
 import type { LayoutItemsContext } from "./types";
 
 export function buildCurrentLayoutItems({

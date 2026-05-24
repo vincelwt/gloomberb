@@ -7,11 +7,11 @@ import {
   type DataTableCell,
   type DataTableKeyEvent,
 } from "../../../components";
-import { TickerBadgeText } from "../../../components/ticker-badge-text";
+import { TickerBadgeText } from "../../../components/ticker/badge/text";
 import { RemoteImage } from "../../../components/ui";
-import { useInlineTickers } from "../../../state/use-inline-tickers";
-import { usePluginAppActions } from "../../plugin-runtime";
-import type { CloudTweetPayload, CloudTweetSearchResponse } from "../../../utils/api-client";
+import { useInlineTickers } from "../../../state/hooks/inline-tickers";
+import { usePluginAppActions } from "../../runtime";
+import type { CloudTweetPayload, CloudTweetSearchResponse } from "../../../api-client";
 import { formatTimeAgo } from "../../../utils/format";
 import { colors } from "../../../theme/colors";
 import { CloudAuthNotice } from "../cloud/auth-actions";

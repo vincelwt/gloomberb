@@ -5,7 +5,7 @@ import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { Quote } from "../../../types/financials";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatPercentRaw } from "../../../utils/format";
-import { useAssetData, useDebouncedPluginPaneState, usePluginPaneState, usePluginTickerActions } from "../../plugin-runtime";
+import { useAssetData, useDebouncedPluginPaneState, usePluginPaneState, usePluginTickerActions } from "../../runtime";
 import {
   SECTOR_COLLECTIONS,
   getSectorCollection,

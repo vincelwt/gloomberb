@@ -1,5 +1,5 @@
 import type { NativeChartBitmap } from "./native/chart-rasterizer";
-import { fillRect, parseHex } from "./native/raster-primitives";
+import { fillRect, parseHex } from "./native/raster/primitives";
 
 export interface ScatterChartPoint {
   x: number;

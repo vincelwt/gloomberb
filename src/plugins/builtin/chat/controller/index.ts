@@ -4,7 +4,7 @@ import {
   type ChatChannel,
   type ChatChannelState,
   type ChatMessage,
-} from "../../../../utils/api-client";
+} from "../../../../api-client";
 import { debugLog } from "../../../../utils/debug-log";
 import {
   getUnreadMentionMessages,

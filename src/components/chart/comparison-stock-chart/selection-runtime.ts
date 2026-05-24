@@ -1,7 +1,7 @@
 import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { BoxRenderable, NativeRendererHost } from "../../../ui";
-import { buildDisplayCursorState } from "../chart-pointer";
-import type { ComparisonChartViewState } from "../chart-types";
+import { buildDisplayCursorState } from "../core/pointer";
+import type { ComparisonChartViewState } from "../core/types";
 import { useChartDisplayCursor, useChartDisplayCursorLayoutRemap } from "../display-cursor";
 import { clamp } from "./helpers";
 

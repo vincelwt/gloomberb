@@ -1,4 +1,4 @@
-import type { ChatMessage } from "../../../../utils/api-client";
+import type { ChatMessage } from "../../../../api-client";
 import { toTimestampMillis } from "../../../../utils/timestamp";
 import type { ChannelRuntimeState, MergeMessagesOptions } from "./state";
 import { PENDING_RECONCILE_WINDOW_MS } from "./state";

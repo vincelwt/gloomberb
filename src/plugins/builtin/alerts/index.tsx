@@ -1,5 +1,5 @@
 import type { GloomPlugin } from "../../../types/plugin";
-import { formatMarketPrice } from "../../../utils/market-format";
+import { formatMarketPrice } from "../../../market-data/market/format";
 import {
   createAlert,
   evaluateAlert,

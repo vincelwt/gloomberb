@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { TickerFinancials } from "../types/financials";
-import { getActiveQuoteDisplay } from "../utils/market-status";
+import { getActiveQuoteDisplay } from "../market-data/market/status";
 
 export type QuoteFlashDirection = "up" | "down" | "flat";
 

@@ -1,7 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
-import { getSharedRegistry } from "../../../plugins/registry";
-import { apiClient } from "../../../utils/api-client";
+import { getSharedRegistry } from "../../registry";
+import { apiClient } from "../../../api-client";
 import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../../sources/gloomberb-cloud";
 import { chatController } from "../chat/controller";
 import { registerCloudAuthCommands } from "./auth-commands";

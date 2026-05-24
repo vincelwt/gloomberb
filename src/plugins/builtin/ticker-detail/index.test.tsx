@@ -8,7 +8,7 @@ import {
   createInitialState,
   PaneInstanceProvider,
   type AppAction,
-} from "../../../state/app-context";
+} from "../../../state/app/context";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { createTestDataProvider } from "../../../test-support/data-provider";
 import {
@@ -23,12 +23,12 @@ import type { DataProvider } from "../../../types/data-provider";
 import type { TickerFinancials } from "../../../types/financials";
 import type { DetailTabDef } from "../../../types/plugin";
 import type { TickerRecord } from "../../../types/ticker";
-import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane-footer";
+import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane/footer";
 import type { PluginRegistry } from "../../registry";
 import { setSharedRegistryForTests } from "../../registry";
-import { PluginRenderProvider } from "../../plugin-runtime";
+import { PluginRenderProvider } from "../../runtime";
 import { tickerDetailPlugin } from ".";
-import { FinancialsTab } from "./financials-tab";
+import { FinancialsTab } from "./financials/tab";
 import { isUsEquityTicker } from "../../../utils/sec";
 
 const TEST_PANE_ID = "ticker-detail:test";

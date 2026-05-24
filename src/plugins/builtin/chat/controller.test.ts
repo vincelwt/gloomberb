@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { AppNotificationRequest } from "../../../types/plugin";
 import { MemoryPluginPersistence as MemoryPersistence } from "../../../test-support/plugin-persistence";
-import { apiClient, type ChatChannel, type ChatMessage, type ChatNotification } from "../../../utils/api-client";
+import { apiClient, type ChatChannel, type ChatMessage, type ChatNotification } from "../../../api-client";
 import { ChatController } from "./controller";
 
 const TRANSCRIPT_KIND = "channel-transcript";

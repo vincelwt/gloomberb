@@ -1,8 +1,8 @@
 import type { ReactNode, RefObject } from "react";
 import { Box, ChartSurface, Text, type BoxRenderable, type ChartSurfaceProps } from "../../../ui";
 import { colors } from "../../../theme/colors";
-import type { ChartMouseEvent } from "../chart-pointer";
-import type { StyledContent } from "../chart-renderer";
+import type { ChartMouseEvent } from "../core/pointer";
+import type { StyledContent } from "../core/renderer";
 import { PriceAxisLabels } from "../price-axis-labels";
 import { TimeAxisLabel } from "../time-axis-label";
 

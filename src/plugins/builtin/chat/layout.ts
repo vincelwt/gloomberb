@@ -1,5 +1,5 @@
 import type { ScrollBoxRenderable } from "../../../ui";
-import type { ChatMessage } from "../../../utils/api-client";
+import type { ChatMessage } from "../../../api-client";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
 
 const MESSAGE_GROUP_THRESHOLD_MS = 5 * 60 * 1000;

@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { Box } from "../../../ui";
-import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane-footer";
+import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane/footer";
 import { testRender } from "../../../renderers/opentui/test-utils";
-import { AppContext, PaneInstanceProvider, createInitialState } from "../../../state/app-context";
+import { AppContext, PaneInstanceProvider, createInitialState } from "../../../state/app/context";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { createDefaultConfig, type BrokerInstanceConfig } from "../../../types/config";
-import { PluginRenderProvider } from "../../plugin-runtime";
+import { PluginRenderProvider } from "../../runtime";
 import { ibkrBroker } from "../../ibkr/broker-adapter";
 import { BrokersPane } from "./index";
 

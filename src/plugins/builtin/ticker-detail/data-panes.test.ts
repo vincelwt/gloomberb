@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildRelationshipAnalysis, createRelationshipPaneTemplate } from "../correlation/relationship-pane";
+import { buildRelationshipAnalysis, createRelationshipPaneTemplate } from "../correlation/relationship/pane";
 import { buildEstimateRows } from "../research/estimates-pane";
 import { buildFundamentalGraphRows, buildValuationGraphRows } from "./data-panes/fundamental-graph";
 import { buildHistoricalPriceRows } from "./data-panes/historical-prices";

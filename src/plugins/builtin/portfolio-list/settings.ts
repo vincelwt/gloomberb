@@ -1,6 +1,6 @@
 import type { PaneSettingOption, PaneSettingsDef, PaneTemplateContext } from "../../../types/plugin";
 import { DEFAULT_COLUMNS, DEFAULT_PORTFOLIO_COLUMN_IDS, type AppConfig, type ColumnConfig } from "../../../types/config";
-import { PRICE_SPARKLINE_COLUMN_ID, PRICE_SPARKLINE_PERIOD_LABEL } from "../../../components/price-sparkline-view";
+import { PRICE_SPARKLINE_COLUMN_ID, PRICE_SPARKLINE_PERIOD_LABEL } from "../../../components/price-sparkline/view";
 
 type CollectionScope = "all" | "portfolios" | "watchlists" | "custom";
 

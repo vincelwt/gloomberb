@@ -3,15 +3,15 @@ import type { PluginRegistry } from "../../plugins/registry";
 import { swapPanes } from "../../plugins/pane-manager";
 import type { LayoutConfig } from "../../types/config";
 import type { PaneSettingField } from "../../types/plugin";
-import type { CommandBarCollectionWorkflowActions } from "./workflow/collection-workflow-actions";
-import type { CollectionCommandId } from "./collection-commands";
-import type { OpenInlineConfirm } from "./confirm-route";
+import type { CommandBarCollectionWorkflowActions } from "./workflow/collection-actions";
+import type { CollectionCommandId } from "./commands/collection";
+import type { OpenInlineConfirm } from "./routing/confirm";
 import { isCollectionCommand } from "./helpers";
 import type {
   CommandBarFieldValue,
   CommandBarPickerRoute,
   CommandBarRoute,
-} from "./workflow/workflow-types";
+} from "./workflow/types";
 
 export function activatePickerSelectionAction({
   closeAll,

@@ -1,6 +1,6 @@
 import { findPaneInstance, type LayoutConfig } from "../../../types/config";
 import type { AppNotificationRequest, GloomPlugin, GloomPluginContext } from "../../../types/plugin";
-import type { AppAction } from "../../../state/app-context";
+import type { AppAction } from "../../../state/app/context";
 import { notifyGridlockComplete } from "../../gridlock-notification";
 import {
   dockPane,

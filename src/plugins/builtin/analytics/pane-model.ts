@@ -1,4 +1,4 @@
-import { resolveChartPalette } from "../../../components/chart/chart-renderer";
+import { resolveChartPalette } from "../../../components/chart/core/renderer";
 import { colors, priceColor } from "../../../theme/colors";
 import type { TickerFinancials, PricePoint } from "../../../types/financials";
 import type { BrokerPortfolioPerformance } from "../../../types/trading";

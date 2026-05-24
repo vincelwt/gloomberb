@@ -5,7 +5,7 @@ import {
   getRenderablePixelSize,
   requestAnimationFrameSafe,
   scaleLocalPixelCoordinate,
-} from "../chart-pointer";
+} from "../core/pointer";
 import type {
   NativeChartBitmap,
   NativeCrosshairOverlay,

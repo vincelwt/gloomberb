@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { type PixelResolution } from "../../../ui";
 import { type NativeRendererHost as CliRenderer } from "../../../ui";
-import type { ChartRendererPreference, ResolvedChartRenderer } from "../chart-types";
-import { ensureKittySupport, getCachedKittySupport } from "./kitty-support";
+import type { ChartRendererPreference, ResolvedChartRenderer } from "../core/types";
+import { ensureKittySupport, getCachedKittySupport } from "./kitty/support";
 
 export interface ResolvedChartRendererState {
   renderer: ResolvedChartRenderer;

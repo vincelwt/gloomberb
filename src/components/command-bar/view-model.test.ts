@@ -5,7 +5,7 @@ import {
   rankTickerSearchItems,
   resolveCommandBarMode,
 } from "./view-model";
-import { commands } from "./command-registry";
+import { commands } from "./commands/registry";
 
 describe("command bar view model helpers", () => {
   test("resolves prefix-driven modes", () => {

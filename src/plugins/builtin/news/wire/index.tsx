@@ -1,22 +1,22 @@
 import type { PaneProps } from "../../../../types/plugin";
 import type { GloomPluginContext } from "../../../../types/plugin";
 import type { NewsQuery } from "../../../../news/types";
-import { createRssNewsCapability } from "./rss-source";
+import { createRssNewsCapability } from "./rss/source";
 import { IndustryPane } from "./industry-pane";
-import { BreakingPane } from "./breaking-pane";
+import { BreakingPane } from "./breaking/pane";
 import {
   BREAKING_NEWS_NOTIFICATIONS_ENABLED_KEY,
   setupBreakingNewsNotifications,
-} from "./breaking-notifications";
+} from "./breaking/notifications";
 import {
   addUserNewsFeed,
   getEnabledNewsFeeds,
   loadNewsFeedSettings,
   saveNewsFeedSettings,
 } from "./feed-config";
-import { NEWS_QUERY_PRESETS } from "./news-query-presets";
-import { NewsPresetPane } from "./news-preset-pane";
-import type { NewsColumnId, NewsSortPreference } from "./news-table";
+import { NEWS_QUERY_PRESETS } from "./news/query-presets";
+import { NewsPresetPane } from "./news/preset-pane";
+import type { NewsColumnId, NewsSortPreference } from "./news/table";
 
 interface NewsPresetPaneConfig {
   paneKey: string;

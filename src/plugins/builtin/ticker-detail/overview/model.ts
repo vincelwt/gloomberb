@@ -13,7 +13,7 @@ import {
   formatMarketCostWithCurrency,
   formatMarketPriceWithCurrency,
   formatMarketQuantity,
-} from "../../../../utils/market-format";
+} from "../../../../market-data/market/format";
 import type { PositionTableRow, StatField } from "./types";
 
 type CurrencyConverter = (value: number, fromCurrency: string) => number;

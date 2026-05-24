@@ -1,5 +1,5 @@
 import type { PricePoint } from "../../../types/financials";
-import type { ChartRenderMode } from "../chart-types";
+import type { ChartRenderMode } from "../core/types";
 
 export function buildNativeBitmapKey(
   pointCount: number,

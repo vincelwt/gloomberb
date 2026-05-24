@@ -1,5 +1,5 @@
-import type { AppState } from "../../../../state/app-context";
-import { normalizeTickerInput } from "../../../../utils/ticker-search";
+import type { AppState } from "../../../../state/app/context";
+import { normalizeTickerInput } from "../../../../tickers/search";
 import {
   getCollectionCommandAction,
   getCollectionCommandKind,
@@ -8,13 +8,13 @@ import {
 } from "../../helpers";
 import {
   getPaneTemplateArgKind,
-} from "../../pane-templates/pane-template-items";
-import type { ShortcutIntent } from "./root-shortcuts";
-import type { CommandBarRoute } from "../../workflow/workflow-types";
+} from "../../pane-templates/items";
+import type { ShortcutIntent } from "./shortcuts";
+import type { CommandBarRoute } from "../../workflow/types";
 import {
   resolvePreferredCollectionTarget,
   resolveSoleCollectionTarget,
-} from "../../workflow/workflow-ops";
+} from "../../workflow/ops";
 
 export function buildRootShortcutFeedback({
   activeCollectionId,

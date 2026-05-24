@@ -3,7 +3,7 @@ import {
   type ChatChannel,
   type ChatChannelState,
   type ChatNotification,
-} from "../../../../utils/api-client";
+} from "../../../../api-client";
 import {
   DEFAULT_CHAT_CHANNEL_ID,
   normalizeChannelId,

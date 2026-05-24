@@ -1,0 +1,174 @@
+import type { BrokerAdapter } from "../../types/broker";
+import type {
+  CommandDef,
+  ContextMenuProviderDef,
+  CustomColumnDef,
+  DetailTabDef,
+  KeyboardShortcut,
+  PaneDef,
+  PaneTemplateDef,
+  TickerAction,
+} from "../../types/plugin";
+
+export interface ContextMenuProviderEntry {
+  pluginId: string;
+  provider: ContextMenuProviderDef;
+}
+
+export interface PluginItems {
+  panes: string[];
+  paneTemplates: string[];
+  commands: string[];
+  columns: string[];
+  brokers: string[];
+  capabilities: string[];
+  detailTabs: string[];
+  shortcuts: string[];
+  tickerActions: string[];
+  contextMenuProviders: string[];
+  eventDisposers: Array<() => void>;
+  capabilityDisposers: Array<() => void>;
+  newsQueryWatchDisposers: Array<() => void>;
+}
+
+interface RegistryContributionsOptions {
+  wrapPaneDef: (pluginId: string, pane: PaneDef) => PaneDef;
+  wrapDetailTabDef: (pluginId: string, tab: DetailTabDef) => DetailTabDef;
+  wrapBrokerAdapter?: (broker: BrokerAdapter, pluginId: string) => BrokerAdapter;
+}
+
+export class RegistryContributions {
+  readonly pluginItems = new Map<string, PluginItems>();
+  readonly commandOwners = new Map<string, string>();
+  readonly paneOwners = new Map<string, string>();
+  readonly paneTemplateOwners = new Map<string, string>();
+  readonly shortcutOwners = new Map<string, string>();
+  readonly capabilityOwners = new Map<string, string>();
+  readonly detailTabOwners = new Map<string, string>();
+
+  readonly panesMap = new Map<string, PaneDef>();
+  readonly paneTemplatesMap = new Map<string, PaneTemplateDef>();
+  readonly commandsMap = new Map<string, CommandDef>();
+  readonly columnsMap = new Map<string, CustomColumnDef>();
+  readonly brokersMap = new Map<string, BrokerAdapter>();
+  readonly detailTabsMap = new Map<string, DetailTabDef>();
+  readonly shortcutsMap = new Map<string, KeyboardShortcut>();
+  readonly tickerActionsMap = new Map<string, TickerAction>();
+  readonly contextMenuProvidersMap = new Map<string, ContextMenuProviderEntry>();
+
+  constructor(private readonly options: RegistryContributionsOptions) {}
+
+  getOrCreatePluginItems(pluginId: string): PluginItems {
+    const existing = this.pluginItems.get(pluginId);
+    if (existing) return existing;
+
+    const items: PluginItems = {
+      panes: [],
+      paneTemplates: [],
+      commands: [],
+      columns: [],
+      brokers: [],
+      capabilities: [],
+      detailTabs: [],
+      shortcuts: [],
+      tickerActions: [],
+      contextMenuProviders: [],
+      eventDisposers: [],
+      capabilityDisposers: [],
+      newsQueryWatchDisposers: [],
+    };
+    this.pluginItems.set(pluginId, items);
+    return items;
+  }
+
+  registerPane(pluginId: string, pane: PaneDef, items = this.getOrCreatePluginItems(pluginId)): void {
+    this.panesMap.set(pane.id, this.options.wrapPaneDef(pluginId, pane));
+    this.paneOwners.set(pane.id, pluginId);
+    items.panes.push(pane.id);
+  }
+
+  registerPaneTemplate(pluginId: string, template: PaneTemplateDef, items = this.getOrCreatePluginItems(pluginId)): void {
+    this.paneTemplatesMap.set(template.id, template);
+    this.paneTemplateOwners.set(template.id, pluginId);
+    items.paneTemplates.push(template.id);
+  }
+
+  registerCommand(pluginId: string, command: CommandDef, items = this.getOrCreatePluginItems(pluginId)): void {
+    this.commandsMap.set(command.id, command);
+    this.commandOwners.set(command.id, pluginId);
+    items.commands.push(command.id);
+  }
+
+  registerColumn(_pluginId: string, column: CustomColumnDef, items: PluginItems): void {
+    this.columnsMap.set(column.id, column);
+    items.columns.push(column.id);
+  }
+
+  registerBroker(pluginId: string, broker: BrokerAdapter, items = this.getOrCreatePluginItems(pluginId)): void {
+    this.brokersMap.set(broker.id, this.options.wrapBrokerAdapter?.(broker, pluginId) ?? broker);
+    items.brokers.push(broker.id);
+  }
+
+  registerCapability(pluginId: string, capabilityId: string, items: PluginItems): void {
+    this.capabilityOwners.set(capabilityId, pluginId);
+    items.capabilities.push(capabilityId);
+  }
+
+  registerDetailTab(pluginId: string, tab: DetailTabDef, items = this.getOrCreatePluginItems(pluginId)): void {
+    this.detailTabsMap.set(tab.id, this.options.wrapDetailTabDef(pluginId, tab));
+    this.detailTabOwners.set(tab.id, pluginId);
+    items.detailTabs.push(tab.id);
+  }
+
+  registerShortcut(pluginId: string, shortcut: KeyboardShortcut, items = this.getOrCreatePluginItems(pluginId)): void {
+    this.shortcutsMap.set(shortcut.id, shortcut);
+    this.shortcutOwners.set(shortcut.id, pluginId);
+    items.shortcuts.push(shortcut.id);
+  }
+
+  registerTickerAction(_pluginId: string, action: TickerAction, items: PluginItems): void {
+    this.tickerActionsMap.set(action.id, action);
+    items.tickerActions.push(action.id);
+  }
+
+  registerContextMenuProvider(pluginId: string, provider: ContextMenuProviderDef, items: PluginItems): void {
+    const providerKey = `${pluginId}:${provider.id}`;
+    this.contextMenuProvidersMap.set(providerKey, { pluginId, provider });
+    items.contextMenuProviders.push(providerKey);
+  }
+
+  unregister(pluginId: string): void {
+    const items = this.pluginItems.get(pluginId);
+    if (!items) return;
+
+    for (const paneId of items.panes) {
+      this.panesMap.delete(paneId);
+      this.paneOwners.delete(paneId);
+    }
+    for (const templateId of items.paneTemplates) {
+      this.paneTemplatesMap.delete(templateId);
+      this.paneTemplateOwners.delete(templateId);
+    }
+    for (const commandId of items.commands) {
+      this.commandsMap.delete(commandId);
+      this.commandOwners.delete(commandId);
+    }
+    for (const columnId of items.columns) this.columnsMap.delete(columnId);
+    for (const brokerId of items.brokers) this.brokersMap.delete(brokerId);
+    for (const capabilityId of items.capabilities) this.capabilityOwners.delete(capabilityId);
+    for (const tabId of items.detailTabs) {
+      this.detailTabsMap.delete(tabId);
+      this.detailTabOwners.delete(tabId);
+    }
+    for (const shortcutId of items.shortcuts) {
+      this.shortcutsMap.delete(shortcutId);
+      this.shortcutOwners.delete(shortcutId);
+    }
+    for (const actionId of items.tickerActions) this.tickerActionsMap.delete(actionId);
+    for (const providerKey of items.contextMenuProviders) this.contextMenuProvidersMap.delete(providerKey);
+    for (const dispose of items.eventDisposers) dispose();
+    for (const dispose of items.capabilityDisposers) dispose();
+    for (const dispose of items.newsQueryWatchDisposers) dispose();
+    this.pluginItems.delete(pluginId);
+  }
+}

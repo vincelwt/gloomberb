@@ -1,5 +1,5 @@
-import type { InlineTickerCatalogEntry } from "../../../../state/use-inline-tickers";
-import type { ChatMessage, ChatUserSummary } from "../../../../utils/api-client";
+import type { InlineTickerCatalogEntry } from "../../../../state/hooks/inline-tickers";
+import type { ChatMessage, ChatUserSummary } from "../../../../api-client";
 
 export interface ChatMessageBaseProps {
   msg: ChatMessage;

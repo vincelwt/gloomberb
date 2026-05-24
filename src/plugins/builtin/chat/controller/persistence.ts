@@ -1,5 +1,5 @@
 import type { PluginPersistence, PluginResumeState } from "../../../../types/plugin";
-import type { PersistedAuthUser } from "../../../../utils/api-client";
+import type { PersistedAuthUser } from "../../../../api-client";
 import {
   CHANNEL_SCHEMA_VERSION,
   MAX_CACHED_MESSAGES,

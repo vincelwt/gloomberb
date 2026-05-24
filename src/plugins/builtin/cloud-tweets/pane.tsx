@@ -5,9 +5,9 @@ import {
   Tabs,
 } from "../../../components";
 import type { DetailTabProps, PaneProps } from "../../../types/plugin";
-import { usePaneInstance, usePaneInstanceId, usePaneTicker } from "../../../state/app-context";
-import { usePluginPaneState, usePluginState } from "../../plugin-runtime";
-import { apiClient, type CloudTweetQueryType, type CloudTweetSearchResponse } from "../../../utils/api-client";
+import { usePaneInstance, usePaneInstanceId, usePaneTicker } from "../../../state/app/context";
+import { usePluginPaneState, usePluginState } from "../../runtime";
+import { apiClient, type CloudTweetQueryType, type CloudTweetSearchResponse } from "../../../api-client";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
 import {
   DEFAULT_TWEET_HOURS,

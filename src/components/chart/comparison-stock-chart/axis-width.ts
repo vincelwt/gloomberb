@@ -1,17 +1,17 @@
 import {
   projectComparisonChartData,
-} from "../comparison-chart-data";
+} from "../comparison/data";
 import {
   buildComparisonChartScene,
   formatComparisonCursorAxisValue,
   renderComparisonChart,
-} from "../comparison-chart-renderer";
-import { resolveIterativeChartAxisWidth } from "../chart-axis-measure";
+} from "../comparison/renderer";
+import { resolveIterativeChartAxisWidth } from "../core/axis-measure";
 import type {
   ChartAxisMode,
   ComparisonChartSeries,
   ComparisonChartViewState,
-} from "../chart-types";
+} from "../core/types";
 
 interface ComparisonChartColors {
   bgColor: string;

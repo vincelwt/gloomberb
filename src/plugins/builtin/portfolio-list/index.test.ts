@@ -5,7 +5,7 @@ import type { TickerRecord } from "../../../types/ticker";
 import type { PortfolioSummaryTotals } from "./metrics";
 import { buildPortfolioSummarySegments } from "./summary";
 import { portfolioListPlugin, shouldToggleCashMarginDrawer } from ".";
-import { selectStreamTickers } from "./pane-data";
+import { selectStreamTickers } from "./pane/data";
 
 function ticker(symbol: string): TickerRecord {
   return {

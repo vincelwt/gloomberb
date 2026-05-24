@@ -1,6 +1,6 @@
 import type { PluginRegistry, WindowEditMode } from "../../../plugins/registry";
 import { fuzzyFilter } from "../../../utils/fuzzy-search";
-import type { ResultItem } from "../list-model";
+import type { ResultItem } from "../list/model";
 import type { CloseAll } from "./types";
 
 export const WINDOW_MODE_COMMAND_OPTIONS: Array<{

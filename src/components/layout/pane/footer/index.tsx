@@ -1,0 +1,246 @@
+import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../../../ui";
+import { colors, blendHex } from "../../../../theme/colors";
+import { getShortcutHintWidth, ShortcutHint } from "../../../ui/shortcut-hint";
+import {
+  EMPTY_FOOTER,
+  hasPaneFooterContent,
+  type CombinedPaneFooter,
+  type PaneFooterPart,
+  type PaneFooterSegment,
+  type PaneHint,
+} from "./model";
+
+export {
+  hasPaneFooterContent,
+  type CombinedPaneFooter,
+  type PaneFooterSegment,
+  type PaneHint,
+} from "./model";
+export {
+  PaneFooterProvider,
+  PaneFooterScope,
+  usePaneFooter,
+  usePaneHints,
+} from "./registration";
+
+function footerToneColor(part: PaneFooterPart): string {
+  if (part.color) return part.color;
+  switch (part.tone) {
+    case "label":
+      return colors.textDim;
+    case "muted":
+      return colors.textMuted;
+    case "positive":
+      return colors.positive;
+    case "negative":
+      return colors.negative;
+    case "warning":
+      return colors.warning;
+    case "value":
+    default:
+      return colors.text;
+  }
+}
+
+function stopMouseEvent(event?: { stopPropagation?: () => void; preventDefault?: () => void }) {
+  event?.stopPropagation?.();
+  event?.preventDefault?.();
+}
+
+function SegmentView({ segment }: { segment: PaneFooterSegment }) {
+  const interactive = !!segment.onPress && !segment.disabled;
+  const attributes = segment.parts.some((part) => part.bold) || interactive ? TextAttributes.BOLD : 0;
+
+  return (
+    <Text
+      fg={segment.disabled ? colors.textMuted : colors.textDim}
+      attributes={attributes}
+      onMouseDown={interactive ? stopMouseEvent : undefined}
+      onMouseUp={interactive ? segment.onPress : undefined}
+      {...(interactive ? { "data-gloom-interactive": "true" } : {})}
+    >
+      {segment.parts.map((part, index) => (
+        <Span
+          key={`${segment.id}:part:${index}`}
+          fg={segment.disabled ? colors.textMuted : footerToneColor(part)}
+          attributes={part.bold ? TextAttributes.BOLD : 0}
+        >
+          {index > 0 ? " " : ""}{part.text}
+        </Span>
+      ))}
+    </Text>
+  );
+}
+
+function hintTextLength(hint: PaneHint, index: number): number {
+  return getShortcutHintWidth(hint.key, hint.label, index > 0 ? " " : "");
+}
+
+function totalHintsWidth(hints: PaneHint[]): number {
+  return hints.reduce((total, hint, index) => total + hintTextLength(hint, index), 0);
+}
+
+function HintView({ hint, prefixSpace }: { hint: PaneHint; prefixSpace: boolean }) {
+  return (
+    <ShortcutHint
+      hotkey={hint.key}
+      label={hint.label}
+      prefix={prefixSpace ? " " : ""}
+      disabled={hint.disabled}
+      dataGloomRole="pane-hint"
+      onPress={hint.onPress}
+    />
+  );
+}
+
+function FooterContent({
+  footer,
+  focused,
+  width,
+  showBackground = true,
+}: {
+  footer: CombinedPaneFooter;
+  focused: boolean;
+  width?: number;
+  showBackground?: boolean;
+}) {
+  const hasInfo = footer.info.length > 0;
+  const visibleHints = focused ? footer.hints : [];
+  const hasHints = visibleHints.length > 0;
+  const dividerColor = focused ? colors.borderFocused : colors.border;
+  const backgroundColor = showBackground ? blendHex(colors.bg, dividerColor, focused ? 0.12 : 0.06) : undefined;
+  const availableWidth = width && width > 0 ? Math.floor(width) : null;
+  const hintsWidth = hasHints
+    ? Math.min(availableWidth ?? totalHintsWidth(visibleHints), totalHintsWidth(visibleHints))
+    : 0;
+  const infoWidth = availableWidth !== null && hasInfo
+    ? Math.max(0, availableWidth - hintsWidth)
+    : undefined;
+
+  if (!hasInfo && !hasHints) {
+    return <Box flexGrow={1} height={1} />;
+  }
+
+  return (
+    <Box
+      height={1}
+      flexGrow={1}
+      flexDirection="row"
+      justifyContent="space-between"
+      overflow="hidden"
+      backgroundColor={backgroundColor}
+    >
+      {hasInfo && (
+        <Box
+          flexDirection="row"
+          overflow="hidden"
+          flexShrink={1}
+          {...(infoWidth != null ? { width: infoWidth } : {})}
+        >
+          {footer.info.map((segment, index) => (
+            <Box key={segment.id} flexDirection="row" marginRight={index === footer.info.length - 1 ? 0 : 1}>
+              <SegmentView segment={segment} />
+            </Box>
+          ))}
+        </Box>
+      )}
+      {hasHints && (
+        <>
+          <Box flexGrow={1} />
+          <Box
+            flexDirection="row"
+            justifyContent="flex-end"
+            flexShrink={0}
+            overflow="hidden"
+            {...(availableWidth !== null ? { width: hintsWidth } : { flexGrow: 1 })}
+          >
+            {visibleHints.map((hint, index) => (
+              <Box key={hint.id} flexDirection="row">
+                <HintView hint={hint} prefixSpace={index > 0} />
+              </Box>
+            ))}
+          </Box>
+        </>
+      )}
+    </Box>
+  );
+}
+
+export function PaneFooterBar({
+  footer = EMPTY_FOOTER,
+  focused,
+  width = 0,
+  reserveRight = 0,
+  showBorder = false,
+}: {
+  footer?: CombinedPaneFooter | null;
+  focused: boolean;
+  width?: number;
+  reserveRight?: number;
+  showBorder?: boolean;
+}) {
+  const { nativePaneChrome } = useUiCapabilities();
+  const resolvedFooter = footer ?? EMPTY_FOOTER;
+  const empty = !hasPaneFooterContent(resolvedFooter);
+  const borderColor = focused ? colors.borderFocused : colors.border;
+  const topBorderColor = colors.border;
+  const nativeBackgroundColor = empty
+    ? "transparent"
+    : focused
+      ? blendHex(colors.bg, colors.borderFocused, 0.06)
+      : blendHex(colors.panel, colors.border, 0.12);
+  const reservedRight = Math.max(0, reserveRight);
+  const rightPadding = reservedRight > 0 ? reservedRight : 1;
+
+  if (nativePaneChrome) {
+    return (
+      <Box
+        height={1}
+        flexDirection="row"
+        paddingLeft={1}
+        paddingRight={rightPadding}
+        alignItems="center"
+        data-gloom-role="pane-footer"
+        data-focused={focused ? "true" : "false"}
+        data-empty={empty ? "true" : "false"}
+        style={{
+          "--pane-footer-border-color": empty ? "transparent" : topBorderColor,
+          borderTop: `1px solid ${empty ? "transparent" : topBorderColor}`,
+          backgroundColor: nativeBackgroundColor,
+          boxShadow: empty ? "none" : `inset 0 1px 0 ${blendHex(nativeBackgroundColor, colors.textBright, 0.03)}`,
+        }}
+      >
+        <FooterContent
+          footer={resolvedFooter}
+          focused={focused}
+          width={width > 0 ? Math.max(0, Math.floor(width) - rightPadding - 1) : undefined}
+          showBackground={false}
+        />
+      </Box>
+    );
+  }
+
+  if (focused || showBorder) {
+    const contentWidth = Math.max(0, Math.floor(width) - 1 - reservedRight - (reservedRight > 0 ? 0 : 1));
+    return (
+      <Box height={1} width={width} flexDirection="row" data-gloom-role="pane-footer" data-focused={focused ? "true" : "false"} data-empty={empty ? "true" : "false"}>
+        <Text fg={borderColor} selectable={false}>└</Text>
+        <Box width={contentWidth} height={1} overflow="hidden">
+          {empty
+            ? <Text fg={borderColor} selectable={false}>{"─".repeat(contentWidth)}</Text>
+            : <FooterContent footer={resolvedFooter} focused={focused} width={contentWidth} />}
+        </Box>
+        {reservedRight === 0 && <Text fg={borderColor} selectable={false}>┘</Text>}
+      </Box>
+    );
+  }
+
+  const contentWidth = Math.max(0, Math.floor(width) - reservedRight);
+  return (
+    <Box height={1} width={width} flexDirection="row" data-gloom-role="pane-footer" data-focused="false" data-empty={empty ? "true" : "false"}>
+      <Box width={contentWidth} height={1} overflow="hidden">
+        <FooterContent footer={resolvedFooter} focused={false} width={contentWidth} />
+      </Box>
+    </Box>
+  );
+}

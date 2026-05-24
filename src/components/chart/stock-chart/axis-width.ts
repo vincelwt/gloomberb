@@ -3,19 +3,19 @@ import { colors } from "../../../theme/colors";
 import {
   projectChartData,
   type ProjectChartDataOptions,
-} from "../chart-data";
+} from "../core/data";
 import {
   getVisibleWindowForDateRange,
   type DateWindowRange,
-} from "../chart-controller";
+} from "../core/controller";
 import {
   buildChartScene,
   formatCursorAxisValue,
   renderChart,
   resolveChartPalette,
-} from "../chart-renderer";
-import type { ChartAxisMode, ChartRenderMode } from "../chart-types";
-import { resolveIterativeChartAxisWidth } from "../chart-axis-measure";
+} from "../core/renderer";
+import type { ChartAxisMode, ChartRenderMode } from "../core/types";
+import { resolveIterativeChartAxisWidth } from "../core/axis-measure";
 
 const AXIS_MEASURE_PALETTE = resolveChartPalette({
   bg: colors.bg,

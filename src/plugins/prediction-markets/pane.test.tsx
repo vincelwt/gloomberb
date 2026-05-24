@@ -15,8 +15,8 @@ import {
 import { attachPredictionMarketsPersistence } from "./services/fetch";
 import {
   normalizeKalshiMarket,
-} from "./services/kalshi-adapter";
-import { normalizePolymarketMarket } from "./services/polymarket-adapter";
+} from "./services/kalshi/adapter";
+import { normalizePolymarketMarket } from "./services/polymarket/adapter";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 

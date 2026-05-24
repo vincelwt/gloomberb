@@ -1,6 +1,6 @@
 import { join } from "path";
 import { existsSync } from "fs";
-import { getDataDir, loadConfig } from "../data/config-store";
+import { getDataDir, loadConfig } from "../data/config/store";
 import { AppPersistence } from "../data/app-persistence";
 import { TickerRepository } from "../data/ticker-repository";
 import { AssetDataRouter } from "../sources/provider-router";

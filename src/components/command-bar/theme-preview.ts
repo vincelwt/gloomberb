@@ -5,7 +5,7 @@ import {
   getCurrentThemeId,
   previewTheme,
 } from "../../theme/colors";
-import type { AppAction } from "../../state/app-context";
+import type { AppAction } from "../../state/app/context";
 import type { ThemePickerHandle } from "./theme-picker";
 
 interface CommandBarThemePreviewOptions {

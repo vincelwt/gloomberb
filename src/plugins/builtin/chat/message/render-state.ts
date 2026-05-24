@@ -1,6 +1,6 @@
 import { TextAttributes } from "../../../../ui";
 import { colors, hoverBg } from "../../../../theme/colors";
-import type { ChatMessage } from "../../../../utils/api-client";
+import type { ChatMessage } from "../../../../api-client";
 import { formatTimeAgo } from "../../../../utils/format";
 import { isGroupedWithPrevious } from "../layout";
 

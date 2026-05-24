@@ -3,7 +3,7 @@ import type { BoxRenderable, NativeRendererHost } from "../../../ui";
 import {
   resolveSelectionDisplayCursorState,
   type DisplayCursorState,
-} from "../chart-pointer";
+} from "../core/pointer";
 import type { ChartCursorMotionKind } from "../cursor-motion";
 
 export { useChartDisplayCursor as useStockChartDisplayCursor } from "../display-cursor";

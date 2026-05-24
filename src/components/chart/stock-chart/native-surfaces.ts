@@ -1,14 +1,14 @@
 import { useCallback, useMemo, type RefObject } from "react";
 import type { BoxRenderable, NativeRendererHost as CliRenderer } from "../../../ui";
-import type { ChartScene, ResolvedChartPalette } from "../chart-renderer";
-import type { ProjectedChartPoint } from "../chart-data";
-import type { ChartRenderMode, ResolvedChartRenderer } from "../chart-types";
+import type { ChartScene, ResolvedChartPalette } from "../core/renderer";
+import type { ProjectedChartPoint } from "../core/data";
+import type { ChartRenderMode, ResolvedChartRenderer } from "../core/types";
 import {
   renderNativeChartBase,
   type NativeCrosshairOverlay,
 } from "../native/chart-rasterizer";
-import { useNativeChartSurfaces } from "../native/surface-rendering";
-import { getNativeSurfaceManager } from "../native/surface-manager";
+import { useNativeChartSurfaces } from "../native/surface/rendering";
+import { getNativeSurfaceManager } from "../native/surface/manager";
 import { buildNativeBitmapKey } from "./bitmaps";
 
 interface UseStockChartNativeSurfacesOptions {

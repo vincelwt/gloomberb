@@ -2,7 +2,7 @@
 /** @jsxImportSource react */
 import { createRoot } from "react-dom/client";
 import { useEffect, type ComponentType, type ReactNode } from "react";
-import { AppProvider, useAppDispatch } from "../../../state/app-context";
+import { AppProvider, useAppDispatch } from "../../../state/app/context";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { UiHostProvider, type RendererHost } from "../../../ui/host";
@@ -13,16 +13,16 @@ import { WebToastHostProvider } from "./toast-host";
 import { webUiHost } from "./ui-host";
 import { getLoadablePlugins } from "../../../plugins/catalog";
 import { setSharedMarketDataForTests } from "../../../plugins/registry";
-import { PluginRenderProvider, type PluginRuntimeAccess } from "../../../plugins/plugin-runtime";
+import { PluginRenderProvider, type PluginRuntimeAccess } from "../../../plugins/runtime";
 import { FloatingPaneWrapper } from "../../../components/layout/floating-pane";
-import { PaneContent } from "../../../components/layout/pane-content";
-import { resolvePaneBodyFrame } from "../../../components/layout/pane-sizing";
-import { getPaneDisplayTitle } from "../../../components/layout/pane-title";
+import { PaneContent } from "../../../components/layout/pane/content";
+import { resolvePaneBodyFrame } from "../../../components/layout/pane/sizing";
+import { getPaneDisplayTitle } from "../../../components/layout/pane/title";
 import type { AppConfig } from "../../../types/config";
 import type { CachedFinancialsTarget, DataProvider, QuoteSubscriptionTarget } from "../../../types/data-provider";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
-import type { AppState, PaneRuntimeState } from "../../../core/state/app-state";
+import type { AppState, PaneRuntimeState } from "../../../core/state/app/state";
 import type { PaneDef } from "../../../types/plugin";
 
 interface CliPaneShotPayload {

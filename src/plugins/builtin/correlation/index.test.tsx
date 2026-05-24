@@ -6,11 +6,11 @@ import {
   AppContext,
   createInitialState,
   PaneInstanceProvider,
-} from "../../../state/app-context";
+} from "../../../state/app/context";
 import { cloneLayout, createDefaultConfig } from "../../../types/config";
 import type { TickerRecord } from "../../../types/ticker";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
-import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugin-runtime";
+import { PluginRenderProvider, type PluginRuntimeAccess } from "../../runtime";
 import { correlationPlugin } from ".";
 
 const TEST_PANE_ID = "correlation:test";

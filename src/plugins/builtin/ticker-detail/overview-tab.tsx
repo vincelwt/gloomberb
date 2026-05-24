@@ -2,16 +2,16 @@ import { Box, ScrollBox, Text, useUiCapabilities } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { useViewport } from "../../../react/input";
 import { useFxRatesMap } from "../../../market-data/hooks";
-import { useAppSelector } from "../../../state/app-context";
+import { useAppSelector } from "../../../state/app/context";
 import { colors, priceColor } from "../../../theme/colors";
 import { convertCurrency, formatPercentRaw } from "../../../utils/format";
-import { formatMarketPriceWithCurrency, formatSignedMarketPrice } from "../../../utils/market-format";
+import { formatMarketPriceWithCurrency, formatSignedMarketPrice } from "../../../market-data/market/format";
 import {
   exchangeShortName,
   marketStateColor,
   marketStateLabel,
   quoteSourceLabel,
-} from "../../../utils/market-status";
+} from "../../../market-data/market/status";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
 import { EmptyState } from "../../../components";
 import { ResolvedStockChart } from "../../../components/chart/stock-chart";

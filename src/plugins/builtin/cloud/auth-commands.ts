@@ -1,5 +1,5 @@
 import type { GloomPluginContext } from "../../../types/plugin";
-import { apiClient } from "../../../utils/api-client";
+import { apiClient } from "../../../api-client";
 import { chatController } from "../chat/controller";
 
 export function registerCloudAuthCommands(ctx: GloomPluginContext): void {

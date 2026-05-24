@@ -3,7 +3,7 @@ import { formatCompact } from "../../../utils/format";
 import type {
   CloudCongressMemberPayload,
   CloudCongressTradePayload,
-} from "../../../utils/api-client";
+} from "../../../api-client";
 
 export const CONGRESS_TRADES_PANE_ID = "congress-trades";
 export const CONGRESS_TRADE_LIMIT = 200;

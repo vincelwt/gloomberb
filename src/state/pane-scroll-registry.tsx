@@ -1,7 +1,7 @@
 import { useImperativeHandle, useLayoutEffect, useRef, type ForwardedRef, type RefObject } from "react";
 import { useShortcut } from "../react/input";
 import { useNativeRenderer, type ScrollBoxRenderable } from "../ui/host";
-import { useAppSelector, useOptionalPaneInstanceId } from "./app-context";
+import { useAppSelector, useOptionalPaneInstanceId } from "./app/context";
 
 type ScrollDirection = "up" | "down";
 

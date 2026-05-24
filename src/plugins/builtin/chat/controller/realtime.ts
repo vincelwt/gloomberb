@@ -1,4 +1,4 @@
-import { apiClient, type ChatNotification } from "../../../../utils/api-client";
+import { apiClient, type ChatNotification } from "../../../../api-client";
 import {
   SAFETY_REFRESH_MS,
   VERIFICATION_POLL_MS,

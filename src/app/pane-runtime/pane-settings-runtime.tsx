@@ -1,11 +1,11 @@
 import { useCallback, type Dispatch } from "react";
 import {
   applyPaneSettingFieldValue as applyPaneSettingFieldValueShared,
-} from "../../components/command-bar/workflow/workflow-ops";
+} from "../../components/command-bar/workflow/ops";
 import { PaneSettingsDialogContent } from "../../components/pane-settings-dialog";
 import type { TickerRepository } from "../../data/ticker-repository";
 import type { PluginRegistry } from "../../plugins/registry";
-import type { AppAction, AppState } from "../../state/app-context";
+import type { AppAction, AppState } from "../../state/app/context";
 import type { LayoutConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type { PaneSettingField } from "../../types/plugin";

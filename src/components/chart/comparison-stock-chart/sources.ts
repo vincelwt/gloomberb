@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useTickerFinancialsMap } from "../../../market-data/hooks";
-import { useAppSelector } from "../../../state/app-context";
-import type { ChartRendererPreference } from "../chart-types";
+import { useAppSelector } from "../../../state/app/context";
+import type { ChartRendererPreference } from "../core/types";
 import type { ComparisonChartSymbolSource } from "./render-data";
 
 export function useComparisonChartSymbolSources(symbols: string[]): {

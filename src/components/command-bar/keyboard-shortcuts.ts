@@ -13,14 +13,14 @@ import {
   isMoveUpShortcut,
   type RefLike,
 } from "./keyboard-handlers";
-import type { ListScreenState } from "./list-model";
+import type { ListScreenState } from "./list/model";
 import type { ThemePickerHandle } from "./theme-picker";
 import type {
   CommandBarFieldValue,
   CommandBarRoute,
   CommandBarWorkflowField,
   CommandBarWorkflowRoute,
-} from "./workflow/workflow-types";
+} from "./workflow/types";
 
 interface CommandBarKeyboardShortcutArgs {
   acceptRootShortcutTab: () => boolean;

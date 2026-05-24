@@ -8,8 +8,8 @@ import { getSharedMarketData } from "../../../plugins/registry";
 import { blendHex, colors, getComparisonSeriesColor } from "../../../theme/colors";
 import type { BrokerContractRef } from "../../../types/instrument";
 import type { PricePoint, Quote } from "../../../types/financials";
-import { appendLiveQuotePoint } from "../chart-data";
-import { resolveChartBodyState } from "../chart-controller";
+import { appendLiveQuotePoint } from "../core/data";
+import { resolveChartBodyState } from "../core/controller";
 import {
   buildChartResolutionSupportMap,
   DEFAULT_VISIBLE_MANUAL_CHART_RESOLUTIONS,
@@ -17,12 +17,12 @@ import {
   normalizeChartResolutionSupport,
   sortChartResolutions,
   type ChartResolutionSupport,
-} from "../chart-resolution";
+} from "../core/resolution";
 import type {
   ChartResolution,
   ComparisonChartSeries,
   ComparisonChartViewState,
-} from "../chart-types";
+} from "../core/types";
 
 export interface ComparisonChartSymbolSource {
   symbol: string;

@@ -14,7 +14,7 @@ import {
   syncConfigActiveLayoutState,
   type AppAction,
   type AppState,
-} from "../../state/app-context";
+} from "../../state/app/context";
 import { scheduleConfigSave } from "../../state/config-save-scheduler";
 import {
   createPaneInstance,

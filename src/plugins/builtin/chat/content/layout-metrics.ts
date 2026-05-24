@@ -1,4 +1,4 @@
-import type { ChatMessage } from "../../../../utils/api-client";
+import type { ChatMessage } from "../../../../api-client";
 import { CHAT_COMPOSER_MAX_ROWS } from "../layout";
 import {
   getChannelSidebarWidth,

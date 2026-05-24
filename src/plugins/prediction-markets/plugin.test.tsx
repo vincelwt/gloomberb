@@ -17,12 +17,12 @@ import {
   loadKalshiCatalog,
   loadKalshiHistory,
   normalizeKalshiMarket,
-} from "./services/kalshi-adapter";
+} from "./services/kalshi/adapter";
 import {
   loadPolymarketCatalog,
   loadPolymarketDetail,
   normalizePolymarketMarket,
-} from "./services/polymarket-adapter";
+} from "./services/polymarket/adapter";
 
 afterEach(async () => {
   await cleanupPredictionTest();

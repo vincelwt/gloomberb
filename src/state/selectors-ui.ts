@@ -1,4 +1,4 @@
-import type { AppState } from "../core/state/app-state";
+import type { AppState } from "../core/state/app/state";
 import type { LayoutConfig, SavedLayout } from "../types/config";
 import type { ReleaseInfo, UpdateProgress } from "../updater";
 

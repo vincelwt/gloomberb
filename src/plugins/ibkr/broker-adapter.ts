@@ -10,8 +10,8 @@ import {
 } from "./config";
 import { getIbkrAccountCachePolicy, getIbkrAccountCacheSourceKey } from "./account-cache";
 import { loadFlexStatement, parseFlexAccounts, parseFlexPositions } from "./flex";
-import { ibkrGatewayManager } from "./gateway-service";
-import { refreshGatewayData } from "./gateway-helpers";
+import { ibkrGatewayManager } from "./gateway/service";
+import { refreshGatewayData } from "./gateway/helpers";
 import { getIbkrPortfolioPerformance } from "./portfolio-performance";
 
 async function importFlexPositions(config: FlexQueryConfig): Promise<BrokerPosition[]> {

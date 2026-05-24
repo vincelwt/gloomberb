@@ -2,17 +2,17 @@ import { Box } from "../../../ui";
 import { useCallback, useMemo } from "react";
 import { EmptyState } from "../../../components";
 import { ComparisonStockChart } from "../../../components/chart/comparison-stock-chart";
-import type { ChartAxisMode, TimeRange } from "../../../components/chart/chart-types";
+import type { ChartAxisMode, TimeRange } from "../../../components/chart/core/types";
 import {
   DEFAULT_COMPARISON_CHART_RANGE_PRESET,
   DEFAULT_COMPARISON_CHART_RESOLUTION,
   normalizeChartResolution,
-} from "../../../components/chart/chart-resolution";
-import { usePluginAppActions, usePluginTickerActions } from "../../plugin-runtime";
-import { usePaneInstance } from "../../../state/app-context";
+} from "../../../components/chart/core/resolution";
+import { usePluginAppActions, usePluginTickerActions } from "../../runtime";
+import { usePaneInstance } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import type { GloomPlugin, PaneProps, PaneSettingsDef } from "../../../types/plugin";
-import { formatTickerListInput, MAX_TICKER_LIST_SIZE, parseTickerListInput } from "../../../utils/ticker-list";
+import { formatTickerListInput, MAX_TICKER_LIST_SIZE, parseTickerListInput } from "../../../tickers/list";
 
 export const COMPARISON_CHART_PANE_ID = "comparison-chart";
 const COMPARISON_CHART_TEMPLATE_ID = "comparison-chart-pane";

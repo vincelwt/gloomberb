@@ -5,13 +5,13 @@ import {
   clearActivePreset,
   shiftDateWindow,
   type DateWindowRange,
-} from "../chart-controller";
+} from "../core/controller";
 import {
   consumeScrollPanMovement,
   getDragPanWindowRatio,
   resolveDragPanOffset,
-} from "../chart-scroll";
-import type { ChartRenderMode, ChartResolution } from "../chart-types";
+} from "../core/scroll";
+import type { ChartRenderMode, ChartResolution } from "../core/types";
 import {
   buildDisplayCursorState,
   getGlobalMouseX,
@@ -20,9 +20,9 @@ import {
   type ChartMouseEvent,
   type DisplayCursorState,
   type LocalPlotPointer,
-} from "../chart-pointer";
-import { getPointTerminalColumn } from "../chart-renderer";
-import { getVisiblePointCount } from "../chart-viewport";
+} from "../core/pointer";
+import { getPointTerminalColumn } from "../core/renderer";
+import { getVisiblePointCount } from "../core/viewport";
 import type { ChartCursorMotionKind } from "../cursor-motion";
 import {
   clamp,

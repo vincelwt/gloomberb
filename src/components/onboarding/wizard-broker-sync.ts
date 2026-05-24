@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { buildBrokerProfileConfig, validateBrokerProfileValues } from "../../brokers/profile-form";
 import { syncBrokerInstance } from "../../brokers/sync-broker-instance";
-import { saveConfig } from "../../data/config-store";
+import { saveConfig } from "../../data/config/store";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { AppConfig } from "../../types/config";
 import { createBrokerInstanceId } from "../../utils/broker-instances";

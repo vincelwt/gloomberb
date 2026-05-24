@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { usePaneFooter, type PaneHint } from "../../../components";
-import type { AccountProfile } from "../../../utils/api-client";
+import type { AccountProfile } from "../../../api-client";
 import { formatPlan, type AccountDraft } from "./model";
 
 export function useAccountManagementFooter({

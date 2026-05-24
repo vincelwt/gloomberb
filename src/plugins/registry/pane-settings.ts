@@ -1,0 +1,105 @@
+import type { PaneRuntimeState } from "../../core/state/app/state";
+import {
+  resolveCollectionForPane,
+  resolveTickerForPane,
+} from "../../core/state/app/state";
+import { getPaneSettings } from "../../pane-settings";
+import type { AppConfig, LayoutConfig, PaneInstanceConfig } from "../../types/config";
+import type {
+  PaneDef,
+  PaneSettingsContext,
+  PaneSettingsDef,
+} from "../../types/plugin";
+
+export interface ResolvedRegistryPaneSettings {
+  paneId: string;
+  pluginId?: string;
+  pane: PaneInstanceConfig;
+  paneDef: PaneDef;
+  settingsDef: PaneSettingsDef;
+  rawSettings: Record<string, unknown>;
+  context: PaneSettingsContext;
+}
+
+export function resolveRegistryPaneSettings({
+  config,
+  getConfigState,
+  getPaneRuntimeState,
+  layout,
+  paneDefs,
+  paneOwners,
+  resolvePaneTarget,
+  requestedPaneId,
+}: {
+  config: AppConfig;
+  getConfigState: <T = unknown>(pluginId: string, key: string) => T | null;
+  getPaneRuntimeState: (paneId: string) => PaneRuntimeState | null;
+  layout: LayoutConfig;
+  paneDefs: ReadonlyMap<string, PaneDef>;
+  paneOwners: ReadonlyMap<string, string>;
+  resolvePaneTarget: (paneId: string) => string | undefined;
+  requestedPaneId: string;
+}): ResolvedRegistryPaneSettings | null {
+  const targetPaneId = resolvePaneTarget(requestedPaneId);
+  if (!targetPaneId) return null;
+
+  const pane = layout.instances.find((instance) => instance.instanceId === targetPaneId);
+  if (!pane) return null;
+
+  const paneDef = paneDefs.get(pane.paneId);
+  if (!paneDef?.settings) return null;
+
+  const pluginId = paneOwners.get(pane.paneId);
+  const paneSettings = getPaneSettings(pane);
+  const paneStateMap = Object.fromEntries(
+    layout.instances.map((instance) => [instance.instanceId, getPaneRuntimeState(instance.instanceId) ?? {}]),
+  );
+  const paneState = paneStateMap[targetPaneId] ?? {};
+  const stateView = {
+    config,
+    paneState: paneStateMap,
+  } as any;
+  const context: PaneSettingsContext = {
+    config,
+    layout,
+    paneId: targetPaneId,
+    paneType: pane.paneId,
+    pane,
+    settings: paneSettings,
+    paneState,
+    activeTicker: resolveTickerForPane(stateView, targetPaneId),
+    activeCollectionId: resolveCollectionForPane(stateView, targetPaneId),
+  };
+  const settingsDef = typeof paneDef.settings === "function"
+    ? paneDef.settings(context)
+    : paneDef.settings;
+  if (!settingsDef) return null;
+
+  const rawSettings = { ...paneSettings };
+  const resolvedSettings = {
+    ...paneSettings,
+    ...(settingsDef.values ?? {}),
+  };
+  if (pluginId) {
+    for (const field of settingsDef.fields) {
+      if (field.storage !== "plugin") continue;
+      const configValue = getConfigState(pluginId, field.key);
+      if (configValue === null) {
+        delete resolvedSettings[field.key];
+      } else {
+        resolvedSettings[field.key] = configValue;
+      }
+    }
+  }
+  context.settings = resolvedSettings;
+
+  return {
+    paneId: targetPaneId,
+    pluginId,
+    pane,
+    paneDef,
+    settingsDef,
+    rawSettings,
+    context,
+  };
+}

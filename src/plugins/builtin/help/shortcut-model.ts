@@ -1,5 +1,5 @@
 import type { CommandDef, KeyboardShortcut } from "../../../types/plugin";
-import { commands as coreCommands } from "../../../components/command-bar/command-registry";
+import { commands as coreCommands } from "../../../components/command-bar/commands/registry";
 import { getSharedRegistry } from "../../registry";
 import type { HelpShortcutEntry } from "./components";
 

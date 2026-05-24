@@ -1,5 +1,5 @@
 import type { EarningsEvent } from "../../../types/data-provider";
-import { parseTickerListInput } from "../../../utils/ticker-list";
+import { parseTickerListInput } from "../../../tickers/list";
 
 export type EarningsDisplayRow =
   | { kind: "separator"; key: string; label: string }

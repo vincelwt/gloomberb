@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { act } from "react";
 import { testRender } from "../../../renderers/opentui/test-utils";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
-import { AppContext, PaneInstanceProvider, createInitialState } from "../../../state/app-context";
+import { AppContext, PaneInstanceProvider, createInitialState } from "../../../state/app/context";
 import { createTestDataProvider } from "../../../test-support/data-provider";
 import { cloneLayout, createDefaultConfig } from "../../../types/config";
 import type { OptionContract, OptionsChain, TickerFinancials } from "../../../types/financials";

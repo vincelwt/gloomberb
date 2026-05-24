@@ -1,7 +1,7 @@
 import { useCallback, useRef } from "react";
 import type { BoxRenderable } from "../../../ui";
-import { useAppDispatch, usePaneInstanceId } from "../../../state/app-context";
-import type { DateWindowRange } from "../chart-controller";
+import { useAppDispatch, usePaneInstanceId } from "../../../state/app/context";
+import type { DateWindowRange } from "../core/controller";
 import { useStockChartDisplayCursor } from "./cursor";
 import type { PendingExpansionAction } from "./viewport";
 

@@ -1,5 +1,5 @@
 import type { ChoiceDialogChoice } from "../../../components";
-import type { AccountProfile } from "../../../utils/api-client";
+import type { AccountProfile } from "../../../api-client";
 import type { Portfolio } from "../../../types/ticker";
 
 export type AccountFieldKey =

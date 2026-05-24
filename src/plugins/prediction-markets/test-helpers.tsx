@@ -1,12 +1,12 @@
 import { act, useMemo, useReducer, useRef } from "react";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane-footer";
+import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane/footer";
 import {
   AppContext,
   appReducer,
   createInitialState,
   PaneInstanceProvider,
-} from "../../state/app-context";
+} from "../../state/app/context";
 import { MemoryPluginPersistence } from "../../test-support/plugin-persistence";
 import { createStatefulTestPluginRuntime } from "../../test-support/plugin-runtime";
 import { createDefaultConfig, type AppConfig } from "../../types/config";
@@ -14,7 +14,7 @@ import { Box } from "../../ui";
 import {
   PluginRenderProvider,
   type PluginRuntimeAccess,
-} from "../plugin-runtime";
+} from "../runtime";
 import { PredictionMarketChart } from "./chart";
 import { PredictionMarketDetailPane } from "./detail/pane";
 import { PredictionMarketsPane } from "./pane";
@@ -23,7 +23,7 @@ import {
   PREDICTION_CACHE_POLICIES,
   attachPredictionMarketsPersistence,
 } from "./services/fetch";
-import { normalizeKalshiMarket } from "./services/kalshi-adapter";
+import { normalizeKalshiMarket } from "./services/kalshi/adapter";
 
 export const TEST_PANE_ID = "prediction-markets:main";
 const originalFetch = globalThis.fetch;

@@ -5,15 +5,15 @@ import {
   getChartResolutionLabel,
   isRangePresetSupported,
   type ManualChartResolution,
-} from "../chart-resolution";
+} from "../core/resolution";
 import {
   CHART_RENDER_MODES,
   TIME_RANGES,
   type ChartRenderMode,
   type ChartResolution,
   type TimeRange,
-} from "../chart-types";
-import type { ResolvedChartPalette } from "../chart-renderer";
+} from "../core/types";
+import type { ResolvedChartPalette } from "../core/renderer";
 
 const MODE_CHIPS: Record<ChartRenderMode, string> = {
   area: "A",

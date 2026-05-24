@@ -5,7 +5,7 @@ import { padTo } from "../../../utils/format";
 import type {
   CloudCongressMemberPayload,
   CloudCongressTradePayload,
-} from "../../../utils/api-client";
+} from "../../../api-client";
 import {
   formatAmountRange,
   formatLag,

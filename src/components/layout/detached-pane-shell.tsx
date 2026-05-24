@@ -1,17 +1,17 @@
 import { Box, Text, useRendererHost, useUiCapabilities } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShortcut, useViewport } from "../../react/input";
-import { useAppDispatch, useAppSelector } from "../../state/app-context";
+import { useAppDispatch, useAppSelector } from "../../state/app/context";
 import type { DesktopWindowBridge } from "../../types/desktop-window";
 import { findPaneInstance } from "../../types/config";
 import type { PluginRegistry } from "../../plugins/registry";
 import { colors, floatingPaneBg, floatingPaneTitleBg, paneTitleText } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
-import { hasPaneFooterContent, PaneFooterBar, PaneFooterProvider } from "./pane-footer";
-import { PaneBodyFrame, getPaneWindowAttributes } from "./pane-frame";
-import { PaneContent } from "./pane-content";
-import { resolvePaneBodyFrame } from "./pane-sizing";
-import { getPaneDisplayTitle } from "./pane-title";
+import { hasPaneFooterContent, PaneFooterBar, PaneFooterProvider } from "./pane/footer";
+import { PaneBodyFrame, getPaneWindowAttributes } from "./pane/frame";
+import { PaneContent } from "./pane/content";
+import { resolvePaneBodyFrame } from "./pane/sizing";
+import { getPaneDisplayTitle } from "./pane/title";
 import { TITLEBAR_OVERLAY_HEIGHT_PX, TITLEBAR_TRAFFIC_LIGHT_WIDTH } from "./titlebar-overlay";
 import {
   createDoubleEscapeCloseState,

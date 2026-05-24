@@ -2,17 +2,17 @@ import { useMemo, useState } from "react";
 import {
   usePaneInstance,
   usePaneSettingValue,
-} from "../../../state/app-context";
-import { usePersistChartControlSelection } from "../chart-pane-settings";
+} from "../../../state/app/context";
+import { usePersistChartControlSelection } from "../core/pane-settings";
 import type { IndicatorConfig } from "../indicators/types";
 import {
   DEFAULT_TICKER_CHART_RANGE_PRESET,
   DEFAULT_TICKER_CHART_RESOLUTION,
-} from "../chart-resolution";
+} from "../core/resolution";
 import type {
   ChartRenderMode,
   ChartResolution,
-} from "../chart-types";
+} from "../core/types";
 import { resolveIndicatorBufferRange } from "./indicators";
 import type { StockChartViewportState } from "./viewport";
 

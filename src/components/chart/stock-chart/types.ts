@@ -1,7 +1,7 @@
-import type { PaneHint } from "../../layout/pane-footer";
+import type { PaneHint } from "../../layout/pane/footer";
 import type { PricePoint, TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
-import type { ChartAxisMode } from "../chart-types";
+import type { ChartAxisMode } from "../core/types";
 import type { IndicatorConfig } from "../indicators/types";
 
 export interface StockChartProps {

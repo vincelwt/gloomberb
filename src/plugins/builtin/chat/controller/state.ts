@@ -3,7 +3,7 @@ import type {
   ChatChannelState,
   ChatMessage,
   PersistedAuthUser,
-} from "../../../../utils/api-client";
+} from "../../../../api-client";
 import { createClientMessageId, getLatestMessageId, resolveHydratedCursor } from "./utils";
 
 export const SESSION_STATE_KEY = "session";

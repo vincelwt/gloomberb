@@ -7,12 +7,12 @@ import {
   type DataTableColumn,
   type DataTableKeyEvent,
 } from "../../../../components";
-import type { TimeRange } from "../../../../components/chart/chart-types";
+import type { TimeRange } from "../../../../components/chart/core/types";
 import type { PaneProps } from "../../../../types/plugin";
 import type { PricePoint } from "../../../../types/financials";
 import { colors, priceColor } from "../../../../theme/colors";
 import { formatCompact, formatNumber, formatPercent } from "../../../../utils/format";
-import { useAssetData, usePluginPaneState } from "../../../plugin-runtime";
+import { useAssetData, usePluginPaneState } from "../../../runtime";
 import { loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../../shared/table-pane";
 import { formatDateTime, useBoundTicker, useTickerRequest } from "../../shared/ticker-request";
 

@@ -2,8 +2,8 @@ import { Box, SpinnerMark, Text, TextAttributes, useUiCapabilities } from "../..
 import { useEffect, type ReactNode } from "react";
 import { blendHex, colors, priceColor } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
-import { useAppActive } from "../../state/app-activity";
-import { useAppDispatch, useAppSelector } from "../../state/app-context";
+import { useAppActive } from "../../state/app/activity";
+import { useAppDispatch, useAppSelector } from "../../state/app/context";
 import {
   selectBaseCurrency,
   selectUpdateAvailable,
@@ -14,8 +14,8 @@ import {
 import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { useQuoteEntry, useResolvedEntryValue } from "../../market-data/hooks";
 import { formatPercentRaw } from "../../utils/format";
-import { formatMarketPrice } from "../../utils/market-format";
-import { marketStateLabel, marketStateColor, getActiveQuoteDisplay } from "../../utils/market-status";
+import { formatMarketPrice } from "../../market-data/market/format";
+import { marketStateLabel, marketStateColor, getActiveQuoteDisplay } from "../../market-data/market/status";
 import { VERSION } from "../../version";
 import { TITLEBAR_TRAFFIC_LIGHT_WIDTH } from "./titlebar-overlay";
 

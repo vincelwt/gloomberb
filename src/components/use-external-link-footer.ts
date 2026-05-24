@@ -5,7 +5,7 @@ import {
   usePaneFooter,
   type PaneFooterSegment,
   type PaneHint,
-} from "./layout/pane-footer";
+} from "./layout/pane/footer";
 
 interface UseExternalLinkFooterOptions {
   registrationId: string;

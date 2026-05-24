@@ -1,21 +1,21 @@
 import { useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { formatCompact } from "../../../utils/format";
-import { formatMarketPriceWithCurrency } from "../../../utils/market-format";
-import { usePaneFooter, type PaneFooterSegment, type PaneHint } from "../../layout/pane-footer";
+import { formatMarketPriceWithCurrency } from "../../../market-data/market/format";
+import { usePaneFooter, type PaneFooterSegment, type PaneHint } from "../../layout/pane/footer";
 import type { PricePoint } from "../../../types/financials";
-import type { ProjectedChartPoint } from "../chart-data";
-import type { DateWindowRange } from "../chart-controller";
-import type { ManualChartResolution } from "../chart-resolution";
+import type { ProjectedChartPoint } from "../core/data";
+import type { DateWindowRange } from "../core/controller";
+import type { ManualChartResolution } from "../core/resolution";
 import {
   CHART_RENDER_MODES,
   TIME_RANGES,
   type ChartRenderMode,
   type ChartResolution,
   type TimeRange,
-} from "../chart-types";
+} from "../core/types";
 import type { ChartCursorMotionKind } from "../cursor-motion";
-import { EMPTY_DISPLAY_CURSOR, type DisplayCursorState } from "../chart-pointer";
-import { RIGHT_EDGE_ANCHOR_RATIO } from "../chart-viewport";
+import { EMPTY_DISPLAY_CURSOR, type DisplayCursorState } from "../core/pointer";
+import { RIGHT_EDGE_ANCHOR_RATIO } from "../core/viewport";
 import { resolveAutoZoomWindow, type AutoRenderedView } from "./auto";
 import {
   applyZoomAroundAnchor,

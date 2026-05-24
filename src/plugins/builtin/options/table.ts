@@ -4,7 +4,7 @@ import type { OptionContract, OptionsChain } from "../../../types/financials";
 import { blendHex, colors, hoverBg } from "../../../theme/colors";
 import { blendForContrast, contrastRatio } from "../../../theme/color-utils";
 import { formatCompact, formatNumber } from "../../../utils/format";
-import { formatMarketPrice } from "../../../utils/market-format";
+import { formatMarketPrice } from "../../../market-data/market/format";
 import type { OptionColumn, OptionColumnId, OptionTableRow } from "./types";
 
 type OptionColorRole = "call" | "put" | "price" | "activity" | "iv" | "strike";

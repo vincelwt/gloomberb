@@ -16,7 +16,7 @@ import { fetchChangelogReleases, type ChangelogRelease } from "../../../updater/
 import { colors } from "../../../theme/colors";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { isPlainKey } from "../../../utils/keyboard";
-import { usePluginPaneState } from "../../plugin-runtime";
+import { usePluginPaneState } from "../../runtime";
 
 const CHANGELOG_LIMIT = 40;
 

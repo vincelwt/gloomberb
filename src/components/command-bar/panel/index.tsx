@@ -1,0 +1,196 @@
+import { useLayoutEffect } from "react";
+import { Box } from "../../../ui";
+import {
+  commandBarBg,
+  commandBarHeadingText,
+  commandBarHoverBg,
+  commandBarInputBg,
+  commandBarPanelBg,
+  commandBarSelectedBg,
+  commandBarSelectedText,
+  commandBarSubtleText,
+  commandBarText,
+} from "../../../theme/colors";
+import { CommandBarPanelBody } from "./body";
+import type { CommandBarPanelProps } from "./types";
+
+const COMMAND_BAR_OVERLAY_Z_INDEX = 2_147_483_646;
+const COMMAND_BAR_PANEL_Z_INDEX = 2_147_483_647;
+const NATIVE_COMMAND_BAR_PADDING_X_PX = 14;
+const NATIVE_COMMAND_BAR_PADDING_Y_PX = 14;
+const NATIVE_COMMAND_BAR_SHADOW = "0 10px 18px color-mix(in srgb, var(--gloom-bg) 34%, transparent)";
+
+export function CommandBarPanel({
+  bodyHeight,
+  bodySlotKey,
+  committedThemeId,
+  contentPadding,
+  currentRoute,
+  getWorkflowInputRef,
+  labelWidth,
+  listBodyHeight,
+  nativeListRows,
+  nativeListScrollRef,
+  nativeOccluderRect,
+  nativePaneChrome,
+  onBack,
+  onConfirmRoute,
+  onFieldFocus,
+  onFieldPickerOpen,
+  onFieldValueChange,
+  onListHoverIndex,
+  onListRowMouseDown,
+  onListScroll,
+  onMoveFieldFocus,
+  onMultiSelectCommit,
+  onMultiSelectSelect,
+  onMultiSelectToggle,
+  onNativeOccluderChange,
+  onNativeSelectRef,
+  onOverlayClose,
+  onQueryChange,
+  onThemeCommit,
+  onThemePreview,
+  onWorkflowActiveTextareaSync,
+  onWorkflowSubmit,
+  panelBounds,
+  queryDisplayWidth,
+  rootGhostSuffix,
+  rootQueryLength,
+  rootShortcutFeedback,
+  selectedScrollRowIndex,
+  termHeight,
+  termWidth,
+  themePickerActive,
+  themePickerFilter,
+  themePickerRef,
+  trailingWidth,
+  visibleListState,
+  workflowScrollRef,
+}: CommandBarPanelProps) {
+  const paletteBg = commandBarBg();
+  const paletteHeadingText = commandBarHeadingText();
+  const paletteHoverBg = commandBarHoverBg();
+  const paletteSelectedBg = commandBarSelectedBg();
+  const paletteSelectedText = commandBarSelectedText();
+  const paletteText = commandBarText();
+  const paletteSubtleText = commandBarSubtleText();
+  const panelBg = nativePaneChrome ? commandBarPanelBg() : paletteBg;
+  const inputBg = nativePaneChrome ? commandBarInputBg() : paletteBg;
+
+  useLayoutEffect(() => {
+    const scrollBox = nativeListScrollRef.current;
+    if (!scrollBox) return;
+    if (scrollBox.verticalScrollBar) scrollBox.verticalScrollBar.visible = false;
+    if (selectedScrollRowIndex < 0) return;
+    const viewportHeight = Math.max(1, scrollBox.viewport?.height ?? listBodyHeight);
+    if (selectedScrollRowIndex < scrollBox.scrollTop) {
+      scrollBox.scrollTo(selectedScrollRowIndex);
+    } else if (selectedScrollRowIndex >= scrollBox.scrollTop + viewportHeight) {
+      scrollBox.scrollTo(selectedScrollRowIndex - viewportHeight + 1);
+    }
+  }, [listBodyHeight, nativeListScrollRef, selectedScrollRowIndex, visibleListState?.kind, visibleListState?.query]);
+
+  useLayoutEffect(() => {
+    onNativeOccluderChange?.(nativeOccluderRect);
+    return () => {
+      onNativeOccluderChange?.(null);
+    };
+  }, [
+    nativeOccluderRect.height,
+    nativeOccluderRect.width,
+    nativeOccluderRect.x,
+    nativeOccluderRect.y,
+    onNativeOccluderChange,
+  ]);
+
+  return (
+    <Box
+      position="absolute"
+      top={0}
+      left={0}
+      width={termWidth}
+      height={termHeight}
+      zIndex={nativePaneChrome ? COMMAND_BAR_OVERLAY_Z_INDEX : 100}
+      onMouseDown={(event: any) => {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        onOverlayClose();
+      }}
+    >
+      <Box
+        position="absolute"
+        top={panelBounds.y}
+        left={panelBounds.x}
+        width={panelBounds.width}
+        height={panelBounds.height}
+        flexDirection="column"
+        backgroundColor={panelBg}
+        zIndex={nativePaneChrome ? COMMAND_BAR_PANEL_Z_INDEX : 101}
+        onMouseDown={(event: any) => {
+          event.stopPropagation?.();
+        }}
+        data-gloom-role="command-bar-panel"
+        style={nativePaneChrome ? {
+          borderRadius: 8,
+          boxShadow: NATIVE_COMMAND_BAR_SHADOW,
+          overflow: "hidden",
+          padding: `${NATIVE_COMMAND_BAR_PADDING_Y_PX}px ${NATIVE_COMMAND_BAR_PADDING_X_PX}px`,
+        } : undefined}
+      >
+        <CommandBarPanelBody
+          bodyHeight={bodyHeight}
+          bodySlotKey={bodySlotKey}
+          committedThemeId={committedThemeId}
+          contentPadding={contentPadding}
+          currentRoute={currentRoute}
+          getWorkflowInputRef={getWorkflowInputRef}
+          labelWidth={labelWidth}
+          listBodyHeight={listBodyHeight}
+          nativeListRows={nativeListRows}
+          nativeListScrollRef={nativeListScrollRef}
+          nativePaneChrome={nativePaneChrome}
+          onBack={onBack}
+          onConfirmRoute={onConfirmRoute}
+          onFieldFocus={onFieldFocus}
+          onFieldPickerOpen={onFieldPickerOpen}
+          onFieldValueChange={onFieldValueChange}
+          onListHoverIndex={onListHoverIndex}
+          onListRowMouseDown={onListRowMouseDown}
+          onListScroll={onListScroll}
+          onMoveFieldFocus={onMoveFieldFocus}
+          onMultiSelectCommit={onMultiSelectCommit}
+          onMultiSelectSelect={onMultiSelectSelect}
+          onMultiSelectToggle={onMultiSelectToggle}
+          onNativeSelectRef={onNativeSelectRef}
+          onQueryChange={onQueryChange}
+          onThemeCommit={onThemeCommit}
+          onThemePreview={onThemePreview}
+          onWorkflowActiveTextareaSync={onWorkflowActiveTextareaSync}
+          onWorkflowSubmit={onWorkflowSubmit}
+          palette={{
+            inputBg,
+            paletteBg,
+            paletteHeadingText,
+            paletteHoverBg,
+            paletteSelectedBg,
+            paletteSelectedText,
+            paletteSubtleText,
+            paletteText,
+            panelBg,
+          }}
+          queryDisplayWidth={queryDisplayWidth}
+          rootGhostSuffix={rootGhostSuffix}
+          rootQueryLength={rootQueryLength}
+          rootShortcutFeedback={rootShortcutFeedback}
+          themePickerActive={themePickerActive}
+          themePickerFilter={themePickerFilter}
+          themePickerRef={themePickerRef}
+          trailingWidth={trailingWidth}
+          visibleListState={visibleListState}
+          workflowScrollRef={workflowScrollRef}
+        />
+      </Box>
+    </Box>
+  );
+}

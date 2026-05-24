@@ -9,7 +9,7 @@ import {
 import { colors } from "../../../theme/colors";
 import { TextAttributes } from "../../../ui";
 import type { PaneProps } from "../../../types/plugin";
-import { useMarketData, usePluginAppActions, usePluginConfigState } from "../../plugin-runtime";
+import { useMarketData, usePluginAppActions, usePluginConfigState } from "../../runtime";
 import {
   deserializeAlerts,
   serializeAlerts,

@@ -1,5 +1,5 @@
 import type { AppNotificationRequest } from "../../../../types/plugin";
-import type { ChatMessage } from "../../../../utils/api-client";
+import type { ChatMessage } from "../../../../api-client";
 import {
   createPendingMessage,
   hasPendingSend,

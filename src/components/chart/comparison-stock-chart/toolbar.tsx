@@ -4,14 +4,14 @@ import {
   getChartResolutionLabel,
   isRangePresetSupported,
   type ManualChartResolution,
-} from "../chart-resolution";
+} from "../core/resolution";
 import {
   COMPARISON_RENDER_MODES,
   TIME_RANGES,
   type ChartResolution,
   type ComparisonChartRenderMode,
   type TimeRange,
-} from "../chart-types";
+} from "../core/types";
 
 const MODE_CHIPS: Record<ComparisonChartRenderMode, string> = {
   area: "A",

@@ -5,23 +5,23 @@ import {
   type InstrumentRef,
 } from "../../../../market-data/request-types";
 import { getSharedMarketData } from "../../../../plugins/registry";
-import { useAppSelector } from "../../../../state/app-context";
-import { useQuoteStreaming } from "../../../../state/use-quote-streaming";
+import { useAppSelector } from "../../../../state/app/context";
+import { useQuoteStreaming } from "../../../../state/hooks/quote-streaming";
 import { useNativeRenderer, useUiCapabilities } from "../../../../ui";
 import { useStockChartDataRuntime } from "../data-runtime";
 import { useStockChartGeometry } from "../geometry";
 import { useStockChartInteractionRuntime } from "../interaction-runtime";
 import { resolveStockChartLayoutMetrics } from "../layout-metrics";
 import { useStockChartPresentation } from "../presentation";
-import { useStockChartProjectionModel } from "../render-projection";
-import { useStockChartDataRenderInvalidation } from "../render-invalidation";
+import { useStockChartProjectionModel } from "../rendering/projection";
+import { useStockChartDataRenderInvalidation } from "../rendering/invalidation";
 import { useStockChartResolutionSupport } from "../resolution-support";
 import { useStockChartSettings } from "../settings";
 import { useResolvedChartRendererState } from "../../native/renderer-selection";
-import type { ChartRenderMode, ResolvedChartRenderer } from "../../chart-types";
+import type { ChartRenderMode, ResolvedChartRenderer } from "../../core/types";
 import type { PricePoint } from "../../../../types/financials";
 import type { ResolvedStockChartProps } from "../types";
-import { useStockChartViewportRuntime } from "../viewport-runtime";
+import { useStockChartViewportRuntime } from "../viewport/runtime";
 
 function useStockChartRendererRuntime(): {
   canvasCharts: boolean | undefined;

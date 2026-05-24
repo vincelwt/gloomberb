@@ -3,8 +3,8 @@ import {
   getMaxComparisonPanOffset,
   getVisibleComparisonWindow,
   projectComparisonChartData,
-} from "../comparison-chart-data";
-import { applyBufferedPanExpansion } from "../chart-scroll";
+} from "../comparison/data";
+import { applyBufferedPanExpansion } from "../core/scroll";
 import {
   buildVisibleDateWindow,
   needsCanonicalPresetViewportReset,
@@ -14,7 +14,7 @@ import {
   resolveResolutionSelection,
   resolveStoredChartSelection,
   resolveVisibleActivePreset,
-} from "../chart-controller";
+} from "../core/controller";
 import {
   getExpandedBufferRange,
   getPresetResolution,
@@ -22,19 +22,19 @@ import {
   isRangePresetSupported,
   type ChartResolutionSupport,
   type ManualChartResolution,
-} from "../chart-resolution";
-import { resolveAnchoredChartZoom } from "../chart-viewport";
+} from "../core/resolution";
+import { resolveAnchoredChartZoom } from "../core/viewport";
 import {
   EMPTY_DISPLAY_CURSOR,
   type DisplayCursorState,
-} from "../chart-pointer";
+} from "../core/pointer";
 import type {
   ChartAxisMode,
   ChartResolution,
   ComparisonChartSeries,
   ComparisonChartViewState,
   TimeRange,
-} from "../chart-types";
+} from "../core/types";
 import type { ChartCursorMotionKind } from "../cursor-motion";
 import {
   clamp,

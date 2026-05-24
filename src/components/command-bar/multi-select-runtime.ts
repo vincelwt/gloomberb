@@ -14,7 +14,7 @@ import {
 import type {
   CommandBarFieldValue,
   CommandBarRoute,
-} from "./workflow/workflow-types";
+} from "./workflow/types";
 
 interface UseCommandBarMultiSelectRuntimeOptions {
   currentRoute: CommandBarRoute | null;

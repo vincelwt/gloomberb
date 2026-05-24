@@ -6,9 +6,9 @@ import {
   type DataTableCell,
   type DataTableKeyEvent,
 } from "../../../../../components";
-import { StaticBarChartSurface } from "../../../../../components/chart/static-bar-chart-surface";
+import { StaticBarChartSurface } from "../../../../../components/chart/static/bar-chart-surface";
 import { colors, priceColor } from "../../../../../theme/colors";
-import { usePluginPaneState } from "../../../../plugin-runtime";
+import { usePluginPaneState } from "../../../../runtime";
 import { loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../../../shared/table-pane";
 import {
   buildFundamentalColumns,

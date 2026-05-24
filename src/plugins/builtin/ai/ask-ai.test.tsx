@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useReducer } from "react";
-import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane-footer";
+import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane/footer";
 import { testRender } from "../../../renderers/opentui/test-utils";
-import { AppContext, PaneInstanceProvider, appReducer, createInitialState } from "../../../state/app-context";
+import { AppContext, PaneInstanceProvider, appReducer, createInitialState } from "../../../state/app/context";
 import { createStatefulTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { createDefaultConfig } from "../../../types/config";
 import { Box } from "../../../ui";
-import { PluginRenderProvider } from "../../plugin-runtime";
+import { PluginRenderProvider } from "../../runtime";
 import { setSharedMarketDataForTests, setSharedRegistryForTests } from "../../registry";
 import {
   AskAiDetailTab as AskAiTab,

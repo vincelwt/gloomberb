@@ -4,7 +4,7 @@ import { formatNumber } from "../../../utils/format";
 import type {
   FearGreedRating,
   FearGreedValueFormat,
-} from "./fear-greed-data";
+} from "./data";
 
 export const FEAR_GREED_GAUGE_SEGMENTS: SpeedometerSegment[] = [
   { from: 0, to: 24.999, label: "EXTREME FEAR", color: colors.negative },

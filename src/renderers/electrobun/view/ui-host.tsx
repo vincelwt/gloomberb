@@ -13,19 +13,19 @@ import {
   WebPageStackView,
   WebSegmentedControl,
   WebTextField,
-} from "./desktop-controls";
-import { WebBox } from "./host-box";
-import { WebChartSurface } from "./host-chart-surface";
-import { WebInput, WebTextarea } from "./host-input";
+} from "./desktop/controls";
+import { WebBox } from "./host/box";
+import { WebChartSurface } from "./host/chart-surface";
+import { WebInput, WebTextarea } from "./host/input";
 import {
   NATIVE_CONTEXT_MENU_SUPPORTED,
   showDesktopContextMenu,
   startElectrobunWindowDrag,
-} from "./host-native";
-import { WebScrollBox } from "./host-scroll-box";
-import { cleanDomProps, commonStyle } from "./host-style";
-import { WebAsciiText, WebSpan, WebStrong, WebText, WebUnderline } from "./host-text";
-import { WebTabs } from "./host-tabs";
+} from "./host/native";
+import { WebScrollBox } from "./host/scroll-box";
+import { cleanDomProps, commonStyle } from "./host/style";
+import { WebAsciiText, WebSpan, WebStrong, WebText, WebUnderline } from "./host/text";
+import { WebTabs } from "./host/tabs";
 
 export const webUiHost: UiHost = {
   kind: "desktop-web",

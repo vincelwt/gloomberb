@@ -11,7 +11,7 @@ import type { AnalystRatingRecord, AnalystResearchData } from "../../../types/fi
 import { blendHex, colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatNumber, formatPercent } from "../../../utils/format";
 import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
-import { useAssetData } from "../../plugin-runtime";
+import { useAssetData } from "../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint } from "../shared/table-pane";
 import { useBoundTicker as useSymbolBinding, useTickerRequest } from "../shared/ticker-request";
 

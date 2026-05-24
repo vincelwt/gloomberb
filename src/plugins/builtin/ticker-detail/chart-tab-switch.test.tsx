@@ -8,13 +8,13 @@ import {
   appReducer,
   createInitialState,
   type AppAction,
-} from "../../../state/app-context";
+} from "../../../state/app/context";
 import { cloneLayout, createDefaultConfig, type AppConfig } from "../../../types/config";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
-import { getNativeSurfaceManager } from "../../../components/chart/native/surface-manager";
-import { PluginRenderProvider } from "../../plugin-runtime";
+import { getNativeSurfaceManager } from "../../../components/chart/native/surface/manager";
+import { PluginRenderProvider } from "../../runtime";
 import { tickerDetailPlugin } from ".";
 
 const TEST_PANE_ID = "ticker-detail:test";

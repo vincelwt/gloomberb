@@ -6,7 +6,7 @@ import {
   DEFAULT_VISIBLE_MANUAL_CHART_RESOLUTIONS,
   normalizeChartResolutionSupport,
   type ChartResolutionSupport,
-} from "../chart-resolution";
+} from "../core/resolution";
 
 export function useStockChartResolutionSupport({
   compact,

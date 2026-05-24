@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ProjectedChartPoint } from "../../../components/chart/chart-data";
+import type { ProjectedChartPoint } from "../../../components/chart/core/data";
 import type { AppConfig, BrokerInstanceConfig } from "../../../types/config";
 import type { BrokerPortfolioPerformance } from "../../../types/trading";
 import type { Portfolio } from "../../../types/ticker";
-import { usePluginBrokerActions } from "../../plugin-runtime";
+import { usePluginBrokerActions } from "../../runtime";
 
 export interface BrokerPerformanceState {
   loading: boolean;

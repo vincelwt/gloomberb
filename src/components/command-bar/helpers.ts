@@ -1,6 +1,6 @@
 import type { CommandDef, PaneSettingField } from "../../types/plugin";
-import type { CommandBarRoute } from "./workflow/workflow-types";
-import type { CollectionKind, CollectionMembershipAction } from "./workflow/workflow-ops";
+import type { CommandBarRoute } from "./workflow/types";
+import type { CollectionKind, CollectionMembershipAction } from "./workflow/ops";
 
 export { slugifyName } from "../../utils/slugify";
 export {
@@ -15,7 +15,7 @@ export {
   normalizeFieldOptions,
   normalizeWizardFields,
   summarizeWorkflowFieldValue,
-} from "./workflow/workflow-fields";
+} from "./workflow/fields";
 
 export type RouteCommandId = "security-description" | "plugins" | "layout";
 export type CollectionCommandId = "add-watchlist" | "add-portfolio" | "remove-watchlist" | "remove-portfolio";

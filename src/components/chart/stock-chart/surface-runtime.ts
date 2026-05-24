@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { buildBlankPlotLines } from "../chart-pointer";
+import { buildBlankPlotLines } from "../core/pointer";
 import { useChartDisplayCursorLayoutRemap } from "../display-cursor";
 import { useStockChartCanvasBitmaps } from "./canvas";
 import {
@@ -7,7 +7,7 @@ import {
 } from "./cursor";
 import { useStockChartPointerInteractions } from "./interactions";
 import { useStockChartNativeSurfaces } from "./native-surfaces";
-import type { useStockChartRenderOutput } from "./render-output";
+import type { useStockChartRenderOutput } from "./rendering/output";
 
 type DisplayCursorRemapOptions = Parameters<typeof useChartDisplayCursorLayoutRemap>[0];
 type SelectionCursorSyncOptions = Parameters<typeof useStockChartSelectionDisplayCursorSync>[0];

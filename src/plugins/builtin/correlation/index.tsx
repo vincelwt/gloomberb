@@ -3,11 +3,11 @@ import { useCallback, useMemo, useState } from "react";
 import { usePaneFooter } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
-import { usePluginTickerActions } from "../../plugin-runtime";
-import { useAppSelector, usePaneInstance } from "../../../state/app-context";
+import { usePluginTickerActions } from "../../runtime";
+import { useAppSelector, usePaneInstance } from "../../../state/app/context";
 import { useChartQueries } from "../../../market-data/hooks";
 import { buildChartKey } from "../../../market-data/selectors";
-import { formatTickerListInput } from "../../../utils/ticker-list";
+import { formatTickerListInput } from "../../../tickers/list";
 import { formatCorrelation } from "./compute";
 import {
   DEFAULT_CORRELATION_SYMBOLS,
@@ -19,7 +19,7 @@ import { resolveCorrelationHeatmapCellColors } from "./colors";
 import {
   createRelationshipPaneTemplate,
   RelationshipGraphPane,
-} from "./relationship-pane";
+} from "./relationship/pane";
 import {
   MATRIX_CELL_WIDTH,
   MIN_MATRIX_CELL_WIDTH,
@@ -31,8 +31,8 @@ import {
   getSeriesForEntry,
   pairKey,
   rowHeaderColor,
-} from "./matrix-model";
-import { SymbolLabelCell } from "./matrix-symbol-cell";
+} from "./matrix/model";
+import { SymbolLabelCell } from "./matrix/symbol-cell";
 
 function CorrelationMatrixPane({ width, height }: PaneProps) {
   const pane = usePaneInstance();

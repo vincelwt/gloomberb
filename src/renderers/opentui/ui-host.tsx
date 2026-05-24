@@ -3,7 +3,7 @@ import { createElement } from "react";
 import "opentui-spinner/react";
 import { TextAttributes, type UiHost, type TextProps } from "../../ui/host";
 import { renderAsciiText } from "../../ui/ascii-font";
-import { OpenTuiImageSurface } from "./image-surface";
+import { OpenTuiImageSurface } from "./image/surface";
 import { OpenTuiChartSurface } from "./chart-surface";
 
 function mapTextAttributes(appAttributes: number | undefined, props?: TextProps): number | undefined {

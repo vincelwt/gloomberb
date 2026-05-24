@@ -1,6 +1,6 @@
 import { colors, priceColor } from "../../../theme/colors";
 import { formatDetailDate as sharedFormatDetailDate, formatRelativeTime as sharedFormatRelativeTime, parseDisplayDate } from "../../../utils/datetime-format";
-import type { BuildoutSource, BuildoutUpdate } from "./model-types";
+import type { BuildoutSource, BuildoutUpdate } from "./model/types";
 
 export function truncate(text: string, width: number) {
   if (width <= 0) return "";

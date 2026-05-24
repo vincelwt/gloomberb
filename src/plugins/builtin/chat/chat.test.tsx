@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { testRender } from "../../../renderers/opentui/test-utils";
-import { AppContext, createInitialState } from "../../../state/app-context";
+import { AppContext, createInitialState } from "../../../state/app/context";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { colors } from "../../../theme/colors";
 import { createDefaultConfig } from "../../../types/config";
-import type { ChatMessage } from "../../../utils/api-client";
-import { apiClient } from "../../../utils/api-client";
-import { PluginRenderProvider } from "../../plugin-runtime";
+import type { ChatMessage } from "../../../api-client";
+import { apiClient } from "../../../api-client";
+import { PluginRenderProvider } from "../../runtime";
 import { setSharedRegistryForTests } from "../../registry";
 import { ChatStatusWidget } from ".";
 import {

@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import { setCloudApiFetchTransport } from "../../../utils/api-client";
+import { setCloudApiFetchTransport } from "../../../api-client";
 import { setHttpFetchTransport } from "../../../utils/http-transport";
 import { backendRequest } from "./backend-rpc";
 

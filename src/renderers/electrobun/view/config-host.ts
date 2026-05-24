@@ -1,4 +1,4 @@
-import { setConfigStoreHost, type ConfigStoreHost } from "../../../data/config-store";
+import { setConfigStoreHost, type ConfigStoreHost } from "../../../data/config/store";
 import type { AppConfig } from "../../../types/config";
 import { backendRequest, getElectrobunBackendInitSnapshot } from "./backend-rpc";
 

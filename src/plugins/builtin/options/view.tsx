@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text } from "../../../ui";
-import { usePaneTicker } from "../../../state/app-context";
+import { usePaneTicker } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import { isPlainKey } from "../../../utils/keyboard";
 import { formatExpDate, resolveOptionsTarget } from "../../../utils/options";

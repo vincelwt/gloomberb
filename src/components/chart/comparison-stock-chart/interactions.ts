@@ -7,12 +7,12 @@ import {
   type SetStateAction,
 } from "react";
 import type { BoxRenderable, NativeRendererHost } from "../../../ui";
-import { getMaxComparisonPanOffset } from "../comparison-chart-data";
-import { clearActivePreset } from "../chart-controller";
+import { getMaxComparisonPanOffset } from "../comparison/data";
+import { clearActivePreset } from "../core/controller";
 import {
   consumeScrollPanMovement,
   resolveDragPanOffset,
-} from "../chart-scroll";
+} from "../core/scroll";
 import {
   buildDisplayCursorState,
   getGlobalMouseX,
@@ -20,11 +20,11 @@ import {
   resolveCursorMotionKind,
   type ChartMouseEvent,
   type DisplayCursorState,
-} from "../chart-pointer";
+} from "../core/pointer";
 import type {
   ComparisonChartSeries,
   ComparisonChartViewState,
-} from "../chart-types";
+} from "../core/types";
 import type { ChartCursorMotionKind } from "../cursor-motion";
 import {
   clamp,

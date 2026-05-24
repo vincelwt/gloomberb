@@ -1,5 +1,5 @@
 import type { CommandResultDef, GloomPluginContext } from "../../../types/plugin";
-import type { ChatChannel } from "../../../utils/api-client";
+import type { ChatChannel } from "../../../api-client";
 import { chatController } from "./controller";
 
 export const DEFAULT_CHAT_CHANNEL_ID = "everyone";

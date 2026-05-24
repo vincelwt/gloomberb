@@ -9,7 +9,7 @@ import {
   sameDisplayCursorState,
   toCursorPosition,
   type DisplayCursorState,
-} from "./chart-pointer";
+} from "./core/pointer";
 import {
   CELL_CURSOR_SNAP_DISTANCE,
   stepCursorTowards,

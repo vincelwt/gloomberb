@@ -4,7 +4,7 @@ import { useShortcut } from "../../../react/input";
 import { TextAttributes } from "../../../ui";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { usePaneFooter } from "../../../components";
-import { usePluginAppActions } from "../../plugin-runtime";
+import { usePluginAppActions } from "../../runtime";
 import { colors, hoverBg } from "../../../theme/colors";
 import { debugLog, type LogEntry, type LogLevel } from "../../../utils/debug-log";
 import { isPlainKey } from "../../../utils/keyboard";

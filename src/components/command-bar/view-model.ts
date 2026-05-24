@@ -1,6 +1,6 @@
-import { matchPrefix, type Command } from "./command-registry";
+import { matchPrefix, type Command } from "./commands/registry";
 
-export { rankTickerSearchItems } from "../../utils/ticker-search";
+export { rankTickerSearchItems } from "../../tickers/search";
 
 export type CommandBarMode = "default" | "search" | "themes" | "plugins" | "layout" | "direct-command";
 

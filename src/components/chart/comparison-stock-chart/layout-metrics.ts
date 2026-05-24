@@ -1,4 +1,4 @@
-import type { ChartAxisMode } from "../chart-types";
+import type { ChartAxisMode } from "../core/types";
 import { getLegendColumns } from "./helpers";
 
 export interface ComparisonChartLayoutMetrics {

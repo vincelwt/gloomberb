@@ -5,7 +5,7 @@ import { type InputRenderable } from "../ui";
 import { type PromptContext, useDialogKeyboard } from "../ui/dialog";
 import type { Quote } from "../types/financials";
 import { colors } from "../theme/colors";
-import { formatMarketPrice } from "../utils/market-format";
+import { formatMarketPrice } from "../market-data/market/format";
 import { DialogFrame, ListView, NumberField } from "./ui";
 import { padTo } from "../utils/format";
 import { isPlainKey } from "../utils/keyboard";

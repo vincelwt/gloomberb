@@ -8,13 +8,13 @@ import {
   useAppSelector,
   useAppStateRef,
   type AppState,
-} from "./state/app-context";
-import { bindAppActivity, useAppActive } from "./state/app-activity";
+} from "./state/app/context";
+import { bindAppActivity, useAppActive } from "./state/app/activity";
 import { Header } from "./components/layout/header";
 import { StatusBar } from "./components/layout/status-bar";
 import { Shell } from "./components/layout/shell";
 import { DetachedPaneShell } from "./components/layout/detached-pane-shell";
-import { CommandBar } from "./components/command-bar/command-bar";
+import { CommandBar } from "./components/command-bar/surface";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard";
 import { useDialog } from "./ui/dialog";
 import { PluginRegistry } from "./plugins/registry";
@@ -30,14 +30,14 @@ import type { AppSessionSnapshot } from "./core/state/session-persistence";
 import type { MarketDataCoordinator } from "./market-data/coordinator";
 import { createAppNotifier } from "./notifications/app-notifier";
 import { createAppServices } from "./core/app-services";
-import { useBrokerImportRuntime } from "./app/broker-import-runtime";
-import { useDesktopApplicationMenuRuntime } from "./app/desktop-menu-runtime";
+import { useBrokerImportRuntime } from "./app/runtime/broker-import";
+import { useDesktopApplicationMenuRuntime } from "./app/runtime/desktop-menu";
 import { useAppGlobalShortcuts } from "./app/global-shortcuts";
 import { useAppPaneRuntime } from "./app/pane-runtime";
-import { bindPluginRegistryRuntimeAccess } from "./app/plugin-runtime-bindings";
-import { useAppStartupRuntime } from "./app/startup-runtime";
-import { useTickerRefreshRuntime } from "./app/ticker-refresh-runtime";
-import { useAppUpdateRuntime } from "./app/update-runtime";
+import { bindPluginRegistryRuntimeAccess } from "./app/runtime/plugin-bindings";
+import { useAppStartupRuntime } from "./app/runtime/startup";
+import { useTickerRefreshRuntime } from "./app/runtime/ticker-refresh";
+import { useAppUpdateRuntime } from "./app/runtime/update";
 import {
   resolveAppSessionSnapshot,
   resolveCliLaunchConfig,

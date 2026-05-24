@@ -1,8 +1,8 @@
 import { memo, type ComponentProps } from "react";
 import { useStockChartFooter } from "./footer";
 import { useStockChartKeyboardShortcuts } from "./keyboard";
-import { useStockChartControlRenderInvalidation } from "./render-invalidation";
-import { useStockChartRenderOutput } from "./render-output";
+import { useStockChartControlRenderInvalidation } from "./rendering/invalidation";
+import { useStockChartRenderOutput } from "./rendering/output";
 import { useStockChartSurfaceRuntime } from "./surface-runtime";
 import { StockChartView } from "./view";
 import { useResolvedStockChartRuntime } from "./resolved/runtime";

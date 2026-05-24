@@ -1,5 +1,5 @@
 import type { GloomPlugin } from "../../../types/plugin";
-import { parseTickerListInput, formatTickerListInput } from "../../../utils/ticker-list";
+import { parseTickerListInput, formatTickerListInput } from "../../../tickers/list";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { AnalystResearchView } from "./analyst-pane";
 import { CorporateActionsView } from "./corporate-actions-pane";

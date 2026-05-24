@@ -7,7 +7,7 @@ import {
   useAppStateRef,
   usePaneInstance,
   usePaneInstanceId,
-} from "../../../state/app-context";
+} from "../../../state/app/context";
 import { scheduleConfigSave } from "../../../state/config-save-scheduler";
 import type { PaneProps } from "../../../types/plugin";
 import {

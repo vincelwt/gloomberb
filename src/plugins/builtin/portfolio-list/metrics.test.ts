@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { CollectionSortPreference } from "../../../state/app-context";
+import type { CollectionSortPreference } from "../../../state/app/context";
 import type { ColumnConfig } from "../../../types/config";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";

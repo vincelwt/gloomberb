@@ -13,7 +13,7 @@ import { colors, priceColor } from "../../../theme/colors";
 import type { HolderData } from "../../../types/financials";
 import { formatCompact } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
-import { useAssetData, usePluginPaneState } from "../../plugin-runtime";
+import { useAssetData, usePluginPaneState } from "../../runtime";
 import {
   displayDate,
   formatHolderOwnershipPercent,

@@ -4,7 +4,7 @@ import { DataTableView, Tabs, usePaneFooter, type DataTableKeyEvent } from "../.
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
-import { useAssetData, usePluginTickerActions } from "../../plugin-runtime";
+import { useAssetData, usePluginTickerActions } from "../../runtime";
 import {
   fetchScreener,
   fetchTrending,

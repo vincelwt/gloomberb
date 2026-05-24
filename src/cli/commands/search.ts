@@ -8,7 +8,7 @@ import type { TickerRecord } from "../../types/ticker";
 import {
   searchTickerCandidates,
   type TickerSearchCandidate,
-} from "../../utils/ticker-search";
+} from "../../tickers/search";
 import { initMarketData } from "../context";
 import { fail } from "../errors";
 import type { MarketContext } from "../types";

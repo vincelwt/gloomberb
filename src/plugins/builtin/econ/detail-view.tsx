@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { StaticChartSurface } from "../../../components";
-import { resolveChartPalette } from "../../../components/chart/chart-renderer";
-import type { ProjectedChartPoint } from "../../../components/chart/chart-data";
+import { resolveChartPalette } from "../../../components/chart/core/renderer";
+import type { ProjectedChartPoint } from "../../../components/chart/core/data";
 import { colors } from "../../../theme/colors";
-import { apiClient, type CloudFredObservationPayload, type CloudFredSeriesInfoPayload } from "../../../utils/api-client";
+import { apiClient, type CloudFredObservationPayload, type CloudFredSeriesInfoPayload } from "../../../api-client";
 import { isPlainKey } from "../../../utils/keyboard";
 import { useShortcut } from "../../../react/input";
-import { usePluginTickerActions } from "../../plugin-runtime";
+import { usePluginTickerActions } from "../../runtime";
 import { resolveFredMapping } from "./fred-series-map";
 import type { EconEvent } from "./types";
 

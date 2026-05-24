@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ChoiceDialog } from "../../../components";
-import { useAppSelector } from "../../../state/app-context";
+import { useAppSelector } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, ScrollBox, Text, Textarea, TextAttributes, type TextareaRenderable } from "../../../ui";
 import { useDialog, type AlertContext, type PromptContext } from "../../../ui/dialog";
-import { apiClient, type AccountProfile } from "../../../utils/api-client";
+import { apiClient, type AccountProfile } from "../../../api-client";
 import { chatController } from "../chat/controller";
 import { CloudAuthNotice } from "../cloud/auth-actions";
 import { AccountTextField, CheckboxRow, FieldRow, PickerRow } from "./form-components";

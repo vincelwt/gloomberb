@@ -5,7 +5,7 @@ import type {
   ChartMarketSession,
   ComparisonChartSeries,
   ComparisonChartViewState,
-} from "../chart-types";
+} from "../core/types";
 import {
   renderNativeComparisonChartBase,
   type NativeCrosshairOverlay,
@@ -13,10 +13,10 @@ import {
 import { resolveCanvasBitmapSize, useNativeCanvasBitmaps } from "../native/canvas-bitmaps";
 import {
   buildComparisonChartScene,
-} from "../comparison-chart-renderer";
+} from "../comparison/renderer";
 import {
   projectComparisonChartData,
-} from "../comparison-chart-data";
+} from "../comparison/data";
 import { buildComparisonNativeBitmapKey } from "./helpers";
 import type { ComparisonChartColors } from "./types";
 

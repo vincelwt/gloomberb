@@ -4,8 +4,8 @@ import { useShortcut } from "../../../react/input";
 import { StaticChartSurface, usePaneFooter } from "../../../components";
 import type { GloomPluginContext, PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
-import { resolveChartPalette } from "../../../components/chart/chart-renderer";
-import type { ProjectedChartPoint } from "../../../components/chart/chart-data";
+import { resolveChartPalette } from "../../../components/chart/core/renderer";
+import type { ProjectedChartPoint } from "../../../components/chart/core/data";
 import {
   loadYieldCurve,
   parseYieldPoints,

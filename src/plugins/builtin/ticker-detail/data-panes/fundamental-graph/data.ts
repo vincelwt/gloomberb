@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useAppSelector } from "../../../../../state/app-context";
-import { useAssetData } from "../../../../plugin-runtime";
+import { useAppSelector } from "../../../../../state/app/context";
+import { useAssetData } from "../../../../runtime";
 import type { LoadState } from "../../../shared/ticker-request";
 import type { SymbolFinancials } from "./types";
 

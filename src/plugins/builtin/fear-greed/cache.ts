@@ -1,7 +1,7 @@
 import {
   fetchFearGreedData,
   type FearGreedData,
-} from "./fear-greed-data";
+} from "./data";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 

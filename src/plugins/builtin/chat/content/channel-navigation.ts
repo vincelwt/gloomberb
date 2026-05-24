@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { ChatChannel, ChatUserSummary } from "../../../../utils/api-client";
+import type { ChatChannel, ChatUserSummary } from "../../../../api-client";
 import {
   DEFAULT_CHAT_CHANNEL_ID,
   normalizeChannelId,

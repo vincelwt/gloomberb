@@ -1,5 +1,5 @@
 import type { PaneTemplateCreateOptions } from "../../../../../types/plugin";
-import { formatTickerListInput, parseTickerListInput } from "../../../../../utils/ticker-list";
+import { formatTickerListInput, parseTickerListInput } from "../../../../../tickers/list";
 import type { GraphKind } from "./types";
 
 export function symbolsFromPaneSettings(settings: Record<string, unknown> | undefined, fallbackSymbol: string | null): string[] {

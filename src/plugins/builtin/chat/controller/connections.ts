@@ -1,5 +1,5 @@
 import { DEFAULT_CHAT_CHANNEL_ID, type ChannelRuntimeState } from "./state";
-import type { ChatMessage } from "../../../../utils/api-client";
+import type { ChatMessage } from "../../../../api-client";
 
 export function countOpenConnections(channelStates: Iterable<ChannelRuntimeState>): number {
   return [...channelStates].filter((channel) => !!channel.wsConnection).length;

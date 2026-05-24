@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import type { MarketNewsItem, NewsStoryItem } from "../../../../types/news-source";
-import { usePluginPaneState } from "../../../plugin-runtime";
+import { usePluginPaneState } from "../../../runtime";
 
 const MAX_PERSISTED_ARTICLES = 200;
 const EMPTY_PERSISTED_ARTICLES: PersistedNewsArticle[] = [];

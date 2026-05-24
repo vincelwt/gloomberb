@@ -2,10 +2,10 @@ import { useMemo, useState } from "react";
 import { Box, Text } from "../../../../ui";
 import { TextAttributes } from "../../../../ui";
 import { ExternalLinkText } from "../../../../components/ui";
-import { TickerBadge } from "../../../../components/ticker-badge";
-import type { InlineTickerCatalogEntry } from "../../../../state/use-inline-tickers";
+import { TickerBadge } from "../../../../components/ticker/badge";
+import type { InlineTickerCatalogEntry } from "../../../../state/hooks/inline-tickers";
 import { blendHex, colors } from "../../../../theme/colors";
-import type { ChatUserSummary } from "../../../../utils/api-client";
+import type { ChatUserSummary } from "../../../../api-client";
 import { tokenizeInlineContent } from "../../../../utils/inline-content-tokenizer";
 
 export function ResponsiveTickerBadgeText({

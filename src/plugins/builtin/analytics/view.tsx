@@ -3,8 +3,8 @@ import {
   DataTableView,
   StaticChartSurface,
 } from "../../../components";
-import type { StaticChartSurfaceProps } from "../../../components/chart/static-chart-surface";
-import type { ProjectedChartPoint } from "../../../components/chart/chart-data";
+import type { StaticChartSurfaceProps } from "../../../components/chart/static/chart/surface";
+import type { ProjectedChartPoint } from "../../../components/chart/core/data";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCompact, formatPercentRaw } from "../../../utils/format";
 import { formatSignedCompact, formatWeight, renderBar } from "./display";

@@ -1,4 +1,4 @@
-import type { PaneRuntimeState } from "../core/state/app-state";
+import type { PaneRuntimeState } from "../core/state/app/state";
 import type { AppConfig } from "./config";
 
 export interface DesktopSharedStateSnapshot {

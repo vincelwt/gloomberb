@@ -1,7 +1,7 @@
 import { Box, Text, TextAttributes } from "../../../../ui";
 import { colors, priceColor } from "../../../../theme/colors";
 import { displayWidth, formatNumber, padTo } from "../../../../utils/format";
-import { formatMarketPriceWithCurrency } from "../../../../utils/market-format";
+import { formatMarketPriceWithCurrency } from "../../../../market-data/market/format";
 import type { Quote } from "../../../../types/financials";
 import type { PositionTableRow, StatField } from "./types";
 

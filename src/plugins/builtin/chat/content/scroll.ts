@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { ScrollBoxRenderable } from "../../../../ui";
-import type { ChatMessage } from "../../../../utils/api-client";
+import type { ChatMessage } from "../../../../api-client";
 import type { ChatContentController } from "./types";
 import {
   estimateMessageHeight,

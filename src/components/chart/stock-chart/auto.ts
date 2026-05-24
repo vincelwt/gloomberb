@@ -5,8 +5,8 @@ import {
   getPointDates,
   type ChartBodyState,
   type DateWindowRange,
-} from "../chart-controller";
-import type { ManualChartResolution } from "../chart-resolution";
+} from "../core/controller";
+import type { ManualChartResolution } from "../core/resolution";
 
 export interface AutoRenderedView {
   window: DateWindowRange;

@@ -9,9 +9,9 @@ import { newsProvider } from "../../../capabilities";
 import { debugLog } from "../../../utils/debug-log";
 import { measurePerf } from "../../../utils/perf-marks";
 import { getRendererBuiltinPlugins } from "../../../plugins/catalog-ui";
-import { createRemoteAssetDataClient } from "./remote-asset-data-client";
-import { RemotePersistence } from "./remote-persistence";
-import { RemoteTickerRepository } from "./remote-ticker-repository";
+import { createRemoteAssetDataClient } from "./remote/asset-data-client";
+import { RemotePersistence } from "./remote/persistence";
+import { RemoteTickerRepository } from "./remote/ticker-repository";
 
 const servicesLog = debugLog.createLogger("services");
 

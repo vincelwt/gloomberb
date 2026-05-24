@@ -2,19 +2,19 @@ import { useCallback, useMemo } from "react";
 import type { InstrumentRef } from "../../../market-data/request-types";
 import type { DataProvider } from "../../../types/data-provider";
 import type { PricePoint, TickerFinancials } from "../../../types/financials";
-import { appendLiveQuotePoint, resolveStableOhlcProjectionOptions } from "../chart-data";
-import type { DateWindowRange } from "../chart-controller";
+import { appendLiveQuotePoint, resolveStableOhlcProjectionOptions } from "../core/data";
+import type { DateWindowRange } from "../core/controller";
 import {
   getChartResolutionLabel,
   sortChartResolutions,
   type ChartResolutionSupport,
   type ManualChartResolution,
-} from "../chart-resolution";
+} from "../core/resolution";
 import type {
   ChartResolution,
   TimeRange,
-} from "../chart-types";
-import { useStockChartRenderData } from "./render-data";
+} from "../core/types";
+import { useStockChartRenderData } from "./rendering/data";
 import type { StockChartViewportState } from "./viewport";
 
 interface UseStockChartDataRuntimeOptions {

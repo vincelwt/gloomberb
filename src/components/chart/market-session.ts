@@ -1,4 +1,4 @@
-import type { ChartMarketSession, ChartSessionBackgroundKind, ChartSessionBackgroundSpan } from "./chart-types";
+import type { ChartMarketSession, ChartSessionBackgroundKind, ChartSessionBackgroundSpan } from "./core/types";
 
 const INTRADAY_SESSION_GAP_MS = 6 * 60 * 60_000;
 const MAX_SESSION_BACKGROUND_WINDOW_MS = 10 * 24 * 60 * 60_000;

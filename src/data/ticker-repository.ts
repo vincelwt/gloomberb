@@ -1,6 +1,6 @@
 import type { TickerRecord, TickerMetadata } from "../types/ticker";
 import type { TickerStore } from "./ticker-store";
-import { hydrateTickerMetadata } from "../utils/ticker-metadata";
+import { hydrateTickerMetadata } from "../tickers/metadata";
 
 function parseTickerMetadata(json: string): TickerMetadata {
   return hydrateTickerMetadata(JSON.parse(json) as Record<string, unknown>);

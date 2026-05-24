@@ -1,5 +1,5 @@
-import { formatMarketPrice } from "../../../utils/market-format";
-import { formatQuoteAgeWithSource } from "../../../utils/quote-time";
+import { formatMarketPrice } from "../../../market-data/market/format";
+import { formatQuoteAgeWithSource } from "../../../market-data/quotes/time";
 import type { AlertCondition, AlertRule } from "./types";
 
 export function relativeTime(ts: number): string {

@@ -5,48 +5,48 @@ import {
   reconcileAppSessionSnapshot,
 } from "../../../core/state/session-persistence";
 import type { AppServices } from "../../../core/app-services";
-import { saveConfig, setConfigStoreHost } from "../../../data/config-store";
-import * as nodeConfigStoreHost from "../../../data/config-store-node";
+import { saveConfig, setConfigStoreHost } from "../../../data/config/store";
+import * as nodeConfigStoreHost from "../../../data/config/store/node";
 import type { AppConfig } from "../../../types/config";
 import type { AppSessionSnapshot } from "../../../core/state/session-persistence";
-import { syncConfigActiveLayoutState, type PaneRuntimeState } from "../../../core/state/app-state";
+import { syncConfigActiveLayoutState, type PaneRuntimeState } from "../../../core/state/app/state";
 import type { DesktopSharedStateSnapshot, DesktopThemePreviewState } from "../../../types/desktop-window";
 import type { UpdateProgress } from "../../../updater";
 import { ELECTROBUN_CONTEXT_MENU_ACTION, type DesktopRestartMessage, type ElectrobunDesktopRpcSchema } from "../shared/protocol";
 import { decodeRpcValue, encodeRpcValue } from "../view/rpc-codec";
-import { contextMenuSelectionMessage } from "./context-menu-click";
-import type { DesktopWorkspace } from "./desktop-workspace";
+import { contextMenuSelectionMessage } from "./context-menu/click";
+import type { DesktopWorkspace } from "./desktop/workspace";
 import { buildApplicationMenu } from "./application-menu";
-import { applicationMenuCommand } from "./application-menu-click";
+import { applicationMenuCommand } from "./application-menu/click";
 import { registerElectrobunCoreCapabilities } from "./core-capabilities";
-import { setNativeIbkrGatewayModuleLoader } from "../../../plugins/ibkr/gateway-service";
+import { setNativeIbkrGatewayModuleLoader } from "../../../plugins/ibkr/gateway/service";
 import {
   runElectrobunDesktopUpdate,
-} from "./desktop-update";
-import { DesktopCapabilityBridge } from "./desktop-capability-bridge";
+} from "./desktop/update";
+import { DesktopCapabilityBridge } from "./desktop/capability-bridge";
 import {
   DEFAULT_WINDOW_FRAME,
   MAIN_WINDOW_MIN_SIZE,
   normalizeWindowFrameWithMinimum,
-} from "./window-frame";
-import { MAIN_WINDOW_RPC_KEY } from "./window-focus";
-import { handleHttpFetch } from "./desktop-http-fetch";
-import { handleDesktopPluginStateRequest } from "./desktop-plugin-state";
-import { scheduleDesktopRelaunch } from "./desktop-relaunch";
+} from "./window/frame";
+import { MAIN_WINDOW_RPC_KEY } from "./window/focus";
+import { handleHttpFetch } from "./desktop/http-fetch";
+import { handleDesktopPluginStateRequest } from "./desktop/plugin-state";
+import { scheduleDesktopRelaunch } from "./desktop/relaunch";
 import {
   applyWindowMoveEvent,
   applyWindowResizeEvent,
   updateWindowFrameCache,
   type WindowMoveEvent,
   type WindowResizeEvent,
-} from "./desktop-window-events";
-import { createDesktopRpcRegistry } from "./desktop-rpc-registry";
-import { DesktopStateBroadcaster } from "./desktop-state-broadcaster";
-import { DesktopDetachedWindowManager } from "./desktop-detached-windows";
-import { handleDesktopHostRequest } from "./desktop-host-requests";
-import { handleDesktopWorkspaceRequest } from "./desktop-workspace-requests";
-import { handleDesktopBackendRequest } from "./desktop-backend-requests";
-import { initializeDesktopBackend } from "./desktop-initialization";
+} from "./desktop/window-events";
+import { createDesktopRpcRegistry } from "./desktop/rpc-registry";
+import { DesktopStateBroadcaster } from "./desktop/state-broadcaster";
+import { DesktopDetachedWindowManager } from "./desktop/detached-windows";
+import { handleDesktopHostRequest } from "./desktop/host-requests";
+import { handleDesktopWorkspaceRequest } from "./desktop/workspace/requests";
+import { handleDesktopBackendRequest } from "./desktop/backend-requests";
+import { initializeDesktopBackend } from "./desktop/initialization";
 
 type DesktopRpc = ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>;
 
@@ -55,7 +55,7 @@ console.info = (...args) => console.error(...args);
 console.warn = (...args) => console.error(...args);
 
 setConfigStoreHost(nodeConfigStoreHost);
-setNativeIbkrGatewayModuleLoader(() => import("../../../plugins/ibkr/gateway-service-native"));
+setNativeIbkrGatewayModuleLoader(() => import("../../../plugins/ibkr/gateway/service/native"));
 
 let currentConfig: AppConfig | null = null;
 let services: AppServices | null = null;

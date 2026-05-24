@@ -1,0 +1,92 @@
+import { useEffect } from "react";
+import { useAppActive } from "../app/activity";
+import type { QuoteSubscriptionTarget } from "../../types/data-provider";
+import { debugLog } from "../../utils/debug-log";
+import { canonicalExchange, normalizeSymbol } from "../../utils/exchanges";
+import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
+
+const quoteStreamLog = debugLog.createLogger("quote-stream");
+
+function normalizeTarget(target: QuoteSubscriptionTarget): QuoteSubscriptionTarget | null {
+  const symbol = normalizeSymbol(target.symbol);
+  if (!symbol) return null;
+  return {
+    ...target,
+    symbol,
+    exchange: canonicalExchange(target.exchange),
+  };
+}
+
+export function buildQuoteStreamSubscriptionKey(target: QuoteSubscriptionTarget): string {
+  const contractKey = target.context?.instrument?.conId
+    ?? target.context?.instrument?.localSymbol
+    ?? target.context?.instrument?.symbol
+    ?? "";
+  const weight = Number.isFinite(target.weight) ? String(target.weight) : "";
+  return [
+    target.symbol,
+    target.exchange ?? "",
+    target.context?.brokerId ?? "",
+    target.context?.brokerInstanceId ?? "",
+    contractKey,
+    target.route ?? "auto",
+    target.surface ?? "",
+    target.visible ? "visible" : "",
+    target.selected ? "selected" : "",
+    weight,
+  ].join("|");
+}
+
+export function useQuoteStreaming(targets: QuoteSubscriptionTarget[]): void {
+  const appActive = useAppActive();
+  const coordinator = getSharedMarketDataCoordinator();
+
+  const normalizedEntries = new Map<string, QuoteSubscriptionTarget>();
+  for (const target of targets) {
+    const normalized = normalizeTarget(target);
+    if (!normalized) continue;
+    const key = buildQuoteStreamSubscriptionKey(normalized);
+    normalizedEntries.set(key, normalized);
+  }
+  const sortedEntries = [...normalizedEntries.entries()].sort(([left], [right]) => left.localeCompare(right));
+  const normalizedTargets = sortedEntries.map(([, target]) => target);
+  const subscriptionKey = sortedEntries.map(([key]) => key).join("|");
+
+  useEffect(() => {
+    if (!appActive) {
+      if (normalizedTargets.length > 0) {
+        quoteStreamLog.info("skipping subscription while inactive", { targets: subscriptionKey });
+      }
+      return;
+    }
+    if (!coordinator || normalizedTargets.length === 0) return;
+    quoteStreamLog.info("subscribe", {
+      providerId: "market-data",
+      count: normalizedTargets.length,
+      targets: subscriptionKey,
+    });
+    const unsubscribe = coordinator.subscribeQuotes(normalizedTargets.map((target) => ({
+      instrument: {
+        symbol: target.symbol,
+        exchange: target.exchange,
+        brokerId: target.context?.brokerId,
+        brokerInstanceId: target.context?.brokerInstanceId,
+        instrument: target.context?.instrument ?? null,
+      },
+      priority: {
+        surface: target.surface,
+        visible: target.visible,
+        selected: target.selected,
+        weight: target.weight,
+      },
+    })));
+    return () => {
+      quoteStreamLog.info("unsubscribe", {
+        providerId: "market-data",
+        count: normalizedTargets.length,
+        targets: subscriptionKey,
+      });
+      unsubscribe?.();
+    };
+  }, [appActive, coordinator, subscriptionKey]);
+}

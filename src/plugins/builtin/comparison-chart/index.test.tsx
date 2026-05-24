@@ -3,19 +3,19 @@ import { act, useState, type ReactElement } from "react";
 import { createTestRenderer } from "@opentui/core/testing";
 import { createOpenTuiTestRoot as createRoot } from "../../../renderers/opentui/test-utils";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
-import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane-footer";
+import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane/footer";
 import {
   AppContext,
   createInitialState,
   PaneInstanceProvider,
-} from "../../../state/app-context";
+} from "../../../state/app/context";
 import { Box } from "../../../ui";
 import { cloneLayout, createDefaultConfig } from "../../../types/config";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import type { DataProvider } from "../../../types/data-provider";
 import type { TickerFinancials } from "../../../types/financials";
 import type { PluginRegistry } from "../../registry";
-import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugin-runtime";
+import { PluginRenderProvider, type PluginRuntimeAccess } from "../../runtime";
 import { setSharedMarketDataForTests, setSharedRegistryForTests } from "../../registry";
 import type { TickerRecord } from "../../../types/ticker";
 import {

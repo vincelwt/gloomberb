@@ -2,7 +2,7 @@ import type { AppNotificationRequest } from "../../../../types/plugin";
 import {
   apiClient,
   type ChatChannelState,
-} from "../../../../utils/api-client";
+} from "../../../../api-client";
 import type { ChannelRuntimeState } from "./state";
 import { createClientMessageId } from "./utils";
 

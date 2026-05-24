@@ -6,7 +6,7 @@ import {
   FavoriteCell,
   tickerBadges,
 } from "./detail";
-import type { BuildoutColumn, BuildoutRow } from "./model-types";
+import type { BuildoutColumn, BuildoutRow } from "./model/types";
 import {
   activityColor,
   activityLabel,

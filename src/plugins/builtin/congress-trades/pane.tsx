@@ -6,14 +6,14 @@ import {
   Spinner,
   Tabs,
 } from "../../../components";
-import { useDebouncedPluginPaneState, usePluginPaneState } from "../../plugin-runtime";
-import { useInlineTickerOpener } from "../../../state/use-inline-tickers";
+import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
+import { useInlineTickerOpener } from "../../../state/hooks/inline-tickers";
 import {
   apiClient,
   type CloudCongressHousePayload,
   type CloudCongressMemberPayload,
   type CloudCongressTradePayload,
-} from "../../../utils/api-client";
+} from "../../../api-client";
 import type { PaneProps } from "../../../types/plugin";
 import {
   CONGRESS_FILING_LIMIT,

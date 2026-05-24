@@ -1,7 +1,7 @@
 import {
   apiClient,
   type ChatMessage,
-} from "../../../../utils/api-client";
+} from "../../../../api-client";
 import {
   MESSAGE_PAGE_SIZE,
   type ChannelRuntimeState,
