@@ -1,47 +1,21 @@
-import type { ResourceStore } from "../data/resource-store";
 import type {
   DataProvider,
   MarketDataRequestContext,
   SecFilingItem,
 } from "../types/data-provider";
-import type { BrokerContractRef } from "../types/instrument";
-import type { CachePolicy } from "../types/persistence";
 import { canonicalExchange } from "../utils/exchanges";
 import {
   buildVariantKey,
   compactUrl,
   selectCachedResource,
-  type ProviderRouterCachePolicyKey,
 } from "./provider-router-cache";
 import { shouldLogProviderError } from "./provider-errors";
-
-interface SourceResult<T> {
-  sourceKey: string;
-  value: T;
-}
-
-export interface ProviderRouterDocumentDeps {
-  resources?: ResourceStore;
-  getEntityKey(ticker: string, instrument?: BrokerContractRef | null): string;
-  getProviderSourceKeys(): string[];
-  providersInPriorityOrder(): DataProvider[];
-  providerSourceKey(provider: DataProvider): string;
-  resolveProviderPolicy(key: ProviderRouterCachePolicyKey, provider: DataProvider): CachePolicy;
-  cacheResource<T>(
-    kind: string,
-    entityKey: string,
-    variantKey: string,
-    sourceKey: string,
-    value: T,
-    cachePolicy: CachePolicy,
-  ): void;
-  logProviderError(message: string): void;
-}
+import type { ProviderRouterCoreDeps, SourceResult } from "./provider-router-route-types";
 
 export class ProviderRouterDocumentRoutes {
   private readonly revalidationInFlight = new Map<string, Promise<unknown>>();
 
-  constructor(private readonly deps: ProviderRouterDocumentDeps) {}
+  constructor(private readonly deps: ProviderRouterCoreDeps) {}
 
   async getSecFilings(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<SecFilingItem[]> {
     const entityKey = this.deps.getEntityKey(ticker, context?.instrument);

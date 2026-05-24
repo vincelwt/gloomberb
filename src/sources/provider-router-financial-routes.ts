@@ -1,4 +1,3 @@
-import type { ResourceStore } from "../data/resource-store";
 import type {
   CachedFinancialsTarget,
   MarketDataRequestContext,
@@ -7,7 +6,6 @@ import type {
   Quote,
   TickerFinancials,
 } from "../types/financials";
-import type { BrokerContractRef } from "../types/instrument";
 import { parseOptionSymbol } from "../utils/options";
 import { isQuoteStaleForCurrentSession } from "../utils/quote-freshness";
 import { resolveTickerFinancialsQuoteState } from "../utils/quote-resolution";
@@ -17,7 +15,6 @@ import {
   selectCachedResource,
   sortCachedRecords,
 } from "./provider-router-cache";
-import type { BrokerCandidate } from "./provider-router-brokers";
 import { withBrokerTimeout } from "./provider-router-brokers";
 import {
   deriveMarketCapFromShares,
@@ -31,15 +28,18 @@ import {
   type CachedFinancialsSelection,
 } from "./provider-router-financials";
 import type { ProviderRouterPrimaryRoutes } from "./provider-router-primary";
+import type { ProviderRouterCoreDeps } from "./provider-router-route-types";
 
-export interface ProviderRouterFinancialRouteDeps {
-  resources?: ResourceStore;
+export interface ProviderRouterFinancialRouteDeps extends Pick<
+  ProviderRouterCoreDeps,
+  | "resources"
+  | "getEntityKey"
+  | "getTickerVariantCandidates"
+  | "getBrokerCandidatesForContext"
+  | "getProviderSourceKeys"
+  | "brokerSourceKey"
+> {
   primaryRoutes: ProviderRouterPrimaryRoutes;
-  getEntityKey(ticker: string, instrument?: BrokerContractRef | null): string;
-  getTickerVariantCandidates(exchange?: string): string[];
-  getBrokerCandidatesForContext(context?: MarketDataRequestContext, includeFallbackInstances?: boolean): BrokerCandidate[];
-  getProviderSourceKeys(): string[];
-  brokerSourceKey(candidate: BrokerCandidate): string;
 }
 
 export class ProviderRouterFinancialRoutes {

@@ -1,11 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useMemo, type RefObject } from "react";
 import type { BoxRenderable, NativeRendererHost } from "../../../ui";
-import {
-  cancelAnimationFrameSafe,
-  getRenderablePixelSize,
-  requestAnimationFrameSafe,
-  scaleLocalPixelCoordinate,
-} from "../chart-pointer";
 import type {
   ChartAxisMode,
   ChartMarketSession,
@@ -14,9 +8,9 @@ import type {
 } from "../chart-types";
 import {
   renderNativeComparisonChartBase,
-  type NativeChartBitmap,
   type NativeCrosshairOverlay,
 } from "../native/chart-rasterizer";
+import { useNativeCanvasBitmaps } from "../native/canvas-bitmaps";
 import {
   buildComparisonChartScene,
 } from "../comparison-chart-renderer";
@@ -69,9 +63,6 @@ export function useComparisonChartCanvasBitmaps({
   series: ComparisonChartSeries[];
   symbolCount: number;
 }) {
-  const [canvasBaseBitmapState, setCanvasBaseBitmapState] = useState<{ key: string; bitmap: NativeChartBitmap } | null>(null);
-  const lastCanvasBaseBitmapRef = useRef<{ key: string; bitmap: NativeChartBitmap } | null>(null);
-
   const canvasBitmapSize = useMemo(() => {
     if (!canvasCharts) return null;
     const resolutionScale = Math.max(1, pixelRatio);
@@ -139,79 +130,15 @@ export function useComparisonChartCanvasBitmaps({
     symbolCount,
   ]);
 
-  const canvasBaseBitmap = useMemo<NativeChartBitmap | null>(() => {
-    return canvasBaseBitmapKey && canvasBaseBitmapState?.key === canvasBaseBitmapKey
-      ? canvasBaseBitmapState.bitmap
-      : null;
-  }, [canvasBaseBitmapKey, canvasBaseBitmapState]);
-
-  const visibleCanvasBaseBitmap = useMemo<NativeChartBitmap | null>(() => {
-    if (canvasBaseBitmap) return canvasBaseBitmap;
-    if (!canvasBaseBitmapKey || !canvasBitmapSize || !canvasBaseBitmapState) return null;
-    return canvasBaseBitmapState.bitmap.width === canvasBitmapSize.pixelWidth
-      && canvasBaseBitmapState.bitmap.height === canvasBitmapSize.pixelHeight
-      ? canvasBaseBitmapState.bitmap
-      : null;
-  }, [canvasBaseBitmap, canvasBaseBitmapKey, canvasBaseBitmapState, canvasBitmapSize]);
-
-  useEffect(() => {
-    if (!canvasBitmapSize || !canvasBaseBitmapKey || !canvasBaseScene) {
-      lastCanvasBaseBitmapRef.current = null;
-      setCanvasBaseBitmapState((current) => (current === null ? current : null));
-      return;
-    }
-
-    const cachedBitmap = lastCanvasBaseBitmapRef.current?.key === canvasBaseBitmapKey
-      ? lastCanvasBaseBitmapRef.current.bitmap
-      : null;
-    if (cachedBitmap) {
-      setCanvasBaseBitmapState((current) => (
-        current?.key === canvasBaseBitmapKey ? current : { key: canvasBaseBitmapKey, bitmap: cachedBitmap }
-      ));
-      return;
-    }
-
-    let cancelled = false;
-    const frame = requestAnimationFrameSafe(() => {
-      const bitmap = renderNativeComparisonChartBase(canvasBaseScene, canvasBitmapSize.pixelWidth, canvasBitmapSize.pixelHeight);
-      if (cancelled) return;
-      lastCanvasBaseBitmapRef.current = { key: canvasBaseBitmapKey, bitmap };
-      setCanvasBaseBitmapState((current) => (
-        current?.key === canvasBaseBitmapKey ? current : { key: canvasBaseBitmapKey, bitmap }
-      ));
-    });
-
-    return () => {
-      cancelled = true;
-      cancelAnimationFrameSafe(frame);
-    };
-  }, [canvasBaseBitmapKey, canvasBaseScene, canvasBitmapSize]);
-
-  const canvasCrosshair = useMemo(() => {
-    if (!canvasBitmapSize || !visibleCanvasBaseBitmap || !nativeCrosshair) return null;
-    const renderablePixelSize = getRenderablePixelSize(plotRef.current, renderer);
-    const overlayPixelX = scaleLocalPixelCoordinate(
-      nativeCrosshair.pixelX,
-      renderablePixelSize?.pixelWidth ?? canvasBitmapSize.pixelWidth,
-      canvasBitmapSize.pixelWidth,
-    );
-    const overlayPixelY = scaleLocalPixelCoordinate(
-      nativeCrosshair.pixelY,
-      renderablePixelSize?.pixelHeight ?? canvasBitmapSize.pixelHeight,
-      canvasBitmapSize.pixelHeight,
-    );
-    if (overlayPixelX === null || overlayPixelY === null) return null;
-    return {
-      pixelX: overlayPixelX,
-      pixelY: overlayPixelY,
-      color: nativeCrosshair.colors.crosshairColor,
-    };
-  }, [canvasBitmapSize, nativeCrosshair, plotRef, renderer, visibleCanvasBaseBitmap]);
-
-  const plotBitmaps = useMemo<NativeChartBitmap[] | null>(() => {
-    if (!visibleCanvasBaseBitmap) return null;
-    return [visibleCanvasBaseBitmap];
-  }, [visibleCanvasBaseBitmap]);
+  const { canvasCrosshair, plotBitmaps } = useNativeCanvasBitmaps({
+    bitmapKey: canvasBaseBitmapKey,
+    bitmapSize: canvasBitmapSize,
+    nativeCrosshair,
+    plotRef,
+    renderBase: renderNativeComparisonChartBase,
+    renderer,
+    scene: canvasBaseScene,
+  });
 
   return {
     canvasBaseBitmapKey,

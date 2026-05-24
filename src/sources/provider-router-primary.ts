@@ -1,50 +1,18 @@
-import type { BrokerAdapter } from "../types/broker";
-import type { DataProvider, MarketDataRequestContext } from "../types/data-provider";
-import type { BrokerContractRef } from "../types/instrument";
+import type { MarketDataRequestContext } from "../types/data-provider";
 import type { Quote, TickerFinancials } from "../types/financials";
 import { normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
 import { isQuoteStaleForCurrentSession } from "../utils/quote-freshness";
 import { resolveTickerFinancialsQuoteState } from "../utils/quote-resolution";
 import { shouldLogProviderError } from "./provider-errors";
-import type { BrokerCandidate } from "./provider-router-brokers";
-import type { ProviderRouterCachePolicyKey } from "./provider-router-cache";
-import { type resolveCachePolicy } from "./provider-router-cache";
 import {
   hasDetailedStatementRows,
   hasStatementRows,
   mergeMissingStatementArrays,
 } from "./provider-router-financials";
-
-export interface SourceResult<T> {
-  sourceKey: string;
-  value: T;
-}
-
-interface ProviderRouterPrimaryRoutesOptions {
-  getEntityKey: (ticker: string, instrument?: BrokerContractRef | null) => string;
-  getTickerVariantCandidates: (exchange?: string) => string[];
-  getBrokerCandidatesForContext: (
-    context?: MarketDataRequestContext,
-    includeFallbackInstances?: boolean,
-  ) => BrokerCandidate[];
-  providersInPriorityOrder: () => DataProvider[];
-  brokerSourceKey: (candidate: BrokerCandidate) => string;
-  providerSourceKey: (provider: DataProvider) => string;
-  resolveBrokerPolicy: (key: ProviderRouterCachePolicyKey, broker: BrokerAdapter) => ReturnType<typeof resolveCachePolicy>;
-  resolveProviderPolicy: (key: ProviderRouterCachePolicyKey, provider: DataProvider) => ReturnType<typeof resolveCachePolicy>;
-  cacheResource: <T>(
-    kind: string,
-    entityKey: string,
-    variantKey: string,
-    sourceKey: string,
-    value: T,
-    cachePolicy: ReturnType<typeof resolveCachePolicy>,
-  ) => void;
-  logProviderError: (message: string) => void;
-}
+import type { ProviderRouterCoreDeps, SourceResult } from "./provider-router-route-types";
 
 export class ProviderRouterPrimaryRoutes {
-  constructor(private readonly options: ProviderRouterPrimaryRoutesOptions) {}
+  constructor(private readonly options: ProviderRouterCoreDeps) {}
 
   async fetchBrokerFinancials(
     ticker: string,

@@ -2,9 +2,9 @@ import type { CachePolicyMap } from "../types/persistence";
 import type { AssetDataProvider } from "../types/data-provider";
 import type { NewsDataProvider } from "../types/capability-route-source";
 
-export type CapabilityOperationKind = "read" | "query" | "action" | "stream";
+type CapabilityOperationKind = "read" | "query" | "action" | "stream";
 
-export type CapabilityKind =
+type CapabilityKind =
   | "asset-data"
   | "news"
   | "plugin-service";
@@ -13,12 +13,12 @@ export interface CapabilitySchema<T = unknown> {
   parse(value: unknown): T;
 }
 
-export interface CapabilityHandlerContext {
+interface CapabilityHandlerContext {
   capability: PluginCapability;
   operationId: string;
 }
 
-export type CapabilityStreamEmit<T = unknown> = (event: T) => void;
+type CapabilityStreamEmit<T = unknown> = (event: T) => void;
 
 export interface CapabilityOperation<I = unknown, O = unknown, E = unknown> {
   kind: CapabilityOperationKind;

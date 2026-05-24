@@ -15,7 +15,7 @@ export const TextAttributes = {
   STRIKETHROUGH: 1 << 7,
 } as const;
 
-export type TextAttributeFlags = number;
+type TextAttributeFlags = number;
 
 export type RGBA = string;
 
@@ -58,7 +58,7 @@ export interface ChartCrosshairOverlay {
   color: string;
 }
 
-export interface TextEditBuffer {
+interface TextEditBuffer {
   getText(): string;
   setText?(text: string): void;
 }
@@ -94,7 +94,7 @@ export interface BoxRenderable {
   [key: string]: unknown;
 }
 
-export interface ScrollBarRenderable {
+interface ScrollBarRenderable {
   visible: boolean;
   on?(event: "change", handler: () => void): void;
   off?(event: "change", handler: () => void): void;
@@ -163,7 +163,7 @@ export interface NativeRendererHost {
   write?(data: string | Uint8Array): boolean;
 }
 
-export interface BoxProps {
+interface BoxProps {
   children?: ReactNode;
   [key: string]: unknown;
 }
@@ -183,9 +183,9 @@ export interface TextProps {
   [key: string]: unknown;
 }
 
-export interface ScrollBoxProps extends BoxProps {}
-export interface InputProps extends BoxProps {}
-export interface TextareaProps extends BoxProps {}
+interface ScrollBoxProps extends BoxProps {}
+interface InputProps extends BoxProps {}
+interface TextareaProps extends BoxProps {}
 export interface ChartSurfaceProps extends BoxProps {
   bitmap?: BitmapSurface | null;
   bitmaps?: readonly BitmapSurface[] | null;
@@ -196,7 +196,7 @@ export interface ImageSurfaceProps extends BoxProps {
   alt?: string;
   objectFit?: "contain" | "cover";
 }
-export interface SpinnerMarkProps extends BoxProps {
+interface SpinnerMarkProps extends BoxProps {
   name?: string;
   color?: string;
 }
@@ -210,7 +210,7 @@ export interface AsciiTextProps extends BoxProps {
   selectable?: boolean;
 }
 
-export interface HostTabItem {
+interface HostTabItem {
   label: string;
   value: string;
   disabled?: boolean;
@@ -219,7 +219,7 @@ export interface HostTabItem {
   onContextMenu?: (value: string, event: any) => void;
 }
 
-export interface HostTabsPalette {
+interface HostTabsPalette {
   activeFg: string;
   inactiveFg: string;
   disabledFg: string;

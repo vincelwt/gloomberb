@@ -2,10 +2,9 @@ import { act } from "react";
 import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane-footer";
 import { testRender } from "../../../renderers/opentui/test-utils";
 import { AppContext, createInitialState } from "../../../state/app-context";
+import { MemoryPluginPersistence } from "../../../test-support/plugin-persistence";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { createDefaultConfig } from "../../../types/config";
-import type { PersistedResourceValue } from "../../../types/persistence";
-import type { PluginPersistence } from "../../../types/plugin";
 import { Box } from "../../../ui";
 import { apiClient, type ChatChannel, type ChatMessage } from "../../../utils/api-client";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugin-runtime";
@@ -64,71 +63,7 @@ export function installServerChannels(controller: ChatController, channels = TES
   (controller as any).channelCatalog.channels = channels;
 }
 
-export class MemoryPersistence implements PluginPersistence {
-  private readonly state = new Map<string, { schemaVersion: number; value: unknown }>();
-  private readonly resources = new Map<string, PersistedResourceValue<unknown>>();
-
-  getState<T = unknown>(key: string, options?: { schemaVersion?: number }): T | null {
-    const record = this.state.get(key);
-    if (!record) return null;
-    if (options?.schemaVersion != null && record.schemaVersion !== options.schemaVersion) {
-      this.state.delete(key);
-      return null;
-    }
-    return record.value as T;
-  }
-
-  setState(key: string, value: unknown, options?: { schemaVersion?: number }): void {
-    this.state.set(key, { schemaVersion: options?.schemaVersion ?? 1, value });
-  }
-
-  deleteState(key: string): void {
-    this.state.delete(key);
-  }
-
-  getResource<T = unknown>(
-    kind: string,
-    key: string,
-    options?: { sourceKey?: string; schemaVersion?: number; allowExpired?: boolean },
-  ): PersistedResourceValue<T> | null {
-    const record = this.resources.get(`${kind}:${key}:${options?.sourceKey ?? ""}`);
-    if (!record) return null;
-    if (options?.schemaVersion != null && record.schemaVersion !== options.schemaVersion) {
-      this.resources.delete(`${kind}:${key}:${options.sourceKey ?? ""}`);
-      return null;
-    }
-    return record as PersistedResourceValue<T>;
-  }
-
-  setResource<T = unknown>(
-    kind: string,
-    key: string,
-    value: T,
-    options: {
-      cachePolicy: { staleMs: number; expireMs: number };
-      sourceKey?: string;
-      schemaVersion?: number;
-      provenance?: unknown;
-    },
-  ): PersistedResourceValue<T> {
-    const now = Date.now();
-    const record: PersistedResourceValue<T> = {
-      value,
-      fetchedAt: now,
-      staleAt: now + options.cachePolicy.staleMs,
-      expiresAt: now + options.cachePolicy.expireMs,
-      sourceKey: options.sourceKey ?? "",
-      schemaVersion: options.schemaVersion ?? 1,
-      provenance: options.provenance,
-    };
-    this.resources.set(`${kind}:${key}:${options.sourceKey ?? ""}`, record);
-    return record;
-  }
-
-  deleteResource(kind: string, key: string, options?: { sourceKey?: string }): void {
-    this.resources.delete(`${kind}:${key}:${options?.sourceKey ?? ""}`);
-  }
-}
+export { MemoryPluginPersistence as MemoryPersistence } from "../../../test-support/plugin-persistence";
 
 export function makeMessage(index: number): ChatMessage {
   return {
@@ -152,7 +87,7 @@ export function createController(options: {
   replyToId?: string | null;
 } = {}) {
   const messages = options.messages ?? [];
-  const persistence = new MemoryPersistence();
+  const persistence = new MemoryPluginPersistence();
   const controller = new ChatController();
   const user = Object.prototype.hasOwnProperty.call(options, "user")
     ? options.user ?? null

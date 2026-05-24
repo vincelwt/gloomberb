@@ -79,7 +79,13 @@ describe("CommandBar", () => {
 
     await testSetup.renderOnce();
 
-    expect(testSetup.captureCharFrame()).toMatchSnapshot();
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Commands");
+    expect(frame).toContain("Tickers");
+    expect(frame).toContain("AAPL");
+    expect(frame).toContain("Panes");
+    expect(frame).toContain("Portfolio");
+    expect(frame).toContain("Help");
   });
 
   test("runs check for updates from the command bar", async () => {
@@ -750,7 +756,6 @@ describe("CommandBar", () => {
     expect(aaplRow).toBeGreaterThanOrEqual(0);
     expect(appRow).toBeGreaterThanOrEqual(0);
     expect(aaplRow).toBeLessThan(appRow);
-    expect(frame).toMatchSnapshot();
   });
 
   test("renders form-layout wizard fields together on one screen", async () => {

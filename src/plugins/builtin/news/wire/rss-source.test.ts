@@ -1,62 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { PluginPersistence } from "../../../../types/plugin";
-import type { PersistedResourceValue } from "../../../../types/persistence";
+import { MemoryPluginPersistence as MemoryPersistence } from "../../../../test-support/plugin-persistence";
 import { createRssNewsCapability, RSS_FEED_CACHE_POLICY } from "./rss-source";
 import type { RssFeedConfig } from "./rss-parser";
-
-class MemoryPersistence implements PluginPersistence {
-  resources = new Map<string, PersistedResourceValue<any>>();
-
-  getState<T = unknown>(): T | null {
-    return null;
-  }
-
-  setState(): void {}
-
-  deleteState(): void {}
-
-  getResource<T = unknown>(
-    kind: string,
-    key: string,
-    options?: { sourceKey?: string; allowExpired?: boolean },
-  ): PersistedResourceValue<T> | null {
-    const record = this.resources.get(`${kind}:${key}:${options?.sourceKey ?? ""}`) as PersistedResourceValue<T> | undefined;
-    if (!record) return null;
-    const now = Date.now();
-    if (record.expiresAt < now && !options?.allowExpired) return null;
-    return {
-      ...record,
-      stale: record.staleAt <= now,
-      expired: record.expiresAt <= now,
-    };
-  }
-
-  setResource<T = unknown>(
-    kind: string,
-    key: string,
-    value: T,
-    options: { cachePolicy: { staleMs: number; expireMs: number }; sourceKey?: string },
-  ): PersistedResourceValue<T> {
-    const now = Date.now();
-    const record: PersistedResourceValue<T> = {
-      value,
-      fetchedAt: now,
-      staleAt: now + options.cachePolicy.staleMs,
-      expiresAt: now + options.cachePolicy.expireMs,
-      sourceKey: options.sourceKey ?? "",
-      schemaVersion: 0,
-      provenance: null,
-      stale: false,
-      expired: false,
-    };
-    this.resources.set(`${kind}:${key}:${options.sourceKey ?? ""}`, record);
-    return record;
-  }
-
-  deleteResource(kind: string, key: string, options?: { sourceKey?: string }): void {
-    this.resources.delete(`${kind}:${key}:${options?.sourceKey ?? ""}`);
-  }
-}
 
 const FEED: RssFeedConfig = {
   id: "example-feed",

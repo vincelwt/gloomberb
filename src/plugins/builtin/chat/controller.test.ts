@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { AppNotificationRequest, PluginPersistence } from "../../../types/plugin";
-import type { PersistedResourceValue } from "../../../types/persistence";
+import type { AppNotificationRequest } from "../../../types/plugin";
+import { MemoryPluginPersistence as MemoryPersistence } from "../../../test-support/plugin-persistence";
 import { apiClient, type ChatChannel, type ChatMessage, type ChatNotification } from "../../../utils/api-client";
 import { ChatController } from "./controller";
 
@@ -31,76 +31,10 @@ async function flushMicrotasks() {
   await Promise.resolve();
 }
 
-class MemoryPersistence implements PluginPersistence {
-  private readonly state = new Map<string, { schemaVersion: number; value: unknown }>();
-  private readonly resources = new Map<string, PersistedResourceValue<unknown>>();
-
-  getState<T = unknown>(key: string, options?: { schemaVersion?: number }): T | null {
-    const record = this.state.get(key);
-    if (!record) return null;
-    if (options?.schemaVersion != null && record.schemaVersion !== options.schemaVersion) {
-      this.state.delete(key);
-      return null;
-    }
-    return record.value as T;
-  }
-
-  setState(key: string, value: unknown, options?: { schemaVersion?: number }): void {
-    this.state.set(key, { schemaVersion: options?.schemaVersion ?? 1, value });
-  }
-
-  deleteState(key: string): void {
-    this.state.delete(key);
-  }
-
-  getResource<T = unknown>(
-    kind: string,
-    key: string,
-    options?: { sourceKey?: string; schemaVersion?: number; allowExpired?: boolean },
-  ): PersistedResourceValue<T> | null {
-    const record = this.resources.get(`${kind}:${key}:${options?.sourceKey ?? ""}`);
-    if (!record) return null;
-    if (options?.schemaVersion != null && record.schemaVersion !== options.schemaVersion) {
-      this.resources.delete(`${kind}:${key}:${options.sourceKey ?? ""}`);
-      return null;
-    }
-    return record as PersistedResourceValue<T>;
-  }
-
-  setResource<T = unknown>(
-    kind: string,
-    key: string,
-    value: T,
-    options: {
-      cachePolicy: { staleMs: number; expireMs: number };
-      sourceKey?: string;
-      schemaVersion?: number;
-      provenance?: unknown;
-    },
-  ): PersistedResourceValue<T> {
-    const now = Date.now();
-    const record: PersistedResourceValue<T> = {
-      value,
-      fetchedAt: now,
-      staleAt: now + options.cachePolicy.staleMs,
-      expiresAt: now + options.cachePolicy.expireMs,
-      sourceKey: options.sourceKey ?? "",
-      schemaVersion: options.schemaVersion ?? 1,
-      provenance: options.provenance,
-    };
-    this.resources.set(`${kind}:${key}:${options.sourceKey ?? ""}`, record);
-    return record;
-  }
-
-  deleteResource(kind: string, key: string, options?: { sourceKey?: string }): void {
-    this.resources.delete(`${kind}:${key}:${options?.sourceKey ?? ""}`);
-  }
-}
-
 class TrackingPersistence extends MemoryPersistence {
   stateWrites = 0;
 
-  setState(key: string, value: unknown, options?: { schemaVersion?: number }): void {
+  override setState(key: string, value: unknown, options?: { schemaVersion?: number }): void {
     this.stateWrites += 1;
     super.setState(key, value, options);
   }
@@ -430,7 +364,10 @@ describe("ChatController", () => {
 
     await expect(controller.refreshSession()).rejects.toThrow("network down");
     expect(apiClient.getSessionToken()).toBe("token-123");
-    expect(persistence.getState("session", { schemaVersion: 1 })).toEqual({
+    expect(persistence.getState<{
+      sessionToken: string;
+      user: { id: string; username: string; emailVerified: boolean };
+    }>("session", { schemaVersion: 1 })).toEqual({
       sessionToken: "token-123",
       user: { id: "u1", username: "vince", emailVerified: true },
     });
@@ -716,7 +653,9 @@ describe("ChatController", () => {
 
     controller.attachPersistence(persistence);
 
-    let resolveSend: ((message: ChatMessage) => void) | null = null;
+    let resolveSend: (message: ChatMessage) => void = () => {
+      throw new Error("send resolver was not captured");
+    };
     apiClient.connectChannel = () => ({
       send: () => new Promise<ChatMessage>((resolve) => {
         resolveSend = resolve;

@@ -42,21 +42,6 @@ export function buildComparisonNativeBitmapKey(
   ].join("::");
 }
 
-export function buildNativeCrosshairBitmapKey(
-  pixelWidth: number,
-  pixelHeight: number,
-  chartHeight: number,
-  chartRows: number,
-  crosshairColor: string,
-  pixelX: number | null,
-  pixelY: number | null,
-): string {
-  const cursorKey = pixelX === null || pixelY === null
-    ? "cursor:none"
-    : `cursor:${pixelX.toFixed(3)}:${pixelY.toFixed(3)}`;
-  return [pixelWidth, pixelHeight, chartHeight, chartRows, crosshairColor, cursorKey].join("::");
-}
-
 export function getLegendColumns(width: number): number {
   if (width >= 110) return 3;
   if (width >= 72) return 2;

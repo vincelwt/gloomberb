@@ -9,7 +9,7 @@ interface CloseCommandBarOptions {
   revertThemePreview?: boolean;
 }
 
-export interface CommandBarInlineConfirmOptions {
+interface CommandBarInlineConfirmOptions {
   confirmId: string;
   title: string;
   body: string[];

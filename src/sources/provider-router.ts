@@ -38,6 +38,7 @@ import {
 } from "./provider-router-cache";
 import { ProviderRouterSearchRoutes } from "./provider-router-search";
 import { collectCapabilityRouteSources, normalizeRouteSource } from "./provider-router-sources";
+import type { ProviderRouterCoreDeps } from "./provider-router-route-types";
 import {
   contextFromCachedTarget,
   getBrokerCandidates,
@@ -76,54 +77,15 @@ export class AssetDataRouter implements DataProvider {
   ) {
     this.fallbackSource = fallbackSource ? normalizeRouteSource(fallbackSource) : null;
     this.extraSources = extraSources.map(normalizeRouteSource);
-    this.primaryRoutes = new ProviderRouterPrimaryRoutes({
-      getEntityKey: (ticker, instrument) => this.getEntityKey(ticker, instrument),
-      getTickerVariantCandidates: (exchange) => this.getTickerVariantCandidates(exchange),
-      getBrokerCandidatesForContext: (context, includeFallbackInstances) => this.getBrokerCandidatesForContext(context, includeFallbackInstances),
-      providersInPriorityOrder: () => this.providersInPriorityOrder(),
-      brokerSourceKey: (candidate) => this.brokerSourceKey(candidate),
-      providerSourceKey: (provider) => this.providerSourceKey(provider),
-      resolveBrokerPolicy: (key, broker) => this.resolveBrokerPolicy(key, broker),
-      resolveProviderPolicy: (key, provider) => this.resolveProviderPolicy(key, provider),
-      cacheResource: (kind, entityKey, variantKey, sourceKey, value, cachePolicy) => {
-        this.cacheResource(kind, entityKey, variantKey, sourceKey, value, cachePolicy);
-      },
-      logProviderError: (message) => providerLog.error(message),
-    });
+    const routeDeps = this.createRouteDeps();
+    this.primaryRoutes = new ProviderRouterPrimaryRoutes(routeDeps);
     this.financialRoutes = new ProviderRouterFinancialRoutes({
-      resources: this.resources,
+      ...routeDeps,
       primaryRoutes: this.primaryRoutes,
-      getEntityKey: (ticker, instrument) => this.getEntityKey(ticker, instrument),
-      getTickerVariantCandidates: (exchange) => this.getTickerVariantCandidates(exchange),
-      getBrokerCandidatesForContext: (context, includeFallbackInstances) => this.getBrokerCandidatesForContext(context, includeFallbackInstances),
-      getProviderSourceKeys: () => this.getProviderSourceKeys(),
-      brokerSourceKey: (candidate) => this.brokerSourceKey(candidate),
     });
-    this.documentRoutes = new ProviderRouterDocumentRoutes({
-      resources: this.resources,
-      getEntityKey: (ticker, instrument) => this.getEntityKey(ticker, instrument),
-      getProviderSourceKeys: () => this.getProviderSourceKeys(),
-      providersInPriorityOrder: () => this.providersInPriorityOrder(),
-      providerSourceKey: (provider) => this.providerSourceKey(provider),
-      resolveProviderPolicy: (key, provider) => this.resolveProviderPolicy(key, provider),
-      cacheResource: (kind, entityKey, variantKey, sourceKey, value, cachePolicy) => {
-        this.cacheResource(kind, entityKey, variantKey, sourceKey, value, cachePolicy);
-      },
-      logProviderError: (message) => providerLog.error(message),
-    });
+    this.documentRoutes = new ProviderRouterDocumentRoutes(routeDeps);
     this.batchRoutes = new ProviderRouterBatchRoutes({
-      resources: this.resources,
-      getEntityKey: (ticker, instrument) => this.getEntityKey(ticker, instrument),
-      getTickerVariantCandidates: (exchange) => this.getTickerVariantCandidates(exchange),
-      getBrokerCandidatesForContext: (context, includeFallbackInstances) => this.getBrokerCandidatesForContext(context, includeFallbackInstances),
-      getProviderSourceKeys: () => this.getProviderSourceKeys(),
-      providersInPriorityOrder: () => this.providersInPriorityOrder(),
-      brokerSourceKey: (candidate) => this.brokerSourceKey(candidate),
-      providerSourceKey: (provider) => this.providerSourceKey(provider),
-      resolveProviderPolicy: (key, provider) => this.resolveProviderPolicy(key, provider),
-      cacheResource: (kind, entityKey, variantKey, sourceKey, value, cachePolicy) => {
-        this.cacheResource(kind, entityKey, variantKey, sourceKey, value, cachePolicy);
-      },
+      ...routeDeps,
       readCachedMergedFinancialsSelection: (ticker, exchange, context, allowExpired) => (
         this.financialRoutes.readCachedMergedFinancialsSelection(ticker, exchange, context, allowExpired)
       ),
@@ -133,22 +95,7 @@ export class AssetDataRouter implements DataProvider {
       getQuote: (ticker, exchange, context) => this.financialRoutes.getQuote(ticker, exchange, context),
       getTickerFinancials: (ticker, exchange, context) => this.financialRoutes.getTickerFinancials(ticker, exchange, context),
     });
-    this.historyRoutes = new ProviderRouterHistoryRoutes({
-      resources: this.resources,
-      getEntityKey: (ticker, instrument) => this.getEntityKey(ticker, instrument),
-      getTickerVariantCandidates: (exchange) => this.getTickerVariantCandidates(exchange),
-      getBrokerCandidatesForContext: (context, includeFallbackInstances) => this.getBrokerCandidatesForContext(context, includeFallbackInstances),
-      getProviderSourceKeys: () => this.getProviderSourceKeys(),
-      providersInPriorityOrder: () => this.providersInPriorityOrder(),
-      brokerSourceKey: (candidate) => this.brokerSourceKey(candidate),
-      providerSourceKey: (provider) => this.providerSourceKey(provider),
-      resolveBrokerPolicy: (key, broker) => this.resolveBrokerPolicy(key, broker),
-      resolveProviderPolicy: (key, provider) => this.resolveProviderPolicy(key, provider),
-      cacheResource: (kind, entityKey, variantKey, sourceKey, value, cachePolicy) => {
-        this.cacheResource(kind, entityKey, variantKey, sourceKey, value, cachePolicy);
-      },
-      logProviderError: (message) => providerLog.error(message),
-    });
+    this.historyRoutes = new ProviderRouterHistoryRoutes(routeDeps);
     this.newsRoutes = new ProviderRouterNewsRoutes({
       newsSourcesInPriorityOrder: () => this.newsSourcesInPriorityOrder(),
       logProviderError: (message) => providerLog.error(message),
@@ -166,7 +113,11 @@ export class AssetDataRouter implements DataProvider {
       logInfo: (message, data) => providerLog.info(message, data),
       logWarn: (message, data) => providerLog.warn(message, data),
     });
-    this.supplementalRoutes = new ProviderRouterSupplementalRoutes({
+    this.supplementalRoutes = new ProviderRouterSupplementalRoutes(routeDeps);
+  }
+
+  private createRouteDeps(): ProviderRouterCoreDeps {
+    return {
       resources: this.resources,
       getEntityKey: (ticker, instrument) => this.getEntityKey(ticker, instrument),
       getTickerVariantCandidates: (exchange) => this.getTickerVariantCandidates(exchange),
@@ -181,7 +132,7 @@ export class AssetDataRouter implements DataProvider {
         this.cacheResource(kind, entityKey, variantKey, sourceKey, value, cachePolicy);
       },
       logProviderError: (message) => providerLog.error(message),
-    });
+    };
   }
 
   attachRegistry(registry: PluginRegistry): void {

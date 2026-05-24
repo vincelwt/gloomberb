@@ -1,5 +1,3 @@
-import type { ResourceStore } from "../data/resource-store";
-import type { BrokerAdapter } from "../types/broker";
 import type {
   DataProvider,
   MarketDataRequestContext,
@@ -10,57 +8,25 @@ import type {
   HolderData,
   OptionsChain,
 } from "../types/financials";
-import type { BrokerContractRef } from "../types/instrument";
-import type { CachePolicy } from "../types/persistence";
 import { canonicalExchange } from "../utils/exchanges";
 import {
   buildVariantKey,
   listCachedResources,
   selectCachedResource,
-  type ProviderRouterCachePolicyKey,
 } from "./provider-router-cache";
 import { shouldLogProviderError } from "./provider-errors";
-import {
-  type BrokerCandidate,
-  withBrokerTimeout,
-} from "./provider-router-brokers";
+import { withBrokerTimeout } from "./provider-router-brokers";
 import {
   hasAnalystResearchValue,
   hasCorporateActionsValue,
   isAnalystResearchMissingRatingTargets,
 } from "./provider-router-financials";
-
-interface SourceResult<T> {
-  sourceKey: string;
-  value: T;
-}
-
-export interface ProviderRouterSupplementalDeps {
-  resources?: ResourceStore;
-  getEntityKey(ticker: string, instrument?: BrokerContractRef | null): string;
-  getTickerVariantCandidates(exchange?: string): string[];
-  getBrokerCandidatesForContext(context?: MarketDataRequestContext, includeFallbackInstances?: boolean): BrokerCandidate[];
-  getProviderSourceKeys(): string[];
-  providersInPriorityOrder(): DataProvider[];
-  brokerSourceKey(candidate: BrokerCandidate): string;
-  providerSourceKey(provider: DataProvider): string;
-  resolveBrokerPolicy(key: ProviderRouterCachePolicyKey, broker: BrokerAdapter): CachePolicy;
-  resolveProviderPolicy(key: ProviderRouterCachePolicyKey, provider: DataProvider): CachePolicy;
-  cacheResource<T>(
-    kind: string,
-    entityKey: string,
-    variantKey: string,
-    sourceKey: string,
-    value: T,
-    cachePolicy: CachePolicy,
-  ): void;
-  logProviderError(message: string): void;
-}
+import type { ProviderRouterCoreDeps, SourceResult } from "./provider-router-route-types";
 
 export class ProviderRouterSupplementalRoutes {
   private readonly revalidationInFlight = new Map<string, Promise<unknown>>();
 
-  constructor(private readonly deps: ProviderRouterSupplementalDeps) {}
+  constructor(private readonly deps: ProviderRouterCoreDeps) {}
 
   getCachedExchangeRates(currencies: string[], options: { allowExpired?: boolean } = {}): Map<string, number> {
     const results = new Map<string, number>();

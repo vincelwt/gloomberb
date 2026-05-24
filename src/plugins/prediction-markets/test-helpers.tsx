@@ -7,10 +7,9 @@ import {
   createInitialState,
   PaneInstanceProvider,
 } from "../../state/app-context";
+import { MemoryPluginPersistence } from "../../test-support/plugin-persistence";
 import { createStatefulTestPluginRuntime } from "../../test-support/plugin-runtime";
 import { createDefaultConfig, type AppConfig } from "../../types/config";
-import type { PersistedResourceValue } from "../../types/persistence";
-import type { PluginPersistence } from "../../types/plugin";
 import { Box } from "../../ui";
 import {
   PluginRenderProvider,
@@ -34,73 +33,9 @@ export const harnessStateRef: {
   current: ReturnType<typeof createInitialState> | null;
 } = { current: null };
 
-export class MemoryPersistence implements PluginPersistence {
-  private readonly state = new Map<string, { schemaVersion: number; value: unknown }>();
-  private readonly resources = new Map<string, PersistedResourceValue<unknown>>();
+export { MemoryPluginPersistence as MemoryPersistence } from "../../test-support/plugin-persistence";
 
-  getState<T = unknown>(key: string, options?: { schemaVersion?: number }): T | null {
-    const record = this.state.get(key);
-    if (!record) return null;
-    if (options?.schemaVersion != null && record.schemaVersion !== options.schemaVersion) {
-      this.state.delete(key);
-      return null;
-    }
-    return record.value as T;
-  }
-
-  setState(key: string, value: unknown, options?: { schemaVersion?: number }): void {
-    this.state.set(key, { schemaVersion: options?.schemaVersion ?? 1, value });
-  }
-
-  deleteState(key: string): void {
-    this.state.delete(key);
-  }
-
-  getResource<T = unknown>(
-    kind: string,
-    key: string,
-    options?: { sourceKey?: string; schemaVersion?: number; allowExpired?: boolean },
-  ): PersistedResourceValue<T> | null {
-    const record = this.resources.get(`${kind}:${key}:${options?.sourceKey ?? ""}`);
-    if (!record) return null;
-    if (options?.schemaVersion != null && record.schemaVersion !== options.schemaVersion) {
-      this.resources.delete(`${kind}:${key}:${options.sourceKey ?? ""}`);
-      return null;
-    }
-    return record as PersistedResourceValue<T>;
-  }
-
-  setResource<T = unknown>(
-    kind: string,
-    key: string,
-    value: T,
-    options: {
-      cachePolicy: { staleMs: number; expireMs: number };
-      sourceKey?: string;
-      schemaVersion?: number;
-      provenance?: unknown;
-    },
-  ): PersistedResourceValue<T> {
-    const now = Date.now();
-    const record: PersistedResourceValue<T> = {
-      value,
-      fetchedAt: now,
-      staleAt: now + options.cachePolicy.staleMs,
-      expiresAt: now + options.cachePolicy.expireMs,
-      sourceKey: options.sourceKey ?? "",
-      schemaVersion: options.schemaVersion ?? 1,
-      provenance: options.provenance,
-    };
-    this.resources.set(`${kind}:${key}:${options.sourceKey ?? ""}`, record);
-    return record;
-  }
-
-  deleteResource(kind: string, key: string, options?: { sourceKey?: string }): void {
-    this.resources.delete(`${kind}:${key}:${options?.sourceKey ?? ""}`);
-  }
-}
-
-attachPredictionMarketsPersistence(new MemoryPersistence());
+attachPredictionMarketsPersistence(new MemoryPluginPersistence());
 
 function createConfig(options?: {
   initialFocusedPaneId?: string;
@@ -126,6 +61,7 @@ function createConfig(options?: {
       },
     ],
     floating: [],
+    detached: [],
   };
 
   return {
@@ -140,7 +76,7 @@ function createRuntime(): PluginRuntimeAccess {
 }
 
 export function installPredictionMarketMocks() {
-  attachPredictionMarketsPersistence(new MemoryPersistence());
+  attachPredictionMarketsPersistence(new MemoryPluginPersistence());
   const fetchUrls: string[] = [];
   const polymarketMarket = {
     id: "pm-1",
@@ -622,7 +558,7 @@ export async function cleanupPredictionTest(
   harnessStateRef.current = null;
   globalThis.fetch = originalFetch;
   globalThis.WebSocket = originalWebSocket;
-  attachPredictionMarketsPersistence(new MemoryPersistence());
+  attachPredictionMarketsPersistence(new MemoryPluginPersistence());
 }
 
 export { PREDICTION_CACHE_POLICIES };

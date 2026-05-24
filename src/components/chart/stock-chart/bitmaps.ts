@@ -20,18 +20,3 @@ export function buildNativeBitmapKey(
     .join("|");
   return [pointCount, pixelWidth, pixelHeight, mode, showVolume ? "1" : "0", paletteId, indicatorKey, marketSessionKey, fingerprint].join("::");
 }
-
-export function buildNativeCrosshairBitmapKey(
-  pixelWidth: number,
-  pixelHeight: number,
-  chartHeight: number,
-  chartRows: number,
-  crosshairColor: string,
-  pixelX: number | null,
-  pixelY: number | null,
-): string {
-  const cursorKey = pixelX === null || pixelY === null
-    ? "cursor:none"
-    : `cursor:${pixelX.toFixed(3)}:${pixelY.toFixed(3)}`;
-  return [pixelWidth, pixelHeight, chartHeight, chartRows, crosshairColor, cursorKey].join("::");
-}

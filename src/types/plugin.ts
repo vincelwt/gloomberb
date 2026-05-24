@@ -77,7 +77,7 @@ interface PaneSettingFieldBase {
   storage?: "pane" | "plugin";
 }
 
-export interface PaneSettingToggleField extends PaneSettingFieldBase {
+interface PaneSettingToggleField extends PaneSettingFieldBase {
   type: "toggle";
 }
 
@@ -86,17 +86,17 @@ export interface PaneSettingTextField extends PaneSettingFieldBase {
   placeholder?: string;
 }
 
-export interface PaneSettingSelectField extends PaneSettingFieldBase {
+interface PaneSettingSelectField extends PaneSettingFieldBase {
   type: "select";
   options: PaneSettingOption[];
 }
 
-export interface PaneSettingMultiSelectField extends PaneSettingFieldBase {
+interface PaneSettingMultiSelectField extends PaneSettingFieldBase {
   type: "multi-select";
   options: PaneSettingOption[];
 }
 
-export interface PaneSettingOrderedMultiSelectField extends PaneSettingFieldBase {
+interface PaneSettingOrderedMultiSelectField extends PaneSettingFieldBase {
   type: "ordered-multi-select";
   options: PaneSettingOption[];
 }
@@ -122,7 +122,7 @@ export interface PaneTemplateContext {
   activeCollectionId: string | null;
 }
 
-export interface PaneTemplateShortcut {
+interface PaneTemplateShortcut {
   prefix: string;
   argPlaceholder?: string;
   argKind?: "text" | "ticker" | "ticker-list";
@@ -177,7 +177,7 @@ export interface CommandShortcutArgContext {
   activeTicker: string | null;
 }
 
-export interface CommandShortcutArgDef {
+interface CommandShortcutArgDef {
   placeholder?: string;
   kind?: "text" | "ticker" | "ticker-list";
   parse?: (
@@ -198,25 +198,25 @@ export interface CommandResultDef {
   execute: () => void | Promise<void>;
 }
 
-export interface CliHelpColumn {
+interface CliHelpColumn {
   header: string;
   align?: "left" | "right" | "center";
   width?: number;
 }
 
-export interface CliCommandHelpSection {
+interface CliCommandHelpSection {
   title: string;
   columns?: CliHelpColumn[];
   rows?: string[][];
   lines?: string[];
 }
 
-export interface CliCommandHelp {
+interface CliCommandHelp {
   usage?: string[];
   sections?: CliCommandHelpSection[];
 }
 
-export interface CliLaunchEnvironment {
+interface CliLaunchEnvironment {
   terminalWidth: number;
   terminalHeight: number;
 }
@@ -284,14 +284,14 @@ export interface CommandDef {
   hidden?: () => boolean;
 }
 
-export interface CommandConfirmContext {
+interface CommandConfirmContext {
   config: AppConfig;
   layout: LayoutConfig;
   activeTicker: string | null;
   activeCollectionId: string | null;
 }
 
-export interface CommandConfirmDef {
+interface CommandConfirmDef {
   title: string;
   body: string[];
   confirmLabel?: string;
@@ -310,7 +310,7 @@ export interface DetailTabProps {
   onCapture: (capturing: boolean) => void;
 }
 
-export interface DetailTabVisibilityContext {
+interface DetailTabVisibilityContext {
   config: AppConfig;
   ticker: TickerRecord | null;
   financials: TickerFinancials | null | undefined;
@@ -395,7 +395,7 @@ export interface PluginPaneSettingsState {
 }
 
 export type AppNotificationType = "info" | "success" | "error";
-export type AppDesktopNotificationMode = "never" | "when-inactive" | "always";
+type AppDesktopNotificationMode = "never" | "when-inactive" | "always";
 
 export interface AppNotificationRequest {
   title?: string;

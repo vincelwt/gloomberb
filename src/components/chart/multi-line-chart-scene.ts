@@ -54,7 +54,7 @@ export interface MultiLineChartScene {
   colors: MultiLineChartColors;
 }
 
-export const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 function dateKey(date: Date): number {
   return date.getTime();

@@ -1,41 +1,20 @@
-import type { ResourceStore } from "../data/resource-store";
 import type {
   CachedFinancialsTarget,
-  DataProvider,
   MarketDataRequestContext,
   QuoteBatchResult,
   QuoteSubscriptionTarget,
   TickerFinancialsBatchResult,
 } from "../types/data-provider";
 import type { Quote, TickerFinancials } from "../types/financials";
-import type { BrokerContractRef } from "../types/instrument";
-import type { CachePolicy } from "../types/persistence";
 import { canonicalExchange } from "../utils/exchanges";
 import { normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
 import { isQuoteStaleForCurrentSession } from "../utils/quote-freshness";
 import { resolveTickerFinancialsQuoteState } from "../utils/quote-resolution";
-import type { BrokerCandidate } from "./provider-router-brokers";
-import { selectCachedResource, type ProviderRouterCachePolicyKey } from "./provider-router-cache";
+import { selectCachedResource } from "./provider-router-cache";
 import { quoteWithFreshnessExchange, type CachedFinancialsSelection } from "./provider-router-financials";
+import type { ProviderRouterCoreDeps } from "./provider-router-route-types";
 
-export interface ProviderRouterBatchDeps {
-  resources?: ResourceStore;
-  getEntityKey(ticker: string, instrument?: BrokerContractRef | null): string;
-  getTickerVariantCandidates(exchange?: string): string[];
-  getBrokerCandidatesForContext(context?: MarketDataRequestContext, includeFallbackInstances?: boolean): BrokerCandidate[];
-  getProviderSourceKeys(): string[];
-  providersInPriorityOrder(): DataProvider[];
-  brokerSourceKey(candidate: BrokerCandidate): string;
-  providerSourceKey(provider: DataProvider): string;
-  resolveProviderPolicy(key: ProviderRouterCachePolicyKey, provider: DataProvider): CachePolicy;
-  cacheResource<T>(
-    kind: string,
-    entityKey: string,
-    variantKey: string,
-    sourceKey: string,
-    value: T,
-    cachePolicy: CachePolicy,
-  ): void;
+export interface ProviderRouterBatchDeps extends ProviderRouterCoreDeps {
   readCachedMergedFinancialsSelection(
     ticker: string,
     exchange?: string,
