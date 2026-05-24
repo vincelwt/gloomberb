@@ -67,9 +67,21 @@ function openChatChannelFromCommand(ctx: GloomPluginContext, channelId: string):
   ctx.createPaneFromTemplate("new-chat-pane", { arg: channelId });
 }
 
+export function openDefaultChatFromCommand(
+  ctx: Pick<GloomPluginContext, "createPaneFromTemplate" | "getConfig" | "showPane">,
+): void {
+  const config = ctx.getConfig();
+  const hasChatPane = config.layout.instances.some((instance) => instance.paneId === "chat");
+  if (hasChatPane) {
+    ctx.showPane("chat");
+    return;
+  }
+  ctx.createPaneFromTemplate("new-chat-pane", { arg: getLastVisitedChatChannelId(config) });
+}
+
 export async function openDmTargetFromCommand(ctx: GloomPluginContext, usernames: string[]): Promise<void> {
   if (usernames.length === 0) {
-    ctx.showPane("chat");
+    openDefaultChatFromCommand(ctx);
     return;
   }
   const channel = usernames.length === 1
