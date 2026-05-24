@@ -8,7 +8,9 @@ import {
   commandBarSelectedText,
   commandBarSubtleText,
   commandBarText,
+  colors,
   floatingPaneTitleBg,
+  getChartIndicatorColor,
   paneTitleBg,
   paneTitleText,
 } from "./colors";
@@ -64,6 +66,19 @@ describe("theme contrast", () => {
       assertMinContrast(id, "commandBarHeadingText/bg", commandBarHeadingText(), commandBarBg(), SUBTLE_TEXT_MIN);
       assertMinContrast(id, "commandBarSubtleText/panel", commandBarSubtleText(), commandBarPanelBg(), SUBTLE_TEXT_MIN);
       assertMinContrast(id, "commandBarSelectedText/selected", commandBarSelectedText(), commandBarSelectedBg(), BODY_TEXT_MIN);
+    }
+  });
+
+  test("keeps chart indicator colors readable and separate from price line colors", () => {
+    for (const id of Object.keys(themes)) {
+      applyTheme(id);
+      for (const indicatorIndex of [0, 1, 2]) {
+        const color = getChartIndicatorColor(indicatorIndex);
+        assertMinContrast(id, `chartIndicator${indicatorIndex}/bg`, color, colors.bg, SUBTLE_TEXT_MIN);
+        if ([colors.positive, colors.negative, colors.text].includes(color)) {
+          throw new Error(`${id} chartIndicator${indicatorIndex} reuses a price line color`);
+        }
+      }
     }
   });
 });

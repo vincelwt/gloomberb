@@ -89,6 +89,28 @@ export function getComparisonSeriesColor(index: number): string {
   return seriesColors[((index % seriesColors.length) + seriesColors.length) % seriesColors.length]!;
 }
 
+export function getChartIndicatorColor(index: number): string {
+  const accent = higherContrast(colors.warning, colors.borderFocused, colors.bg);
+  const indicatorColors = [
+    colors.warning,
+    blendHex(colors.borderFocused, colors.warning, 0.38),
+    blendHex(colors.warning, colors.textBright, 0.42),
+    blendHex(colors.borderFocused, colors.textBright, 0.38),
+    colors.neutral,
+    blendHex(colors.warning, colors.neutral, 0.52),
+    blendHex(colors.borderFocused, colors.neutral, 0.46),
+  ];
+  const candidate = indicatorColors[((index % indicatorColors.length) + indicatorColors.length) % indicatorColors.length]!;
+  const color = blendForContrast(
+    candidate,
+    colors.bg,
+    higherContrast(accent, colors.textBright, colors.bg),
+    3.6,
+  );
+  if (![colors.positive, colors.negative, colors.text].includes(color)) return color;
+  return blendForContrast(blendHex(color, accent, 0.55), colors.bg, colors.textBright, 3.6);
+}
+
 /** Returns a hover background color derived from bg and selected */
 export function hoverBg(): string {
   return blendHex(colors.bg, colors.selected, 0.5);

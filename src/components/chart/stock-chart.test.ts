@@ -9,6 +9,7 @@ import {
   resolveChartKeyboardKey,
   resolveIndicatorBufferRange,
 } from "./stock-chart";
+import { colors, getChartIndicatorColor } from "../../theme/colors";
 import {
   getLocalPlotPointer,
   projectCellCursorToLocalPixels,
@@ -358,6 +359,11 @@ describe("stock chart indicator helpers", () => {
     expect(overlays.smaLines[0]?.points[0]?.index).toBe(0);
     expect(overlays.smaLines[0]?.points.at(-1)?.index).toBe(projected.length - 1);
     expect(overlays.bollinger?.upper[0]?.index).toBe(0);
+    expect(overlays.smaLines[0]?.color).toBe(getChartIndicatorColor(0));
+    expect(overlays.bollinger?.color).toBe(getChartIndicatorColor(1));
+    expect(new Set([overlays.smaLines[0]?.color, overlays.bollinger?.color]).size).toBe(2);
+    expect([colors.positive, colors.negative]).not.toContain(overlays.smaLines[0]?.color);
+    expect([colors.positive, colors.negative]).not.toContain(overlays.bollinger?.color);
   });
 
   test("widens the data buffer enough for selected indicator warmup periods", () => {

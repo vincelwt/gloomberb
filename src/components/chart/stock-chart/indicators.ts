@@ -1,4 +1,4 @@
-import { colors } from "../../../theme/colors";
+import { getChartIndicatorColor } from "../../../theme/colors";
 import type { PricePoint } from "../../../types/financials";
 import type { ChartIndicatorOverlays } from "../chart-types";
 import { RANGE_DAYS, type ChartRenderMode, type TimeRange } from "../chart-types";
@@ -14,19 +14,6 @@ import {
 
 function coerceChartDate(value: Date | string | number): Date {
   return value instanceof Date ? value : new Date(value);
-}
-
-function getIndicatorColor(index: number): string {
-  const indicatorColors = [
-    colors.negative,
-    colors.positive,
-    colors.borderFocused,
-    colors.warning,
-    colors.textBright,
-    colors.neutral,
-    colors.textMuted,
-  ];
-  return indicatorColors[((index % indicatorColors.length) + indicatorColors.length) % indicatorColors.length]!;
 }
 
 function getIndicatorWarmupPeriod(config: IndicatorConfig): number {
@@ -143,7 +130,7 @@ export function computeIndicatorOverlays(
   config: IndicatorConfig,
 ): ChartIndicatorOverlays {
   let colorIdx = 0;
-  const nextColor = () => getIndicatorColor(colorIdx++);
+  const nextColor = () => getChartIndicatorColor(colorIdx++);
 
   const smaLines = (config.sma ?? []).map((period) => ({
     period,
