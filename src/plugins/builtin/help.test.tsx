@@ -85,12 +85,12 @@ describe("HelpPane", () => {
         },
       ]]),
       shortcuts: new Map([[
-        "toggle-chat",
+        "sync-data",
         {
-          id: "toggle-chat",
-          key: "c",
+          id: "sync-data",
+          key: "x",
           shift: true,
-          description: "Toggle chat",
+          description: "Sync data",
           execute: () => {},
         },
       ]]),
@@ -112,8 +112,8 @@ describe("HelpPane", () => {
     expect(frame).toMatch(/SA\s+<symbol condition price>/);
     expect(frame).toMatch(/QQ\s+<tickers>/);
     expect(frame).toContain("Add Alert (Alerts)");
-    expect(frame).toContain("Shift+C");
-    expect(frame).toContain("Toggle chat (Gloomberb Cloud)");
+    expect(frame).toContain("Shift+X");
+    expect(frame).toContain("Sync data (Gloomberb Cloud)");
     expect(frame).toContain("Ctrl+W");
     expect(frame).toContain("Ctrl+,");
     expect(frame).not.toContain("Ctrl+Shift+O");

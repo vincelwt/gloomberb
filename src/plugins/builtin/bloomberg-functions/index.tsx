@@ -7,7 +7,7 @@ import {
   type DataTableColumn,
   type DataTableKeyEvent,
 } from "../../../components";
-import { useShortcut } from "../../../react/input";
+import { useShortcut, type KeyEventLike } from "../../../react/input";
 import { StaticBarChartSurface } from "../../../components/chart/static-bar-chart-surface";
 import { StaticMultiLineChartSurface } from "../../../components/chart/static-multi-line-chart-surface";
 import { StaticScatterChartSurface } from "../../../components/chart/static-scatter-chart-surface";
@@ -77,6 +77,26 @@ type FundamentalPeriod = "annual" | "quarterly";
 type FundamentalColumnId = "symbol" | "date" | "value" | "growth";
 type FundamentalColumn = DataTableColumn & { id: FundamentalColumnId };
 type RelationshipRange = Extract<TimeRange, "1M" | "3M" | "6M" | "1Y" | "5Y" | "ALL">;
+type RelationshipGraphShortcut = "range" | "window" | "correlation" | "regression";
+
+export function resolveRelationshipGraphShortcut(
+  event: Pick<KeyEventLike, "name" | "key" | "ctrl" | "shift" | "alt" | "meta" | "super">,
+): RelationshipGraphShortcut | null {
+  if (event.ctrl || event.shift || event.alt || event.meta || event.super) return null;
+
+  switch ((event.name ?? event.key ?? "").toLowerCase()) {
+    case "t":
+      return "range";
+    case "p":
+      return "window";
+    case "c":
+      return "correlation";
+    case "g":
+      return "regression";
+    default:
+      return null;
+  }
+}
 
 export type FundamentalGraphRow = {
   key: string;
@@ -204,6 +224,16 @@ function formatDateTime(date: Date): string {
   return hasTime ? iso.slice(0, 16).replace("T", " ") : iso.slice(0, 10);
 }
 
+function pricePointTime(point: PricePoint): number {
+  const value = point.date as Date | string | number;
+  return value instanceof Date ? value.getTime() : new Date(value).getTime();
+}
+
+function pricePointDate(point: PricePoint): Date | null {
+  const timestamp = pricePointTime(point);
+  return Number.isFinite(timestamp) ? new Date(timestamp) : null;
+}
+
 function formatMaybePrice(value: number | undefined): string {
   return value == null ? "-" : formatNumber(value, 2);
 }
@@ -217,9 +247,15 @@ function formatMaybeCompact(value: number | undefined): string {
 }
 
 export function buildHistoricalPriceRows(points: PricePoint[]): HistoricalPriceRow[] {
-  const sorted = [...points].sort((left, right) => left.date.getTime() - right.date.getTime());
-  return sorted.map((point, index) => {
-    const previous = sorted[index - 1];
+  const sorted = points
+    .flatMap((point): Array<{ point: PricePoint; timestamp: number }> => {
+      const date = pricePointDate(point);
+      return date ? [{ point: { ...point, date }, timestamp: date.getTime() }] : [];
+    })
+    .sort((left, right) => left.timestamp - right.timestamp);
+
+  return sorted.map(({ point }, index) => {
+    const previous = sorted[index - 1]?.point;
     const change = previous ? point.close - previous.close : null;
     return {
       key: `${point.date.toISOString()}:${index}`,
@@ -556,11 +592,6 @@ export interface RelationshipAnalysis {
   stats: RelationshipRegressionStats | null;
   latestRatio: number | null;
   latestCorrelation: number | null;
-}
-
-function pricePointTime(point: PricePoint): number {
-  const value = point.date as Date | string | number;
-  return value instanceof Date ? value.getTime() : new Date(value).getTime();
 }
 
 function pricePointDateKey(point: PricePoint): string | null {
@@ -1400,23 +1431,24 @@ function RelationshipGraphPane({ focused, width, height }: PaneProps) {
 
   useShortcut((event) => {
     if (!focused) return;
-    switch (event.name) {
-      case "t":
+
+    switch (resolveRelationshipGraphShortcut(event)) {
+      case "range":
         event.preventDefault();
         event.stopPropagation();
         cycleRange();
         return;
-      case "w":
+      case "window":
         event.preventDefault();
         event.stopPropagation();
         cycleWindow();
         return;
-      case "c":
+      case "correlation":
         event.preventDefault();
         event.stopPropagation();
         toggleCorrelation();
         return;
-      case "g":
+      case "regression":
         event.preventDefault();
         event.stopPropagation();
         toggleRegression();
@@ -1432,8 +1464,8 @@ function RelationshipGraphPane({ focused, width, height }: PaneProps) {
     ],
     hints: [
       { id: "range", key: "t", label: "range", onPress: cycleRange },
-      { id: "window", key: "w", label: "win", onPress: cycleWindow },
-      { id: "correlation", key: "c", label: "corr", onPress: toggleCorrelation },
+      { id: "window", key: "p", label: "eriod", onPress: cycleWindow },
+      { id: "correlation", key: "c", label: "orr", onPress: toggleCorrelation },
       { id: "regression", key: "g", label: "reg", onPress: toggleRegression },
     ],
   }), [
