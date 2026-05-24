@@ -20,7 +20,9 @@ import {
   createPaneInstance,
   findPaneInstance,
   isTickerPaneId,
+  normalizePaneId,
   normalizePaneLayout,
+  TICKER_RESEARCH_PANE_ID,
   type LayoutConfig,
   type PaneBinding,
   type PaneInstanceConfig,
@@ -94,8 +96,8 @@ export function useAppPaneRuntime({
   const {
     buildPaneBinding,
     selectTickerInPane,
-    showTickerDetailPane,
-    switchDetailTab,
+    showTickerResearchPane,
+    switchTickerResearchTab,
   } = useAppTickerInspectorRuntime({
     activatePane,
     dispatch,
@@ -112,13 +114,14 @@ export function useAppPaneRuntime({
     settings?: Record<string, unknown>;
     instanceId?: string;
   }): PaneInstanceConfig | null => {
-    if (paneType === "portfolio-list") {
+    const normalizedPaneType = normalizePaneId(paneType);
+    if (normalizedPaneType === "portfolio-list") {
       const collectionId = options?.params?.collectionId
         ?? getFocusedCollectionId(state)
         ?? state.config.portfolios[0]?.id
         ?? state.config.watchlists[0]?.id
         ?? "";
-      return createPaneInstance(paneType, {
+      return createPaneInstance(normalizedPaneType, {
         instanceId: options?.instanceId,
         title: options?.title,
         binding: options?.binding ?? { kind: "none" },
@@ -126,9 +129,9 @@ export function useAppPaneRuntime({
         settings: options?.settings,
       });
     }
-    const binding = options?.binding ?? buildPaneBinding(paneType);
-    if (isTickerPaneId(paneType) && !binding) return null;
-    return createPaneInstance(paneType, {
+    const binding = options?.binding ?? buildPaneBinding(normalizedPaneType);
+    if (isTickerPaneId(normalizedPaneType) && !binding) return null;
+    return createPaneInstance(normalizedPaneType, {
       instanceId: options?.instanceId,
       title: options?.title,
       binding: binding ?? { kind: "none" },
@@ -191,15 +194,16 @@ export function useAppPaneRuntime({
   ]);
 
   const showPane = useCallback((paneId: string) => {
-    const paneDef = pluginRegistry.panes.get(paneId);
+    const normalizedPaneId = normalizePaneId(paneId);
+    const paneDef = pluginRegistry.panes.get(normalizedPaneId);
     if (!paneDef) return;
 
-    if (paneId === "ticker-detail") {
-      showTickerDetailPane();
+    if (normalizedPaneId === TICKER_RESEARCH_PANE_ID) {
+      showTickerResearchPane();
       return;
     }
 
-    const existingInstanceId = resolvePaneTarget(paneId);
+    const existingInstanceId = resolvePaneTarget(normalizedPaneId);
     if (existingInstanceId && isPaneInLayout(state.config.layout, existingInstanceId)) {
       pluginRegistry.focusPaneFn(existingInstanceId);
       return;
@@ -207,7 +211,7 @@ export function useAppPaneRuntime({
 
     const instance = existingInstanceId
       ? findPaneInstance(state.config.layout, existingInstanceId)
-      : buildPaneInstance(paneId);
+      : buildPaneInstance(normalizedPaneId);
     if (!instance) {
       if (isTickerPaneId(paneId)) {
         notify("Open a ticker or collection context first.");
@@ -221,7 +225,7 @@ export function useAppPaneRuntime({
     placePaneInstance,
     pluginRegistry,
     resolvePaneTarget,
-    showTickerDetailPane,
+    showTickerResearchPane,
     state.config.layout,
   ]);
 
@@ -287,7 +291,7 @@ export function useAppPaneRuntime({
     showPane,
     state,
     stateRef,
-    switchDetailTab,
+    switchTickerResearchTab,
     tickerRepository,
   });
 }

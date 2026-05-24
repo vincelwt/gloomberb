@@ -64,7 +64,7 @@ function setupIbkrPlugin(config: AppConfig) {
     registerColumn: () => {},
     registerBroker: () => {},
     registerCapability: () => {},
-    registerDetailTab: () => {},
+    registerTickerResearchTab: () => {},
     registerShortcut: () => {},
     registerTickerAction: (action: TickerAction) => { tickerActions.push(action); },
     getData: () => null,

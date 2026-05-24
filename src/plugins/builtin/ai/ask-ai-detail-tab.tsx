@@ -3,7 +3,7 @@ import { useRef, useEffect, useState, useCallback, type SetStateAction } from "r
 import { useShortcut } from "../../../react/input";
 import { TextAttributes } from "../../../ui";
 import { type ScrollBoxRenderable, type TextareaRenderable } from "../../../ui";
-import type { DetailTabProps } from "../../../types/plugin";
+import type { TickerResearchTabProps } from "../../../types/plugin";
 import { useAppSelector, usePaneTicker } from "../../../state/app/context";
 import { useFxRatesMap } from "../../../market-data/hooks";
 import { usePluginState } from "../../runtime";
@@ -56,7 +56,7 @@ export function __resetAskAiHistoryForTests(): void {
   chatHistories.clear();
 }
 
-export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabProps) {
+export function AskAiResearchTab({ width, height, focused, onCapture }: TickerResearchTabProps) {
   const { nativePaneChrome } = useUiCapabilities();
   const baseCurrency = useAppSelector((state) => state.config.baseCurrency);
   const cachedExchangeRates = useAppSelector((state) => state.exchangeRates);

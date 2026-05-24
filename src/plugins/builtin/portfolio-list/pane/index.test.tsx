@@ -9,7 +9,14 @@ import { AppPersistence } from "../../../../data/app-persistence";
 import { TickerRepository } from "../../../../data/ticker-repository";
 import { AppContext, appReducer, createInitialState, PaneInstanceProvider, type AppAction } from "../../../../state/app/context";
 import { AssetDataRouter } from "../../../../sources/provider-router";
-import { cloneLayout, createDefaultConfig, type AppConfig, type BrokerInstanceConfig, type LayoutConfig } from "../../../../types/config";
+import {
+  cloneLayout,
+  createDefaultConfig,
+  TICKER_RESEARCH_PANE_ID,
+  type AppConfig,
+  type BrokerInstanceConfig,
+  type LayoutConfig,
+} from "../../../../types/config";
 import type { DataProvider } from "../../../../types/data-provider";
 import type { Quote } from "../../../../types/financials";
 import type { TickerRecord } from "../../../../types/ticker";
@@ -373,7 +380,7 @@ describe("PortfolioListPane cash and margin UI", () => {
       await testSetup!.mockMouse.click(2, rowY);
       await testSetup!.renderOnce();
     });
-    expect(pinned).toEqual([{ symbol: "AAPL", options: { floating: true, paneType: "ticker-detail" } }]);
+    expect(pinned).toEqual([{ symbol: "AAPL", options: { floating: true, paneType: TICKER_RESEARCH_PANE_ID } }]);
   });
 
   test("quick-add validates and adds an exact watchlist ticker", async () => {

@@ -6,6 +6,7 @@ import { collectUniqueTickerSymbols } from "../../tickers/tokenizer";
 import { useQuoteStreaming } from "./quote-streaming";
 import type { Quote } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
+import { TICKER_RESEARCH_PANE_ID } from "../../types/config";
 
 type InlineTickerStatus = "loading" | "ready" | "missing";
 
@@ -32,7 +33,7 @@ function normalizeSymbols(texts: readonly string[]): string[] {
 export function useInlineTickerOpener(): (symbol: string) => void {
   const registry = getSharedRegistry();
   return useCallback((symbol: string) => {
-    registry?.pinTicker(symbol, { floating: true, paneType: "ticker-detail" });
+    registry?.pinTicker(symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
   }, [registry]);
 }
 

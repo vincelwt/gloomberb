@@ -15,8 +15,10 @@ import {
   findPaneInstance,
   findPrimaryPaneInstance,
   isTickerPaneId,
+  normalizePaneId,
   resolveFollowBindingInstance,
   resolvePaneInstance,
+  TICKER_RESEARCH_PANE_ID,
   type LayoutConfig,
   type PaneBinding,
   type PaneInstanceConfig,
@@ -53,7 +55,7 @@ export function useAppTickerInspectorRuntime({
   const resolveTickerContextSourcePaneId = useCallback((preferredPaneId?: string | null) => {
     return resolveFollowBindingInstance(state.config.layout, preferredPaneId, isTickerContextPaneInstance)?.instanceId
       ?? resolveFollowBindingInstance(state.config.layout, state.focusedPaneId, isTickerContextPaneInstance)?.instanceId
-      ?? findPrimaryPaneInstance(state.config.layout, "ticker-detail")?.instanceId
+      ?? findPrimaryPaneInstance(state.config.layout, TICKER_RESEARCH_PANE_ID)?.instanceId
       ?? findPrimaryPaneInstance(state.config.layout, "portfolio-list")?.instanceId
       ?? null;
   }, [state.config.layout, state.focusedPaneId]);
@@ -66,7 +68,7 @@ export function useAppTickerInspectorRuntime({
 
   const resolveInspectorPane = useCallback((sourcePaneId: string): PaneInstanceConfig | null => {
     return state.config.layout.instances.find((instance) =>
-      instance.paneId === "ticker-detail"
+      instance.paneId === TICKER_RESEARCH_PANE_ID
       && instance.binding?.kind === "follow"
       && instance.binding.sourceInstanceId === sourcePaneId
       && isPaneInLayout(state.config.layout, instance.instanceId),
@@ -77,14 +79,14 @@ export function useAppTickerInspectorRuntime({
     const existing = resolveInspectorPane(sourcePaneId);
     if (existing) return { layout: state.config.layout, instance: existing };
 
-    const paneDef = pluginRegistry.panes.get("ticker-detail");
+    const paneDef = pluginRegistry.panes.get(TICKER_RESEARCH_PANE_ID);
     if (!paneDef) return null;
 
     const preferredInstanceId = sourcePaneId === "portfolio-list:main"
       && !findPaneInstance(state.config.layout, "ticker-detail:main")
       ? "ticker-detail:main"
       : undefined;
-    const instance = createPaneInstance("ticker-detail", {
+    const instance = createPaneInstance(TICKER_RESEARCH_PANE_ID, {
       instanceId: preferredInstanceId,
       binding: { kind: "follow", sourceInstanceId: sourcePaneId },
     });
@@ -96,12 +98,12 @@ export function useAppTickerInspectorRuntime({
     return { layout, instance };
   }, [pluginRegistry, resolveInspectorPane, state.config.layout]);
 
-  const switchDetailTab = useCallback((tabId: string, preferredPaneId?: string | null) => {
+  const switchTickerResearchTab = useCallback((tabId: string, preferredPaneId?: string | null) => {
     const targetPaneId = (() => {
       const target = preferredPaneId ? resolvePaneInstance(state.config.layout, preferredPaneId) : null;
-      if (target?.paneId === "ticker-detail") return target.instanceId;
+      if (target?.paneId === TICKER_RESEARCH_PANE_ID) return target.instanceId;
       const focused = state.focusedPaneId ? resolvePaneInstance(state.config.layout, state.focusedPaneId) : null;
-      if (focused?.paneId === "ticker-detail") return focused.instanceId;
+      if (focused?.paneId === TICKER_RESEARCH_PANE_ID) return focused.instanceId;
       const sourcePaneId = resolveCollectionSourcePaneId(preferredPaneId);
       if (!sourcePaneId) return null;
       const ensured = ensureInspectorPane(sourcePaneId);
@@ -124,7 +126,7 @@ export function useAppTickerInspectorRuntime({
   ]);
 
   const buildPaneBinding = useCallback((paneType: string, preferredPaneId?: string | null): PaneBinding | null => {
-    if (paneType === "ticker-detail") {
+    if (normalizePaneId(paneType) === TICKER_RESEARCH_PANE_ID) {
       const sourceInstanceId = resolveCollectionSourcePaneId(preferredPaneId);
       return sourceInstanceId ? { kind: "follow", sourceInstanceId } : null;
     }
@@ -135,7 +137,7 @@ export function useAppTickerInspectorRuntime({
     return { kind: "none" };
   }, [resolveCollectionSourcePaneId, resolveTickerContextSourcePaneId]);
 
-  const showTickerDetailPane = useCallback(() => {
+  const showTickerResearchPane = useCallback(() => {
     const sourcePaneId = resolveCollectionSourcePaneId();
     if (!sourcePaneId) {
       notify("Open a collection pane first to inspect a ticker.");
@@ -159,7 +161,7 @@ export function useAppTickerInspectorRuntime({
   return {
     buildPaneBinding,
     selectTickerInPane,
-    showTickerDetailPane,
-    switchDetailTab,
+    showTickerResearchPane,
+    switchTickerResearchTab,
   };
 }

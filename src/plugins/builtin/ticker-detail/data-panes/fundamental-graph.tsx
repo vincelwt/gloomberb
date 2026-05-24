@@ -54,7 +54,7 @@ export function FundamentalGraphPane({ focused, width, height }: PaneProps) {
   );
 }
 
-export function FundamentalGraphsDetailTab({ focused, width, height }: { focused: boolean; width: number; height: number }) {
+export function FundamentalGraphsResearchTab({ focused, width, height }: { focused: boolean; width: number; height: number }) {
   const { symbol, financials } = usePaneTicker();
   const [period, setPeriod] = usePluginPaneState<FundamentalPeriod>("detailPeriod", "annual");
   const [chartKind, setChartKind] = usePluginPaneState<GraphKind>("detailChartKind", "fundamental");

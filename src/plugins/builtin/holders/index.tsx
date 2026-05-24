@@ -10,7 +10,7 @@ export const holdersPlugin: GloomPlugin = {
   toggleable: true,
 
   setup(ctx) {
-    ctx.registerDetailTab({
+    ctx.registerTickerResearchTab({
       id: "holders",
       name: "Holders",
       order: 42,

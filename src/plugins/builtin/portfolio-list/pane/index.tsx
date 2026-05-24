@@ -19,6 +19,7 @@ import {
 import { selectEffectiveExchangeRates } from "../../../../utils/exchange-rate-map";
 import type { TickerRecord } from "../../../../types/ticker";
 import type { PaneProps } from "../../../../types/plugin";
+import { TICKER_RESEARCH_PANE_ID } from "../../../../types/config";
 import { resolveCollectionSortPreference, type ColumnContext } from "../metrics";
 import {
   PortfolioCashMarginDrawer,
@@ -187,7 +188,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   }, [activeSort.columnId, activeSort.direction, setSortPreference]);
 
   const openTickerFloating = useCallback((symbol: string) => {
-    pinTicker(symbol, { floating: true, paneType: "ticker-detail" });
+    pinTicker(symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
   }, [pinTicker]);
 
   const handleRowActivate = useCallback((ticker: TickerRecord) => {

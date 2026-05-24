@@ -11,7 +11,7 @@ import {
 } from "./pane";
 
 export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
-  ctx.registerDetailTab({
+  ctx.registerTickerResearchTab({
     id: "ticker-tweets",
     name: "Tweets",
     order: 38,

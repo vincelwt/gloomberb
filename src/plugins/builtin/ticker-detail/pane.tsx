@@ -1,7 +1,6 @@
 import { Box } from "../../../ui";
-import { useShortcut } from "../../../react/input";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { DetailTabDef, PaneProps } from "../../../types/plugin";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import type { PaneProps, TickerResearchTabDef } from "../../../types/plugin";
 import { quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
 import {
   useAppDispatch,
@@ -16,12 +15,9 @@ import { getCollectionName, getCollectionTickerCount } from "../../../state/sele
 import { getSharedRegistry } from "../../registry";
 import { EmptyState, PaneFooterScope, Tabs } from "../../../components";
 import { resolveOptionsTarget } from "../../../utils/options";
-import { ChartTab } from "./chart-tab";
-import { ResolvedFinancialsTab } from "./financials/tab";
-import { OverviewTab } from "./overview-tab";
 import {
-  buildVisibleDetailTabs,
-  getTickerDetailPaneSettings,
+  buildVisibleTickerResearchTabs,
+  getTickerResearchPaneSettings,
   resolveLockedTabId,
 } from "./settings";
 
@@ -33,14 +29,14 @@ function sameStringSet(left: Set<string>, right: Set<string>): boolean {
   return true;
 }
 
-function registryDetailTabsSnapshot(registry: ReturnType<typeof getSharedRegistry>): string {
+function registryTickerResearchTabsSnapshot(registry: ReturnType<typeof getSharedRegistry>): string {
   if (!registry) return "";
-  return [...registry.detailTabs.values()]
-    .map((tab) => `${tab.id}:${tab.name}:${tab.order}:${registry.getDetailTabPluginId?.(tab.id) ?? ""}`)
+  return [...registry.tickerResearchTabs.values()]
+    .map((tab) => `${tab.id}:${tab.name}:${tab.order}:${registry.getTickerResearchTabPluginId?.(tab.id) ?? ""}`)
     .join("\0");
 }
 
-function useRegistryDetailTabsSnapshot(registry: ReturnType<typeof getSharedRegistry>): string {
+function useRegistryTickerResearchTabsSnapshot(registry: ReturnType<typeof getSharedRegistry>): string {
   const subscribe = useCallback((onStoreChange: () => void) => {
     const events = registry?.events;
     if (!events) return () => {};
@@ -52,11 +48,11 @@ function useRegistryDetailTabsSnapshot(registry: ReturnType<typeof getSharedRegi
     };
   }, [registry]);
 
-  const getSnapshot = useCallback(() => registryDetailTabsSnapshot(registry), [registry]);
+  const getSnapshot = useCallback(() => registryTickerResearchTabsSnapshot(registry), [registry]);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
-export function TickerDetailPane({ focused, width, height }: PaneProps) {
+export function TickerResearchPane({ focused, width, height }: PaneProps) {
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
   const paneInstance = usePaneInstance();
@@ -84,26 +80,25 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
 
   const { collectionId } = usePaneCollection();
   const [activeTabId, setActiveTabId] = usePaneStateValue<string>("activeTabId", "overview");
-  const [chartInteractive, setChartInteractive] = useState(false);
   const [pluginCaptured, setPluginCaptured] = useState(false);
   const [mountedTabIds, setMountedTabIds] = useState<Set<string>>(() => new Set());
-  const paneSettings = getTickerDetailPaneSettings(paneInstance?.settings);
+  const paneSettings = getTickerResearchPaneSettings(paneInstance?.settings);
   const hasOptionsChain = !!resolveOptionsTarget(ticker)?.effectiveTicker;
   const collectionTickerCount = useAppSelector((state) => getCollectionTickerCount(state, collectionId));
   const collectionName = useAppSelector((state) => getCollectionName(state, collectionId));
 
   const disabledPlugins = config.disabledPlugins;
   const registry = getSharedRegistry();
-  const detailTabsSnapshot = useRegistryDetailTabsSnapshot(registry);
-  const pluginTabs = useMemo<DetailTabDef[]>(() => (
+  const tickerResearchTabsSnapshot = useRegistryTickerResearchTabsSnapshot(registry);
+  const tickerResearchTabs = useMemo<TickerResearchTabDef[]>(() => (
     registry
-      ? [...registry.detailTabs.values()].filter((tab) => {
-        const ownerId = registry.getDetailTabPluginId?.(tab.id);
+      ? [...registry.tickerResearchTabs.values()].filter((tab) => {
+        const ownerId = registry.getTickerResearchTabPluginId?.(tab.id);
         return !ownerId || !disabledPlugins.includes(ownerId);
       })
       : []
-  ), [disabledPlugins, registry, detailTabsSnapshot]);
-  const allTabs = buildVisibleDetailTabs(pluginTabs, ticker, financials, {
+  ), [disabledPlugins, registry, tickerResearchTabsSnapshot]);
+  const allTabs = buildVisibleTickerResearchTabs(tickerResearchTabs, ticker, financials, {
     config,
     hasOptionsChain,
   });
@@ -125,35 +120,13 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
     return next;
   }, [mountedTabIds, resolvedTabId, visibleTabIds]);
 
-  const stateRef = useRef({
-    focused,
-    chartInteractive,
-    pluginCaptured,
-    activeTabId: resolvedTabId,
-  });
-  stateRef.current = {
-    focused,
-    chartInteractive,
-    pluginCaptured,
-    activeTabId: resolvedTabId,
-  };
-
-  const setChartInteractiveEager = useCallback((value: boolean) => {
-    stateRef.current = { ...stateRef.current, chartInteractive: value };
-    setChartInteractive(value);
-  }, []);
-
   const handlePluginCapture = useCallback((capturing: boolean) => {
-    stateRef.current = { ...stateRef.current, pluginCaptured: capturing };
     setPluginCaptured(capturing);
     dispatch({ type: "SET_INPUT_CAPTURED", captured: capturing });
   }, [dispatch]);
   const ignorePluginCapture = useCallback(() => {}, []);
 
   useEffect(() => {
-    if (resolvedTabId !== "chart") {
-      setChartInteractive(false);
-    }
     setPluginCaptured(false);
     dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
   }, [resolvedTabId, dispatch]);
@@ -170,27 +143,6 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
       return sameStringSet(current, next) ? current : next;
     });
   }, [resolvedTabId, visibleTabIds]);
-
-  const handleKeyboard = useCallback((event: { name?: string }) => {
-    const currentState = stateRef.current;
-    if (!currentState.focused || currentState.pluginCaptured) return;
-
-    if (currentState.activeTabId === "chart") {
-      const isEnter = event.name === "enter" || event.name === "return";
-      if (event.name === "escape" && currentState.chartInteractive) {
-        setChartInteractiveEager(false);
-        return;
-      }
-      if (isEnter && !currentState.chartInteractive) {
-        setChartInteractiveEager(true);
-        return;
-      }
-      if (currentState.chartInteractive) return;
-    }
-
-  }, [setChartInteractiveEager]);
-
-  useShortcut(handleKeyboard);
 
   if (!ticker) {
     const isEmptyFollowCollection = paneInstance?.binding?.kind === "follow" && !!collectionId && collectionTickerCount === 0;
@@ -212,76 +164,14 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
           tabs={allTabs.map((tab) => ({ label: tab.name, value: tab.id }))}
           activeValue={resolvedTabId}
           onSelect={setActiveTabId}
-          focused={focused && !pluginCaptured && !(resolvedTabId === "chart" && chartInteractive)}
+          focused={focused && !pluginCaptured}
         />
       )}
 
       <Box height={contentHeight} flexGrow={1} flexBasis={0} overflow="hidden">
-        {renderedTabIds.has("overview") && (
-          <Box
-            key="overview"
-            visible={resolvedTabId === "overview"}
-            flexDirection="column"
-            flexGrow={1}
-            flexBasis={0}
-            height={contentHeight}
-            overflow="hidden"
-          >
-            <PaneFooterScope active={resolvedTabId === "overview"}>
-              <OverviewTab
-                width={width}
-                ticker={ticker}
-                financials={financials}
-              />
-            </PaneFooterScope>
-          </Box>
-        )}
-        {renderedTabIds.has("financials") && (
-          <Box
-            key="financials"
-            visible={resolvedTabId === "financials"}
-            flexDirection="column"
-            flexGrow={1}
-            flexBasis={0}
-            height={contentHeight}
-            overflow="hidden"
-          >
-            <PaneFooterScope active={resolvedTabId === "financials"}>
-              <ResolvedFinancialsTab
-                focused={focused && resolvedTabId === "financials"}
-                financials={financials}
-              />
-            </PaneFooterScope>
-          </Box>
-        )}
-        {renderedTabIds.has("chart") && (
-          <Box
-            key="chart"
-            visible={resolvedTabId === "chart"}
-            flexDirection="column"
-            flexGrow={1}
-            flexBasis={0}
-            height={contentHeight}
-            overflow="hidden"
-          >
-            <PaneFooterScope active={resolvedTabId === "chart"}>
-              <ChartTab
-                width={width}
-                height={contentHeight}
-                focused={focused && resolvedTabId === "chart"}
-                interactive={chartInteractive}
-                axisMode={paneSettings.chartAxisMode}
-                onActivate={() => setChartInteractiveEager(true)}
-                ticker={ticker}
-                financials={financials}
-              />
-            </PaneFooterScope>
-          </Box>
-        )}
-
-        {pluginTabs.map((tab) => {
+        {tickerResearchTabs.map((tab) => {
           if (!renderedTabIds.has(tab.id) || !visibleTabIds.has(tab.id)) return null;
-          const PluginTab = tab.component;
+          const TickerResearchTab = tab.component;
           const isActive = resolvedTabId === tab.id;
           return (
             <Box
@@ -294,7 +184,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
               overflow="hidden"
             >
               <PaneFooterScope active={isActive}>
-                <PluginTab
+                <TickerResearchTab
                   width={width}
                   height={contentHeight}
                   focused={focused && isActive}

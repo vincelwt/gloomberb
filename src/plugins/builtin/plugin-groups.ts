@@ -12,8 +12,10 @@ import { optionsPlugin } from "./options";
 import { researchPlugin } from "./research";
 import { secPlugin } from "./sec";
 import { sectorsPlugin } from "./sectors";
+import { tickerDetailPlugin } from "./ticker-detail";
 import { registerYieldCurveFeature } from "./yield-curve";
 import { worldIndicesPlugin } from "./world-indices";
+import { brokerManagerPlugin } from "./broker-manager";
 
 type PluginGroupOptions = Pick<
   GloomPlugin,
@@ -51,17 +53,28 @@ function createPluginGroup(options: PluginGroupOptions): GloomPlugin {
   };
 }
 
-export const companyResearchPlugin = createPluginGroup({
-  id: "company-research",
-  name: "Company Research",
-  description: "Options, SEC filings, ownership, insider activity, analyst research, and corporate actions.",
+export const tickerResearchPlugin = createPluginGroup({
+  id: "ticker-research",
+  name: "Ticker Research",
+  description: "Company research workspace: overview, charts, financials, filings, ownership, options, analyst research, and events.",
   toggleable: true,
   plugins: [
+    tickerDetailPlugin,
     optionsPlugin,
     researchPlugin,
     holdersPlugin,
     secPlugin,
     insiderPlugin,
+  ],
+});
+
+export const brokerPlugin = createPluginGroup({
+  id: "broker",
+  name: "Broker",
+  description: "Broker profiles, account sync, and connection status.",
+  toggleable: true,
+  plugins: [
+    brokerManagerPlugin,
   ],
 });
 

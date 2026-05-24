@@ -66,7 +66,7 @@ describe("TickerBadgeText", () => {
     expect(frame).not.toContain("TSLA -5%");
   });
 
-  test("opens the ticker detail pane when a badge is clicked", async () => {
+  test("opens the Ticker Research pane when a badge is clicked", async () => {
     const opened: string[] = [];
     testSetup = await testRender(
       <TickerBadgeText

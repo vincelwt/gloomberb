@@ -258,12 +258,15 @@ function buildPluginToggleItems({
   pluginRegistry: PluginRegistry;
   query: string;
 }): ResultItem[] {
-  const normalizedQuery = query.toLowerCase();
+  const normalizedQuery = query.trim().toLowerCase();
+  const pluginQuery = normalizedQuery === "plugin" || normalizedQuery === "plugins"
+    ? ""
+    : normalizedQuery;
   const toggleable = [...pluginRegistry.allPlugins.values()].filter((plugin) => plugin.toggleable);
-  const filtered = normalizedQuery
+  const filtered = pluginQuery
     ? toggleable.filter((plugin) => (
-      plugin.name.toLowerCase().includes(normalizedQuery)
-      || plugin.id.includes(normalizedQuery)
+      plugin.name.toLowerCase().includes(pluginQuery)
+      || plugin.id.includes(pluginQuery)
     ))
     : toggleable;
 

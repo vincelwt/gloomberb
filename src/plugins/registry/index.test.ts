@@ -202,11 +202,11 @@ describe("PluginRegistry capabilities", () => {
   });
 });
 
-describe("PluginRegistry detail tabs", () => {
-  test("tracks the owning plugin for registered detail tabs", async () => {
+describe("PluginRegistry ticker research tabs", () => {
+  test("tracks the owning plugin for registered ticker research tabs", async () => {
     const registry = createRegistry();
-    await registry.register(plugin("company-research", (ctx) => {
-      ctx.registerDetailTab({
+    await registry.register(plugin("ticker-research", (ctx) => {
+      ctx.registerTickerResearchTab({
         id: "sec",
         name: "SEC",
         order: 45,
@@ -214,10 +214,10 @@ describe("PluginRegistry detail tabs", () => {
       });
     }));
 
-    expect(registry.getDetailTabPluginId("sec")).toBe("company-research");
+    expect(registry.getTickerResearchTabPluginId("sec")).toBe("ticker-research");
 
-    registry.unregister("company-research");
-    expect(registry.getDetailTabPluginId("sec")).toBeUndefined();
+    registry.unregister("ticker-research");
+    expect(registry.getTickerResearchTabPluginId("sec")).toBeUndefined();
   });
 });
 

@@ -197,6 +197,20 @@ describe("CommandBar", () => {
     expect(frame).toContain("SA");
   });
 
+  test("treats plugin route trigger words as an empty plugin filter", async () => {
+    testSetup = await testRender(<CommandBarHarness query="PL plugins" />, {
+      width: 80,
+      height: 18,
+    });
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("News");
+    expect(frame).toContain("Notes");
+    expect(frame).not.toContain("No plugins match");
+  });
+
   test("opens plugin command shortcut arguments in the wizard for confirmation", async () => {
     const calls: Array<Record<string, string> | undefined> = [];
 

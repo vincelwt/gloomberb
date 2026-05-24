@@ -12,7 +12,7 @@ import {
 } from "../../../state/app/context";
 import { createTestDataProvider } from "../../../test-support/data-provider";
 import { ThemeProvider, useThemeId } from "../../../theme/theme-context";
-import { cloneLayout, createDefaultConfig, type AppConfig } from "../../../types/config";
+import { cloneLayout, createDefaultConfig, TICKER_RESEARCH_PANE_ID, type AppConfig } from "../../../types/config";
 import type { DataProvider } from "../../../types/data-provider";
 import type { TickerRecord } from "../../../types/ticker";
 import type { PluginRegistry } from "../../../plugins/registry";
@@ -127,9 +127,9 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
         component: () => null,
         defaultPosition: "left",
       }],
-      ["ticker-detail", {
-        id: "ticker-detail",
-        name: "Ticker Detail",
+      [TICKER_RESEARCH_PANE_ID, {
+        id: TICKER_RESEARCH_PANE_ID,
+        name: "Ticker Research",
         component: () => null,
         defaultPosition: "right",
       }],
@@ -171,9 +171,9 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
       }],
       ["new-ticker-detail-pane", {
         id: "new-ticker-detail-pane",
-        paneId: "ticker-detail",
-        label: "New Ticker Detail Pane",
-        description: "Open another detail pane",
+        paneId: TICKER_RESEARCH_PANE_ID,
+        label: "Ticker Research",
+        description: "Open another research pane",
       }],
       ["new-chat-pane", {
         id: "new-chat-pane",

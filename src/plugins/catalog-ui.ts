@@ -1,6 +1,5 @@
 import type { GloomPlugin } from "../types/plugin";
 import { portfolioListPlugin } from "./builtin/portfolio-list";
-import { tickerDetailPlugin } from "./builtin/ticker-detail";
 import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
 import { aiPlugin } from "./builtin/ai";
@@ -12,22 +11,21 @@ import { layoutManagerPlugin } from "./builtin/layout-manager";
 import { predictionMarketsPlugin } from "./prediction-markets";
 import { analyticsPlugin } from "./builtin/analytics";
 import { alertsPlugin } from "./builtin/alerts";
-import { brokerManagerPlugin } from "./builtin/broker-manager";
 import {
-  companyResearchPlugin,
+  brokerPlugin,
   macroPlugin,
   marketOverviewPlugin,
+  tickerResearchPlugin,
 } from "./builtin/plugin-groups";
 
 export const uiBuiltinPlugins: GloomPlugin[] = [
   gloomberbCloudPlugin,
   portfolioListPlugin,
-  tickerDetailPlugin,
+  tickerResearchPlugin,
+  brokerPlugin,
   ibkrPlugin,
-  brokerManagerPlugin,
   layoutManagerPlugin,
   newsPlugin,
-  companyResearchPlugin,
   notesPlugin,
   aiPlugin,
   changelogPlugin,

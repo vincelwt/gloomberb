@@ -1,6 +1,6 @@
 import type { Portfolio, Watchlist } from "./ticker";
 
-export const CURRENT_CONFIG_VERSION = 17;
+export const CURRENT_CONFIG_VERSION = 19;
 
 type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc" | "hlc";
 type ChartRendererPreference = "auto" | "kitty" | "braille";
@@ -138,12 +138,30 @@ export interface AppConfig {
   onboardingComplete?: boolean;
 }
 
+export const TICKER_RESEARCH_PANE_ID = "ticker-research";
+export const LEGACY_TICKER_DETAIL_PANE_ID = "ticker-detail";
+
+export function normalizePaneId(paneId: string): string {
+  return paneId === LEGACY_TICKER_DETAIL_PANE_ID ? TICKER_RESEARCH_PANE_ID : paneId;
+}
+
 const TICKER_PANE_IDS = new Set([
-  "ticker-detail",
+  TICKER_RESEARCH_PANE_ID,
+  LEGACY_TICKER_DETAIL_PANE_ID,
+  "financial-analysis",
+  "ticker-chart",
   "quote-monitor",
-  "news",
+  "ticker-news",
   "notes",
   "options",
+  "holders",
+  "sec",
+  "insider",
+  "analyst-research",
+  "corporate-actions",
+  "earnings-estimates",
+  "historical-prices",
+  "fundamental-graph",
   "ibkr-trading",
 ]);
 
@@ -203,7 +221,7 @@ const DEFAULT_HOME_LAYOUT: LayoutConfig = {
     },
     {
       instanceId: "ticker-detail:main",
-      paneId: "ticker-detail",
+      paneId: TICKER_RESEARCH_PANE_ID,
       settings: {
         hideTabs: false,
         lockedTabId: "overview",
@@ -214,7 +232,7 @@ const DEFAULT_HOME_LAYOUT: LayoutConfig = {
     },
     {
       instanceId: "ticker-detail:nvda",
-      paneId: "ticker-detail",
+      paneId: TICKER_RESEARCH_PANE_ID,
       title: "NVDA",
       settings: {
         hideTabs: false,
@@ -412,10 +430,12 @@ export function isFixedTickerPane(instance: PaneInstanceConfig): boolean {
 }
 
 export function findPrimaryPaneInstance(layout: LayoutConfig, paneId: string): PaneInstanceConfig | undefined {
-  const instances = layout.instances.filter((instance) => instance.paneId === paneId);
+  const normalizedPaneId = normalizePaneId(paneId);
+  const instances = layout.instances.filter((instance) => instance.paneId === normalizedPaneId);
   if (instances.length === 0) return undefined;
-  if (!isTickerPaneId(paneId)) return instances[0];
+  if (!isTickerPaneId(normalizedPaneId)) return instances[0];
   return instances.find((instance) => instance.instanceId === `${paneId}:main` && instance.binding?.kind !== "fixed")
+    ?? instances.find((instance) => instance.instanceId === `${normalizedPaneId}:main` && instance.binding?.kind !== "fixed")
     ?? instances.find((instance) => instance.binding?.kind !== "fixed");
 }
 
@@ -444,9 +464,10 @@ export function createPaneInstance(
   paneId: string,
   options: Partial<PaneInstanceConfig> = {},
 ): PaneInstanceConfig {
+  const normalizedPaneId = normalizePaneId(paneId);
   return {
-    instanceId: options.instanceId ?? createPaneInstanceId(paneId),
-    paneId,
+    instanceId: options.instanceId ?? createPaneInstanceId(normalizedPaneId),
+    paneId: normalizedPaneId,
     title: options.title,
     binding: clonePaneBinding(options.binding) ?? { kind: "none" },
     params: options.params ? { ...options.params } : undefined,

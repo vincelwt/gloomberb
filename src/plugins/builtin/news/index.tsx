@@ -178,7 +178,7 @@ export const newsPlugin: GloomPlugin = {
   ],
 
   setup(ctx) {
-    ctx.registerDetailTab({
+    ctx.registerTickerResearchTab({
       id: "news",
       name: "News",
       order: 40,

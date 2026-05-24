@@ -51,7 +51,7 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | `FXC` | Major FX cross rates |
 | `FNG` | Fear and greed market gauge |
 | `ALRT` | Price alerts |
-| `CHAT` | Gloomberb Cloud chat |
+| `CHAT` | Gloom Cloud chat |
 | `PF` | Portfolio and watchlist workspace |
 | `N` | News feed |
 | `CN <ticker>` | Ticker news |

@@ -132,7 +132,7 @@ function buildRouteListState(options: BuildRouteListStateOptions): ListScreenSta
         return {
           kind: "mode",
           title: "Security Description",
-          subtitle: "Resolve a ticker, then open its detail pane.",
+          subtitle: "Resolve a ticker, then open its Ticker Research pane.",
           query: currentRoute.query,
           selectedIdx: currentRoute.selectedIdx,
           hoveredIdx: currentRoute.hoveredIdx,

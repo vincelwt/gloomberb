@@ -19,7 +19,7 @@ export const notesPlugin: GloomPlugin = {
       notesFiles.delete(symbol).catch(() => {});
     });
 
-    ctx.registerDetailTab({
+    ctx.registerTickerResearchTab({
       id: "notes",
       name: "Notes",
       order: 50,

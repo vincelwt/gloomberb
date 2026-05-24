@@ -8,7 +8,6 @@ import {
   type DataTableKeyEvent,
 } from "../../../components";
 import type { AnalystEstimateRecord, AnalystResearchData } from "../../../types/financials";
-import type { PaneProps } from "../../../types/plugin";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCompact, formatNumber, formatPercent } from "../../../utils/format";
 import { useAssetData, usePluginPaneState } from "../../runtime";
@@ -70,7 +69,7 @@ function formatEstimateValue(row: EstimateRow, value: number | undefined): strin
   return row.type === "Revenue" ? formatCompact(value) : formatNumber(value, 2);
 }
 
-export function EarningsEstimatesPane({ focused, width, height }: PaneProps) {
+export function EarningsEstimatesPane({ focused, width, height }: { focused: boolean; width: number; height: number }) {
   const dataProvider = useAssetData();
   const { symbol, exchange } = useBoundTicker();
   const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>("selectedIdx", 0);

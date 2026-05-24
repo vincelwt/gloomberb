@@ -1,6 +1,6 @@
 # Building Plugins
 
-Gloomberb is built on a plugin architecture — core features like the portfolio list and ticker detail view are plugins themselves. You can extend the app by writing your own.
+Gloomberb is built on a plugin architecture — core features like the portfolio list and Ticker Research workspace are plugins themselves. You can extend the app by writing your own.
 
 ## Installing plugins
 
@@ -71,9 +71,9 @@ Use `setup()` for interactive runtime registration, and `cliCommands` for root-l
 
 ## Renderer-neutral UI
 
-Plugins should treat Gloomberb's UI APIs as the renderer contract. Official plugins may render panes, detail tabs, and slot widgets with React, but plugin UI should import shared Gloom APIs such as `gloomberb/ui`, `gloomberb/react`, or the plugin runtime hooks instead of importing OpenTUI, Electrobun, DOM, or terminal renderer packages directly. Renderer-specific details like terminal keyboard events, kitty images, DOM pointer behavior, dialogs, and notifications belong in the renderer adapters.
+Plugins should treat Gloomberb's UI APIs as the renderer contract. Official plugins may render panes, Ticker Research tabs, and slot widgets with React, but plugin UI should import shared Gloom APIs such as `gloomberb/ui`, `gloomberb/react`, or the plugin runtime hooks instead of importing OpenTUI, Electrobun, DOM, or terminal renderer packages directly. Renderer-specific details like terminal keyboard events, kitty images, DOM pointer behavior, dialogs, and notifications belong in the renderer adapters.
 
-React plugin panes and detail tabs are wrapped in a plugin render context. Use plugin runtime hooks for app services from render code.
+React plugin panes and Ticker Research tabs are wrapped in a plugin render context. Use plugin runtime hooks for app services from render code.
 
 The `setup()` function receives a context object with these capabilities:
 
@@ -81,7 +81,7 @@ The `setup()` function receives a context object with these capabilities:
 
 | Method | What it does |
 |--------|-------------|
-| `ctx.registerDetailTab(tab)` | Add a tab to the ticker detail pane |
+| `ctx.registerTickerResearchTab(tab)` | Add a tab to the Ticker Research pane |
 | `ctx.registerCommand(cmd)` | Add a command to the command bar |
 | `ctx.registerColumn(col)` | Add a custom column to the ticker list |
 | `ctx.registerPane(pane)` | Add a full pane (left/right/bottom) |
@@ -317,8 +317,8 @@ ctx.configState.keys(); // ["apiKey"]
 ctx.selectTicker("AAPL");              // Select ticker + focus right panel
 ctx.selectTicker("AAPL", "my-pane:1"); // Select in a specific pane
 ctx.switchPanel("left");               // Switch active panel
-ctx.switchTab("chart");                // Switch detail tab by id
-ctx.switchTab("chart", "detail:1");    // Switch tab in a specific pane
+ctx.switchTab("chart");                // Switch Ticker Research tab by id
+ctx.switchTab("chart", "ticker-research:1"); // Switch tab in a specific pane
 ctx.openCommandBar();                  // Open the command bar
 ctx.openCommandBar("export");          // Open with a pre-filled query
 ctx.openPaneSettings();                // Open settings for the focused pane
@@ -326,8 +326,8 @@ ctx.openPaneSettings("my-pane:1");     // Open settings for a specific pane
 ctx.showPane("my-pane");               // Show a hidden pane
 ctx.hidePane("my-pane");               // Hide a pane
 ctx.focusPane("my-pane");              // Move focus to a pane
-ctx.pinTicker("AAPL");                 // Open or focus a fixed detail pane for AAPL
-ctx.pinTicker("AAPL", { floating: true, paneType: "ticker-detail", forceNewPane: true });
+ctx.pinTicker("AAPL");                 // Open or focus a fixed Ticker Research pane for AAPL
+ctx.pinTicker("AAPL", { floating: true, paneType: "ticker-research", forceNewPane: true });
 ctx.createPaneFromTemplate("quote-monitor-new", { symbol: "AAPL" });
 ```
 
@@ -602,7 +602,7 @@ Available components:
 - `Spinner` — loading indicator
 - `PriceSelectorDialog` — ticker price picker dialog
 - `PaneFooterBar` — shared pane footer renderer used by the shell
-- `usePaneFooter(registrationId, factory, deps)` — register pane footer info and action hints from a pane or detail tab
+- `usePaneFooter(registrationId, factory, deps)` — register pane footer info and action hints from a pane or Ticker Research tab
 - `usePaneHints(registrationId, factory, deps)` — register only footer hints
 - `useExternalLinkFooter(options)` — register footer help for an external link
 - `colors` — theme color palette
@@ -678,12 +678,12 @@ interface PaneProps {
 }
 ```
 
-## Detail tab props
+## Ticker Research tab props
 
 Tab components receive these props:
 
 ```typescript
-interface DetailTabProps {
+interface TickerResearchTabProps {
   width: number;
   height: number;
   focused: boolean;
@@ -693,10 +693,10 @@ interface DetailTabProps {
 
 Call `onCapture(true)` when your tab needs exclusive keyboard input (e.g., a text editor or chat input) and `onCapture(false)` when done, so global shortcuts keep working.
 
-Detail tabs can control their visibility based on the current ticker:
+Ticker Research tabs can control their visibility based on the current ticker:
 
 ```typescript
-ctx.registerDetailTab({
+ctx.registerTickerResearchTab({
   id: "options",
   name: "Options",
   order: 50,
@@ -707,17 +707,17 @@ ctx.registerDetailTab({
 });
 ```
 
-## Example: adding a detail tab
+## Example: adding a Ticker Research tab
 
-The simplest plugin type. This adds a new tab to the right-side detail pane:
+The simplest plugin type. This adds a new tab to the Ticker Research pane:
 
 ```typescript
 import React from "react";
 import { Box, Text } from "gloomberb/ui";
-import type { GloomPlugin, DetailTabProps } from "gloomberb/types/plugin";
+import type { GloomPlugin, TickerResearchTabProps } from "gloomberb/types/plugin";
 import { EmptyState, usePaneTicker, colors } from "gloomberb/components";
 
-function SentimentTab({ width, height, focused }: DetailTabProps) {
+function SentimentTab({ width, height, focused }: TickerResearchTabProps) {
   const { ticker } = usePaneTicker();
   if (!ticker) {
     return (
@@ -753,7 +753,7 @@ export default {
   description: "View market sentiment for each ticker",
   toggleable: true,
   setup(ctx) {
-    ctx.registerDetailTab({
+    ctx.registerTickerResearchTab({
       id: "sentiment",
       name: "Sentiment",
       order: 60,
@@ -910,7 +910,7 @@ export const myPlugin: GloomPlugin = {
   version: "1.0.0",
   slots: {
     "status:widget": () => <Text> LIVE</Text>,
-    "detail:section": ({ ticker, financials }) => (
+    "ticker-research:section": ({ ticker, financials }) => (
       <Box>
         <Text>Extra info for {ticker.metadata.ticker}</Text>
       </Box>
@@ -923,8 +923,8 @@ Available slots:
 
 | Slot | Props | Where it renders |
 |------|-------|-----------------|
-| `detail:tab` | `{ ticker, financials }` | Tab in the detail pane |
-| `detail:section` | `{ ticker, financials }` | Section within detail view |
+| `ticker-research:tab` | `{ ticker, financials }` | Tab in the Ticker Research pane |
+| `ticker-research:section` | `{ ticker, financials }` | Section within the Ticker Research view |
 | `list:column` | `{ ticker, financials }` | Column in the ticker list |
 | `command:extra` | `{ query }` | Extra items in command bar |
 | `command:preset` | `{}` | Preset commands |
@@ -936,7 +936,7 @@ Available slots:
 ## Tips
 
 - Look at the built-in plugins in `src/plugins/builtin/` for real-world examples
-- Use `order` on detail tabs to control position (core tabs use 10, 20, 30)
+- Use `order` on Ticker Research tabs to control position (core tabs use 10, 20, 30)
 - Toggleable plugins can be enabled/disabled by users from settings (`Ctrl+,`)
 - The terminal renderer is backed by [OpenTUI](https://opentui.com/) packages such as `@opentui/core` and `@opentui/react`; plugin UI should stay on `gloomberb/ui` and `gloomberb/components`
 - Use `ctx.storage` to persist data across app restarts

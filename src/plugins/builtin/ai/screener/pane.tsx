@@ -1,6 +1,7 @@
 import { Box, Text } from "../../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PaneProps } from "../../../../types/plugin";
+import { TICKER_RESEARCH_PANE_ID } from "../../../../types/config";
 import {
   useAppDispatch,
   useAppSelector,
@@ -267,7 +268,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
     event.stopPropagation?.();
     pinTicker(cursorSymbol, {
       floating: !!event.shift,
-      paneType: "ticker-detail",
+      paneType: TICKER_RESEARCH_PANE_ID,
     });
     return true;
   }, [cursorSymbol, pinTicker]);
@@ -402,7 +403,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
           onHeaderClick={handleHeaderClick}
           onRootKeyDown={handleTableKeyDown}
           onRowActivate={(ticker) => {
-            pinTicker(ticker.metadata.ticker, { floating: true, paneType: "ticker-detail" });
+            pinTicker(ticker.metadata.ticker, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
           }}
         />
       )}

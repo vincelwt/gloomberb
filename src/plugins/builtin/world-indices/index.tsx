@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataTableView } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { useAssetData, usePluginTickerActions } from "../../runtime";
 import { WORLD_INDICES, REGION_LABELS, getIndicesByRegion } from "./indices";
 import { useWorldIndicesFooter } from "./footer";
@@ -132,7 +133,7 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
   const openSelected = useCallback((flatIdx: number) => {
     const row = flatRows[flatIdx];
     if (!row || row.type !== "row") return;
-    pinTicker(row.entry.symbol, { floating: true, paneType: "ticker-detail" });
+    pinTicker(row.entry.symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
   }, [flatRows, pinTicker]);
 
   const selectFlatIndex = useCallback((flatIdx: number) => {

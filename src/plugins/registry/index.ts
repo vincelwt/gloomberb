@@ -15,7 +15,6 @@ import type {
   BrokerInstanceUpdateOptions,
   CommandDef,
   CustomColumnDef,
-  DetailTabDef,
   GloomPlugin,
   GloomSlots,
   KeyboardShortcut,
@@ -24,6 +23,7 @@ import type {
   PaneTemplateDef,
   PinTickerOptions,
   TickerAction,
+  TickerResearchTabDef,
 } from "../../types/plugin";
 import type { ContextMenuContext, ContextMenuItem } from "../../types/context-menu";
 import type { TickerRecord } from "../../types/ticker";
@@ -31,7 +31,7 @@ import { EventBus } from "../event-bus";
 import { resolvePaneInstance } from "../../types/config";
 import { debugLog } from "../../utils/debug-log";
 import {
-  wrapDetailTabDefWithRuntime,
+  wrapTickerResearchTabDefWithRuntime,
   wrapPaneDefWithRuntime,
   type PluginRuntimeAccess,
 } from "../runtime";
@@ -185,7 +185,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
     this.events = new EventBus();
     this.contributions = new RegistryContributions({
       wrapPaneDef: (pluginId, pane) => wrapPaneDefWithRuntime(pluginId, pane, this),
-      wrapDetailTabDef: (pluginId, tab) => wrapDetailTabDefWithRuntime(pluginId, tab, this),
+      wrapTickerResearchTabDef: (pluginId, tab) => wrapTickerResearchTabDefWithRuntime(pluginId, tab, this),
       wrapBrokerAdapter: this.wrapBrokerAdapter,
     });
 
@@ -207,7 +207,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   get commands(): ReadonlyMap<string, CommandDef> { return this.contributions.commandsMap; }
   get columns(): ReadonlyMap<string, CustomColumnDef> { return this.contributions.columnsMap; }
   get brokers(): ReadonlyMap<string, BrokerAdapter> { return this.contributions.brokersMap; }
-  get detailTabs(): ReadonlyMap<string, DetailTabDef> { return this.contributions.detailTabsMap; }
+  get tickerResearchTabs(): ReadonlyMap<string, TickerResearchTabDef> { return this.contributions.tickerResearchTabsMap; }
   get shortcuts(): ReadonlyMap<string, KeyboardShortcut> { return this.contributions.shortcutsMap; }
   get tickerActions(): ReadonlyMap<string, TickerAction> { return this.contributions.tickerActionsMap; }
   get allPlugins(): ReadonlyMap<string, GloomPlugin> { return this.plugins; }
@@ -343,8 +343,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
     return this.contributions.shortcutOwners.get(shortcutId);
   }
 
-  getDetailTabPluginId(tabId: string): string | undefined {
-    return this.contributions.detailTabOwners.get(tabId);
+  getTickerResearchTabPluginId(tabId: string): string | undefined {
+    return this.contributions.tickerResearchTabOwners.get(tabId);
   }
 
   isPaneFloating(paneId: string): boolean {

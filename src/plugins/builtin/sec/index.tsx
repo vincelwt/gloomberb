@@ -331,7 +331,7 @@ export const secPlugin: GloomPlugin = {
   ],
 
   setup(ctx) {
-    ctx.registerDetailTab({
+    ctx.registerTickerResearchTab({
       id: "sec",
       name: "SEC",
       order: 45,

@@ -9,6 +9,7 @@ import {
 import type { PluginRegistry } from "../../plugins/registry";
 import { findFixedTickerPaneForSymbol } from "../../plugins/ticker-navigation";
 import type { AppAction, AppState } from "../../state/app/context";
+import { TICKER_RESEARCH_PANE_ID, normalizePaneId } from "../../types/config";
 import type {
   LayoutConfig,
   PaneBinding,
@@ -80,7 +81,7 @@ export function useAppTickerOpenRuntime({
   }, [dispatch, pluginRegistry.events, stateRef]);
 
   const placePinnedTickerTarget = useCallback((target: TickerOpenTarget, options?: PinTickerOptions) => {
-    const paneType = options?.paneType ?? "ticker-detail";
+    const paneType = normalizePaneId(options?.paneType ?? TICKER_RESEARCH_PANE_ID);
     const paneDef = pluginRegistry.panes.get(paneType);
     if (!paneDef) return;
 

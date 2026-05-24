@@ -7,6 +7,7 @@ import {
 import {
   findPaneInstance,
   isTickerPaneId,
+  normalizePaneId,
   resolvePaneInstance,
   type LayoutConfig,
   type PaneInstanceConfig,
@@ -23,7 +24,9 @@ export function isTickerContextPaneInstance(instance: PaneInstanceConfig): boole
 }
 
 export function resolvePaneTarget(layout: LayoutConfig, paneId: string): string | null {
-  return resolvePaneInstance(layout, paneId)?.instanceId ?? null;
+  return resolvePaneInstance(layout, normalizePaneId(paneId))?.instanceId
+    ?? resolvePaneInstance(layout, paneId)?.instanceId
+    ?? null;
 }
 
 export function resolvePanelForPane({

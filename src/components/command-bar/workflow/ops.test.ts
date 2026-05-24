@@ -67,6 +67,59 @@ describe("createPaneTemplateOrThrow", () => {
     expect(buildCalls).toHaveLength(0);
     expect(placeCalls).toHaveLength(0);
   });
+
+  test("passes pane template instance ids through to pane creation", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+    const state = createInitialState(config);
+    const buildCalls: unknown[] = [];
+
+    await createPaneTemplateOrThrow("financial-analysis-pane", undefined, {
+      dataProvider: makeDataProvider() as any,
+      tickerRepository: makeTickerRepository() as any,
+      dispatch: () => {},
+      getState: () => state,
+      pluginRegistry: {
+        paneTemplates: new Map([
+          ["financial-analysis-pane", {
+            id: "financial-analysis-pane",
+            paneId: "financial-analysis",
+            label: "Financial Analysis",
+            description: "Open financial statements",
+            createInstance: () => ({
+              instanceId: "financial-analysis:AAPL",
+              title: "FA AAPL",
+              binding: { kind: "fixed", symbol: "AAPL" },
+              placement: "floating",
+            }),
+          }],
+        ]),
+        panes: new Map([
+          ["financial-analysis", {
+            id: "financial-analysis",
+            name: "Financials",
+            component: () => null,
+            defaultPosition: "right",
+          }],
+        ]),
+        getPaneTemplatePluginId: () => undefined,
+        events: { emit: () => {} },
+      } as any,
+      buildPaneInstance: (...args) => {
+        buildCalls.push(args);
+        return {
+          instanceId: "financial-analysis:AAPL",
+          paneId: "financial-analysis",
+          title: "FA AAPL",
+        } as any;
+      },
+      placePaneInstance: () => {},
+    });
+
+    expect(buildCalls[0]).toEqual([
+      "financial-analysis",
+      expect.objectContaining({ instanceId: "financial-analysis:AAPL" }),
+    ]);
+  });
 });
 
 describe("applyPaneSettingFieldValue", () => {

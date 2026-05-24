@@ -7,7 +7,7 @@ import {
   createInitialState,
   PaneInstanceProvider,
 } from "../../../state/app/context";
-import { cloneLayout, createDefaultConfig } from "../../../types/config";
+import { cloneLayout, createDefaultConfig, TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { TickerRecord } from "../../../types/ticker";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../runtime";
@@ -144,8 +144,8 @@ describe("correlationPlugin", () => {
     });
 
     expect(opened).toEqual([
-      { symbol: "AAPL", options: { floating: true, paneType: "ticker-detail" } },
-      { symbol: "MSFT", options: { floating: true, paneType: "ticker-detail" } },
+      { symbol: "AAPL", options: { floating: true, paneType: TICKER_RESEARCH_PANE_ID } },
+      { symbol: "MSFT", options: { floating: true, paneType: TICKER_RESEARCH_PANE_ID } },
     ]);
   });
 });

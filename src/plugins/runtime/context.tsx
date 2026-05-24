@@ -10,10 +10,10 @@ import type { DataProvider } from "../../types/data-provider";
 import type {
   AppNotificationRequest,
   BrokerInstanceUpdateOptions,
-  DetailTabDef,
   PaneDef,
   PaneTemplateCreateOptions,
   PinTickerOptions,
+  TickerResearchTabDef,
 } from "../../types/plugin";
 
 export interface PluginRuntimeAccess {
@@ -88,11 +88,11 @@ export function wrapPaneDefWithRuntime(
   };
 }
 
-export function wrapDetailTabDefWithRuntime(
+export function wrapTickerResearchTabDefWithRuntime(
   pluginId: string,
-  tab: DetailTabDef,
+  tab: TickerResearchTabDef,
   runtime: PluginRuntimeAccess,
-): DetailTabDef {
+): TickerResearchTabDef {
   return {
     ...tab,
     component: (props) => createElement(

@@ -2,6 +2,7 @@ import { Box, ScrollBox, Text } from "../../../ui";
 import { useCallback, useMemo, useState } from "react";
 import { usePaneFooter } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { colors } from "../../../theme/colors";
 import { usePluginTickerActions } from "../../runtime";
 import { useAppSelector, usePaneInstance } from "../../../state/app/context";
@@ -27,6 +28,7 @@ import {
   buildCorrelationMatrix,
   buildCorrelationPaneTitle,
   buildStatusSummary,
+  type CorrelationSeries,
   displaySymbol,
   getSeriesForEntry,
   pairKey,
@@ -105,7 +107,7 @@ function CorrelationMatrixPane({ width, height }: PaneProps) {
 
   const openSymbol = useCallback((symbol: string) => {
     if (tickers.has(symbol)) {
-      pinTicker(symbol, { floating: true, paneType: "ticker-detail" });
+      pinTicker(symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
       return;
     }
     navigateTicker(symbol);

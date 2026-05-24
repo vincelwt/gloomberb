@@ -4,7 +4,7 @@ import {
   EmptyState,
   Tabs,
 } from "../../../components";
-import type { DetailTabProps, PaneProps } from "../../../types/plugin";
+import type { PaneProps, TickerResearchTabProps } from "../../../types/plugin";
 import { usePaneInstance, usePaneInstanceId, usePaneTicker } from "../../../state/app/context";
 import { usePluginPaneState, usePluginState } from "../../runtime";
 import { apiClient, type CloudTweetQueryType, type CloudTweetSearchResponse } from "../../../api-client";
@@ -30,7 +30,7 @@ import { TwitterFeedSearchBar } from "./search-bar";
 import { useTwitterFeedFooter } from "./footer";
 import { useTwitterFeedKeyboard } from "./keyboard";
 
-export function TwitterTickerTab({ focused, width, height }: DetailTabProps) {
+export function TwitterTickerTab({ focused, width, height }: TickerResearchTabProps) {
   const { symbol } = usePaneTicker();
   const load = useCallback(() => {
     if (!symbol) throw new Error("No ticker selected");

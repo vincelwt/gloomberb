@@ -37,17 +37,20 @@ const PRE_DAY_PNL_PORTFOLIO_COLUMN_IDS = [
 ];
 const BUILTIN_SOURCE_IDS = new Set(["yahoo", "gloomberb-cloud"]);
 const BUILTIN_PLUGIN_GROUP_ALIASES: Record<string, string> = {
+  "broker-manager": "broker",
+  "company-research": "ticker-research",
   "comparison-chart": "market-overview",
   correlation: "market-overview",
   "earnings-calendar": "macro",
   "fx-matrix": "market-overview",
-  holders: "company-research",
-  insider: "company-research",
+  holders: "ticker-research",
+  insider: "ticker-research",
   "market-movers": "market-overview",
-  options: "company-research",
-  research: "company-research",
+  options: "ticker-research",
+  research: "ticker-research",
   sectors: "market-overview",
-  sec: "company-research",
+  sec: "ticker-research",
+  "ticker-detail": "ticker-research",
   "world-indices": "market-overview",
 };
 

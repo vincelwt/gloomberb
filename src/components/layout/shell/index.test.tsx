@@ -38,8 +38,8 @@ function createShellPluginRegistry(options?: {
       }],
       ["ticker-detail", {
         id: "ticker-detail",
-        name: "Ticker Detail",
-        component: options?.tickerDetailComponent ?? (() => <text>Ticker Detail Body</text>),
+        name: "Ticker Research",
+        component: options?.tickerDetailComponent ?? (() => <text>Ticker Research Body</text>),
         defaultPosition: "right",
         defaultMode: "floating",
       }],
@@ -365,7 +365,7 @@ describe("Shell", () => {
   test("shows the pane menu above a high z-index floating pane", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-shell-test");
     const detailPane = config.layout.instances.find((instance) => instance.instanceId === "ticker-detail:main");
-    if (!detailPane) throw new Error("missing default detail pane");
+    if (!detailPane) throw new Error("missing default Ticker Research pane");
 
     const floatingOnlyLayout = {
       dockRoot: null,

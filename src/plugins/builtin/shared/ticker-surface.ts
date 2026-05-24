@@ -14,6 +14,11 @@ export interface TickerSurfacePaneTemplateOptions {
   keywords: string[];
   shortcut: string;
   titlePrefix?: string;
+  viewKey?: string | ((
+    symbol: string,
+    context: PaneTemplateContext,
+    options: PaneTemplateCreateOptions | undefined,
+  ) => string | undefined);
   settings?: (
     symbol: string,
     context: PaneTemplateContext,
@@ -37,18 +42,40 @@ function resolveTickerSurfaceSymbol(
 function createTickerSurfacePaneInstance(
   context: Pick<PaneTemplateContext, "activeTicker">,
   options: Pick<PaneTemplateCreateOptions, "arg" | "symbol"> | undefined,
+  paneId: string,
   titlePrefix: string,
   settings?: Record<string, unknown>,
+  viewKey?: string,
 ): PaneTemplateInstanceConfig | null {
   const ticker = resolveTickerSurfaceSymbol(context, options);
   return ticker
     ? {
+      instanceId: buildTickerSurfaceInstanceId(paneId, ticker, viewKey),
       title: `${titlePrefix} ${ticker}`,
       binding: { kind: "fixed", symbol: ticker },
       placement: "floating",
       settings,
     }
     : null;
+}
+
+function normalizeInstanceIdPart(value: string): string {
+  return encodeURIComponent(value.trim().toUpperCase()).replace(/%/g, "~");
+}
+
+function buildTickerSurfaceInstanceId(paneId: string, symbol: string, viewKey?: string): string {
+  const parts = [paneId, normalizeInstanceIdPart(symbol)];
+  if (viewKey) parts.push(normalizeInstanceIdPart(viewKey));
+  return parts.join(":");
+}
+
+function resolveViewKey(
+  viewKey: TickerSurfacePaneTemplateOptions["viewKey"],
+  symbol: string,
+  context: PaneTemplateContext,
+  options: PaneTemplateCreateOptions | undefined,
+): string | undefined {
+  return typeof viewKey === "function" ? viewKey(symbol, context, options) : viewKey;
 }
 
 export function createTickerSurfacePaneTemplate(
@@ -76,8 +103,10 @@ export function createTickerSurfacePaneTemplate(
       return createTickerSurfacePaneInstance(
         context,
         createOptions,
+        templateOptions.paneId,
         titlePrefix,
         templateOptions.settings?.(symbol, context, createOptions),
+        resolveViewKey(templateOptions.viewKey, symbol, context, createOptions),
       );
     },
   };

@@ -289,12 +289,12 @@ describe("loadConfig", () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
       configVersion: CURRENT_CONFIG_VERSION - 1,
-      disabledPlugins: ["options", "sec", "world-indices", "earnings-calendar", "options"],
+      disabledPlugins: ["options", "sec", "world-indices", "earnings-calendar", "ibkr", "broker-manager", "options"],
     }));
 
     const config = await loadConfig(dataDir);
 
-    expect(config.disabledPlugins).toEqual(["company-research", "market-overview", "macro"]);
+    expect(config.disabledPlugins).toEqual(["ticker-research", "market-overview", "macro", "ibkr", "broker"]);
   });
 
   test("migrates grouped built-in plugin config keys", async () => {
@@ -314,14 +314,14 @@ describe("loadConfig", () => {
     const config = await loadConfig(dataDir);
 
     expect(config.pluginConfig).toEqual({
-      "company-research": {
+      "ticker-research": {
         selectedExpiration: "2026-06-19",
         preferredTab: "analyst-research",
       },
     });
   });
 
-  test("enables Gloomberb Cloud when migrating older default configs", async () => {
+  test("enables Gloom Cloud when migrating older default configs", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
       configVersion: 12,

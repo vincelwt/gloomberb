@@ -1,4 +1,4 @@
-import type { PaneSettingsDef, DetailTabDef } from "../../../types/plugin";
+import type { PaneSettingsDef, TickerResearchTabDef } from "../../../types/plugin";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import type { AppConfig } from "../../../types/config";
@@ -12,13 +12,9 @@ import type { PriceSparklinePeriod } from "../../../components/price-sparkline/v
 import { getSharedRegistry } from "../../registry";
 import { formatTickerListInput, MAX_TICKER_LIST_SIZE, parseTickerListInput } from "../../../tickers/list";
 
-type DetailTabSummary = { id: string; name: string; order: number };
+type TickerResearchTabSummary = { id: string; name: string; order: number };
 
-const CORE_OVERVIEW_TAB: DetailTabSummary = { id: "overview", name: "Overview", order: 10 };
-const CORE_FINANCIALS_TAB: DetailTabSummary = { id: "financials", name: "Financials", order: 20 };
-const CORE_CHART_TAB: DetailTabSummary = { id: "chart", name: "Chart", order: 30 };
-
-export interface TickerDetailPaneSettings {
+export interface TickerResearchPaneSettings {
   hideTabs: boolean;
   lockedTabId: string;
   chartAxisMode: ChartAxisMode;
@@ -34,9 +30,9 @@ export interface QuoteMonitorPaneSettings {
 
 const DEFAULT_QUOTE_MONITOR_CHART_PERIOD: PriceSparklinePeriod = "1M";
 
-export function getTickerDetailPaneSettings(
+export function getTickerResearchPaneSettings(
   settings: Record<string, unknown> | undefined,
-): TickerDetailPaneSettings {
+): TickerResearchPaneSettings {
   return {
     hideTabs: settings?.hideTabs === true,
     lockedTabId: typeof settings?.lockedTabId === "string" ? settings.lockedTabId : "overview",
@@ -56,8 +52,8 @@ export function getTickerDetailPaneSettings(
 }
 
 export function resolveLockedTabId(
-  settings: TickerDetailPaneSettings,
-  tabs: DetailTabSummary[],
+  settings: TickerResearchPaneSettings,
+  tabs: TickerResearchTabSummary[],
 ): string {
   if (tabs.some((tab) => tab.id === settings.lockedTabId)) {
     return settings.lockedTabId;
@@ -65,27 +61,27 @@ export function resolveLockedTabId(
   return tabs[0]?.id ?? "overview";
 }
 
-function getAvailableSettingsTabs(): DetailTabSummary[] {
+function getAvailableSettingsTabs(): TickerResearchTabSummary[] {
   const registry = getSharedRegistry();
   const pluginTabs = registry
-    ? [...registry.detailTabs.values()].map((tab) => ({ id: tab.id, name: tab.name, order: tab.order }))
+    ? [...registry.tickerResearchTabs.values()].map((tab) => ({ id: tab.id, name: tab.name, order: tab.order }))
     : [];
 
-  return [CORE_OVERVIEW_TAB, CORE_FINANCIALS_TAB, CORE_CHART_TAB, ...pluginTabs]
+  return pluginTabs
     .sort((left, right) => left.order - right.order)
     .filter((tab, index, allTabs) => allTabs.findIndex((candidate) => candidate.id === tab.id) === index);
 }
 
-export function buildTickerDetailSettingsDef(settings: TickerDetailPaneSettings): PaneSettingsDef {
+export function buildTickerResearchSettingsDef(settings: TickerResearchPaneSettings): PaneSettingsDef {
   const tabs = getAvailableSettingsTabs();
 
   return {
-    title: "Detail Pane Settings",
+    title: "Ticker Research Settings",
     fields: [
       {
         key: "hideTabs",
         label: "Hide Tabs",
-        description: "Hide the detail tabs and lock this pane to one view.",
+        description: "Hide Ticker Research tabs and lock this pane to one view.",
         type: "toggle" as const,
       },
       ...(settings.hideTabs
@@ -96,6 +92,24 @@ export function buildTickerDetailSettingsDef(settings: TickerDetailPaneSettings)
           options: tabs.map((tab) => ({ value: tab.id, label: tab.name })),
         }]
         : []),
+      {
+        key: "chartAxisMode",
+        label: "Chart Y-Axis",
+        description: "Show chart values as raw prices or percent change from the first visible point.",
+        type: "select" as const,
+        options: [
+          { value: "price", label: "Price" },
+          { value: "percent", label: "Percent" },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildTickerChartSettingsDef(): PaneSettingsDef {
+  return {
+    title: "Chart Pane Settings",
+    fields: [
       {
         key: "chartAxisMode",
         label: "Chart Y-Axis",
@@ -195,24 +209,16 @@ export function buildQuoteMonitorSettingsDef(): PaneSettingsDef {
   };
 }
 
-function hasStatementFinancials(financials: TickerFinancials | null | undefined): boolean {
-  return (financials?.annualStatements.length ?? 0) > 0 || (financials?.quarterlyStatements.length ?? 0) > 0;
-}
-
-export function buildVisibleDetailTabs(
-  pluginTabs: DetailTabDef[],
+export function buildVisibleTickerResearchTabs(
+  pluginTabs: TickerResearchTabDef[],
   ticker: TickerRecord | null,
   financials: TickerFinancials | null | undefined,
   options: {
     config: AppConfig;
     hasOptionsChain: boolean;
   },
-): DetailTabSummary[] {
-  const tabs: DetailTabSummary[] = [CORE_OVERVIEW_TAB];
-  if (hasStatementFinancials(financials)) {
-    tabs.push(CORE_FINANCIALS_TAB);
-  }
-  tabs.push(CORE_CHART_TAB);
+): TickerResearchTabSummary[] {
+  const tabs: TickerResearchTabSummary[] = [];
 
   for (const tab of pluginTabs) {
     if (tab.isVisible && !tab.isVisible({

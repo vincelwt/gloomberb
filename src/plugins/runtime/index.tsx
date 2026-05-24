@@ -8,8 +8,8 @@ import {
 
 export {
   PluginRenderProvider,
-  wrapDetailTabDefWithRuntime,
   wrapPaneDefWithRuntime,
+  wrapTickerResearchTabDefWithRuntime,
 } from "./context";
 export type { PluginRuntimeAccess } from "./context";
 

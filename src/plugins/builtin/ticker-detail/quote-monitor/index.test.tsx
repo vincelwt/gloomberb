@@ -179,7 +179,7 @@ describe("QuoteMonitorPane", () => {
     expect(frame).toContain("$202.12");
   });
 
-  test("opens a ticker detail pane on the second card click", async () => {
+  test("opens a Ticker Research pane on the second card click", async () => {
     const pinCalls: PinTickerCall[] = [];
     testSetup = await testRender(createQuoteMonitorHarness({ pinCalls }), {
       width: 72,

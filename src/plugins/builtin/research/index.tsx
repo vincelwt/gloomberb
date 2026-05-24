@@ -14,18 +14,25 @@ export const researchPlugin: GloomPlugin = {
   toggleable: true,
 
   setup(ctx) {
-    ctx.registerDetailTab({
+    ctx.registerTickerResearchTab({
       id: "analyst-research",
       name: "Analyst",
       order: 32,
       component: AnalystResearchView,
       isVisible: ({ ticker }) => !!ticker,
     });
-    ctx.registerDetailTab({
+    ctx.registerTickerResearchTab({
       id: "corporate-actions",
       name: "Events",
       order: 34,
       component: CorporateActionsView,
+      isVisible: ({ ticker }) => !!ticker,
+    });
+    ctx.registerTickerResearchTab({
+      id: "earnings-estimates",
+      name: "Estimates",
+      order: 36,
+      component: EarningsEstimatesPane,
       isVisible: ({ ticker }) => !!ticker,
     });
   },

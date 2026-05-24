@@ -93,7 +93,7 @@ function quoteTargetKey(symbol: string, exchange?: string): string {
 async function requireVerifiedSession(): Promise<void> {
   const user = await apiClient.ensureVerifiedSession();
   if (!user) {
-    throw createProviderMiss("Gloomberb Cloud requires signup and email verification");
+    throw createProviderMiss("Gloom Cloud requires signup and email verification");
   }
 }
 
@@ -109,7 +109,7 @@ function unwrapRequiredCloudResponse<T>(response: CloudMarketResponse<T>, messag
 
 export class GloomberbCloudProvider implements AssetDataProvider {
   readonly id = providerId;
-  readonly name = "Gloomberb Cloud";
+  readonly name = "Gloom Cloud";
   readonly priority = 100;
 
   getChartResolutionSupport(): ChartResolutionSupport[] {
@@ -417,7 +417,7 @@ export function createGloomberbCloudCapabilities(provider = createGloomberbCloud
     assetDataProvider(provider),
     newsProvider({
       id: providerId,
-      name: "Gloomberb Cloud",
+      name: "Gloom Cloud",
       priority: 10,
       provider: {
         supports(query: NewsQuery): boolean {

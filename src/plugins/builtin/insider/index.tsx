@@ -293,7 +293,7 @@ export const insiderPlugin: GloomPlugin = {
   ],
 
   setup(ctx) {
-    ctx.registerDetailTab({
+    ctx.registerTickerResearchTab({
       id: "insider",
       name: "Insider",
       order: 47,

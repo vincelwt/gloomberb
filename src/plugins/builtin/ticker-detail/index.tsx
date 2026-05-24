@@ -1,37 +1,68 @@
 import type { GloomPlugin } from "../../../types/plugin";
+import type { TickerFinancials } from "../../../types/financials";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { normalizeTickerInput } from "../../../tickers/search";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
+import { TickerChartPane, ChartResearchTab } from "./chart-pane";
 import {
   createGraphPaneTemplate,
   FundamentalGraphPane,
-  FundamentalGraphsDetailTab,
+  FundamentalGraphsResearchTab,
 } from "./data-panes/fundamental-graph";
+import { FinancialAnalysisPane, FinancialsResearchTab } from "./financials/pane";
 import { HistoricalPricesPane } from "./data-panes/historical-prices";
 import {
   createProviderSearchPaneTemplate,
   ProviderSearchPane,
 } from "./data-panes/provider-search";
-import { TickerDetailPane } from "./pane";
+import { TickerResearchPane } from "./pane";
+import { OverviewResearchTab } from "./overview/pane";
 import { QuoteMonitorPane } from "./quote-monitor";
 import {
   buildQuoteMonitorSettingsDef,
   buildQuoteMonitorPaneTitle,
-  buildTickerDetailSettingsDef,
-  getTickerDetailPaneSettings,
+  buildTickerChartSettingsDef,
+  buildTickerResearchSettingsDef,
+  getTickerResearchPaneSettings,
 } from "./settings";
 import { formatTickerListInput } from "../../../tickers/list";
 
+function hasStatementFinancials(financials: TickerFinancials | null | undefined): boolean {
+  return (financials?.annualStatements.length ?? 0) > 0 || (financials?.quarterlyStatements.length ?? 0) > 0;
+}
+
 export const tickerDetailPlugin: GloomPlugin = {
   id: "ticker-detail",
-  name: "Ticker Detail",
+  name: "Ticker Research",
   version: "1.0.0",
 
   setup(ctx) {
-    ctx.registerDetailTab({
+    ctx.registerTickerResearchTab({
+      id: "overview",
+      name: "Overview",
+      order: 10,
+      component: OverviewResearchTab,
+      isVisible: ({ ticker }) => !!ticker,
+    });
+    ctx.registerTickerResearchTab({
+      id: "financials",
+      name: "Financials",
+      order: 20,
+      component: FinancialsResearchTab,
+      isVisible: ({ financials }) => hasStatementFinancials(financials),
+    });
+    ctx.registerTickerResearchTab({
+      id: "chart",
+      name: "Chart",
+      order: 30,
+      component: ChartResearchTab,
+      isVisible: ({ ticker }) => !!ticker,
+    });
+    ctx.registerTickerResearchTab({
       id: "fundamental-graphs",
       name: "Graphs",
       order: 28,
-      component: FundamentalGraphsDetailTab,
+      component: FundamentalGraphsResearchTab,
       isVisible: ({ ticker, financials }) => !!ticker && (
         (financials?.annualStatements.length ?? 0) > 0
         || (financials?.quarterlyStatements.length ?? 0) > 0
@@ -43,13 +74,32 @@ export const tickerDetailPlugin: GloomPlugin = {
 
   panes: [
     {
-      id: "ticker-detail",
-      name: "Detail",
+      id: TICKER_RESEARCH_PANE_ID,
+      name: "Research",
       icon: "D",
-      component: TickerDetailPane,
+      component: TickerResearchPane,
       defaultPosition: "right",
       defaultMode: "floating",
-      settings: (context) => buildTickerDetailSettingsDef(getTickerDetailPaneSettings(context.settings)),
+      settings: (context) => buildTickerResearchSettingsDef(getTickerResearchPaneSettings(context.settings)),
+    },
+    {
+      id: "financial-analysis",
+      name: "Financials",
+      icon: "F",
+      component: FinancialAnalysisPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 98, height: 30 },
+    },
+    {
+      id: "ticker-chart",
+      name: "Chart",
+      icon: "G",
+      component: TickerChartPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 92, height: 30 },
+      settings: () => buildTickerChartSettingsDef(),
     },
     {
       id: "quote-monitor",
@@ -92,10 +142,10 @@ export const tickerDetailPlugin: GloomPlugin = {
   paneTemplates: [
     {
       id: "new-ticker-detail-pane",
-      paneId: "ticker-detail",
-      label: "New Ticker Detail Pane",
-      description: "Open another detail pane for the selected ticker or current collection",
-      keywords: ["new", "ticker", "detail", "pane", "inspector"],
+      paneId: TICKER_RESEARCH_PANE_ID,
+      label: "Ticker Research",
+      description: "Open another research pane for the selected ticker or current collection",
+      keywords: ["new", "ticker", "research", "detail", "pane", "inspector"],
       canCreate: (context) => context.activeTicker !== null || context.activeCollectionId !== null,
       createInstance: (context) => (
         context.activeTicker
@@ -170,40 +220,35 @@ export const tickerDetailPlugin: GloomPlugin = {
     createProviderSearchPaneTemplate(),
     createTickerSurfacePaneTemplate({
       id: "financial-analysis-pane",
-      paneId: "ticker-detail",
+      paneId: "financial-analysis",
       label: "Financial Analysis",
-      description: "Open a ticker detail pane locked to financial statements.",
+      description: "Open financial statements for a ticker.",
       keywords: ["fa", "financial", "analysis", "statements"],
       shortcut: "FA",
-      settings: () => ({
-        hideTabs: true,
-        lockedTabId: "financials",
-      }),
+      titlePrefix: "FA",
     }),
     createTickerSurfacePaneTemplate({
       id: "graph-price-pane",
-      paneId: "ticker-detail",
+      paneId: "ticker-chart",
       label: "Graph Price",
-      description: "Open a ticker detail pane locked to a price chart.",
+      description: "Open a price chart for a ticker.",
       keywords: ["gp", "graph", "price", "chart"],
       shortcut: "GP",
+      viewKey: "price",
       settings: () => ({
-        hideTabs: true,
-        lockedTabId: "chart",
         chartRangePreset: "5Y",
         chartResolution: "auto",
       }),
     }),
     createTickerSurfacePaneTemplate({
       id: "graph-intraday-price-pane",
-      paneId: "ticker-detail",
+      paneId: "ticker-chart",
       label: "Intraday Price Graph",
-      description: "Open a ticker detail pane locked to an intraday chart.",
+      description: "Open an intraday price chart for a ticker.",
       keywords: ["gip", "intraday", "graph", "chart"],
       shortcut: "GIP",
+      viewKey: "intraday",
       settings: () => ({
-        hideTabs: true,
-        lockedTabId: "chart",
         chartRangePreset: "1D",
         chartResolution: "1m",
       }),

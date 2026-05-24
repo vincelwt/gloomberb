@@ -20,8 +20,8 @@ import type { TickerRecord } from "./ticker";
 import type { InstrumentSearchResult } from "./instrument";
 
 export interface GloomSlots {
-  "detail:tab": { ticker: TickerRecord; financials: TickerFinancials | null };
-  "detail:section": { ticker: TickerRecord; financials: TickerFinancials | null };
+  "ticker-research:tab": { ticker: TickerRecord; financials: TickerFinancials | null };
+  "ticker-research:section": { ticker: TickerRecord; financials: TickerFinancials | null };
   "list:column": { ticker: TickerRecord; financials: TickerFinancials | null };
   "command:extra": { query: string };
   "command:preset": Record<string, never>;
@@ -138,6 +138,7 @@ export interface PaneTemplateCreateOptions {
 }
 
 export interface PaneTemplateInstanceConfig {
+  instanceId?: string;
   title?: string;
   binding?: PaneBinding;
   params?: Record<string, string>;
@@ -303,26 +304,26 @@ export interface CustomColumnDef extends ColumnConfig {
   render: (ticker: TickerRecord, financials: TickerFinancials | null) => string;
 }
 
-export interface DetailTabProps {
+export interface TickerResearchTabProps {
   width: number;
   height: number;
   focused: boolean;
   onCapture: (capturing: boolean) => void;
 }
 
-interface DetailTabVisibilityContext {
+interface TickerResearchTabVisibilityContext {
   config: AppConfig;
   ticker: TickerRecord | null;
   financials: TickerFinancials | null | undefined;
   hasOptionsChain: boolean;
 }
 
-export interface DetailTabDef {
+export interface TickerResearchTabDef {
   id: string;
   name: string;
   order: number;
-  component: (props: DetailTabProps) => ReactNode;
-  isVisible?: (context: DetailTabVisibilityContext) => boolean;
+  component: (props: TickerResearchTabProps) => ReactNode;
+  isVisible?: (context: TickerResearchTabVisibilityContext) => boolean;
 }
 
 export interface KeyboardShortcut {
@@ -434,7 +435,7 @@ export interface GloomPluginContext {
   registerColumn(column: CustomColumnDef): void;
   registerBroker(broker: BrokerAdapter): void;
   registerCapability(capability: PluginCapability): void;
-  registerDetailTab(tab: DetailTabDef): void;
+  registerTickerResearchTab(tab: TickerResearchTabDef): void;
   registerShortcut(shortcut: KeyboardShortcut): void;
   registerTickerAction(action: TickerAction): void;
   registerContextMenuProvider(provider: ContextMenuProviderDef): void;

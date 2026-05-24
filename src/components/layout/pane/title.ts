@@ -1,5 +1,5 @@
 import { resolveCollectionForPane, resolveTickerForPane, type AppState } from "../../../state/app/context";
-import type { PaneInstanceConfig } from "../../../types/config";
+import { TICKER_RESEARCH_PANE_ID, type PaneInstanceConfig } from "../../../types/config";
 import type { PaneDef } from "../../../types/plugin";
 
 export function getPaneDisplayTitle(
@@ -14,7 +14,7 @@ export function getPaneDisplayTitle(
     return instance.title ?? `#${channelId}`;
   }
 
-  if (instance.paneId === "ticker-detail") {
+  if (instance.paneId === TICKER_RESEARCH_PANE_ID) {
     const ticker = resolveTickerForPane(state as AppState, instance.instanceId);
     if (ticker) return ticker;
     const collectionId = resolveCollectionForPane(state as AppState, instance.instanceId);

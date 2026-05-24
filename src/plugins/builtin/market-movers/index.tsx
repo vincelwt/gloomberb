@@ -2,6 +2,7 @@ import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataTableView, Tabs, usePaneFooter, type DataTableKeyEvent } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
 import { useAssetData, usePluginTickerActions } from "../../runtime";
@@ -174,7 +175,7 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
   useEffect(() => { loadTab(activeTab); }, [activeTab, loadTab]);
 
   const openSymbol = useCallback((symbol: string) => {
-    pinTicker(symbol, { floating: true, paneType: "ticker-detail" });
+    pinTicker(symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
   }, [pinTicker]);
 
   const handleHeaderClick = useCallback((columnId: string) => {

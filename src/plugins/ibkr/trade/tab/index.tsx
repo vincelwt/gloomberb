@@ -8,7 +8,7 @@ import {
   usePaneTicker,
 } from "../../../../state/app/context";
 import { colors, hoverBg } from "../../../../theme/colors";
-import type { DetailTabProps } from "../../../../types/plugin";
+import type { TickerResearchTabProps } from "../../../../types/plugin";
 import { isGatewayConfigured } from "../../config";
 import { useIbkrGatewaySelection } from "../../gateway/selection";
 import { TradePreviewPanel } from "../preview-panel";
@@ -32,7 +32,7 @@ import { useTradeTabActions } from "./actions";
 import { useTradeTabShortcuts } from "./shortcuts";
 import { useTradeTicketSync } from "./state-sync";
 
-export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
+export function TradeTab({ focused, width, onCapture }: TickerResearchTabProps) {
   const config = useAppSelector((state) => state.config);
   const brokerAccounts = useAppSelector((state) => state.brokerAccounts);
   const paneId = usePaneInstanceId();

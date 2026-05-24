@@ -340,7 +340,7 @@ describe("ChatContent channel sidebar", () => {
         registeredPanes.push(pane);
       },
       registerPaneTemplate: () => {},
-      registerDetailTab: () => {},
+      registerTickerResearchTab: () => {},
       registerShortcut: () => {},
       registerCommand: () => {},
       showPane: () => {},

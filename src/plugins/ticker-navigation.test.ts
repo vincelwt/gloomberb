@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { createPaneInstance, type LayoutConfig, type PaneInstanceConfig } from "../types/config";
+import {
+  createPaneInstance,
+  TICKER_RESEARCH_PANE_ID,
+  type LayoutConfig,
+  type PaneInstanceConfig,
+} from "../types/config";
 import {
   findFixedTickerPaneForSymbol,
   resolveTickerNavigationReplacementPane,
@@ -22,7 +27,7 @@ function createLayout(instances: PaneInstanceConfig[]): LayoutConfig {
 }
 
 describe("resolveTickerNavigationReplacementPane", () => {
-  test("only replaces the ticker detail pane that opened ticker navigation", () => {
+  test("only replaces the Ticker Research pane that opened ticker navigation", () => {
     const layout = createLayout([
       createPaneInstance("portfolio-list", {
         instanceId: "portfolio-list:main",
@@ -74,6 +79,22 @@ describe("findFixedTickerPaneForSymbol", () => {
 
     expect(findFixedTickerPaneForSymbol(layout, "ticker-detail", "AAPL")?.instanceId).toBe("ticker-detail:aapl");
     expect(findFixedTickerPaneForSymbol(layout, "ticker-detail", "NVDA")).toBeNull();
+  });
+
+  test("does not let standalone shortcut panes collide with full Ticker Research", () => {
+    const layout = createLayout([
+      createPaneInstance("portfolio-list", {
+        instanceId: "portfolio-list:main",
+        binding: { kind: "none" },
+      }),
+      createPaneInstance("financial-analysis", {
+        instanceId: "financial-analysis:AAPL",
+        binding: { kind: "fixed", symbol: "AAPL" },
+      }),
+    ]);
+
+    expect(findFixedTickerPaneForSymbol(layout, TICKER_RESEARCH_PANE_ID, "AAPL")).toBeNull();
+    expect(findFixedTickerPaneForSymbol(layout, "financial-analysis", "AAPL")?.instanceId).toBe("financial-analysis:AAPL");
   });
 });
 

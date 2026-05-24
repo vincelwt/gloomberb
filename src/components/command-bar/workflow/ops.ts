@@ -4,6 +4,7 @@ import { getFocusedCollectionId, getFocusedTickerSymbol } from "../../../state/a
 import type { PluginRegistry } from "../../../plugins/registry";
 import { formatTickerListInput } from "../../../tickers/list";
 import { updatePaneInstance, setPaneSettings } from "../../../pane-settings";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { cleanPortfolioPaneSettings, resolvePortfolioPaneCollectionId } from "../../../plugins/builtin/portfolio-list/settings";
 import {
   buildComparisonChartPaneTitle,
@@ -139,6 +140,7 @@ export async function createPaneTemplateOrThrow(
   }
 
   const instance = deps.buildPaneInstance(template.paneId, {
+    instanceId: spec.instanceId,
     title: spec.title,
     binding: spec.binding,
     params: spec.params,
@@ -227,7 +229,7 @@ export async function applyPaneSettingFieldValue(
     nextSettings = cleanPortfolioPaneSettings(nextSettings);
   }
 
-  if (descriptor.pane.paneId === "ticker-detail" && field.key === "hideTabs" && value === true) {
+  if (descriptor.pane.paneId === TICKER_RESEARCH_PANE_ID && field.key === "hideTabs" && value === true) {
     const lockedTabId = typeof descriptor.context.paneState.activeTabId === "string"
       ? descriptor.context.paneState.activeTabId
       : "overview";

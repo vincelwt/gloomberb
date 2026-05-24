@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { getSharedRegistry, type PluginRegistry } from "../plugins/registry";
 import type { TickerFinancials } from "../types/financials";
+import { TICKER_RESEARCH_PANE_ID } from "../types/config";
 import type { TickerRecord } from "../types/ticker";
 import {
   contextMenuDivider,
@@ -127,7 +128,7 @@ function selectedTextMenuItems(text: string, registry: PluginRegistry | null, co
       contextMenuDivider("selected-text:ticker-divider"),
       {
         id: "selected-text:open-ticker",
-        label: "Open Ticker Detail",
+        label: "Open Ticker Research",
         onSelect: () => registry?.navigateTicker(symbol),
       },
       {
@@ -224,13 +225,13 @@ export function tickerContextMenuItems({
   const items: ContextMenuItem[] = [
     {
       id: "ticker:open",
-      label: `Open ${symbol} Detail`,
+      label: `Open ${symbol} Ticker Research`,
       onSelect: () => (openTicker ? openTicker(symbol) : registry?.navigateTicker(symbol)),
     },
     {
       id: "ticker:pin-floating",
-      label: `Open ${symbol} in New Floating Detail`,
-      onSelect: () => registry?.pinTicker(symbol, { floating: true, paneType: "ticker-detail", forceNewPane: true }),
+      label: `Open ${symbol} in New Floating Ticker Research`,
+      onSelect: () => registry?.pinTicker(symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID, forceNewPane: true }),
     },
     {
       id: "ticker:copy-symbol",

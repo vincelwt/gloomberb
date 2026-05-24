@@ -1,4 +1,10 @@
-import { findPaneInstance, type LayoutConfig, type PaneInstanceConfig } from "../types/config";
+import {
+  findPaneInstance,
+  normalizePaneId,
+  TICKER_RESEARCH_PANE_ID,
+  type LayoutConfig,
+  type PaneInstanceConfig,
+} from "../types/config";
 import { isPaneInLayout } from "./pane-manager";
 
 export function resolveTickerNavigationReplacementPane(
@@ -6,7 +12,7 @@ export function resolveTickerNavigationReplacementPane(
   sourcePaneId: string | null,
 ): PaneInstanceConfig | null {
   const sourceInstance = sourcePaneId ? findPaneInstance(layout, sourcePaneId) : null;
-  return sourceInstance?.paneId === "ticker-detail" && isPaneInLayout(layout, sourceInstance.instanceId)
+  return sourceInstance?.paneId === TICKER_RESEARCH_PANE_ID && isPaneInLayout(layout, sourceInstance.instanceId)
     ? sourceInstance
     : null;
 }
@@ -17,7 +23,7 @@ export function findFixedTickerPaneForSymbol(
   symbol: string,
 ): PaneInstanceConfig | null {
   return layout.instances.find((instance) =>
-    instance.paneId === paneId
+    instance.paneId === normalizePaneId(paneId)
     && instance.binding?.kind === "fixed"
     && instance.binding.symbol === symbol
     && isPaneInLayout(layout, instance.instanceId)

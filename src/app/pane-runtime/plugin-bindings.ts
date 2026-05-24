@@ -64,7 +64,7 @@ interface BindAppPanePluginRegistryOptions {
   showPane: (paneId: string) => void;
   state: AppState;
   stateRef: { current: AppState };
-  switchDetailTab: (tabId: string, preferredPaneId?: string | null) => void;
+  switchTickerResearchTab: (tabId: string, preferredPaneId?: string | null) => void;
   tickerRepository: TickerRepository;
 }
 
@@ -90,7 +90,7 @@ export function bindAppPanePluginRegistry({
   showPane,
   state,
   stateRef,
-  switchDetailTab,
+  switchTickerResearchTab,
   tickerRepository,
 }: BindAppPanePluginRegistryOptions): void {
   pluginRegistry.selectTickerFn = (symbol, paneId) => selectTickerInPane(symbol, paneId);
@@ -98,7 +98,7 @@ export function bindAppPanePluginRegistry({
     if (isDetachedWindow) return;
     dispatch({ type: "SET_ACTIVE_PANEL", panel });
   };
-  pluginRegistry.switchTabFn = (tabId, paneId) => switchDetailTab(tabId, paneId);
+  pluginRegistry.switchTabFn = (tabId, paneId) => switchTickerResearchTab(tabId, paneId);
   pluginRegistry.openCommandBarFn = (query) => {
     if (isDetachedWindow) return;
     dispatch({ type: "SET_COMMAND_BAR", open: true, query });

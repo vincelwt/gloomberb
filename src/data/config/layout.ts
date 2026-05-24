@@ -11,6 +11,7 @@ import {
   clonePaneSettings,
   createPaneInstanceId,
   normalizePaneLayout,
+  normalizePaneId,
 } from "../../types/config";
 
 export function isLayoutConfig(value: unknown): value is LayoutConfig {
@@ -126,11 +127,12 @@ function sanitizePaneInstances(value: unknown, fallback: LayoutConfig): PaneInst
       && typeof (entry as PaneInstanceConfig).paneId === "string",
     )
     .map((entry) => {
-      const instanceId = seen.has(entry.instanceId) ? createPaneInstanceId(entry.paneId) : entry.instanceId;
+      const paneId = normalizePaneId(entry.paneId);
+      const instanceId = seen.has(entry.instanceId) ? createPaneInstanceId(paneId) : entry.instanceId;
       seen.add(instanceId);
       return {
         instanceId,
-        paneId: entry.paneId,
+        paneId,
         title: typeof entry.title === "string" ? entry.title : undefined,
         binding: sanitizePaneBinding(entry.binding),
         params: entry.params && typeof entry.params === "object"

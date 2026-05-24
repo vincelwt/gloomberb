@@ -704,7 +704,7 @@ describe("ChatContent", () => {
     expect(frame).not.toContain("message 1");
   });
 
-  test("renders ticker badges and opens a floating detail pane on click", async () => {
+  test("renders ticker badges and opens a floating Ticker Research pane on click", async () => {
     const controller = createController({
       messages: [{
         id: "m1",

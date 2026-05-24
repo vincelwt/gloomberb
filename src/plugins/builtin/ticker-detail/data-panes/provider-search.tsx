@@ -8,6 +8,7 @@ import {
   type DataTableKeyEvent,
 } from "../../../../components";
 import type { PaneProps, PaneTemplateDef } from "../../../../types/plugin";
+import { TICKER_RESEARCH_PANE_ID } from "../../../../types/config";
 import type { InstrumentSearchResult } from "../../../../types/instrument";
 import { usePaneInstance } from "../../../../state/app/context";
 import { colors } from "../../../../theme/colors";
@@ -81,7 +82,7 @@ export function ProviderSearchPane({ focused, width, height }: PaneProps) {
   const columns = useMemo(() => buildSearchColumns(width), [width]);
   const boundedSelectedIdx = rows.length > 0 ? Math.min(selectedIdx, rows.length - 1) : -1;
   const openResult = useCallback((row: InstrumentSearchResult) => {
-    pinTicker(resultSymbol(row), { floating: true, paneType: "ticker-detail" });
+    pinTicker(resultSymbol(row), { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
   }, [pinTicker]);
 
   useClampSelectedIndex(rows.length, selectedIdx, setSelectedIdx);

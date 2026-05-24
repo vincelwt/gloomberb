@@ -9,7 +9,7 @@ import { Box } from "../../../ui";
 import { PluginRenderProvider } from "../../runtime";
 import { setSharedMarketDataForTests, setSharedRegistryForTests } from "../../registry";
 import {
-  AskAiDetailTab as AskAiTab,
+  AskAiResearchTab as AskAiTab,
   __resetAskAiHistoryForTests,
   __setAskAiHistoryForTests,
   __setDetectedProvidersForTests,
@@ -175,7 +175,7 @@ describe("AskAiTab", () => {
     expect(frameAfterType).toContain("> DCF");
   });
 
-  test("renders assistant ticker badges and opens a floating detail pane on click", async () => {
+  test("renders assistant ticker badges and opens a floating Ticker Research pane on click", async () => {
     setProviders([
       { id: "claude", name: "Claude", command: "claude", available: true, buildArgs: () => [] },
     ]);

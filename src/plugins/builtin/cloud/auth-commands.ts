@@ -69,7 +69,7 @@ export function registerCloudAuthCommands(ctx: GloomPluginContext): void {
   ctx.registerCommand({
     id: "auth-resend-verification",
     label: "Resend Verification Email",
-    description: "Send another Gloomberb Cloud verification email",
+    description: "Send another Gloom Cloud verification email",
     keywords: ["verify", "verification", "resend", "email"],
     category: "config",
     hidden: () => {

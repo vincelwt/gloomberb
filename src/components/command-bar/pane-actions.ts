@@ -4,6 +4,7 @@ import {
   findPaneInstance,
   findPrimaryPaneInstance,
   resolveFollowBindingInstance,
+  TICKER_RESEARCH_PANE_ID,
   type LayoutConfig,
 } from "../../types/config";
 import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
@@ -38,10 +39,10 @@ export function useCommandBarPaneActions({
     dispatch({ type: "UPDATE_PANE_STATE", paneId: targetPaneId, patch: { collectionId } });
   }, [dispatch, stateRef]);
 
-  const retargetDetailPane = useCallback((paneId: string, symbol: string) => {
+  const retargetTickerResearchPane = useCallback((paneId: string, symbol: string) => {
     const currentState = stateRef.current;
     const targetPane = findPaneInstance(currentState.config.layout, paneId);
-    if (!targetPane || targetPane.paneId !== "ticker-detail") return;
+    if (!targetPane || targetPane.paneId !== TICKER_RESEARCH_PANE_ID) return;
 
     const nextLayout = {
       ...currentState.config.layout,
@@ -58,7 +59,7 @@ export function useCommandBarPaneActions({
   const openFixedTickerPane = useCallback((symbol: string, options?: { forceNewPane?: boolean }) => {
     pluginRegistry.pinTicker(symbol, {
       floating: true,
-      paneType: "ticker-detail",
+      paneType: TICKER_RESEARCH_PANE_ID,
       forceNewPane: options?.forceNewPane,
     });
   }, [pluginRegistry]);
@@ -73,13 +74,13 @@ export function useCommandBarPaneActions({
       return;
     }
 
-    if (focusedPane?.paneId === "ticker-detail") {
-      retargetDetailPane(focusedPane.instanceId, symbol);
+    if (focusedPane?.paneId === TICKER_RESEARCH_PANE_ID) {
+      retargetTickerResearchPane(focusedPane.instanceId, symbol);
       return;
     }
 
     openFixedTickerPane(symbol);
-  }, [openFixedTickerPane, retargetDetailPane, stateRef]);
+  }, [openFixedTickerPane, retargetTickerResearchPane, stateRef]);
 
   const persistLayoutChange = useCallback((nextLayout: LayoutConfig) => {
     pluginRegistry.updateLayoutFn(nextLayout);

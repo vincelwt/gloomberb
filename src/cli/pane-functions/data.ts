@@ -1,11 +1,14 @@
 import type { TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
+import { LEGACY_TICKER_DETAIL_PANE_ID } from "../../types/config";
 import { normalizeTickerInput } from "../../tickers/search";
 import type { MarketContext } from "../types";
 import { cleanTickerInput } from "./options";
 import type { ResolvedPaneFunction } from "./resolver";
 
 const SHOT_PRICE_HISTORY_RANGE = "5Y" as const;
+const FINANCIAL_ANALYSIS_PANE_ID = "financial-analysis";
+const FINANCIAL_ANALYSIS_TEMPLATE_ID = "financial-analysis-pane";
 
 export async function fetchTickerFinancials(
   context: MarketContext,
@@ -44,11 +47,10 @@ export function requireSymbol(resolved: ResolvedPaneFunction, rawArg: string): s
 }
 
 export function isFinancialAnalysisFunction(resolved: ResolvedPaneFunction): boolean {
-  return resolved.pane.id === "ticker-detail"
-    && (
-      resolved.template?.id === "financial-analysis-pane"
-      || resolved.instance.settings?.lockedTabId === "financials"
-    );
+  if (resolved.pane.id === FINANCIAL_ANALYSIS_PANE_ID) return true;
+  if (resolved.template?.id === FINANCIAL_ANALYSIS_TEMPLATE_ID) return true;
+  return resolved.pane.id === LEGACY_TICKER_DETAIL_PANE_ID
+    && resolved.instance.settings?.lockedTabId === "financials";
 }
 
 export function createFallbackTicker(symbol: string, financials: TickerFinancials | null, context: MarketContext): TickerRecord {

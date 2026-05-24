@@ -4,13 +4,13 @@ import type { BrokerInstanceConfig, LayoutConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
+import type { PluginCapability } from "../../capabilities";
 import type {
   AppNotificationRequest,
   BrokerInstanceUpdateOptions,
   GloomPluginContext,
   PaneTemplateCreateOptions,
   PinTickerOptions,
-  PluginCapability,
 } from "../../types/plugin";
 import type { PaneRuntimeState } from "../../core/state/app/state";
 import type { NewsQuery, NewsQueryState } from "../../types/news-source";
@@ -139,7 +139,7 @@ export function createRegistryPluginContext({
     registerCapability: (capability) => {
       if (enableCapabilityHandlers) registerCapabilityForPlugin(pluginId, capability, items);
     },
-    registerDetailTab: (tab) => contributions.registerDetailTab(pluginId, tab, items),
+    registerTickerResearchTab: (tab) => contributions.registerTickerResearchTab(pluginId, tab, items),
     registerShortcut: (shortcut) => contributions.registerShortcut(pluginId, shortcut, items),
     registerTickerAction: (action) => contributions.registerTickerAction(pluginId, action, items),
     registerContextMenuProvider: (provider) => contributions.registerContextMenuProvider(pluginId, provider, items),

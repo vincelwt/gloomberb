@@ -32,7 +32,7 @@ export function useCommandBarTickerSearchActions({
 }: UseCommandBarTickerSearchActionsOptions) {
   const tickerSearchCacheRef = useRef<Map<string, TickerSearchCandidate[]>>(new Map());
 
-  const openTickerDetail = useCallback((result: any, options?: { forceNewPane?: boolean }) => {
+  const openTickerResearch = useCallback((result: any, options?: { forceNewPane?: boolean }) => {
     (async () => {
       const { ticker, created } = await upsertTickerFromSearchResult(tickerRepository, result);
       dispatch({ type: "UPDATE_TICKER", ticker });
@@ -71,10 +71,10 @@ export function useCommandBarTickerSearchActions({
       right: candidate.right,
       category: candidate.category,
       kind: "search",
-      secondaryAction: () => openTickerDetail(candidate.result!, { forceNewPane: true }),
-      action: () => openTickerDetail(candidate.result!),
+      secondaryAction: () => openTickerResearch(candidate.result!, { forceNewPane: true }),
+      action: () => openTickerResearch(candidate.result!),
     };
-  }, [closeAll, focusTicker, openTickerDetail]);
+  }, [closeAll, focusTicker, openTickerResearch]);
 
   const buildTickerSearchResultItems = useCallback((candidates: TickerSearchCandidate[], query: string): ResultItem[] => (
     candidates.length > 0

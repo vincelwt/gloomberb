@@ -96,12 +96,12 @@ describe("HelpPane", () => {
       ]]),
       allPlugins: new Map([
         ["alerts", { name: "Alerts" }],
-        ["ticker-detail", { name: "Ticker Detail" }],
-        ["gloomberb-cloud", { name: "Gloomberb Cloud" }],
+        ["ticker-research", { name: "Ticker Research" }],
+        ["gloomberb-cloud", { name: "Gloom Cloud" }],
       ]),
       getConfigFn: () => ({ disabledPlugins: [] }),
       getCommandPluginId: () => "alerts",
-      getPaneTemplatePluginId: () => "ticker-detail",
+      getPaneTemplatePluginId: () => "ticker-research",
       getShortcutPluginId: () => "gloomberb-cloud",
     } as any);
 
@@ -113,7 +113,7 @@ describe("HelpPane", () => {
     expect(frame).toMatch(/QQ\s+<tickers>/);
     expect(frame).toContain("Add Alert (Alerts)");
     expect(frame).toContain("Shift+C");
-    expect(frame).toContain("Toggle chat (Gloomberb Cloud)");
+    expect(frame).toContain("Toggle chat (Gloom Cloud)");
     expect(frame).toContain("Ctrl+W");
     expect(frame).toContain("Ctrl+,");
     expect(frame).not.toContain("Ctrl+Shift+O");

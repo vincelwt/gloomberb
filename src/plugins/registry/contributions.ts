@@ -3,11 +3,11 @@ import type {
   CommandDef,
   ContextMenuProviderDef,
   CustomColumnDef,
-  DetailTabDef,
   KeyboardShortcut,
   PaneDef,
   PaneTemplateDef,
   TickerAction,
+  TickerResearchTabDef,
 } from "../../types/plugin";
 
 export interface ContextMenuProviderEntry {
@@ -22,7 +22,7 @@ export interface PluginItems {
   columns: string[];
   brokers: string[];
   capabilities: string[];
-  detailTabs: string[];
+  tickerResearchTabs: string[];
   shortcuts: string[];
   tickerActions: string[];
   contextMenuProviders: string[];
@@ -33,7 +33,7 @@ export interface PluginItems {
 
 interface RegistryContributionsOptions {
   wrapPaneDef: (pluginId: string, pane: PaneDef) => PaneDef;
-  wrapDetailTabDef: (pluginId: string, tab: DetailTabDef) => DetailTabDef;
+  wrapTickerResearchTabDef: (pluginId: string, tab: TickerResearchTabDef) => TickerResearchTabDef;
   wrapBrokerAdapter?: (broker: BrokerAdapter, pluginId: string) => BrokerAdapter;
 }
 
@@ -44,14 +44,14 @@ export class RegistryContributions {
   readonly paneTemplateOwners = new Map<string, string>();
   readonly shortcutOwners = new Map<string, string>();
   readonly capabilityOwners = new Map<string, string>();
-  readonly detailTabOwners = new Map<string, string>();
+  readonly tickerResearchTabOwners = new Map<string, string>();
 
   readonly panesMap = new Map<string, PaneDef>();
   readonly paneTemplatesMap = new Map<string, PaneTemplateDef>();
   readonly commandsMap = new Map<string, CommandDef>();
   readonly columnsMap = new Map<string, CustomColumnDef>();
   readonly brokersMap = new Map<string, BrokerAdapter>();
-  readonly detailTabsMap = new Map<string, DetailTabDef>();
+  readonly tickerResearchTabsMap = new Map<string, TickerResearchTabDef>();
   readonly shortcutsMap = new Map<string, KeyboardShortcut>();
   readonly tickerActionsMap = new Map<string, TickerAction>();
   readonly contextMenuProvidersMap = new Map<string, ContextMenuProviderEntry>();
@@ -69,7 +69,7 @@ export class RegistryContributions {
       columns: [],
       brokers: [],
       capabilities: [],
-      detailTabs: [],
+      tickerResearchTabs: [],
       shortcuts: [],
       tickerActions: [],
       contextMenuProviders: [],
@@ -114,10 +114,10 @@ export class RegistryContributions {
     items.capabilities.push(capabilityId);
   }
 
-  registerDetailTab(pluginId: string, tab: DetailTabDef, items = this.getOrCreatePluginItems(pluginId)): void {
-    this.detailTabsMap.set(tab.id, this.options.wrapDetailTabDef(pluginId, tab));
-    this.detailTabOwners.set(tab.id, pluginId);
-    items.detailTabs.push(tab.id);
+  registerTickerResearchTab(pluginId: string, tab: TickerResearchTabDef, items = this.getOrCreatePluginItems(pluginId)): void {
+    this.tickerResearchTabsMap.set(tab.id, this.options.wrapTickerResearchTabDef(pluginId, tab));
+    this.tickerResearchTabOwners.set(tab.id, pluginId);
+    items.tickerResearchTabs.push(tab.id);
   }
 
   registerShortcut(pluginId: string, shortcut: KeyboardShortcut, items = this.getOrCreatePluginItems(pluginId)): void {
@@ -156,9 +156,9 @@ export class RegistryContributions {
     for (const columnId of items.columns) this.columnsMap.delete(columnId);
     for (const brokerId of items.brokers) this.brokersMap.delete(brokerId);
     for (const capabilityId of items.capabilities) this.capabilityOwners.delete(capabilityId);
-    for (const tabId of items.detailTabs) {
-      this.detailTabsMap.delete(tabId);
-      this.detailTabOwners.delete(tabId);
+    for (const tabId of items.tickerResearchTabs) {
+      this.tickerResearchTabsMap.delete(tabId);
+      this.tickerResearchTabOwners.delete(tabId);
     }
     for (const shortcutId of items.shortcuts) {
       this.shortcutsMap.delete(shortcutId);

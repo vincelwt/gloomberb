@@ -14,6 +14,7 @@ import { createTestDataProvider } from "../../../test-support/data-provider";
 import {
   cloneLayout,
   createDefaultConfig,
+  TICKER_RESEARCH_PANE_ID,
   type AppConfig,
   type BrokerInstanceConfig,
 } from "../../../types/config";
@@ -21,7 +22,7 @@ import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { EventBus } from "../../event-bus";
 import type { DataProvider } from "../../../types/data-provider";
 import type { TickerFinancials } from "../../../types/financials";
-import type { DetailTabDef } from "../../../types/plugin";
+import type { TickerResearchTabDef } from "../../../types/plugin";
 import type { TickerRecord } from "../../../types/ticker";
 import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane/footer";
 import type { PluginRegistry } from "../../registry";
@@ -31,7 +32,7 @@ import { tickerDetailPlugin } from ".";
 import { FinancialsTab } from "./financials/tab";
 import { isUsEquityTicker } from "../../../utils/sec";
 
-const TEST_PANE_ID = "ticker-detail:test";
+const TEST_PANE_ID = "ticker-research:test";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let harnessDispatch: React.Dispatch<AppAction> | null = null;
@@ -155,7 +156,11 @@ function makeRegistry(): PluginRegistry {
   const stubTab = (_props: { width: number; height: number; focused: boolean; onCapture: (capturing: boolean) => void }) => (
     <text>stub</text>
   );
-  const detailTabs = new Map<string, DetailTabDef>([
+  const tickerResearchTabs = new Map<string, TickerResearchTabDef>();
+  tickerDetailPlugin.setup?.({
+    registerTickerResearchTab: (tab: TickerResearchTabDef) => tickerResearchTabs.set(tab.id, tab),
+  } as any);
+  for (const tab of [
     ["ibkr-trade", {
       id: "ibkr-trade",
       name: "Trade",
@@ -166,8 +171,10 @@ function makeRegistry(): PluginRegistry {
     ["options", { id: "options", name: "Options", order: 35, component: stubTab, isVisible: ({ hasOptionsChain }) => hasOptionsChain }],
     ["sec", { id: "sec", name: "SEC", order: 45, component: stubTab, isVisible: ({ ticker }) => isUsEquityTicker(ticker) }],
     ["ai-chat", { id: "ai-chat", name: "Ask AI", order: 60, component: stubTab }],
-  ]);
-  return { detailTabs } as unknown as PluginRegistry;
+  ] as Array<[string, TickerResearchTabDef]>) {
+    tickerResearchTabs.set(tab[0], tab[1]);
+  }
+  return { tickerResearchTabs } as unknown as PluginRegistry;
 }
 
 function createGatewayInstance(id = "ibkr-paper"): BrokerInstanceConfig {
@@ -187,7 +194,7 @@ function createDetailConfig(symbol: string, brokerInstances: BrokerInstanceConfi
     dockRoot: { kind: "pane" as const, instanceId: TEST_PANE_ID },
     instances: [{
       instanceId: TEST_PANE_ID,
-      paneId: "ticker-detail",
+      paneId: TICKER_RESEARCH_PANE_ID,
       binding: { kind: "fixed" as const, symbol },
     }],
     floating: [],
@@ -247,7 +254,7 @@ function DetailHarness({
         <PluginRenderProvider pluginId={tickerDetailPlugin.id} runtime={runtime}>
           <DetailPane
             paneId={TEST_PANE_ID}
-            paneType="ticker-detail"
+            paneType={TICKER_RESEARCH_PANE_ID}
             focused
             width={width}
             height={height}
@@ -301,7 +308,7 @@ describe("FinancialsTab", () => {
 
 });
 
-describe("TickerDetailPane", () => {
+describe("TickerResearchPane", () => {
   test("shows core and lightweight plugin tabs without waiting on options preflight", async () => {
     setSharedRegistryForTests(makeRegistry());
     setOptionsProvider(createProvider(false));
@@ -406,13 +413,13 @@ describe("TickerDetailPane", () => {
   test("hides plugin tabs when their owner plugin is disabled", async () => {
     setSharedRegistryForTests({
       ...makeRegistry(),
-      getDetailTabPluginId: (tabId: string) => (
-        tabId === "sec" ? "company-research" : tabId
+      getTickerResearchTabPluginId: (tabId: string) => (
+        tabId === "sec" ? "ticker-research" : tabId
       ),
     } as unknown as PluginRegistry);
     setOptionsProvider(createProvider(false));
     const config = createDetailConfig("AAPL");
-    config.disabledPlugins = ["company-research"];
+    config.disabledPlugins = ["ticker-research"];
 
     testSetup = await testRender(
       <DetailHarness
@@ -429,12 +436,12 @@ describe("TickerDetailPane", () => {
   });
 
   test("refreshes plugin tabs when registration completes after the pane mounted", async () => {
-    const detailTabs = new Map<string, DetailTabDef>();
+    const tickerResearchTabs = new Map<string, TickerResearchTabDef>();
     const events = new EventBus();
     setSharedRegistryForTests({
-      detailTabs,
+      tickerResearchTabs,
       events,
-      getDetailTabPluginId: () => "company-research",
+      getTickerResearchTabPluginId: () => "ticker-research",
     } as unknown as PluginRegistry);
     setOptionsProvider(createProvider(false));
 
@@ -451,14 +458,14 @@ describe("TickerDetailPane", () => {
     expect(testSetup.captureCharFrame()).not.toContain("Analyst");
 
     await act(async () => {
-      detailTabs.set("analyst-research", {
+      tickerResearchTabs.set("analyst-research", {
         id: "analyst-research",
         name: "Analyst",
         order: 32,
         component: () => <text>Analyst body</text>,
         isVisible: ({ ticker }) => !!ticker,
       });
-      events.emit("plugin:registered", { pluginId: "company-research" });
+      events.emit("plugin:registered", { pluginId: "ticker-research" });
     });
     await flushFrame();
 
@@ -467,12 +474,12 @@ describe("TickerDetailPane", () => {
 
   test("passes visible tab content height to plugin tabs", async () => {
     let receivedHeight: number | null = null;
-    const probeTab: DetailTabDef["component"] = ({ height }) => {
+    const probeTab: TickerResearchTabDef["component"] = ({ height }) => {
       receivedHeight = height;
       return <text>{`height:${height}`}</text>;
     };
     setSharedRegistryForTests({
-      detailTabs: new Map<string, DetailTabDef>([
+      tickerResearchTabs: new Map<string, TickerResearchTabDef>([
         ["sec", { id: "sec", name: "SEC", order: 45, component: probeTab, isVisible: ({ ticker }) => isUsEquityTicker(ticker) }],
       ]),
     } as unknown as PluginRegistry);

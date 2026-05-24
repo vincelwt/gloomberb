@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Box, Text, type TextareaRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import type { DetailTabProps } from "../../../types/plugin";
+import type { TickerResearchTabProps } from "../../../types/plugin";
 import { usePaneTicker } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import { MarkdownEditor } from "../../../components/markdown-editor";
@@ -11,7 +11,7 @@ import { MarkdownNotePreview } from "./markdown-note-preview";
 import { useSyncedText } from "./text-state";
 
 export function createNotesTab(notesFiles: NotesFiles) {
-  return function NotesTab({ focused, width, onCapture }: DetailTabProps) {
+  return function NotesTab({ focused, width, onCapture }: TickerResearchTabProps) {
     const { ticker } = usePaneTicker();
     const textareaRef = useRef<TextareaRenderable | null>(null);
     const [notesFocused, setNotesFocused] = useState(false);

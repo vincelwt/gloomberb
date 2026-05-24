@@ -33,7 +33,7 @@ export const optionsPlugin: GloomPlugin = {
   ],
 
   setup(ctx) {
-    ctx.registerDetailTab({
+    ctx.registerTickerResearchTab({
       id: "options",
       name: "Options",
       order: 35,

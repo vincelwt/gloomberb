@@ -32,7 +32,7 @@ export function createGloomberbCloudPlugin({
 }: GloomberbCloudPluginComponents): GloomPlugin {
   return {
     id: "gloomberb-cloud",
-    name: "Gloomberb Cloud",
+    name: "Gloom Cloud",
     version: "1.0.0",
     description: "Free market, macro, and chat services. Chat requires signup.",
     toggleable: true,
@@ -60,7 +60,7 @@ export function createGloomberbCloudPlugin({
         id: "account-management-pane",
         paneId: "account-management",
         label: "Account Management",
-        description: "Edit your Gloomberb Cloud profile, password, and public portfolio sharing settings",
+        description: "Edit your Gloom Cloud profile, password, and public portfolio sharing settings",
         keywords: ["account", "profile", "cloud", "acm", "password", "settings"],
         shortcut: { prefix: "ACM" },
         createInstance: () => ({

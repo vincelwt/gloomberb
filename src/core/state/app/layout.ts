@@ -5,6 +5,7 @@ import {
   isFixedTickerPane,
   normalizePaneLayout,
   removePaneInstances,
+  TICKER_RESEARCH_PANE_ID,
   type LayoutConfig,
 } from "../../../types/config";
 import type { AppConfig, PaneBinding, PaneInstanceConfig, SavedLayout } from "../../../types/config";
@@ -48,7 +49,7 @@ function defaultPaneStateForInstance(config: AppConfig, instance: PaneInstanceCo
       cursorSymbol: null,
     };
   }
-  if (instance.paneId === "ticker-detail") {
+  if (instance.paneId === TICKER_RESEARCH_PANE_ID) {
     return { activeTabId: "overview" };
   }
   return {};

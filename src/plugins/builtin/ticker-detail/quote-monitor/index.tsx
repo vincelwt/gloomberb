@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { Box, useUiCapabilities } from "../../../../ui";
 import type { PaneProps } from "../../../../types/plugin";
+import { TICKER_RESEARCH_PANE_ID } from "../../../../types/config";
 import type { QuoteSubscriptionTarget } from "../../../../types/data-provider";
 import { quoteSubscriptionTargetFromTicker } from "../../../../market-data/request-types";
 import { useAppSelector, usePaneInstance, usePaneTicker } from "../../../../state/app/context";
@@ -81,7 +82,7 @@ export function QuoteMonitorPane({ paneId, focused, width, height }: PaneProps) 
   const { openPaneSettings } = usePluginAppActions();
   const { nativePaneChrome } = useUiCapabilities();
   const openTicker = useCallback((nextSymbol: string) => {
-    pinTicker(nextSymbol, { paneType: "ticker-detail", floating: true });
+    pinTicker(nextSymbol, { paneType: TICKER_RESEARCH_PANE_ID, floating: true });
   }, [pinTicker]);
   useShortcut((event) => {
     if (!focused || event.name !== "t") return;

@@ -15,7 +15,7 @@ export async function createPaneCatalog(context: MarketContext, plugins: GloomPl
     registerColumn: () => {},
     registerBroker: () => {},
     registerCapability: () => {},
-    registerDetailTab: () => {},
+    registerTickerResearchTab: () => {},
     registerShortcut: () => {},
     registerTickerAction: () => {},
     registerContextMenuProvider: () => {},

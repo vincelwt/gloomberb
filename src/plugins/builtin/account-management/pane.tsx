@@ -232,7 +232,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   if (!hasSession && !apiClient.getSessionToken()) {
     return (
       <Box padding={1}>
-        <CloudAuthNotice message="Log in to manage your Gloomberb Cloud account." />
+        <CloudAuthNotice message="Log in to manage your Gloom Cloud account." />
       </Box>
     );
   }
