@@ -1,6 +1,10 @@
 import type { ScrollBoxRenderable } from "../../../ui";
 import type { ChatMessage } from "../../../api-client";
-import { truncateWithEllipsis } from "../../../utils/text-wrap";
+import { splitLongTextSegmentByDisplayWidth, truncateWithEllipsis } from "../../../utils/text-wrap";
+import { tokenizeInlineContent, type InlineContentToken } from "../../../utils/inline-content-tokenizer";
+import { displayWidth } from "../../../utils/format";
+import { getTickerBadgeCellWidth } from "../../../components/ticker/badge/format";
+import type { InlineTickerCatalogEntry } from "../../../state/hooks/inline-tickers";
 
 const MESSAGE_GROUP_THRESHOLD_MS = 5 * 60 * 1000;
 const MESSAGE_SELECTION_BOTTOM_INSET = 1;
@@ -51,24 +55,150 @@ function wrapTextLines(text: string, width: number) {
   return lines.length > 0 ? lines : [""];
 }
 
-export function getMessageBodyLines(message: ChatMessage, width: number) {
+function inlineTokenWidth(
+  token: InlineContentToken,
+  catalog: Record<string, InlineTickerCatalogEntry>,
+): number {
+  if (token.kind !== "ticker") return displayWidth(token.value);
+
+  const entry = catalog[token.symbol];
+  if (!entry || entry.status === "missing") return displayWidth(token.value);
+
+  const baseWidth = getTickerBadgeCellWidth({
+    symbol: token.symbol,
+    status: entry.status,
+    quote: entry.quote,
+  });
+  const hoverWidth = getTickerBadgeCellWidth({
+    symbol: token.symbol,
+    status: entry.status,
+    quote: entry.quote,
+    hovered: true,
+  });
+  return Math.max(baseWidth, hoverWidth);
+}
+
+function wrapInlineContentLine(
+  text: string,
+  width: number,
+  catalog: Record<string, InlineTickerCatalogEntry>,
+): string[] {
+  const safeWidth = Math.max(width, 1);
+  const lines: string[] = [];
+  let current = "";
+  let currentWidth = 0;
+
+  const finishLine = () => {
+    lines.push(current.trimEnd());
+    current = "";
+    currentWidth = 0;
+  };
+
+  const appendTextPart = (rawPart: string) => {
+    let part = currentWidth === 0 ? rawPart.trimStart() : rawPart;
+    if (!part) return;
+
+    while (part) {
+      const partWidth = displayWidth(part);
+      if (currentWidth > 0 && currentWidth + partWidth > safeWidth) {
+        finishLine();
+        part = part.trimStart();
+        if (!part) return;
+        continue;
+      }
+
+      if (partWidth <= safeWidth - currentWidth) {
+        current += part;
+        currentWidth += partWidth;
+        return;
+      }
+
+      const available = Math.max(safeWidth - currentWidth, 1);
+      const [chunk = "", ...rest] = splitLongTextSegmentByDisplayWidth(part, available);
+      if (chunk) {
+        current += chunk;
+        currentWidth += displayWidth(chunk);
+      }
+      finishLine();
+      part = rest.join("").trimStart();
+    }
+  };
+
+  const appendText = (value: string) => {
+    const parts = value.match(/\S+\s*|\s+/g) ?? [value];
+    for (const part of parts) {
+      appendTextPart(part);
+    }
+  };
+
+  const appendInlineToken = (token: InlineContentToken) => {
+    const tokenWidth = inlineTokenWidth(token, catalog);
+    if (currentWidth > 0 && currentWidth + tokenWidth > safeWidth) finishLine();
+    current += token.value;
+    currentWidth += tokenWidth;
+  };
+
+  for (const token of tokenizeInlineContent(text)) {
+    if (token.kind === "text") {
+      appendText(token.value);
+      continue;
+    }
+    appendInlineToken(token);
+  }
+
+  if (current || lines.length === 0) lines.push(current.trimEnd());
+  return lines;
+}
+
+function wrapInlineContentLines(
+  text: string,
+  width: number,
+  catalog: Record<string, InlineTickerCatalogEntry>,
+): string[] {
+  const lines: string[] = [];
+  for (const paragraph of text.split("\n")) {
+    if (!paragraph) {
+      lines.push("");
+      continue;
+    }
+    lines.push(...wrapInlineContentLine(paragraph, width, catalog));
+  }
+  return lines.length > 0 ? lines : [""];
+}
+
+export function getMessageBodyLines(
+  message: ChatMessage,
+  width: number,
+  catalog?: Record<string, InlineTickerCatalogEntry>,
+) {
   const contentLineWidth = Math.max(width - 4, 1);
+  if (catalog) return wrapInlineContentLines(message.content, contentLineWidth, catalog);
   return wrapTextLines(message.content, contentLineWidth);
 }
 
-export function estimateMessageHeight(message: ChatMessage, width: number, grouped = false) {
+export function estimateMessageHeight(
+  message: ChatMessage,
+  width: number,
+  grouped = false,
+  catalog?: Record<string, InlineTickerCatalogEntry>,
+) {
   const headerHeight = grouped ? 0 : 1;
-  return headerHeight + (message.replyTo ? 1 : 0) + getMessageBodyLines(message, width).length;
+  return headerHeight + (message.replyTo ? 1 : 0) + getMessageBodyLines(message, width, catalog).length;
 }
 
 export function estimateComposerHeight(text: string, width: number) {
   return Math.max(1, Math.min(CHAT_COMPOSER_MAX_ROWS, wrapTextLines(text, width).length));
 }
 
-export function getMessageTopOffset(messages: ChatMessage[], index: number, width: number) {
+export function getMessageTopOffset(
+  messages: ChatMessage[],
+  index: number,
+  width: number,
+  catalog?: Record<string, InlineTickerCatalogEntry>,
+) {
   let offset = 0;
   for (let i = 0; i < index; i += 1) {
-    offset += estimateMessageHeight(messages[i]!, width, isGroupedWithPrevious(messages, i));
+    offset += estimateMessageHeight(messages[i]!, width, isGroupedWithPrevious(messages, i), catalog);
   }
   return offset;
 }

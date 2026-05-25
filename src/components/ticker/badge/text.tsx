@@ -5,6 +5,7 @@ import { ExternalLinkText, openUrl } from "../../ui";
 import { tokenizeInlineContent } from "../../../utils/inline-content-tokenizer";
 import type { InlineTickerCatalogEntry } from "../../../state/hooks/inline-tickers";
 import { displayWidth } from "../../../utils/format";
+import { splitLongTextSegmentByDisplayWidth } from "../../../utils/text-wrap";
 import { blendHex, colors } from "../../../theme/colors";
 
 export interface TickerBadgeTextProps {
@@ -54,28 +55,10 @@ function UsernameBadge({
   );
 }
 
-function splitLongTextSegment(value: string, lineWidth: number): string[] {
-  if (displayWidth(value) <= lineWidth) return [value];
-
-  const chunks: string[] = [];
-  let current = "";
-  for (const char of Array.from(value)) {
-    const next = `${current}${char}`;
-    if (current && displayWidth(next) > lineWidth) {
-      chunks.push(current);
-      current = char;
-      continue;
-    }
-    current = next;
-  }
-  if (current) chunks.push(current);
-  return chunks;
-}
-
 function splitTextForWrap(value: string, lineWidth: number): string[] {
   const width = Math.max(1, lineWidth);
   const segments = value.match(/\S+\s*|\s+/g) ?? [value];
-  return segments.flatMap((segment) => splitLongTextSegment(segment, width));
+  return segments.flatMap((segment) => splitLongTextSegmentByDisplayWidth(segment, width));
 }
 
 export function TickerBadgeText({
