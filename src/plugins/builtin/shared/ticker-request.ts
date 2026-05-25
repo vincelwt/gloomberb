@@ -58,7 +58,9 @@ export function useTickerRequest<T>(
     load(false);
   }, [load]);
 
-  return { ...state, reload: () => load(true) };
+  const reload = useCallback(() => load(true), [load]);
+
+  return { ...state, reload };
 }
 
 export function formatDateTime(date: Date): string {

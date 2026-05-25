@@ -23,6 +23,11 @@ const rows: Row[] = [
   { type: "row", id: "second", title: "Second row" },
   { type: "row", id: "third", title: "Third row" },
 ];
+const largeRows: Row[] = Array.from({ length: 1_000 }, (_, index) => ({
+  type: "row",
+  id: `row-${index}`,
+  title: `Row ${index}`,
+}));
 
 const columns: Column[] = [
   { id: "title", label: "Title", width: 20, align: "left" },
@@ -77,6 +82,40 @@ function Harness() {
               <Text>{`selected=${selectedTitle} activated=${activatedTitle}`}</Text>
             </Box>
           }
+        />
+      </PaneInstanceProvider>
+    </AppContext>
+  );
+}
+
+function LargeSelectionHarness({
+  onIsSelected,
+}: {
+  onIsSelected: () => void;
+}) {
+  const state = createInitialState(
+    createDefaultConfig("/tmp/gloomberb-data-table-view-large-test"),
+  );
+
+  return (
+    <AppContext value={{ state, dispatch: () => {} }}>
+      <PaneInstanceProvider paneId="data-table-view-large-test">
+        <DataTableView<Row, Column>
+          focused
+          selectedIndex={500}
+          columns={columns}
+          items={largeRows}
+          sortColumnId={null}
+          sortDirection="asc"
+          onHeaderClick={() => {}}
+          getItemKey={(row) => row.id}
+          isSelected={(_row, index) => {
+            onIsSelected();
+            return index === 500;
+          }}
+          onSelect={() => {}}
+          renderCell={(row): DataTableCell => ({ text: row.title })}
+          emptyStateTitle="No rows"
         />
       </PaneInstanceProvider>
     </AppContext>
@@ -197,4 +236,19 @@ describe("DataTableView", () => {
     expect(testSetup.captureCharFrame()).toContain("selected=Third row activated=Third row");
   });
 
+  test("does not scan every row when the selected index is explicit", async () => {
+    let isSelectedCalls = 0;
+    testSetup = await testRender(
+      <LargeSelectionHarness
+        onIsSelected={() => {
+          isSelectedCalls += 1;
+        }}
+      />,
+      { width: 60, height: 12 },
+    );
+
+    await renderSettled();
+
+    expect(isSelectedCalls).toBeLessThan(150);
+  });
 });

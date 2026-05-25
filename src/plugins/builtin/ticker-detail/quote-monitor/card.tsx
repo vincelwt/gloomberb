@@ -1,7 +1,14 @@
+import { useMemo } from "react";
 import { Box, Text, TextAttributes, useUiCapabilities } from "../../../../ui";
 import type { TickerFinancials } from "../../../../types/financials";
 import type { TickerRecord } from "../../../../types/ticker";
-import { useTickerFinancials } from "../../../../market-data/hooks";
+import {
+  DEFAULT_LIVE_CHART_REFRESH_INTERVAL_MS,
+  useChartQuery,
+  useTickerFinancials,
+} from "../../../../market-data/hooks";
+import { instrumentFromTicker } from "../../../../market-data/request-types";
+import { resolveEntryData } from "../../../../market-data/selectors";
 import { useDoubleClickActivation } from "../../../../components/use-double-click-activation";
 import { colors, priceColor } from "../../../../theme/colors";
 import { formatPercentRaw } from "../../../../utils/format";
@@ -47,6 +54,23 @@ export function QuoteMonitorCard({
   const { nativePaneChrome } = useUiCapabilities();
   const marketFinancials = useTickerFinancials(symbol, ticker);
   const financials = marketFinancials ?? cachedFinancials;
+  const chartRequest = useMemo(() => {
+    const instrument = instrumentFromTicker(ticker, symbol);
+    return instrument
+      ? {
+        instrument,
+        bufferRange: chartPeriod,
+        granularity: "range" as const,
+      }
+      : null;
+  }, [chartPeriod, symbol, ticker]);
+  const chartEntry = useChartQuery(chartRequest, {
+    refreshIntervalMs: DEFAULT_LIVE_CHART_REFRESH_INTERVAL_MS,
+  });
+  const queriedPriceHistory = resolveEntryData(chartEntry);
+  const priceHistory = queriedPriceHistory && queriedPriceHistory.length >= 2
+    ? queriedPriceHistory
+    : financials?.priceHistory;
   const flashDirection = useQuoteFlashDirection(financials, valueFlashingEnabled);
   const quote = financials?.quote;
   const display = getActiveQuoteDisplay(quote);
@@ -62,7 +86,7 @@ export function QuoteMonitorCard({
   const changeValueText = display ? formatSignedMarketPrice(display.change, { assetCategory: ticker?.metadata.assetCategory }) : "";
   const priceColumnWidth = Math.max(priceText.length, changePercentText.length + changeValueText.length + 1);
   const nameMaxWidth = Math.max(10, width - priceColumnWidth - (nativePaneChrome ? 5 : 3));
-  const sparklineRange = resolvePriceSparklineRange(financials?.priceHistory, chartPeriod);
+  const sparklineRange = resolvePriceSparklineRange(priceHistory, chartPeriod);
   const rangeLabel = sparklineRange
     ? `${chartPeriod} ${formatMarketPriceWithCurrency(sparklineRange.min, currency, { assetCategory: ticker?.metadata.assetCategory })}-${formatMarketPriceWithCurrency(sparklineRange.max, currency, { assetCategory: ticker?.metadata.assetCategory })}`
     : "";
@@ -124,7 +148,7 @@ export function QuoteMonitorCard({
       } : undefined}
     >
       {nativePaneChrome && display && (
-        <PriceAreaSparklineBackground priceHistory={financials?.priceHistory} trend={trend} period={chartPeriod} />
+        <PriceAreaSparklineBackground priceHistory={priceHistory} trend={trend} period={chartPeriod} />
       )}
       {!display ? (
         <Box flexDirection="column" flexGrow={1} justifyContent="center">
@@ -286,7 +310,7 @@ export function QuoteMonitorCard({
 
           <Box height={terminalSparklineHeight} flexDirection="row" alignItems="center" gap={1}>
             <PriceSparkline
-              priceHistory={financials?.priceHistory}
+              priceHistory={priceHistory}
               width={sparklineWidth}
               height={terminalSparklineHeight}
               trend={trend}

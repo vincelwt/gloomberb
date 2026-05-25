@@ -16,6 +16,7 @@ import {
   getLastVisitedChatChannelId,
   hasOnlyDmUsernameArgs,
   normalizeShortcutChannelId,
+  openDefaultChatFromCommand,
   openDmTargetFromCommand,
   parseDmUsernames,
 } from "../chat/channels";
@@ -147,9 +148,7 @@ export function createGloomberbCloudPlugin({
         keywords: ["chat", "message", "messages"],
         category: "navigation",
         shortcut: "CHAT",
-        execute: () => {
-          ctx.showPane("chat");
-        },
+        execute: () => openDefaultChatFromCommand(ctx),
       });
 
       ctx.registerCommand({

@@ -45,10 +45,12 @@ export function FinancialsTab({
   focused,
   headerScrollId,
   bodyScrollId,
+  allowArrowSubTabNavigation = true,
 }: {
   focused: boolean;
   headerScrollId?: string;
   bodyScrollId?: string;
+  allowArrowSubTabNavigation?: boolean;
 }) {
   const { financials } = usePaneTicker();
   return (
@@ -57,6 +59,7 @@ export function FinancialsTab({
       financials={financials}
       headerScrollId={headerScrollId}
       bodyScrollId={bodyScrollId}
+      allowArrowSubTabNavigation={allowArrowSubTabNavigation}
     />
   );
 }
@@ -66,11 +69,13 @@ export function ResolvedFinancialsTab({
   financials,
   headerScrollId,
   bodyScrollId,
+  allowArrowSubTabNavigation = true,
 }: {
   focused: boolean;
   financials: ReturnType<typeof usePaneTicker>["financials"];
   headerScrollId?: string;
   bodyScrollId?: string;
+  allowArrowSubTabNavigation?: boolean;
 }) {
   const annualStatements = financials?.annualStatements ?? [];
   const quarterlyStatements = financials?.quarterlyStatements ?? [];
@@ -85,6 +90,7 @@ export function ResolvedFinancialsTab({
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     () => new Set(collectDefaultCollapsedGroupIds(FINANCIAL_SUB_TABS.flatMap((tab) => tab.rows))),
   );
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const bodyScrollRef = useRef<ScrollBoxRenderable>(null);
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
   const resolvedPeriodForFooter = resolveFinancialPeriod(period, hasAnnualStatements, hasQuarterlyStatements);
@@ -102,6 +108,9 @@ export function ResolvedFinancialsTab({
     const boundedIndex = ((rawIndex % FINANCIAL_SUB_TABS.length) + FINANCIAL_SUB_TABS.length) % FINANCIAL_SUB_TABS.length;
     setStoredSubTab(FINANCIAL_SUB_TABS[boundedIndex]?.key ?? FINANCIAL_SUB_TABS[0]!.key);
   }, [setStoredSubTab, subTabIdx]);
+  const selectAdjacentSubTab = useCallback((direction: -1 | 1) => {
+    setSubTabIdx((current) => current + direction);
+  }, [setSubTabIdx]);
   const togglePeriod = useCallback(() => {
     if (!hasAnnualStatements && !hasQuarterlyStatements) return;
     setPeriod((current) => {
@@ -192,6 +201,7 @@ export function ResolvedFinancialsTab({
 
   useShortcut((event) => {
     if (!focused) return;
+    if (event.ctrl || event.meta || event.alt || event.super || event.targetEditable) return;
     const keyName = event.name || event.key || event.sequence;
     if (keyName === "p") {
       event.preventDefault();
@@ -209,6 +219,14 @@ export function ResolvedFinancialsTab({
       event.preventDefault();
       event.stopPropagation();
       setSubTabIdx(Number(keyName) - 1);
+    } else if (allowArrowSubTabNavigation && keyName === "left") {
+      event.preventDefault();
+      event.stopPropagation();
+      selectAdjacentSubTab(-1);
+    } else if (allowArrowSubTabNavigation && keyName === "right") {
+      event.preventDefault();
+      event.stopPropagation();
+      selectAdjacentSubTab(1);
     }
   }, { phase: "before" });
 
@@ -219,10 +237,6 @@ export function ResolvedFinancialsTab({
       setPeriod("annual");
     }
   }, [hasAnnualStatements, hasQuarterlyStatements, period]);
-
-  if (!financials || (!hasAnnualStatements && !hasQuarterlyStatements)) {
-    return <Text fg={colors.textDim}>No financial data available.</Text>;
-  }
 
   const resolvedPeriod = resolveFinancialPeriod(period, hasAnnualStatements, hasQuarterlyStatements);
   const isAnnual = resolvedPeriod === "annual";
@@ -256,6 +270,25 @@ export function ResolvedFinancialsTab({
     })),
   ];
   const rows = buildFinancialRows(subTab.rows, displayStatements, collapsedGroups);
+  const selectedIndex = selectedRowId
+    ? rows.findIndex((row) => row.id === selectedRowId)
+    : rows.length > 0 ? 0 : -1;
+  const effectiveSelectedIndex = selectedIndex >= 0
+    ? selectedIndex
+    : rows.length > 0 ? 0 : -1;
+
+  useEffect(() => {
+    if (rows.length === 0) {
+      if (selectedRowId !== null) setSelectedRowId(null);
+      return;
+    }
+    if (selectedRowId && rows.some((row) => row.id === selectedRowId)) return;
+    setSelectedRowId(rows[0]!.id);
+  }, [rows, selectedRowId]);
+
+  if (!financials || (!hasAnnualStatements && !hasQuarterlyStatements)) {
+    return <Text fg={colors.textDim}>No financial data available.</Text>;
+  }
 
   const renderCell = (
     row: FinancialTableRow,
@@ -345,18 +378,22 @@ export function ResolvedFinancialsTab({
         bodyScrollId={bodyScrollId}
         columns={columns}
         items={rows}
+        selectedIndex={effectiveSelectedIndex}
+        onSelectIndex={(_index, row) => {
+          setSelectedRowId(row.id);
+        }}
         sortColumnId={null}
         sortDirection="desc"
         onHeaderClick={() => {}}
         getItemKey={(row) => row.id}
-        isSelected={() => false}
+        isSelected={(_row, index) => index === effectiveSelectedIndex}
         onSelect={(row) => {
+          setSelectedRowId(row.id);
           if (row.kind === "group" && row.toggleable) toggleGroup(row.id);
         }}
         onActivate={(row) => {
           if (row.kind === "group" && row.toggleable) toggleGroup(row.id);
         }}
-        isNavigable={(row) => row.kind === "group" && row.toggleable}
         getRowBackgroundColor={(row) => row.kind === "group" && row.depth === 0 ? colors.panel : undefined}
         renderCell={renderCell}
         emptyStateTitle="No financial data"

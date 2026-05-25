@@ -36,6 +36,8 @@ const TEST_PANE_ID = "ticker-research:test";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let harnessDispatch: React.Dispatch<AppAction> | null = null;
+let financialsHarnessState: ReturnType<typeof createInitialState> | null = null;
+let detailHarnessState: ReturnType<typeof createInitialState> | null = null;
 let sharedCoordinator: MarketDataCoordinator | null = null;
 
 const runtime = createTestPluginRuntime();
@@ -78,7 +80,7 @@ function makeFinancials(overrides: Partial<TickerFinancials> = {}): TickerFinanc
   };
 }
 
-function createFinancialsTabHarness() {
+function FinancialsTabHarness() {
   const config = createDefaultConfig("/tmp/gloomberb-test");
   config.layout.instances = config.layout.instances.map((instance) => (
     instance.instanceId === "ticker-detail:main"
@@ -91,25 +93,27 @@ function createFinancialsTabHarness() {
   const financials: TickerFinancials = {
     annualStatements: [
       { date: "2021-12-31" },
-      { date: "2022-12-31", totalRevenue: 43.49e9, operatingIncome: 9.37e9, eps: 4.68, totalAssets: 64e9, currentAssets: 18e9, cashAndCashEquivalents: 3e9 },
-      { date: "2023-12-31", totalRevenue: 27.62e9, operatingIncome: -2.4e9, eps: -0.92, totalAssets: 67.89e9, currentAssets: 16.77e9, cashAndCashEquivalents: 3.93e9 },
-      { date: "2024-12-31", totalRevenue: 25.88e9, operatingIncome: -3.92e9, eps: -1.73, totalAssets: 69.23e9, currentAssets: 19.05e9, cashAndCashEquivalents: 3.79e9, accountsReceivable: 5.12e9 },
-      { date: "2025-12-31", totalRevenue: 28.88e9, operatingIncome: -3.7e9, eps: -1.77, totalAssets: 76.93e9, currentAssets: 26.95e9, cashAndCashEquivalents: 5.54e9, accountsReceivable: 7.45e9, inventory: 4.88e9 },
+      { date: "2022-12-31", totalRevenue: 43.49e9, operatingRevenue: 43.49e9, costOfRevenue: 20e9, grossProfit: 23.49e9, operatingIncome: 9.37e9, eps: 4.68, totalAssets: 64e9, currentAssets: 18e9, cashAndCashEquivalents: 3e9 },
+      { date: "2023-12-31", totalRevenue: 27.62e9, operatingRevenue: 27.62e9, costOfRevenue: 16e9, grossProfit: 11.62e9, operatingIncome: -2.4e9, eps: -0.92, totalAssets: 67.89e9, currentAssets: 16.77e9, cashAndCashEquivalents: 3.93e9 },
+      { date: "2024-12-31", totalRevenue: 25.88e9, operatingRevenue: 25.88e9, costOfRevenue: 15e9, grossProfit: 10.88e9, operatingIncome: -3.92e9, eps: -1.73, totalAssets: 69.23e9, currentAssets: 19.05e9, cashAndCashEquivalents: 3.79e9, accountsReceivable: 5.12e9 },
+      { date: "2025-12-31", totalRevenue: 28.88e9, operatingRevenue: 28.88e9, costOfRevenue: 17e9, grossProfit: 11.88e9, operatingIncome: -3.7e9, eps: -1.77, totalAssets: 76.93e9, currentAssets: 26.95e9, cashAndCashEquivalents: 5.54e9, accountsReceivable: 7.45e9, inventory: 4.88e9 },
     ],
     quarterlyStatements: [
-      { date: "2025-03-31", totalRevenue: 6e9, operatingIncome: -1e9, eps: -0.4 },
-      { date: "2025-06-30", totalRevenue: 6.5e9, operatingIncome: -1.1e9, eps: -0.42 },
-      { date: "2025-09-30", totalRevenue: 7e9, operatingIncome: -1.2e9, eps: -0.45 },
-      { date: "2025-12-31", totalRevenue: 7.08e9, operatingIncome: -1.01e9, eps: -0.5, totalAssets: 76.93e9, currentAssets: 26.95e9, cashAndCashEquivalents: 5.54e9, accountsReceivable: 7.45e9, inventory: 4.88e9 },
+      { date: "2025-03-31", totalRevenue: 6e9, operatingRevenue: 6e9, costOfRevenue: 3e9, grossProfit: 3e9, operatingIncome: -1e9, eps: -0.4 },
+      { date: "2025-06-30", totalRevenue: 6.5e9, operatingRevenue: 6.5e9, costOfRevenue: 3.3e9, grossProfit: 3.2e9, operatingIncome: -1.1e9, eps: -0.42 },
+      { date: "2025-09-30", totalRevenue: 7e9, operatingRevenue: 7e9, costOfRevenue: 3.5e9, grossProfit: 3.5e9, operatingIncome: -1.2e9, eps: -0.45 },
+      { date: "2025-12-31", totalRevenue: 7.08e9, operatingRevenue: 7.08e9, costOfRevenue: 3.7e9, grossProfit: 3.38e9, operatingIncome: -1.01e9, eps: -0.5, totalAssets: 76.93e9, currentAssets: 26.95e9, cashAndCashEquivalents: 5.54e9, accountsReceivable: 7.45e9, inventory: 4.88e9 },
     ],
     priceHistory: [],
   };
 
   state.tickers = new Map([["2337", ticker]]);
   state.financials = new Map([["2337", financials]]);
+  const [appState, dispatch] = useReducer(appReducer, state);
+  financialsHarnessState = appState;
 
   return (
-    <AppContext value={{ state, dispatch: () => {} }}>
+    <AppContext value={{ state: appState, dispatch }}>
       <PaneInstanceProvider paneId="ticker-detail:main">
         <FinancialsTab
           focused
@@ -119,6 +123,10 @@ function createFinancialsTabHarness() {
       </PaneInstanceProvider>
     </AppContext>
   );
+}
+
+function createFinancialsTabHarness() {
+  return <FinancialsTabHarness />;
 }
 
 function createFinancialsTabFooterHarness(width = 90, height = 18) {
@@ -246,6 +254,7 @@ function DetailHarness({
   const initialState = createDetailState(config, ticker, financials, activeTabId, exchangeRates);
   const [state, dispatch] = useReducer(appReducer, initialState);
   harnessDispatch = dispatch;
+  detailHarnessState = state;
 
   return (
     <AppContext value={{ state, dispatch }}>
@@ -277,6 +286,8 @@ afterEach(() => {
     testSetup = undefined;
   }
   harnessDispatch = null;
+  financialsHarnessState = null;
+  detailHarnessState = null;
   setSharedRegistryForTests(undefined);
   setOptionsProvider(undefined);
 });
@@ -304,6 +315,51 @@ describe("FinancialsTab", () => {
     frame = testSetup.captureCharFrame();
     expect(frame).toContain("Quarterly");
     expect(frame).toContain("[p]eriod");
+  });
+
+  test("moves selection with down without collapsing the selected financial group", async () => {
+    testSetup = await testRender(createFinancialsTabFooterHarness(100, 20), {
+      width: 100,
+      height: 20,
+    });
+
+    await flushFrame();
+    await flushFrame();
+    expect(testSetup.captureCharFrame()).toContain("Operating Revenue");
+
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("down");
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    expect(testSetup.captureCharFrame()).toContain("Operating Revenue");
+  });
+
+  test("switches financial statement sections with left and right arrows", async () => {
+    testSetup = await testRender(createFinancialsTabFooterHarness(100, 20), {
+      width: 100,
+      height: 20,
+    });
+
+    await flushFrame();
+    await flushFrame();
+
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("right");
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    expect(financialsHarnessState?.paneState["ticker-detail:main"]?.financialSubTab).toBe("cashflow");
+
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("left");
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    expect(financialsHarnessState?.paneState["ticker-detail:main"]?.financialSubTab).toBe("income");
   });
 
 });
@@ -352,6 +408,42 @@ describe("TickerResearchPane", () => {
     await flushFrame();
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Financials");
+  });
+
+  test("lets ticker detail tab arrows leave the embedded financials tab", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    setOptionsProvider(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("AAPL")}
+        ticker={makeTicker("AAPL")}
+        financials={makeFinancials({
+          annualStatements: [{ date: "2024-12-31", totalRevenue: 1_000 }],
+        })}
+        activeTabId="financials"
+      />,
+      { width: 90, height: 24 },
+    );
+
+    await flushFrame();
+    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("financials");
+
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("right");
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("fundamental-graphs");
+
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("left");
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("financials");
   });
 
   test("shows Trade when an IBKR gateway profile exists", async () => {

@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { testRender } from "../../../../renderers/opentui/test-utils";
-import type { TickerFinancials } from "../../../../types/financials";
+import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../../market-data/coordinator";
+import { createTestDataProvider } from "../../../../test-support/data-provider";
+import type { PricePoint, TickerFinancials } from "../../../../types/financials";
 import type { TickerRecord } from "../../../../types/ticker";
-import { createDefaultConfig } from "../../../../types/config";
+import { createDefaultConfig, TICKER_RESEARCH_PANE_ID } from "../../../../types/config";
 import { AppContext, createInitialState, PaneInstanceProvider } from "../../../../state/app/context";
 import { QuoteMonitorPane } from "./index";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../../runtime";
@@ -12,6 +14,7 @@ import type { PinTickerOptions } from "../../../../types/plugin";
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
 afterEach(() => {
+  setSharedMarketDataCoordinator(null);
   if (testSetup) {
     testSetup.renderer.destroy();
     testSetup = undefined;
@@ -79,7 +82,20 @@ function makeTicker(symbol: string, name: string): TickerRecord {
   };
 }
 
-function makeFinancials(symbol: string, price: number, change: number, changePercent: number): TickerFinancials {
+function makePriceHistory(price: number): PricePoint[] {
+  return Array.from({ length: 12 }, (_, index) => ({
+    date: new Date(Date.UTC(2026, 0, index + 1)),
+    close: price - 6 + index,
+  }));
+}
+
+function makeFinancials(
+  symbol: string,
+  price: number,
+  change: number,
+  changePercent: number,
+  priceHistory = makePriceHistory(price),
+): TickerFinancials {
   return {
     quote: {
       symbol,
@@ -91,15 +107,13 @@ function makeFinancials(symbol: string, price: number, change: number, changePer
     },
     annualStatements: [],
     quarterlyStatements: [],
-    priceHistory: Array.from({ length: 12 }, (_, index) => ({
-      date: new Date(Date.UTC(2026, 0, index + 1)),
-      close: price - 6 + index,
-    })),
+    priceHistory,
   };
 }
 
 function createQuoteMonitorHarness(options: {
   symbols?: string[];
+  financials?: Map<string, TickerFinancials>;
   pinCalls?: PinTickerCall[];
   settingsCalls?: Array<string | undefined>;
 } = {}) {
@@ -128,7 +142,7 @@ function createQuoteMonitorHarness(options: {
     makeTicker("AAPL", "Apple"),
   ];
   state.tickers = new Map(tickers.map((ticker) => [ticker.metadata.ticker, ticker]));
-  state.financials = new Map([
+  state.financials = options.financials ?? new Map([
     ["MSFT", makeFinancials("MSFT", 356.15, -9.82, -2.68)],
     ["AAPL", makeFinancials("AAPL", 202.12, 3.05, 1.53)],
   ]);
@@ -147,14 +161,40 @@ function createQuoteMonitorHarness(options: {
   );
 }
 
+async function renderHarness(
+  node: ReturnType<typeof createQuoteMonitorHarness>,
+  options: Parameters<typeof testRender>[1],
+) {
+  await act(async () => {
+    testSetup = await testRender(node, options);
+  });
+}
+
+async function renderOnce() {
+  await act(async () => {
+    await testSetup!.renderOnce();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+async function flushFrames(count: number) {
+  for (let index = 0; index < count; index += 1) {
+    await act(async () => {
+      await Promise.resolve();
+      await testSetup!.renderOnce();
+    });
+  }
+}
+
 describe("QuoteMonitorPane", () => {
   test("renders a compact quote card for the bound ticker", async () => {
-    testSetup = await testRender(createQuoteMonitorHarness(), {
+    await renderHarness(createQuoteMonitorHarness(), {
       width: 72,
       height: 7,
     });
 
-    await testSetup.renderOnce();
+    await renderOnce();
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("MSFT");
@@ -165,12 +205,12 @@ describe("QuoteMonitorPane", () => {
   });
 
   test("renders multiple configured tickers", async () => {
-    testSetup = await testRender(createQuoteMonitorHarness({ symbols: ["MSFT", "AAPL"] }), {
+    await renderHarness(createQuoteMonitorHarness({ symbols: ["MSFT", "AAPL"] }), {
       width: 72,
       height: 8,
     });
 
-    await testSetup.renderOnce();
+    await renderOnce();
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("MSFT");
@@ -181,12 +221,12 @@ describe("QuoteMonitorPane", () => {
 
   test("opens a Ticker Research pane on the second card click", async () => {
     const pinCalls: PinTickerCall[] = [];
-    testSetup = await testRender(createQuoteMonitorHarness({ pinCalls }), {
+    await renderHarness(createQuoteMonitorHarness({ pinCalls }), {
       width: 72,
       height: 7,
     });
 
-    await testSetup.renderOnce();
+    await renderOnce();
     const frame = testSetup.captureCharFrame();
     const row = frame.split("\n").findIndex((line) => line.includes("MSFT"));
     expect(row).toBeGreaterThanOrEqual(0);
@@ -200,18 +240,47 @@ describe("QuoteMonitorPane", () => {
 
     expect(pinCalls).toEqual([{
       symbol: "MSFT",
-      options: { paneType: "ticker-detail", floating: true },
+      options: { paneType: TICKER_RESEARCH_PANE_ID, floating: true },
     }]);
   });
 
-  test("opens pane settings when t is pressed", async () => {
-    const settingsCalls: Array<string | undefined> = [];
-    testSetup = await testRender(createQuoteMonitorHarness({ settingsCalls }), {
+  test("loads chart history for quote-only cards", async () => {
+    const loadCalls: Array<{ symbol: string; exchange: string; range: string }> = [];
+    const chartHistory = makePriceHistory(356.15);
+    setSharedMarketDataCoordinator(new MarketDataCoordinator(createTestDataProvider({
+      getTickerFinancials: async (symbol) => makeFinancials(symbol, 356.15, -9.82, -2.68, []),
+      getPriceHistory: async (symbol, exchange, range) => {
+        loadCalls.push({ symbol, exchange, range });
+        return chartHistory;
+      },
+    })));
+
+    await renderHarness(createQuoteMonitorHarness({
+      financials: new Map([
+        ["MSFT", makeFinancials("MSFT", 356.15, -9.82, -2.68, [])],
+      ]),
+    }), {
       width: 72,
       height: 7,
     });
 
-    await testSetup.renderOnce();
+    await renderOnce();
+    await flushFrames(3);
+
+    const frame = testSetup.captureCharFrame();
+    expect(loadCalls).toContainEqual({ symbol: "MSFT", exchange: "NASDAQ", range: "1M" });
+    expect(frame).toContain("MSFT");
+    expect(frame).toMatch(/[⠁-⣿]/);
+  });
+
+  test("opens pane settings when t is pressed", async () => {
+    const settingsCalls: Array<string | undefined> = [];
+    await renderHarness(createQuoteMonitorHarness({ settingsCalls }), {
+      width: 72,
+      height: 7,
+    });
+
+    await renderOnce();
 
     await act(async () => {
       testSetup!.mockInput.pressKey("t");

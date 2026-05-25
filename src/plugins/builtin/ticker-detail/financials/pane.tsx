@@ -9,6 +9,7 @@ export function FinancialsResearchTab({ focused }: TickerResearchTabProps) {
     <ResolvedFinancialsTab
       focused={focused}
       financials={financials}
+      allowArrowSubTabNavigation={false}
     />
   );
 }
