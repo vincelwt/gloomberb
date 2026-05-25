@@ -18,6 +18,7 @@ export { FINANCIAL_SUB_TABS, FINANCIAL_SUB_TABS_WIDTH } from "./schema";
 export type { FinancialPeriod } from "./aggregation";
 
 type FinancialMetricFormat = "compact" | "eps" | "percent";
+export type FinancialGrowthDirection = "higher" | "lower" | "neutral";
 
 export type MetricDef = {
   label: string;
@@ -26,6 +27,7 @@ export type MetricDef = {
   compute?: (statement: FinancialStatement) => number | undefined;
   format: FinancialMetricFormat;
   showGrowth?: boolean;
+  growthDirection?: FinancialGrowthDirection;
 };
 
 export type FinancialRowDef = MetricDef | FinancialGroupDef;
@@ -36,6 +38,7 @@ type FinancialGroupDef = {
   label: string;
   summaryKey?: keyof FinancialStatement;
   format?: FinancialMetricFormat;
+  growthDirection?: FinancialGrowthDirection;
   defaultExpanded?: boolean;
   children: FinancialRowDef[];
 };
@@ -56,6 +59,7 @@ export type FinancialTableRow =
     divisor: number;
     format: FinancialMetricFormat;
     showGrowth: boolean;
+    growthDirection: FinancialGrowthDirection;
     depth: number;
   }
   | {
@@ -66,6 +70,7 @@ export type FinancialTableRow =
     summaryKey?: keyof FinancialStatement;
     divisor: number;
     format: FinancialMetricFormat;
+    growthDirection: FinancialGrowthDirection;
     depth: number;
     expanded: boolean;
     toggleable: boolean;
@@ -89,6 +94,16 @@ const FINANCIAL_VALUE_W = FINANCIAL_COL_W - FINANCIAL_GROWTH_W;
 export function computeGrowth(current: number | undefined, previous: number | undefined): number | undefined {
   if (current == null || previous == null || previous === 0) return undefined;
   return (current - previous) / Math.abs(previous);
+}
+
+export function semanticGrowthValue(
+  growth: number | undefined,
+  direction: FinancialGrowthDirection,
+): number | undefined {
+  if (growth == null) return undefined;
+  if (direction === "lower") return -growth;
+  if (direction === "neutral") return 0;
+  return growth;
 }
 
 export function formatFinancialCell(value: string, growth: number | undefined) {
@@ -204,6 +219,7 @@ export function buildFinancialRows(
         divisor,
         format,
         showGrowth: def.showGrowth ?? format !== "percent",
+        growthDirection: def.growthDirection ?? "higher",
         depth,
       });
       continue;
@@ -223,6 +239,7 @@ export function buildFinancialRows(
       summaryKey: def.summaryKey,
       divisor: metricUnit.divisor,
       format: metricUnit.format,
+      growthDirection: def.growthDirection ?? "higher",
       depth,
       expanded,
       toggleable,
@@ -260,6 +277,7 @@ interface FinancialTableCellModel {
   growthText: string;
   value: number | undefined;
   growth: number | undefined;
+  semanticGrowth: number | undefined;
 }
 
 interface FinancialTableModelRow {
@@ -269,6 +287,7 @@ interface FinancialTableModelRow {
   summaryKey?: keyof FinancialStatement;
   unitLabel: string;
   depth: number;
+  growthDirection: FinancialGrowthDirection;
   cells: FinancialTableCellModel[];
 }
 
@@ -326,6 +345,7 @@ export function buildFinancialTableModel(
         ...formatFinancialCell(formatFinancialValue(value, row), growth),
         value,
         growth,
+        semanticGrowth: semanticGrowthValue(growth, row.growthDirection),
       };
     });
     return {
@@ -335,6 +355,7 @@ export function buildFinancialTableModel(
       summaryKey: row.kind === "group" ? row.summaryKey : undefined,
       unitLabel: row.unitLabel,
       depth: row.depth,
+      growthDirection: row.growthDirection,
       cells,
     };
   });

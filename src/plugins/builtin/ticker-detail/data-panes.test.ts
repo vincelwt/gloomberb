@@ -1,10 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { buildRelationshipAnalysis, createRelationshipPaneTemplate } from "../correlation/relationship/pane";
-import { buildEstimateRows } from "../research/estimates-pane";
 import { buildFundamentalGraphRows, buildValuationGraphRows } from "./data-panes/fundamental-graph";
 import { buildHistoricalPriceRows } from "./data-panes/historical-prices";
 import { createDefaultConfig } from "../../../types/config";
-import type { AnalystResearchData, FinancialStatement, PricePoint } from "../../../types/financials";
+import type { FinancialStatement, PricePoint } from "../../../types/financials";
 
 describe("ticker data panes", () => {
   test("builds historical price rows with close-to-close changes", () => {
@@ -107,24 +106,5 @@ describe("ticker data panes", () => {
       symbols: ["AMD", "SPY"],
       symbolsText: "AMD, SPY",
     });
-  });
-
-  test("combines earnings and revenue estimates in date order", () => {
-    const rows = buildEstimateRows({
-      symbol: "AAPL",
-      recommendations: [],
-      ratings: [],
-      earningsEstimates: [
-        { date: "2026-06-30", period: "next_quarter", average: 1.5 },
-      ],
-      revenueEstimates: [
-        { date: "2026-03-31", period: "current_quarter", average: 100_000_000 },
-      ],
-    } satisfies AnalystResearchData);
-
-    expect(rows.map((row) => [row.type, row.estimate.date])).toEqual([
-      ["Revenue", "2026-03-31"],
-      ["EPS", "2026-06-30"],
-    ]);
   });
 });

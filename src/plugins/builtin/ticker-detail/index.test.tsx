@@ -280,6 +280,19 @@ async function flushFrame() {
   });
 }
 
+async function clickFrameText(text: string) {
+  const lines = testSetup!.captureCharFrame().split("\n");
+  const row = lines.findIndex((line) => line.includes(text));
+  expect(row).toBeGreaterThanOrEqual(0);
+  const col = lines[row]!.indexOf(text);
+  expect(col).toBeGreaterThanOrEqual(0);
+  await act(async () => {
+    await testSetup!.mockMouse.click(col + 1, row);
+    await testSetup!.renderOnce();
+  });
+  await flushFrame();
+}
+
 afterEach(() => {
   if (testSetup) {
     testSetup.renderer.destroy();
@@ -315,6 +328,24 @@ describe("FinancialsTab", () => {
     frame = testSetup.captureCharFrame();
     expect(frame).toContain("Quarterly");
     expect(frame).toContain("[p]eriod");
+  });
+
+  test("clicks the period footer hint repeatedly", async () => {
+    testSetup = await testRender(createFinancialsTabFooterHarness(100, 20), {
+      width: 100,
+      height: 20,
+    });
+
+    await flushFrame();
+    await flushFrame();
+
+    expect(testSetup.captureCharFrame()).toContain("Annual");
+
+    await clickFrameText("[p]eriod");
+    expect(testSetup.captureCharFrame()).toContain("Quarterly");
+
+    await clickFrameText("[p]eriod");
+    expect(testSetup.captureCharFrame()).toContain("Annual");
   });
 
   test("moves selection with down without collapsing the selected financial group", async () => {

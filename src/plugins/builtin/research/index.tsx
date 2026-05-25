@@ -3,8 +3,11 @@ import { parseTickerListInput, formatTickerListInput } from "../../../tickers/li
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { AnalystResearchView } from "./analyst-pane";
 import { CorporateActionsView } from "./corporate-actions-pane";
-import { EarningsEstimatesPane } from "./estimates-pane";
 import { RelativeValuationPane } from "./relative-valuation-pane";
+
+function EarningsEstimatesAliasPane(props: { focused: boolean; width: number; height: number }) {
+  return <CorporateActionsView {...props} footerPaneId="earnings-estimates" />;
+}
 
 export const researchPlugin: GloomPlugin = {
   id: "research",
@@ -28,13 +31,6 @@ export const researchPlugin: GloomPlugin = {
       component: CorporateActionsView,
       isVisible: ({ ticker }) => !!ticker,
     });
-    ctx.registerTickerResearchTab({
-      id: "earnings-estimates",
-      name: "Estimates",
-      order: 36,
-      component: EarningsEstimatesPane,
-      isVisible: ({ ticker }) => !!ticker,
-    });
   },
 
   panes: [
@@ -54,7 +50,7 @@ export const researchPlugin: GloomPlugin = {
       component: CorporateActionsView,
       defaultPosition: "right",
       defaultMode: "floating",
-      defaultFloatingSize: { width: 82, height: 24 },
+      defaultFloatingSize: { width: 104, height: 24 },
     },
     {
       id: "relative-valuation",
@@ -69,10 +65,10 @@ export const researchPlugin: GloomPlugin = {
       id: "earnings-estimates",
       name: "Earnings Estimates",
       icon: "E",
-      component: EarningsEstimatesPane,
+      component: EarningsEstimatesAliasPane,
       defaultPosition: "right",
       defaultMode: "floating",
-      defaultFloatingSize: { width: 96, height: 22 },
+      defaultFloatingSize: { width: 104, height: 22 },
     },
   ],
 
@@ -89,16 +85,16 @@ export const researchPlugin: GloomPlugin = {
       id: "corporate-actions-pane",
       paneId: "corporate-actions",
       label: "Corporate Actions",
-      description: "Dividends, splits, and recent earnings.",
-      keywords: ["events", "corporate", "actions", "dividend", "split", "earnings", "evt"],
+      description: "Dividends, splits, reported earnings, and analyst estimates.",
+      keywords: ["events", "corporate", "actions", "dividend", "split", "earnings", "estimate", "revenue", "evt"],
       shortcut: "EVT",
     }),
     createTickerSurfacePaneTemplate({
       id: "earnings-estimates-pane",
-      paneId: "earnings-estimates",
+      paneId: "corporate-actions",
       label: "Earnings Estimates",
-      description: "Open analyst earnings and revenue estimates for a ticker.",
-      keywords: ["earnings", "estimates", "ee", "analyst", "eps"],
+      description: "Open the Events view with EPS and revenue estimates.",
+      keywords: ["earnings", "estimates", "ee", "analyst", "eps", "revenue", "events"],
       shortcut: "EE",
     }),
     {

@@ -6,6 +6,7 @@ import {
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
+  type PaneFooterSegment,
 } from "../../../components";
 import type { AnalystRatingRecord, AnalystResearchData } from "../../../types/financials";
 import { blendHex, colors, priceColor } from "../../../theme/colors";
@@ -56,13 +57,27 @@ function formatPriceTarget(value: number | undefined, currency: string): string 
     .replace(/(\.\d)0\b/, "$1");
 }
 
-function formatRatingTarget(row: AnalystResearchData["ratings"][number], currency: string): string {
+const TARGET_SEPARATOR = " → ";
+
+interface RatingTargetColumnSizing {
+  targetPriorWidth: number;
+  targetCurrentWidth: number;
+}
+
+export function formatRatingTarget(
+  row: AnalystResearchData["ratings"][number],
+  currency: string,
+  sizing?: Partial<RatingTargetColumnSizing>,
+): string {
   const current = row.currentPriceTarget;
   const prior = row.priorPriceTarget;
   if (current == null && prior == null) return "-";
   if (current == null) return ` ${formatPriceTarget(prior, currency)}`;
   if (prior == null) return ` ${formatPriceTarget(current, currency)}`;
-  return ` ${formatPriceTarget(prior, currency)} → ${formatPriceTarget(current, currency)}`;
+
+  const priorText = formatPriceTarget(prior, currency).padStart(sizing?.targetPriorWidth ?? 0);
+  const currentText = formatPriceTarget(current, currency).padEnd(sizing?.targetCurrentWidth ?? 0);
+  return ` ${priorText}${TARGET_SEPARATOR}${currentText}`;
 }
 
 function ratingTargetDelta(row: AnalystResearchData["ratings"][number]): number | null {
@@ -75,13 +90,10 @@ function ratingTargetBackground(delta: number | null): string | undefined {
   return blendHex(colors.bg, delta > 0 ? colors.positive : colors.negative, 0.42);
 }
 
-function AnalystSummary({ data, width }: { data: AnalystResearchData | null; width: number }) {
+function AnalystSummary({ data }: { data: AnalystResearchData | null }) {
   const target = data?.priceTarget;
   const upside = targetUpside(target);
-  const rec = latestRecommendation(data);
-  const total = recommendationTotal(data);
   const currency = target?.currency ?? data?.currency ?? "USD";
-  const summaryWidth = Math.max(1, width - 2);
 
   if (!data) {
     return (
@@ -93,7 +105,7 @@ function AnalystSummary({ data, width }: { data: AnalystResearchData | null; wid
   }
 
   return (
-    <Box flexDirection="column" paddingX={1} height={4}>
+    <Box flexDirection="column" paddingX={1} height={1}>
       <Box height={1} flexDirection="row">
         <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
           {target?.average != null ? formatCurrency(target.average, currency) : "-"}
@@ -103,40 +115,63 @@ function AnalystSummary({ data, width }: { data: AnalystResearchData | null; wid
           {upside != null ? formatPercent(upside) : "-"}
         </Text>
         <Text fg={colors.textDim}> upside</Text>
-        <Box flexGrow={1} />
-        <Text fg={colors.textDim}>rating </Text>
-        <Text fg={colors.text}>{formatRatingLabel(data?.recommendationRating)}</Text>
-      </Box>
-      <Box height={1} flexDirection="row">
-        <Text fg={colors.textDim}>low </Text>
-        <Text fg={colors.text}>{target?.low != null ? formatCurrency(target.low, currency) : "-"}</Text>
-        <Text fg={colors.textDim}>  median </Text>
-        <Text fg={colors.text}>{target?.median != null ? formatCurrency(target.median, currency) : "-"}</Text>
-        <Text fg={colors.textDim}>  high </Text>
-        <Text fg={colors.text}>{target?.high != null ? formatCurrency(target.high, currency) : "-"}</Text>
-      </Box>
-      <Box height={1} width={summaryWidth} flexDirection="row">
-        <Text fg={colors.textDim}>{compactPeriod(rec?.period ?? "")}</Text>
-        <Box flexGrow={1} />
-        <Text fg={colors.positive}>SB {rec?.strongBuy ?? 0}</Text>
-        <Text fg={colors.text}>  B {rec?.buy ?? 0}</Text>
-        <Text fg={colors.textDim}>  H {rec?.hold ?? 0}</Text>
-        <Text fg={colors.negative}>  S {(rec?.sell ?? 0) + (rec?.strongSell ?? 0)}</Text>
-        <Text fg={colors.textDim}>  n={total}</Text>
-      </Box>
-      <Box height={1} flexDirection="row">
-        <Text fg={colors.textDim}>
-          {data?.ratings[0]
-            ? `${data.ratings[0].firm} ${data.ratings[0].action ?? ""} ${data.ratings[0].current ?? ""}`.trim()
-            : "No recent rating actions"}
-        </Text>
       </Box>
     </Box>
   );
 }
 
+export function buildAnalystFooterInfo(data: AnalystResearchData | null): PaneFooterSegment[] {
+  if (!data) return [];
+
+  const target = data.priceTarget;
+  const currency = target?.currency ?? data.currency ?? "USD";
+  const rec = latestRecommendation(data);
+  const total = recommendationTotal(data);
+  const info: PaneFooterSegment[] = [];
+
+  if (target) {
+    info.push({
+      id: "target-range",
+      parts: [
+        { text: "low", tone: "label" },
+        { text: target.low != null ? formatCurrency(target.low, currency) : "-", tone: "muted" },
+        { text: "med", tone: "label" },
+        { text: target.median != null ? formatCurrency(target.median, currency) : "-", tone: "muted" },
+        { text: "high", tone: "label" },
+        { text: target.high != null ? formatCurrency(target.high, currency) : "-", tone: "value" },
+      ],
+    });
+  }
+
+  if (data.recommendationRating != null) {
+    info.push({
+      id: "rating",
+      parts: [
+        { text: "rating", tone: "label" },
+        { text: formatRatingLabel(data.recommendationRating), tone: "value", bold: true },
+      ],
+    });
+  }
+
+  if (rec || total > 0) {
+    info.push({
+      id: "recommendations",
+      parts: [
+        { text: compactPeriod(rec?.period ?? ""), tone: "muted" },
+        { text: `SB ${rec?.strongBuy ?? 0}`, tone: "positive" },
+        { text: `B ${rec?.buy ?? 0}`, tone: "value" },
+        { text: `H ${rec?.hold ?? 0}`, tone: "muted" },
+        { text: `S ${(rec?.sell ?? 0) + (rec?.strongSell ?? 0)}`, tone: "negative" },
+        { text: `n=${total}`, tone: "muted" },
+      ],
+    });
+  }
+
+  return info;
+}
+
 type RatingColumnId = "date" | "firm" | "action" | "current" | "target" | "prior";
-type RatingColumn = DataTableColumn & { id: RatingColumnId };
+type RatingColumn = DataTableColumn & { id: RatingColumnId } & Partial<RatingTargetColumnSizing>;
 
 export interface RatingSortPreference {
   columnId: RatingColumnId;
@@ -157,7 +192,7 @@ const DEFAULT_RATING_SORT_DIRECTIONS: Record<RatingColumnId, SortDirection> = {
   prior: "asc",
 };
 
-const RATING_COLUMNS: RatingColumn[] = [
+const BASE_RATING_COLUMNS: RatingColumn[] = [
   { id: "date", label: "DATE", width: 10, align: "left" },
   { id: "firm", label: "FIRM", width: 20, align: "left" },
   { id: "action", label: "ACTION", width: 10, align: "left" },
@@ -165,6 +200,33 @@ const RATING_COLUMNS: RatingColumn[] = [
   { id: "target", label: "TARGET", width: 13, align: "left" },
   { id: "prior", label: "PRIOR", width: 13, align: "left" },
 ];
+
+export function buildRatingColumns(
+  rows: readonly AnalystRatingRecord[],
+  currency: string,
+): RatingColumn[] {
+  const targetSizing = rows.reduce<RatingTargetColumnSizing>(
+    (sizing, row) => ({
+      targetPriorWidth: Math.max(
+        sizing.targetPriorWidth,
+        row.priorPriceTarget == null ? 0 : formatPriceTarget(row.priorPriceTarget, currency).length,
+      ),
+      targetCurrentWidth: Math.max(
+        sizing.targetCurrentWidth,
+        row.currentPriceTarget == null ? 0 : formatPriceTarget(row.currentPriceTarget, currency).length,
+      ),
+    }),
+    { targetPriorWidth: 0, targetCurrentWidth: 0 },
+  );
+  const targetWidth = rows.reduce(
+    (width, row) => Math.max(width, formatRatingTarget(row, currency, targetSizing).length),
+    BASE_RATING_COLUMNS.find((column) => column.id === "target")?.width ?? 13,
+  );
+
+  return BASE_RATING_COLUMNS.map((column) => {
+    return column.id === "target" ? { ...column, ...targetSizing, width: targetWidth } : column;
+  });
+}
 
 function normalizedText(value: string | undefined): string | null {
   const trimmed = value?.trim();
@@ -248,6 +310,10 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
   const { data, loading, error, reload } = useTickerRequest<AnalystResearchData>(loader, symbol, exchange);
   const rows = useMemo(() => sortRatingRows(data?.ratings ?? [], sortPreference), [data?.ratings, sortPreference]);
   const ratingCurrency = data?.priceTarget?.currency ?? data?.currency ?? "USD";
+  const columns = useMemo(
+    () => buildRatingColumns(data?.ratings ?? [], ratingCurrency),
+    [data?.ratings, ratingCurrency],
+  );
 
   const renderCell = useCallback((
     row: AnalystResearchData["ratings"][number],
@@ -269,7 +335,7 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
         const delta = ratingTargetDelta(row);
         const hasTarget = row.currentPriceTarget != null || row.priorPriceTarget != null;
         return {
-          text: formatRatingTarget(row, ratingCurrency),
+          text: formatRatingTarget(row, ratingCurrency, column),
           color: selectedColor ?? (hasTarget ? colors.textBright : colors.textDim),
           backgroundColor: rowState.selected ? undefined : ratingTargetBackground(delta),
           attributes: hasTarget ? TextAttributes.BOLD : undefined,
@@ -288,18 +354,21 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
   }, []);
 
   usePaneFooter("analyst-research", () => ({
-    info: loadingErrorFooterInfo(loading, error),
+    info: [
+      ...buildAnalystFooterInfo(data),
+      ...loadingErrorFooterInfo(loading, error),
+    ],
     hints: [refreshFooterHint(reload)],
-  }), [error, loading, reload]);
+  }), [data, error, loading, reload]);
 
   return (
     <DataTableView<AnalystResearchData["ratings"][number], RatingColumn>
       focused={focused}
       rootWidth={width}
       rootHeight={height}
-      rootBefore={<AnalystSummary data={data} width={width} />}
+      rootBefore={<AnalystSummary data={data} />}
       onRootKeyDown={handleKeyDown}
-      columns={RATING_COLUMNS}
+      columns={columns}
       items={rows}
       sortColumnId={sortPreference.columnId}
       sortDirection={sortPreference.direction}

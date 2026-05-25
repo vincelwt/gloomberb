@@ -1,7 +1,7 @@
 import { Box, Text, useUiCapabilities } from "../../../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../../ui";
 import { useShortcut } from "../../../../react/input";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import { usePaneStateValue, usePaneTicker } from "../../../../state/app/context";
 import {
   DataTableView,
@@ -31,6 +31,7 @@ import {
   resolveFinancialPeriod,
   resolveFinancialPeriodOption,
   resolveFinancialSubTabKey,
+  semanticGrowthValue,
   statementMetricValue,
   type FinancialPeriod,
   type FinancialTableRow,
@@ -99,15 +100,18 @@ export function ResolvedFinancialsTab({
   const currentGroupIds = useMemo(() => collectGroupIds(subTab.rows), [subTab]);
   const hasCollapsedCurrentGroup = currentGroupIds.some((id) => collapsedGroups.has(id));
   const hasExpandedCurrentGroup = currentGroupIds.some((id) => !collapsedGroups.has(id));
-  const setPeriod = useCallback((next: FinancialPeriod | ((current: FinancialPeriod) => FinancialPeriod)) => {
-    const value = typeof next === "function" ? next(period) : next;
-    setStoredPeriod(value);
-  }, [period, setStoredPeriod]);
-  const setSubTabIdx = useCallback((next: number | ((current: number) => number)) => {
-    const rawIndex = typeof next === "function" ? next(subTabIdx) : next;
-    const boundedIndex = ((rawIndex % FINANCIAL_SUB_TABS.length) + FINANCIAL_SUB_TABS.length) % FINANCIAL_SUB_TABS.length;
-    setStoredSubTab(FINANCIAL_SUB_TABS[boundedIndex]?.key ?? FINANCIAL_SUB_TABS[0]!.key);
-  }, [setStoredSubTab, subTabIdx]);
+  const setPeriod = useCallback((next: SetStateAction<FinancialPeriod>) => {
+    setStoredPeriod(next);
+  }, [setStoredPeriod]);
+  const setSubTabIdx = useCallback((next: SetStateAction<number>) => {
+    setStoredSubTab((currentKey) => {
+      const currentSubTabKey = resolveFinancialSubTabKey(currentKey);
+      const currentIndex = Math.max(0, FINANCIAL_SUB_TABS.findIndex((tab) => tab.key === currentSubTabKey));
+      const rawIndex = typeof next === "function" ? next(currentIndex) : next;
+      const boundedIndex = ((rawIndex % FINANCIAL_SUB_TABS.length) + FINANCIAL_SUB_TABS.length) % FINANCIAL_SUB_TABS.length;
+      return FINANCIAL_SUB_TABS[boundedIndex]?.key ?? FINANCIAL_SUB_TABS[0]!.key;
+    });
+  }, [setStoredSubTab]);
   const selectAdjacentSubTab = useCallback((direction: -1 | 1) => {
     setSubTabIdx((current) => current + direction);
   }, [setSubTabIdx]);
@@ -119,7 +123,7 @@ export function ResolvedFinancialsTab({
       if (hasAnnualStatements) return "annual";
       return "quarterly";
     });
-  }, [hasAnnualStatements, hasQuarterlyStatements]);
+  }, [hasAnnualStatements, hasQuarterlyStatements, setPeriod]);
   const toggleGroup = useCallback((groupId: string) => {
     setCollapsedGroups((current) => {
       const next = new Set(current);
@@ -236,7 +240,7 @@ export function ResolvedFinancialsTab({
     } else if (period === "quarterly" && !hasQuarterlyStatements && hasAnnualStatements) {
       setPeriod("annual");
     }
-  }, [hasAnnualStatements, hasQuarterlyStatements, period]);
+  }, [hasAnnualStatements, hasQuarterlyStatements, period, setPeriod]);
 
   const resolvedPeriod = resolveFinancialPeriod(period, hasAnnualStatements, hasQuarterlyStatements);
   const isAnnual = resolvedPeriod === "annual";
@@ -337,6 +341,7 @@ export function ResolvedFinancialsTab({
     const growth = row.kind === "metric" && !row.showGrowth ? undefined : computeGrowth(value, previousValue);
     const formattedValue = formatFinancialValue(value, row);
     const cell = formatFinancialCell(formattedValue, growth);
+    const growthColorValue = semanticGrowthValue(growth, row.growthDirection);
 
     return {
       text: `${cell.valueText}${cell.growthText}`,
@@ -351,7 +356,7 @@ export function ResolvedFinancialsTab({
           </Text>
           <Text
             attributes={row.kind === "group" ? TextAttributes.BOLD : TextAttributes.NONE}
-            fg={growth != null ? priceColor(growth) : colors.text}
+            fg={growthColorValue != null ? priceColor(growthColorValue) : colors.text}
           >
             {cell.growthText}
           </Text>

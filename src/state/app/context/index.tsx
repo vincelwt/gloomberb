@@ -235,15 +235,26 @@ export function usePaneCollection(paneId?: string) {
   ), [collectionId, portfolio, watchlist]);
 }
 
-export function usePaneStateValue<T>(key: string, fallback: T, paneId?: string): [T, (value: T) => void] {
+export function usePaneStateValue<T>(key: string, fallback: T, paneId?: string): [T, (value: SetStateAction<T>) => void] {
   const dispatch = useAppDispatch();
+  const stateRef = useAppStateRef();
+  const fallbackRef = useRef(fallback);
   const scopedPaneId = paneId ?? usePaneInstanceId();
   const value = useAppSelector((state) => (
     (state.paneState[scopedPaneId]?.[key] as T | undefined) ?? fallback
   ));
-  const setValue = useCallback((nextValue: T) => {
-    dispatch({ type: "UPDATE_PANE_STATE", paneId: scopedPaneId, patch: { [key]: nextValue } });
-  }, [dispatch, key, scopedPaneId]);
+
+  useLayoutEffect(() => {
+    fallbackRef.current = fallback;
+  }, [fallback]);
+
+  const setValue = useCallback((nextValue: SetStateAction<T>) => {
+    const currentValue = (stateRef.current.paneState[scopedPaneId]?.[key] as T | undefined) ?? fallbackRef.current;
+    const resolved = typeof nextValue === "function"
+      ? (nextValue as (previousValue: T) => T)(currentValue)
+      : nextValue;
+    dispatch({ type: "UPDATE_PANE_STATE", paneId: scopedPaneId, patch: { [key]: resolved } });
+  }, [dispatch, key, scopedPaneId, stateRef]);
   return [value, setValue];
 }
 

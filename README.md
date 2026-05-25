@@ -31,7 +31,7 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | `GF <tickers>` | Fundamental statement graph |
 | `GE <tickers>` | Valuation multiple graph |
 | `GR <tickers>` | Security relationship graph |
-| `EE <ticker>` | Earnings and revenue estimates |
+| `EE <ticker>` | Events view with earnings and revenue estimates |
 | `EM [tickers]` | Earnings monitor |
 | `SRCH <query>` | Provider symbol search |
 | `QQ <tickers>` | Ticker quote monitor |
@@ -63,7 +63,7 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | `ERN` | Earnings calendar |
 | `HDS <ticker>` | Institutional holders |
 | `INS <ticker>` | Insider activity |
-| `EVT <ticker>` | Corporate actions |
+| `EVT <ticker>` | Corporate actions, earnings, and estimates |
 | `RV <tickers>` | Relative valuation |
 | `IBKR` | IBKR trading pane |
 | `BR` | Broker connections |
