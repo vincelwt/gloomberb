@@ -54,37 +54,52 @@ export function BuildoutDetail({
   ) : null;
 
   return (
-    <ScrollBox width={width} height={height}>
-      <Box flexDirection="column" paddingX={1} width={bodyWidth}>
-        {row.kind === "company" ? (
-          <CompanyDetail
-            company={row.item}
-            bodyWidth={bodyWidth}
-            catalog={catalog}
-            openTicker={openTicker}
-            favoriteToggle={favoriteToggle}
-          />
-        ) : null}
-        {row.kind === "site" ? (
-          <SiteDetail
-            site={row.item}
-            bodyWidth={bodyWidth}
-            height={height}
-            catalog={catalog}
-            openTicker={openTicker}
-            favoriteToggle={favoriteToggle}
-          />
-        ) : null}
-        {row.kind === "intel" ? (
-          <IntelDetail
-            item={row.item}
-            bodyWidth={bodyWidth}
-            height={height}
-            catalog={catalog}
-            openTicker={openTicker}
-          />
-        ) : null}
-      </Box>
-    </ScrollBox>
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      flexBasis={0}
+      minHeight={0}
+      overflow="hidden"
+    >
+      <ScrollBox
+        width={width}
+        flexGrow={1}
+        flexBasis={0}
+        minHeight={0}
+        scrollY
+        focusable={false}
+      >
+        <Box flexDirection="column" paddingX={1} width={bodyWidth}>
+          {row.kind === "company" ? (
+            <CompanyDetail
+              company={row.item}
+              bodyWidth={bodyWidth}
+              catalog={catalog}
+              openTicker={openTicker}
+              favoriteToggle={favoriteToggle}
+            />
+          ) : null}
+          {row.kind === "site" ? (
+            <SiteDetail
+              site={row.item}
+              bodyWidth={bodyWidth}
+              height={height}
+              catalog={catalog}
+              openTicker={openTicker}
+              favoriteToggle={favoriteToggle}
+            />
+          ) : null}
+          {row.kind === "intel" ? (
+            <IntelDetail
+              item={row.item}
+              bodyWidth={bodyWidth}
+              height={height}
+              catalog={catalog}
+              openTicker={openTicker}
+            />
+          ) : null}
+        </Box>
+      </ScrollBox>
+    </Box>
   );
 }
