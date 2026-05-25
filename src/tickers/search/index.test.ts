@@ -165,6 +165,31 @@ describe("ticker-search utilities", () => {
     });
   });
 
+  test("tries canonical symbol aliases before raw lowercase provider searches", async () => {
+    const queries: string[] = [];
+    const results = await searchTickerCandidates({
+      query: "nvda",
+      tickers: new Map<string, TickerRecord>(),
+      dataProvider: createTestDataProvider({
+        id: "test",
+        search: async (query) => {
+          queries.push(query);
+          return query === "NVDA"
+            ? [makeSearchResult("NVDA", "NVIDIA Corporation")]
+            : [{ ...makeSearchResult("NVD", "GraniteShares 2x Short NVDA Daily ETF"), exchange: "NYSEArca", type: "ETF" }];
+        },
+      }),
+      totalLimit: 5,
+      includeOptionContracts: false,
+    });
+
+    expect(queries[0]).toBe("NVDA");
+    expect(results[0]).toMatchObject({
+      label: "NVDA",
+      category: "Primary Listing",
+    });
+  });
+
   test("upserts ticker records from provider search results", async () => {
     const saved: TickerRecord[] = [];
     const repository = {

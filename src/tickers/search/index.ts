@@ -234,9 +234,13 @@ function buildProviderSearchQueries(query: string): string[] {
   const trimmedQuery = query.trim();
   if (!trimmedQuery) return [];
 
-  const queries = new Set<string>([trimmedQuery]);
+  const symbolLike = /^[A-Za-z0-9.^=\-/]+$/.test(trimmedQuery);
+  const queries = new Set<string>();
+
+  if (!symbolLike) queries.add(trimmedQuery);
   for (const alias of buildSymbolAliases(trimmedQuery)) queries.add(alias);
   for (const alias of buildCompactShareClassAliases(trimmedQuery)) queries.add(alias);
+  queries.add(trimmedQuery);
   return [...queries].slice(0, 4);
 }
 
