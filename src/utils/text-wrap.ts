@@ -1,8 +1,28 @@
+import { displayWidth } from "./format";
+
 export function truncateWithEllipsis(text: string, width: number): string {
   if (width <= 0) return "";
   if (text.length <= width) return text;
   if (width <= 3) return text.slice(0, width);
   return `${text.slice(0, width - 3)}...`;
+}
+
+export function splitLongTextSegmentByDisplayWidth(value: string, lineWidth: number): string[] {
+  if (displayWidth(value) <= lineWidth) return [value];
+
+  const chunks: string[] = [];
+  let current = "";
+  for (const char of Array.from(value)) {
+    const next = `${current}${char}`;
+    if (current && displayWidth(next) > lineWidth) {
+      chunks.push(current);
+      current = char;
+      continue;
+    }
+    current = next;
+  }
+  if (current) chunks.push(current);
+  return chunks;
 }
 
 export function wrapTextLines(

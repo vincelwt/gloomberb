@@ -30,7 +30,7 @@ export function TerminalChatMessage({
   setHoveredIdx,
 }: TerminalChatMessageProps) {
   const state = getChatMessageRenderState({ msg, index, messages, selectedIdx, hoveredIdx, canSend });
-  const bodyLines = getMessageBodyLines(msg, contentWidth);
+  const bodyLines = getMessageBodyLines(msg, contentWidth, catalog);
   const showInlineReplyAction = !state.grouped && state.showReplyAction;
   const showGroupedReplyAction = state.grouped && state.showReplyAction;
   const setHovered = () => setHoveredIdx((current) => (current === index ? current : index));

@@ -2,8 +2,8 @@ import { Box, Text, useTickerContextMenu, useUiCapabilities } from "../../../ui"
 import { TextAttributes } from "../../../ui";
 import { colors, priceColor } from "../../../theme/colors";
 import { getSharedRegistry } from "../../../plugins/registry";
-import { formatMarketPriceWithCurrency } from "../../../market-data/market/format";
 import type { Quote } from "../../../types/financials";
+import { getTickerBadgeText } from "./format";
 
 export interface TickerBadgeProps {
   symbol: string;
@@ -33,15 +33,6 @@ function blendHex(base: string, accent: string, ratio: number): string {
   return `#${mix(br, ar)}${mix(bg, ag)}${mix(bb, ab)}`;
 }
 
-function formatBadgeChange(changePercent: number): string {
-  const rounded = Math.round(changePercent * 10) / 10;
-  const normalized = Object.is(rounded, -0) ? 0 : rounded;
-  if (normalized === 0) return "0%";
-  const abs = Math.abs(normalized);
-  const body = Number.isInteger(abs) ? abs.toFixed(0) : abs.toFixed(1);
-  return `${normalized > 0 ? "+" : "-"}${body}%`;
-}
-
 export function TickerBadge({
   symbol,
   status,
@@ -65,14 +56,7 @@ export function TickerBadge({
   const tone = status === "ready" && quoteForDisplay
     ? priceColor(quoteForDisplay.changePercent)
     : colors.borderFocused;
-  const quoteLabel = hovered && quoteForDisplay
-    ? `${symbol} ${formatMarketPriceWithCurrency(quoteForDisplay.price, quoteForDisplay.currency, { minimumFractionDigits: 2 })}`
-    : status === "ready" && quoteForDisplay
-      ? formatBadgeChange(quoteForDisplay.changePercent)
-      : "…";
-  const text = liveQuote
-    ? hovered && quoteForDisplay ? quoteLabel : `${symbol} ${quoteLabel}`
-    : symbol;
+  const text = getTickerBadgeText({ symbol, status, quote, liveQuote, hovered });
   const color = hovered ? colors.textBright : tone;
   const backgroundColor = hovered
     ? blendHex(colors.bg, tone, 0.42)

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { ScrollBoxRenderable } from "../../../../ui";
 import type { ChatMessage } from "../../../../api-client";
+import type { InlineTickerCatalogEntry } from "../../../../state/hooks/inline-tickers";
 import type { ChatContentController } from "./types";
 import {
   estimateMessageHeight,
@@ -30,6 +31,7 @@ export interface ChatPrependAnchor {
 
 interface ChatScrollRuntimeArgs {
   channelId: string;
+  catalog: Record<string, InlineTickerCatalogEntry>;
   contentWidth: number;
   controller: ChatContentController;
   focused: boolean;
@@ -53,6 +55,7 @@ interface ChatScrollRuntimeArgs {
 
 export function useChatScrollRuntime({
   channelId,
+  catalog,
   contentWidth,
   controller,
   focused,
@@ -149,10 +152,11 @@ export function useChatScrollRuntime({
       if (nativePaneChrome && scrollElementIntoScrollBoxView(scrollRef.current, messageElementsRef.current.get(messageId))) return;
       const scrollBox = scrollRef.current;
       if (!scrollBox) return;
-      scrollBox.scrollTo(getMessageTopOffset(messages, targetIndex, contentWidth));
+      scrollBox.scrollTo(getMessageTopOffset(messages, targetIndex, contentWidth, catalog));
     });
     return true;
   }, [
+    catalog,
     contentWidth,
     messageElementsRef,
     messages,
@@ -210,7 +214,7 @@ export function useChatScrollRuntime({
       : -1;
     const exactPixels = nativePaneChrome === true && hasPixelScrollMetrics(scrollBox);
     const addedRows = !exactPixels && previousOldestIndex > 0
-      ? getMessageTopOffset(messages, previousOldestIndex, contentWidth)
+      ? getMessageTopOffset(messages, previousOldestIndex, contentWidth, catalog)
       : Math.max(0, getScrollHeight(scrollBox, exactPixels) - currentAnchor.scrollHeight);
     scrollToPosition(scrollBox, currentAnchor.scrollTop + addedRows, exactPixels);
     if (currentAnchor.selectedMessageId) {
@@ -224,7 +228,7 @@ export function useChatScrollRuntime({
         prependAnchorRef.current = null;
       }
     });
-  }, [contentWidth, loadingOlderMessages, messages, nativePaneChrome, prependAnchorRef, scrollRef, setSelectedIdx]);
+  }, [catalog, contentWidth, loadingOlderMessages, messages, nativePaneChrome, prependAnchorRef, scrollRef, setSelectedIdx]);
 
   useEffect(() => {
     if (!focused || !stickyTranscript) return;
@@ -241,8 +245,8 @@ export function useChatScrollRuntime({
       runAfterLayout(() => scrollElementIntoScrollBoxView(scrollRef.current, messageElementsRef.current.get(selectedMessageId)));
       return;
     }
-    const top = getMessageTopOffset(messages, selectedIdx, contentWidth);
-    const rowHeight = estimateMessageHeight(messages[selectedIdx]!, contentWidth, isGroupedWithPrevious(messages, selectedIdx));
+    const top = getMessageTopOffset(messages, selectedIdx, contentWidth, catalog);
+    const rowHeight = estimateMessageHeight(messages[selectedIdx]!, contentWidth, isGroupedWithPrevious(messages, selectedIdx), catalog);
     const nextScrollTop = getSelectedMessageScrollTop({
       scrollTop: sb.scrollTop,
       viewportHeight: sb.viewport?.height ?? 0,
@@ -253,6 +257,7 @@ export function useChatScrollRuntime({
       sb.scrollTo(nextScrollTop);
     }
   }, [
+    catalog,
     contentWidth,
     messageElementsRef,
     messages,

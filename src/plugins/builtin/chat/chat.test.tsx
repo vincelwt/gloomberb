@@ -779,6 +779,66 @@ describe("ChatContent", () => {
     expect(opened).toEqual(["TSLA"]);
   });
 
+  test("wraps ticker badges using their rendered width in terminal messages", async () => {
+    const controller = createController({
+      messages: [{
+        id: "m1",
+        channelId: "everyone",
+        content: "For example for $META it seems to look at Meta AI revenue, not mentioning the ad engine where revenues are most likely to translate",
+        replyToId: null,
+        createdAt: "2026-03-28T00:00:00.000Z",
+        user: { id: "u1", username: "vince", displayName: "Vince" },
+      }],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 60,
+        height: 12,
+        configureState(state) {
+          state.tickers = new Map([["META", {
+            metadata: {
+              ticker: "META",
+              exchange: "NASDAQ",
+              currency: "USD",
+              name: "Meta Platforms, Inc.",
+              portfolios: [],
+              watchlists: [],
+              positions: [],
+              custom: {},
+              tags: [],
+            },
+          }]]);
+          state.financials = new Map([["META", {
+            annualStatements: [],
+            quarterlyStatements: [],
+            priceHistory: [],
+            quote: {
+              symbol: "META",
+              price: 650,
+              currency: "USD",
+              change: -3.25,
+              changePercent: -0.5,
+              lastUpdated: Date.now(),
+            },
+          }]]);
+        },
+      }), {
+        width: 60,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const frame = setup().captureCharFrame();
+    const normalizedFrame = frame.replace(/\s+/g, " ");
+    expect(normalizedFrame).toContain("For example for META -0.5%");
+    expect(normalizedFrame).toContain("it seems to look at Meta AI revenue, not");
+    expect(normalizedFrame).toContain("mentioning the ad engine where revenues");
+    expect(frame).not.toContain("mentioningttheoad");
+  });
+
   test("renders detected links in chat messages", async () => {
     const controller = createController({
       messages: [{

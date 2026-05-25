@@ -240,6 +240,7 @@ export function ChatContent({
     requestOlderMessagesIfNeeded,
   } = useChatScrollRuntime({
     channelId,
+    catalog,
     contentWidth,
     controller,
     focused,
