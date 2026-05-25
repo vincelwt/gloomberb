@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
   type RefObject,
@@ -80,6 +81,7 @@ export function DataTableView<
   onRootKeyDown,
   resetScrollKey,
   scrollToIndex,
+  scrollToIndexVersion = 0,
   ...tableProps
 }: DataTableViewProps<T, C>) {
   const {
@@ -108,6 +110,13 @@ export function DataTableView<
     ?? (selectedIndexFromPredicate >= 0
       ? selectedIndexFromPredicate
       : fallbackSelectedIndex ?? -1);
+  const effectiveSelectedIndexRef = useRef(effectiveSelectedIndex);
+  effectiveSelectedIndexRef.current = effectiveSelectedIndex;
+  const effectiveScrollToIndex = scrollToIndex ?? (
+    effectiveSelectedIndex >= 0 ? effectiveSelectedIndex : null
+  );
+  const [selectionScrollVersion, setSelectionScrollVersion] = useState(0);
+  const lastSelectionScrollIndexRef = useRef<number | null>(null);
 
   const navigableIndices = useMemo(() => {
     if (!isNavigable) {
@@ -146,10 +155,21 @@ export function DataTableView<
     resetScrollKey,
   });
 
+  useEffect(() => {
+    if (effectiveScrollToIndex == null) {
+      lastSelectionScrollIndexRef.current = null;
+      return;
+    }
+    if (lastSelectionScrollIndexRef.current === effectiveScrollToIndex) return;
+    lastSelectionScrollIndexRef.current = effectiveScrollToIndex;
+    setSelectionScrollVersion((current) => current + 1);
+  }, [effectiveScrollToIndex]);
+
   const selectIndex = useCallback((index: number) => {
     if (index < 0 || index >= tableProps.items.length) return;
     const item = tableProps.items[index]!;
     if (isNavigable && !isNavigable(item, index)) return;
+    effectiveSelectedIndexRef.current = index;
     if (usesFallbackSelection) {
       setFallbackSelectedIndex(index);
     }
@@ -173,19 +193,20 @@ export function DataTableView<
 
   const selectByOffset = useCallback((offset: -1 | 1) => {
     if (navigableIndices.length === 0) return;
-    const currentPosition = navigableIndices.indexOf(effectiveSelectedIndex);
+    const currentPosition = navigableIndices.indexOf(effectiveSelectedIndexRef.current);
     const nextPosition = currentPosition >= 0
       ? Math.max(0, Math.min(currentPosition + offset, navigableIndices.length - 1))
       : 0;
     const nextIndex = navigableIndices[nextPosition];
     if (nextIndex !== undefined) selectIndex(nextIndex);
-  }, [effectiveSelectedIndex, navigableIndices, selectIndex]);
+  }, [navigableIndices, selectIndex]);
 
   const activateSelection = useCallback(() => {
     if (navigableIndices.length === 0) return;
-    const selectedIsNavigable = navigableIndices.includes(effectiveSelectedIndex);
-    activateIndex(selectedIsNavigable ? effectiveSelectedIndex : navigableIndices[0]!);
-  }, [activateIndex, effectiveSelectedIndex, navigableIndices]);
+    const selectedIndex = effectiveSelectedIndexRef.current;
+    const selectedIsNavigable = navigableIndices.includes(selectedIndex);
+    activateIndex(selectedIsNavigable ? selectedIndex : navigableIndices[0]!);
+  }, [activateIndex, navigableIndices]);
 
   useShortcut((event) => {
     if (event.defaultPrevented || event.propagationStopped) return;
@@ -228,9 +249,8 @@ export function DataTableView<
         onBodyScrollActivity={handleBodyScrollActivity}
         hoveredIdx={effectiveHoveredIdx}
         setHoveredIdx={effectiveSetHoveredIdx}
-        scrollToIndex={scrollToIndex ?? (
-          effectiveSelectedIndex >= 0 ? effectiveSelectedIndex : null
-        )}
+        scrollToIndex={effectiveScrollToIndex}
+        scrollToIndexVersion={scrollToIndexVersion + selectionScrollVersion}
         isSelected={(item, index) => (
           tableProps.isSelected(item, index)
           || (

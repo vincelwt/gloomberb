@@ -126,6 +126,7 @@ interface PaneTemplateShortcut {
   prefix: string;
   argPlaceholder?: string;
   argKind?: "text" | "ticker" | "ticker-list";
+  argOptional?: boolean;
 }
 
 export interface PaneTemplateCreateOptions {

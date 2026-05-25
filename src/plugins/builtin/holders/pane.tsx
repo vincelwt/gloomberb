@@ -13,7 +13,8 @@ import { colors, priceColor } from "../../../theme/colors";
 import type { HolderData } from "../../../types/financials";
 import { formatCompact } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
-import { useAssetData, usePluginPaneState } from "../../runtime";
+import { useAssetData, usePluginAppActions, usePluginPaneState } from "../../runtime";
+import { THIRTEENF_TEMPLATE_ID } from "../thirteenf/model";
 import {
   displayDate,
   formatHolderOwnershipPercent,
@@ -32,18 +33,23 @@ import {
 } from "./table-model";
 import { HoldersTreemap } from "./treemap";
 import type { HolderColumn, HolderRow, SortPreference, ViewMode } from "./types";
+import { loadHolder13FMatches, type Holder13FMatch } from "./thirteenf-match";
 
 export function HoldersView({ focused, width, height }: { focused: boolean; width: number; height: number }) {
   const { nativePaneChrome } = useUiCapabilities();
   const { symbol, ticker, financials } = usePaneTicker();
   const dataProvider = useAssetData();
+  const { createPaneFromTemplate } = usePluginAppActions();
   const [viewMode, setViewMode] = usePluginPaneState<ViewMode>("viewMode", "chart");
   const [sortPreference, setSortPreference] = usePluginPaneState<SortPreference>("sortPreference", DEFAULT_SORT);
   const [data, setData] = useState<HolderData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fundMatches, setFundMatches] = useState<Map<string, Holder13FMatch>>(() => new Map());
+  const [fundMatching, setFundMatching] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const fetchGenRef = useRef(0);
+  const fundMatchAbortRef = useRef<AbortController | null>(null);
 
   const currency = data?.currency ?? ticker?.metadata.currency ?? "USD";
   const quoteMarketCap = financials?.quote?.marketCap;
@@ -93,10 +99,55 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
     setSelectedId(sortedRows[0]?.id ?? null);
   }, [selectedId, sortedRows]);
 
+  useEffect(() => {
+    fundMatchAbortRef.current?.abort();
+    setFundMatches(new Map());
+    if (sortedRows.length === 0) {
+      setFundMatching(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    fundMatchAbortRef.current = controller;
+    setFundMatching(true);
+    void loadHolder13FMatches(sortedRows, controller.signal)
+      .then((matches) => {
+        if (fundMatchAbortRef.current !== controller) return;
+        setFundMatches(matches);
+      })
+      .finally(() => {
+        if (fundMatchAbortRef.current === controller) setFundMatching(false);
+      });
+
+    return () => {
+      controller.abort();
+      if (fundMatchAbortRef.current === controller) {
+        fundMatchAbortRef.current = null;
+      }
+    };
+  }, [sortedRows]);
+
   const selectIndex = useCallback((index: number) => {
     const row = sortedRows[index];
     if (row) setSelectedId(row.id);
   }, [sortedRows]);
+
+  const selectedRow = activeIdx >= 0 ? sortedRows[activeIdx] ?? null : null;
+  const selectedFundMatch = selectedRow ? fundMatches.get(selectedRow.id) ?? null : null;
+
+  const openFundDetail = useCallback((row: HolderRow | null | undefined) => {
+    if (!row) return;
+    const match = fundMatches.get(row.id);
+    if (!match) return;
+    createPaneFromTemplate(THIRTEENF_TEMPLATE_ID, {
+      arg: match.fundName,
+      values: {
+        cik: match.cik,
+        query: match.fundName,
+        tab: "search",
+      },
+    });
+  }, [createPaneFromTemplate, fundMatches]);
 
   const handleHeaderClick = useCallback((columnId: string) => {
     setSortPreference((current) => nextSortPreference(current, columnId));
@@ -123,8 +174,14 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
       toggleView();
       return true;
     }
+    if ((event.name === "f" || event.name === "enter" || event.name === "return") && selectedFundMatch) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openFundDetail(selectedRow);
+      return true;
+    }
     return false;
-  }, [refresh, toggleView]);
+  }, [openFundDetail, refresh, selectedFundMatch, selectedRow, toggleView]);
 
   useShortcut((event) => {
     if (!focused || viewMode !== "chart") return;
@@ -144,16 +201,22 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
       if (nextRow) setSelectedId(nextRow.id);
       return;
     }
-    if (event.name === "r") {
+    if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       refresh();
       return;
     }
-    if (event.name === "s") {
+    if (isPlainKey(event, "s")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       toggleView();
+      return;
+    }
+    if (isPlainKey(event, "f", "enter", "return") && selectedFundMatch) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openFundDetail(selectedRow);
     }
   });
 
@@ -167,7 +230,7 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
     switch (column.id) {
       case "holder":
         return {
-          text: row.name,
+          text: fundMatches.has(row.id) ? `${row.name} 13F` : row.name,
           color: selectedColor ?? colors.textBright,
           attributes: TextAttributes.BOLD,
         };
@@ -193,18 +256,22 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
       case "reportDate":
         return { text: displayDate(row.reportDate), color: selectedColor ?? colors.textDim };
     }
-  }, [currency, marketCap]);
+  }, [currency, fundMatches, marketCap]);
 
-  usePaneFooter("holders", () => ({
-    info: [
-      ...(data?.asOf ? [{ id: "as-of", parts: [{ text: data.asOf, tone: "value" as const }] }] : []),
-      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-    ],
-    hints: [
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
-      { id: "view", key: "s", label: "witch", onPress: toggleView },
-    ],
-  }), [data?.asOf, loading, refresh, toggleView]);
+  usePaneFooter("holders", () => {
+    return {
+      info: [
+        ...(data?.asOf ? [{ id: "as-of", parts: [{ text: data.asOf, tone: "value" as const }] }] : []),
+        ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+        ...(fundMatching ? [{ id: "fund-matching", parts: [{ text: "13F matching", tone: "muted" as const }] }] : []),
+      ],
+      hints: [
+        { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+        { id: "view", key: "s", label: "witch", onPress: toggleView },
+        ...(selectedFundMatch ? [{ id: "fund", key: "f", label: "und", onPress: () => openFundDetail(selectedRow) }] : []),
+      ],
+    };
+  }, [data?.asOf, fundMatching, loading, openFundDetail, refresh, selectedFundMatch, selectedRow, toggleView]);
 
   const emptyTitle = !symbol
     ? "No ticker selected"
@@ -231,6 +298,7 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
           focused={focused}
           selectedIndex={activeIdx}
           onSelectIndex={selectIndex}
+          onActivateIndex={(_index, row) => openFundDetail(row)}
           onRootKeyDown={handleKeyDown}
           resetScrollKey={data?.symbol}
           rootWidth={width}
@@ -242,6 +310,7 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
           getItemKey={(row) => row.id}
           isSelected={(row) => row.id === selectedId}
           onSelect={(row) => setSelectedId(row.id)}
+          onActivate={(row) => openFundDetail(row)}
           renderCell={renderCell}
           emptyStateTitle={emptyTitle}
         />
@@ -252,6 +321,7 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
           height={chartHeight}
           selectedId={selectedId}
           onSelect={(row) => setSelectedId(row.id)}
+          onActivate={openFundDetail}
           currency={currency}
           marketCap={marketCap}
         />

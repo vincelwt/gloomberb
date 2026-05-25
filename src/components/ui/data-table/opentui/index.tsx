@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes, useNativeRenderer } from "../../../../ui";
 import { colors, hoverBg } from "../../../../theme/colors";
 import { useThemeColors } from "../../../../theme/theme-context";
@@ -71,6 +71,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   const appViewport = useViewport();
   const nativeRenderer = useNativeRenderer();
   const [scrollVersion, setScrollVersion] = useState(0);
+  const lastAppliedScrollRequestRef = useRef<string | null>(null);
   const scrollTop = virtualize ? (scrollRef.current?.scrollTop ?? 0) : 0;
   const measuredViewportHeight = scrollRef.current?.viewport?.height;
   const tableWindow = useMemo(
@@ -207,10 +208,28 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   }, [columns.length, headerScrollRef, horizontalScrollbarVisible, items.length, measuredViewportHeight, scrollRef]);
 
   useEffect(() => {
-    if (applyScrollToIndex()) return;
+    if (scrollToIndex == null) {
+      lastAppliedScrollRequestRef.current = null;
+      return;
+    }
+
+    const scrollRequestKey = [
+      scrollToIndex,
+      scrollToIndexVersion,
+      measuredViewportHeight ?? "pending",
+    ].join(":");
+    if (lastAppliedScrollRequestRef.current === scrollRequestKey) return;
+
+    if (applyScrollToIndex()) {
+      lastAppliedScrollRequestRef.current = scrollRequestKey;
+      return;
+    }
     let cancelled = false;
     const retry = () => {
-      if (!cancelled) applyScrollToIndex();
+      if (cancelled) return;
+      if (applyScrollToIndex()) {
+        lastAppliedScrollRequestRef.current = scrollRequestKey;
+      }
     };
     process.nextTick(retry);
     return () => {
@@ -219,6 +238,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   }, [
     applyScrollToIndex,
     measuredViewportHeight,
+    scrollToIndex,
     scrollToIndexVersion,
   ]);
 

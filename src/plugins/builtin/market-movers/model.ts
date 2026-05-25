@@ -2,8 +2,6 @@ import type { DataTableColumn } from "../../../components";
 import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import type { MarketSummaryQuote, ScreenerCategory, ScreenerQuote } from "./screener";
 
-export const CACHE_TTL_MS = 5 * 60 * 1000;
-
 export type TabId = "gainers" | "losers" | "actives" | "trending";
 
 export const TABS: Array<{ id: TabId; label: string }> = [
@@ -18,11 +16,6 @@ export const CATEGORY_MAP: Record<Exclude<TabId, "trending">, ScreenerCategory> 
   losers: "day_losers",
   actives: "most_actives",
 };
-
-export interface TabCache {
-  data: ScreenerQuote[];
-  fetchedAt: number;
-}
 
 type MarketMoverColumnId =
   | "rank"

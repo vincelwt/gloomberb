@@ -100,6 +100,23 @@ function registerAiScreenerPane(pluginRegistry: MutablePaneRegistry): void {
   });
 }
 
+function registerOptionalTextPane(pluginRegistry: MutablePaneRegistry): void {
+  mutableRegistryMap(pluginRegistry.panes).set("optional-search", {
+    id: "optional-search",
+    name: "Optional Search",
+    component: () => null,
+    defaultPosition: "right",
+    defaultMode: "floating",
+  });
+  mutableRegistryMap(pluginRegistry.paneTemplates).set("optional-search-pane", {
+    id: "optional-search-pane",
+    paneId: "optional-search",
+    label: "Optional Search",
+    description: "Open with an optional text query.",
+    shortcut: { prefix: "OPT", argPlaceholder: "query", argKind: "text", argOptional: true },
+  });
+}
+
 describe("CommandBar pane and layout routes", () => {
   const layoutModeConfig = (config: AppConfig): AppConfig => {
     const research = cloneLayout(config.layout);
@@ -224,6 +241,33 @@ describe("CommandBar pane and layout routes", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Quote Monitor");
     expect(frame).toContain("QQ");
+  });
+
+  test("executes optional text pane shortcuts without opening the generated form", async () => {
+    const created: CreatedPaneCall[] = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query="OPT"
+      live
+      configurePluginRegistry={(pluginRegistry) => {
+        registerOptionalTextPane(pluginRegistry);
+        recordPaneCreations(pluginRegistry, created);
+      }}
+    />, {
+      width: 100,
+      height: 18,
+    });
+
+    await testSetup.renderOnce();
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(created).toEqual([{ templateId: "optional-search-pane", options: undefined }]);
+    expect(testSetup.captureCharFrame()).not.toContain("Create Pane");
   });
 
   test("shows pane templates that share the same shortcut", async () => {

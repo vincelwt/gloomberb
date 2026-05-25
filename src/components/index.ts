@@ -6,6 +6,7 @@ export type { SpeedometerSegment } from "./speedometer-gauge";
 export { TickerListTableView } from "./ticker/list-table-view";
 export type { TickerListVisibleRange } from "./ticker/list-table-view";
 export { TickerBadgeList } from "./ticker/badge/list";
+export { InputSearchBar } from "./input-search-bar";
 export { DataTableView } from "./data-table/view";
 export type { DataTableKeyEvent } from "./data-table/view";
 export { DataTableStackView } from "./data-table/stack-view";

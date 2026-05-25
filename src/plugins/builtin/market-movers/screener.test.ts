@@ -1,9 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { MemoryPluginPersistence } from "../../../test-support/plugin-persistence";
 import {
+  attachMarketMoversPersistence,
   createYahooScreenerApi,
   fetchScreener,
   parseScreenerResponse,
   parseTrendingResponse,
+  resetMarketMoversPersistence,
+  type YahooScreenerApi,
 } from "./screener";
 
 const SAMPLE_SCREENER_RESPONSE = {
@@ -59,6 +63,10 @@ const SAMPLE_TRENDING_RESPONSE = {
     error: null,
   },
 };
+
+afterEach(() => {
+  resetMarketMoversPersistence();
+});
 
 describe("parseScreenerResponse", () => {
   test("maps Yahoo Finance fields to ScreenerQuote", () => {
@@ -158,6 +166,28 @@ describe("fetchScreener", () => {
       "query1.finance.yahoo.com",
     ]);
     expect(userAgents.every((agent) => agent.includes("Mozilla/5.0"))).toBe(true);
+    expect(results.map((result) => result.symbol)).toEqual(["AAPL", "MSFT"]);
+  });
+
+  test("rehydrates persisted screener results without refetching", async () => {
+    const persistence = new MemoryPluginPersistence();
+    attachMarketMoversPersistence(persistence);
+    let calls = 0;
+    const api: YahooScreenerApi = {
+      async fetchJson<T = unknown>() {
+        calls += 1;
+        return SAMPLE_SCREENER_RESPONSE as T;
+      },
+    };
+
+    await fetchScreener("day_gainers", 2, api, { cache: true });
+
+    resetMarketMoversPersistence();
+    attachMarketMoversPersistence(persistence);
+
+    const results = await fetchScreener("day_gainers", 2, api, { cache: true });
+
+    expect(calls).toBe(1);
     expect(results.map((result) => result.symbol)).toEqual(["AAPL", "MSFT"]);
   });
 });

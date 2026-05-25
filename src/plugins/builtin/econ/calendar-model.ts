@@ -1,9 +1,17 @@
 import type { DataTableColumn } from "../../../components";
 import { colors } from "../../../theme/colors";
+import type { PluginPersistence } from "../../../types/plugin";
 import { fetchEconCalendar } from "./calendar-source";
 import type { EconEvent, EconImpact } from "./types";
 
-const CACHE_TTL_MS = 15 * 60 * 1000;
+const CACHE_KIND = "calendar";
+const CACHE_KEY = "global";
+const CACHE_SOURCE = "gloomberb-cloud";
+const CACHE_SCHEMA_VERSION = 1;
+const CACHE_POLICY = {
+  staleMs: 15 * 60 * 1000,
+  expireMs: 2 * 24 * 60 * 60 * 1000,
+} as const;
 
 export type ImpactFilter = "high" | "medium" | "low" | "all";
 export type CountryFilter = "all" | "US" | "G7" | "EU";
@@ -36,10 +44,20 @@ type EconCalendarColumnId =
   | "prior";
 export type EconCalendarColumn = DataTableColumn & { id: EconCalendarColumnId };
 
-type CalendarCache = { data: EconEvent[]; fetchedAt: number };
+type PersistedEconEvent = Omit<EconEvent, "date"> & { date: string };
+export type EconCalendarCacheEntry = { data: EconEvent[]; fetchedAt: number; stale: boolean };
 
-let sharedCache: CalendarCache | null = null;
+let econCalendarPersistence: PluginPersistence | null = null;
 let activeFetch: Promise<EconEvent[]> | null = null;
+
+export function attachEconCalendarPersistence(persistence: PluginPersistence): void {
+  econCalendarPersistence = persistence;
+}
+
+export function resetEconCalendarPersistence(): void {
+  econCalendarPersistence = null;
+  activeFetch = null;
+}
 
 export function countryFlag(code: string): string {
   return FLAG_MAP[code] ?? code;
@@ -112,26 +130,71 @@ export function formatStaleness(fetchedAt: number, now: number): string {
   return `updated ${hours}h ago`;
 }
 
-export function getCalendarCache(): CalendarCache | null {
-  return sharedCache;
+function serializeEvents(events: EconEvent[]): PersistedEconEvent[] {
+  return events.map((event) => ({
+    ...event,
+    date: event.date.toISOString(),
+  }));
 }
 
-export function getFreshCalendarCache(now = Date.now()): CalendarCache | null {
-  return sharedCache && now - sharedCache.fetchedAt < CACHE_TTL_MS ? sharedCache : null;
+function deserializeEvents(events: PersistedEconEvent[]): EconEvent[] {
+  return events
+    .map((event) => ({
+      ...event,
+      date: new Date(event.date),
+    }))
+    .filter((event) => !Number.isNaN(event.date.getTime()));
 }
 
-export async function loadCalendar(force = false): Promise<EconEvent[]> {
-  if (!force) {
-    const cached = getFreshCalendarCache();
-    if (cached) return cached.data;
-  }
+function readPersistedCache(options?: { allowExpired?: boolean }): EconCalendarCacheEntry | null {
+  const record = econCalendarPersistence?.getResource<PersistedEconEvent[]>(CACHE_KIND, CACHE_KEY, {
+    sourceKey: CACHE_SOURCE,
+    schemaVersion: CACHE_SCHEMA_VERSION,
+    allowExpired: options?.allowExpired,
+  });
+  if (!record) return null;
+
+  const data = deserializeEvents(record.value);
+  return {
+    data,
+    fetchedAt: record.fetchedAt,
+    stale: !!record.stale,
+  };
+}
+
+function writeCache(events: EconEvent[]): void {
+  econCalendarPersistence?.setResource(CACHE_KIND, CACHE_KEY, serializeEvents(events), {
+    sourceKey: CACHE_SOURCE,
+    schemaVersion: CACHE_SCHEMA_VERSION,
+    cachePolicy: CACHE_POLICY,
+  });
+}
+
+export function getCalendarCache(options?: { allowExpired?: boolean }): EconCalendarCacheEntry | null {
+  return readPersistedCache(options);
+}
+
+export function getFreshCalendarCache(): EconCalendarCacheEntry | null {
+  const cached = getCalendarCache();
+  return cached && !cached.stale ? cached : null;
+}
+
+export async function loadCalendar(
+  force = false,
+  loader: () => Promise<EconEvent[]> = fetchEconCalendar,
+): Promise<EconEvent[]> {
+  const cached = getCalendarCache();
+  if (!force && cached && !cached.stale) return cached.data;
   if (activeFetch) return activeFetch;
-  activeFetch = fetchEconCalendar().then((data) => {
-    sharedCache = { data, fetchedAt: Date.now() };
+
+  const fallback = cached ?? getCalendarCache({ allowExpired: true });
+  activeFetch = loader().then((data) => {
+    writeCache(data);
     activeFetch = null;
     return data;
   }).catch((err) => {
     activeFetch = null;
+    if (fallback) return fallback.data;
     throw err;
   });
   return activeFetch;

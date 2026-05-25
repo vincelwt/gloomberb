@@ -9,6 +9,7 @@ import { EconDetailView } from "./detail-view";
 import {
   COUNTRY_CYCLE,
   FILTER_CYCLE,
+  attachEconCalendarPersistence,
   actualColor,
   countryFlag,
   dateKey,
@@ -21,15 +22,21 @@ import {
   loadCalendar,
   matchesCountry,
   matchesImpact,
+  resetEconCalendarPersistence,
   type CountryFilter,
   type DisplayRow,
   type EconCalendarColumn,
   type ImpactFilter,
 } from "./calendar-model";
+import {
+  attachEconFredPersistence,
+  resetEconFredPersistence,
+} from "./fred-cache";
 
 function EconCalendarPane({ focused, width, height }: PaneProps) {
-  const [events, setEvents] = useState<EconEvent[]>(getFreshCalendarCache()?.data ?? []);
-  const [loading, setLoading] = useState(false);
+  const [initialCache] = useState(() => getCalendarCache());
+  const [events, setEvents] = useState<EconEvent[]>(initialCache?.data ?? []);
+  const [loading, setLoading] = useState(!initialCache || initialCache.stale);
   const [error, setError] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [impactFilter, setImpactFilter] = useState<ImpactFilter>("all");
@@ -350,6 +357,9 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
 }
 
 export function registerEconCalendarFeature(ctx: GloomPluginContext): void {
+  attachEconCalendarPersistence(ctx.persistence);
+  attachEconFredPersistence(ctx.persistence);
+
   ctx.registerPane({
     id: "econ-calendar",
     name: "Economic Calendar",
@@ -368,4 +378,9 @@ export function registerEconCalendarFeature(ctx: GloomPluginContext): void {
     keywords: ["econ", "economic", "calendar", "events", "macro", "releases", "fed", "cpi", "gdp"],
     shortcut: { prefix: "ECON" },
   });
+}
+
+export function resetEconCalendarFeature(): void {
+  resetEconCalendarPersistence();
+  resetEconFredPersistence();
 }

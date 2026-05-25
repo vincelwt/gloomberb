@@ -24,6 +24,9 @@ export function shouldOpenPaneTemplateConfig(template: PaneTemplateDef, arg?: st
     const argPlaceholder = template.shortcut?.argPlaceholder;
     return template.wizard.some((step) => step.type === "textarea" || step.key !== argPlaceholder);
   }
+  if (template.shortcut?.argOptional) {
+    return false;
+  }
   if (canPromptForPaneTemplateArg(template)) {
     return !arg?.trim();
   }

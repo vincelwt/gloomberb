@@ -19,11 +19,11 @@ const DESKTOP_SUMMARY_STACK_WIDTH = 84;
 
 export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
   const isDesktopWeb = useUiHost().kind === "desktop-web";
-  const cached = getCachedFearGreedData();
-  const [data, setData] = useState<FearGreedData | null>(cached?.data ?? null);
-  const [loading, setLoading] = useState(!cached);
+  const [initialCache] = useState(() => getCachedFearGreedData());
+  const [data, setData] = useState<FearGreedData | null>(initialCache?.data ?? null);
+  const [loading, setLoading] = useState(!initialCache || initialCache.stale);
   const [error, setError] = useState<string | null>(null);
-  const [lastRefreshed, setLastRefreshed] = useState<number | null>(cached?.fetchedAt ?? null);
+  const [lastRefreshed, setLastRefreshed] = useState<number | null>(initialCache?.fetchedAt ?? null);
   const [now, setNow] = useState(Date.now());
   const fetchGenRef = useRef(0);
 
@@ -36,7 +36,7 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
       const nextData = await loadFearGreed(force);
       if (fetchGenRef.current !== gen) return;
       setData(nextData);
-      setLastRefreshed(Date.now());
+      setLastRefreshed(getCachedFearGreedData({ allowExpired: true })?.fetchedAt ?? Date.now());
     } catch (err) {
       if (fetchGenRef.current !== gen) return;
       setError(err instanceof Error ? err.message : String(err));
@@ -46,10 +46,10 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
   }, []);
 
   useEffect(() => {
-    if (!cached) {
+    if (!initialCache || initialCache.stale) {
       void load();
     }
-  }, [cached, load]);
+  }, [initialCache, load]);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 10_000);

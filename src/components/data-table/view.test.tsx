@@ -21,6 +21,7 @@ const rows: Row[] = [
   { type: "section", id: "section", title: "Group" },
   { type: "row", id: "first", title: "First row" },
   { type: "row", id: "second", title: "Second row" },
+  { type: "row", id: "third", title: "Third row" },
 ];
 
 const columns: Column[] = [
@@ -117,6 +118,34 @@ async function emitKeypress(event: {
   });
 }
 
+async function emitKeypressBatch(events: Array<{
+  name?: string;
+  sequence?: string;
+  ctrl?: boolean;
+  meta?: boolean;
+  shift?: boolean;
+  option?: boolean;
+}>) {
+  await act(async () => {
+    for (const event of events) {
+      testSetup!.renderer.keyInput.emit("keypress", {
+        ctrl: false,
+        meta: false,
+        option: false,
+        shift: false,
+        eventType: "press",
+        repeated: false,
+        defaultPrevented: false,
+        propagationStopped: false,
+        preventDefault: () => {},
+        stopPropagation: () => {},
+        ...event,
+      } as any);
+    }
+    await testSetup!.renderOnce();
+  });
+}
+
 describe("DataTableView", () => {
   test("owns row keyboard navigation and skips section headers", async () => {
     testSetup = await testRender(<Harness />, { width: 60, height: 12 });
@@ -124,15 +153,19 @@ describe("DataTableView", () => {
     await renderSettled();
     expect(testSetup.captureCharFrame()).toContain("selected=First row");
 
+    await emitKeypress({ name: "down", sequence: "\u001B[B" });
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toContain("selected=Second row");
+
+    await emitKeypress({ name: "up", sequence: "\u001B[A", meta: true });
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toContain("selected=Second row");
+
+    await emitKeypress({ name: "up", sequence: "\u001B[A" });
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toContain("selected=First row");
+
     await emitKeypress({ name: "j", sequence: "j" });
-    await renderSettled();
-    expect(testSetup.captureCharFrame()).toContain("selected=Second row");
-
-    await emitKeypress({ name: "k", sequence: "k", meta: true });
-    await renderSettled();
-    expect(testSetup.captureCharFrame()).toContain("selected=Second row");
-
-    await emitKeypress({ name: "k", sequence: "k" });
     await emitKeypress({ name: "k", sequence: "k" });
     await renderSettled();
     expect(testSetup.captureCharFrame()).toContain("selected=First row");
@@ -148,6 +181,20 @@ describe("DataTableView", () => {
     await emitKeypress({ name: "enter", sequence: "\r", defaultPrevented: true });
     await renderSettled();
     expect(testSetup.captureCharFrame()).toContain("selected=Second row activated=First row");
+  });
+
+  test("keeps selection current across repeated keypresses before the next render", async () => {
+    testSetup = await testRender(<Harness />, { width: 60, height: 12 });
+
+    await renderSettled();
+    await emitKeypressBatch([
+      { name: "down", sequence: "\u001B[B" },
+      { name: "down", sequence: "\u001B[B" },
+      { name: "enter", sequence: "\r" },
+    ]);
+    await renderSettled();
+
+    expect(testSetup.captureCharFrame()).toContain("selected=Third row activated=Third row");
   });
 
 });

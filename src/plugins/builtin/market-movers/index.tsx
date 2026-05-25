@@ -7,14 +7,15 @@ import { priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
 import { useAssetData, usePluginTickerActions } from "../../runtime";
 import {
+  attachMarketMoversPersistence,
   fetchScreener,
   fetchTrending,
   MARKET_SUMMARY_SYMBOLS,
+  resetMarketMoversPersistence,
   type ScreenerQuote,
   type MarketSummaryQuote,
 } from "./screener";
 import {
-  CACHE_TTL_MS,
   CATEGORY_MAP,
   DEFAULT_SORT_PREFERENCE,
   INDEX_SHORT,
@@ -27,7 +28,6 @@ import {
   type MarketMoverColumn,
   type MarketMoverRow,
   type MarketMoverSortPreference,
-  type TabCache,
   type TabId,
 } from "./model";
 import { buildMarketMoverColumns, renderMarketMoverCell } from "./table";
@@ -43,7 +43,6 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
   const [sortPreference, setSortPreference] = useState<MarketMoverSortPreference>(DEFAULT_SORT_PREFERENCE);
   const [summaryQuotes, setSummaryQuotes] = useState<MarketSummaryQuote[]>([]);
 
-  const cacheRef = useRef<Map<TabId, TabCache>>(new Map());
   const fetchGenRef = useRef(0);
 
   const columns = useMemo(() => buildMarketMoverColumns(width), [width]);
@@ -94,7 +93,7 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
       }));
       setSummaryQuotes(
         MARKET_SUMMARY_SYMBOLS
-          .map((s) => results.find((r) => r.symbol === s))
+          .map((s) => results.find((r) => r?.symbol === s))
           .filter((r): r is MarketSummaryQuote => !!r),
       );
     };
@@ -103,15 +102,7 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
     return () => clearInterval(interval);
   }, [dataProvider]);
 
-  const loadTab = useCallback(async (tab: TabId) => {
-    const cached = cacheRef.current.get(tab);
-    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
-      setQuotes(cached.data);
-      setSelectedSymbol(null);
-      setLoadError(null);
-      return;
-    }
-
+  const loadTab = useCallback(async (tab: TabId, options?: { forceRefresh?: boolean }) => {
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
     setLoading(true);
@@ -121,7 +112,9 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
       let data: ScreenerQuote[];
 
       if (tab === "trending") {
-        const trending = await fetchTrending(25);
+        const trending = await fetchTrending(25, undefined, {
+          forceRefresh: options?.forceRefresh,
+        });
         if (fetchGenRef.current !== gen) return;
 
         const resolved: ScreenerQuote[] = [];
@@ -154,11 +147,12 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
           .map((t) => resolved.find((r) => r.symbol === t.symbol))
           .filter((r): r is ScreenerQuote => r !== undefined);
       } else {
-        data = await fetchScreener(CATEGORY_MAP[tab], 25);
+        data = await fetchScreener(CATEGORY_MAP[tab], 25, undefined, {
+          forceRefresh: options?.forceRefresh,
+        });
         if (fetchGenRef.current !== gen) return;
       }
 
-      cacheRef.current.set(tab, { data, fetchedAt: Date.now() });
       setQuotes(data);
       setSelectedSymbol(null);
       setLoadError(null);
@@ -188,16 +182,14 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
     if (key === "r") {
       event.preventDefault?.();
       event.stopPropagation?.();
-      cacheRef.current.delete(activeTab);
-      loadTab(activeTab);
+      loadTab(activeTab, { forceRefresh: true });
       return true;
     }
     return false;
   }, [activeTab, loadTab]);
 
   const refreshActiveTab = useCallback(() => {
-    cacheRef.current.delete(activeTab);
-    void loadTab(activeTab);
+    void loadTab(activeTab, { forceRefresh: true });
   }, [activeTab, loadTab]);
 
   usePaneFooter("market-movers", () => ({
@@ -261,6 +253,14 @@ export const marketMoversPlugin: GloomPlugin = {
   version: "1.0.0",
   description: "Top gainers, losers, most active, and trending tickers",
   toggleable: true,
+
+  setup(ctx) {
+    attachMarketMoversPersistence(ctx.persistence);
+  },
+
+  dispose() {
+    resetMarketMoversPersistence();
+  },
 
   panes: [
     {

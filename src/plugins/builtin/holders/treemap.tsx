@@ -36,12 +36,13 @@ function tileTextColor(backgroundColor: string): string {
   return blendForContrast(preferred, backgroundColor, fallback, TILE_TEXT_MIN_CONTRAST);
 }
 
-function Tile({ tile, selected, currency, marketCap, onSelect }: {
+function Tile({ tile, selected, currency, marketCap, onSelect, onActivate }: {
   tile: TileLayout;
   selected: boolean;
   currency: string;
   marketCap?: number;
   onSelect: () => void;
+  onActivate?: () => void;
 }) {
   const renderWidth = Math.max(1, tile.width - (tile.width > 2 ? 1 : 0));
   const renderHeight = Math.max(1, tile.height - (tile.height > 2 ? 1 : 0));
@@ -68,6 +69,7 @@ function Tile({ tile, selected, currency, marketCap, onSelect }: {
         event.preventDefault();
         onSelect();
       }}
+      onDoubleClick={onActivate}
     >
       <Text fg={textColor} attributes={attributes}>{padTo(label, innerWidth)}</Text>
       {renderHeight >= 2 && (
@@ -87,7 +89,7 @@ function pct(value: number, total: number): string {
   return `${total > 0 ? value / total * 100 : 0}%`;
 }
 
-function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currency, marketCap, onSelect, onHover }: {
+function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currency, marketCap, onSelect, onActivate, onHover }: {
   tile: FloatTileLayout;
   chartWidth: number;
   chartHeight: number;
@@ -96,6 +98,7 @@ function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currenc
   currency: string;
   marketCap?: number;
   onSelect: () => void;
+  onActivate?: () => void;
   onHover: (hovered: boolean) => void;
 }) {
   const amount = tile.row.value != null
@@ -161,6 +164,7 @@ function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currenc
         event.preventDefault();
         onSelect();
       }}
+      onDoubleClick={onActivate}
       onMouseMove={() => onHover(true)}
       onMouseOut={() => onHover(false)}
     >
@@ -190,12 +194,13 @@ function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currenc
   );
 }
 
-function DesktopHoldersTreemap({ rows, width, height, selectedId, onSelect, currency, marketCap, cellAspect }: {
+function DesktopHoldersTreemap({ rows, width, height, selectedId, onSelect, onActivate, currency, marketCap, cellAspect }: {
   rows: HolderRow[];
   width: number;
   height: number;
   selectedId: string | null;
   onSelect: (row: HolderRow) => void;
+  onActivate?: (row: HolderRow) => void;
   currency: string;
   marketCap?: number;
   cellAspect: number;
@@ -245,6 +250,7 @@ function DesktopHoldersTreemap({ rows, width, height, selectedId, onSelect, curr
             currency={currency}
             marketCap={marketCap}
             onSelect={() => onSelect(tile.row)}
+            onActivate={onActivate ? () => onActivate(tile.row) : undefined}
             onHover={(isHovered) => setHoveredId((current) => (isHovered ? tile.row.id : current === tile.row.id ? null : current))}
           />
         ))}
@@ -253,12 +259,13 @@ function DesktopHoldersTreemap({ rows, width, height, selectedId, onSelect, curr
   );
 }
 
-export function HoldersTreemap({ rows, width, height, selectedId, onSelect, currency, marketCap }: {
+export function HoldersTreemap({ rows, width, height, selectedId, onSelect, onActivate, currency, marketCap }: {
   rows: HolderRow[];
   width: number;
   height: number;
   selectedId: string | null;
   onSelect: (row: HolderRow) => void;
+  onActivate?: (row: HolderRow) => void;
   currency: string;
   marketCap?: number;
 }) {
@@ -275,6 +282,7 @@ export function HoldersTreemap({ rows, width, height, selectedId, onSelect, curr
         height={height}
         selectedId={selectedId}
         onSelect={onSelect}
+        onActivate={onActivate}
         currency={currency}
         marketCap={marketCap}
         cellAspect={cellAspect}
@@ -301,6 +309,7 @@ export function HoldersTreemap({ rows, width, height, selectedId, onSelect, curr
             currency={currency}
             marketCap={marketCap}
             onSelect={() => onSelect(tile.row)}
+            onActivate={onActivate ? () => onActivate(tile.row) : undefined}
           />
         ))}
       </Box>

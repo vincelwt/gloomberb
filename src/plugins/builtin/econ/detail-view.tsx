@@ -4,17 +4,18 @@ import { StaticChartSurface } from "../../../components";
 import { resolveChartPalette } from "../../../components/chart/core/renderer";
 import type { ProjectedChartPoint } from "../../../components/chart/core/data";
 import { colors } from "../../../theme/colors";
-import { apiClient, type CloudFredObservationPayload, type CloudFredSeriesInfoPayload } from "../../../api-client";
+import { apiClient, type CloudFredObservationPayload } from "../../../api-client";
 import { isPlainKey } from "../../../utils/keyboard";
 import { useShortcut } from "../../../react/input";
 import { usePluginTickerActions } from "../../runtime";
 import { resolveFredMapping } from "./fred-series-map";
+import {
+  getCachedFredSeries,
+  loadCachedFredSeries,
+  type FredSeriesCacheData,
+  type FredSeriesRequest,
+} from "./fred-cache";
 import type { EconEvent } from "./types";
-
-interface FredCache {
-  observations: CloudFredObservationPayload[];
-  info: CloudFredSeriesInfoPayload | null;
-}
 
 interface EconDetailViewProps {
   event: EconEvent;
@@ -37,34 +38,55 @@ function formatCompactAxisValue(value: number, units: string): string {
 
 export function EconDetailView({ event, width, height, focused }: EconDetailViewProps) {
   const { navigateTicker } = usePluginTickerActions();
-  const cacheRef = useRef<Map<string, FredCache>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<FredCache | null>(null);
+  const [data, setData] = useState<FredSeriesCacheData | null>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
 
   const mapping = useMemo(() => resolveFredMapping(event.event, event.country), [event.event, event.country]);
+  const request = useMemo<FredSeriesRequest | null>(() => {
+    if (!mapping) return null;
+    const fiveYearsAgo = new Date();
+    fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
+    const startDate = `${fiveYearsAgo.getFullYear()}-${String(fiveYearsAgo.getMonth() + 1).padStart(2, "0")}-${String(fiveYearsAgo.getDate()).padStart(2, "0")}`;
+    return {
+      seriesId: mapping.seriesId,
+      startDate,
+      sortOrder: "asc",
+    };
+  }, [mapping?.seriesId]);
 
   useEffect(() => {
-    if (!mapping) return;
-
-    const cached = cacheRef.current.get(mapping.seriesId);
-    if (cached) {
-      setData(cached);
+    if (!request) {
+      setData(null);
+      setLoading(false);
+      setError(null);
       return;
+    }
+
+    const cached = getCachedFredSeries(request);
+    if (cached) {
+      setData(cached.data);
+      if (!cached.stale) {
+        setLoading(false);
+        setError(null);
+        return;
+      }
+    } else {
+      setData(null);
     }
 
     setLoading(true);
     setError(null);
 
-    const fiveYearsAgo = new Date();
-    fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
-    const startDate = `${fiveYearsAgo.getFullYear()}-${String(fiveYearsAgo.getMonth() + 1).padStart(2, "0")}-${String(fiveYearsAgo.getDate()).padStart(2, "0")}`;
-
-    apiClient.getCloudFredSeries(mapping.seriesId, { startDate, sortOrder: "asc" })
-      .then(({ observations, info }) => {
-        const entry: FredCache = { observations, info };
-        cacheRef.current.set(mapping.seriesId, entry);
+    loadCachedFredSeries(
+      request,
+      () => apiClient.getCloudFredSeries(request.seriesId, {
+        startDate: request.startDate,
+        sortOrder: request.sortOrder,
+      }),
+    )
+      .then((entry) => {
         setData(entry);
       })
       .catch((err) => {
@@ -73,7 +95,7 @@ export function EconDetailView({ event, width, height, focused }: EconDetailView
       .finally(() => {
         setLoading(false);
       });
-  }, [mapping?.seriesId]);
+  }, [request]);
 
   const scrollDetailBy = useCallback((delta: number) => {
     const scrollBox = scrollRef.current;

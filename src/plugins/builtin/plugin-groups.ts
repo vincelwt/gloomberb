@@ -2,7 +2,7 @@ import type { GloomPlugin, GloomPluginContext } from "../../types/plugin";
 import { comparisonChartPlugin } from "./comparison-chart";
 import { correlationPlugin } from "./correlation";
 import { earningsPlugin } from "./earnings";
-import { registerEconCalendarFeature } from "./econ";
+import { registerEconCalendarFeature, resetEconCalendarFeature } from "./econ";
 import { fxMatrixPlugin } from "./fx-matrix";
 import { fearGreedPlugin } from "./fear-greed";
 import { holdersPlugin } from "./holders";
@@ -12,6 +12,7 @@ import { optionsPlugin } from "./options";
 import { researchPlugin } from "./research";
 import { secPlugin } from "./sec";
 import { sectorsPlugin } from "./sectors";
+import { thirteenFPlugin } from "./thirteenf";
 import { tickerDetailPlugin } from "./ticker-detail";
 import { registerYieldCurveFeature } from "./yield-curve";
 import { worldIndicesPlugin } from "./world-indices";
@@ -23,6 +24,7 @@ type PluginGroupOptions = Pick<
 > & {
   plugins: GloomPlugin[];
   setup?: (ctx: GloomPluginContext) => void | Promise<void>;
+  dispose?: () => void;
 };
 
 function createPluginGroup(options: PluginGroupOptions): GloomPlugin {
@@ -49,6 +51,7 @@ function createPluginGroup(options: PluginGroupOptions): GloomPlugin {
       for (const plugin of [...options.plugins].reverse()) {
         plugin.dispose?.();
       }
+      options.dispose?.();
     },
   };
 }
@@ -63,6 +66,7 @@ export const tickerResearchPlugin = createPluginGroup({
     optionsPlugin,
     researchPlugin,
     holdersPlugin,
+    thirteenFPlugin,
     secPlugin,
     insiderPlugin,
   ],
@@ -103,5 +107,8 @@ export const macroPlugin = createPluginGroup({
   setup(ctx) {
     registerEconCalendarFeature(ctx);
     registerYieldCurveFeature(ctx);
+  },
+  dispose() {
+    resetEconCalendarFeature();
   },
 });

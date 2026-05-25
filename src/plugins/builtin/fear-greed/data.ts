@@ -358,7 +358,11 @@ export async function fetchFearGreedData(options: {
   const latest = latestResult.status === "fulfilled" ? latestResult.value : null;
 
   if (!charts && !latest) {
-    const reason = chartsResult.status === "rejected" ? chartsResult.reason : latestResult.reason;
+    const reason = chartsResult.status === "rejected"
+      ? chartsResult.reason
+      : latestResult.status === "rejected"
+        ? latestResult.reason
+        : "CNN Fear & Greed returned no data";
     throw reason instanceof Error ? reason : new Error(String(reason));
   }
 
