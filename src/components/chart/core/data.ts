@@ -1,5 +1,6 @@
 import type { PricePoint, Quote } from "../../../types/financials";
 import { isQuoteStaleForCurrentSession } from "../../../market-data/quotes/freshness";
+import { hasLikelyQuoteUnitMismatch } from "../../../utils/currency-units";
 
 export {
   bucketOhlcSeries,
@@ -61,6 +62,13 @@ export function appendLiveQuotePoint(
   if (!Number.isFinite(latestTime) || quoteTime <= latestTime) return points;
 
   const latestClose = latest.close;
+  if (hasLikelyQuoteUnitMismatch(
+    { currency: quote.currency, price: latestClose },
+    { currency: quote.currency, price: quotePrice },
+  )) {
+    return points;
+  }
+
   return [
     ...points,
     {

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { BoxRenderable, CliRenderer } from "@opentui/core";
 import {
   computeProjectedIndicatorOverlays,
+  isAutoWindowOverridePending,
   resolveAutoDisplayState,
   resolveAutoPlanningWindow,
   resolveAutoZoomWindow,
@@ -16,6 +17,8 @@ import {
   resolveSelectionDisplayCursorState,
 } from "../core/pointer";
 import { getPointTerminalColumn } from "../core/renderer";
+import { CHART_ZOOM_STEP_FACTOR, getVisiblePointCount, RIGHT_EDGE_ANCHOR_RATIO } from "../core/viewport";
+import { applyZoomStepAroundAnchor } from "./viewport";
 
 const renderer = {
   resolution: { width: 1200, height: 800 },
@@ -130,6 +133,107 @@ describe("stock chart keyboard helpers", () => {
     expect(resolveChartKeyboardKey({ sequence: "-" })).toBe("zoom-out");
     expect(resolveChartKeyboardKey({ name: "minus" })).toBe("zoom-out");
     expect(resolveChartKeyboardKey({ name: "A" })).toBe("a");
+  });
+});
+
+describe("stock chart viewport helpers", () => {
+  test("zooms from the displayed window when the render cache lags viewport state", () => {
+    const history = makeDailyHistory(1, 90);
+    const displayedDateWindow = {
+      start: history[30]!.date,
+      end: history[89]!.date,
+    };
+    const stalePendingView = {
+      presetRange: "3M" as const,
+      bufferRange: "6M" as const,
+      activePreset: null,
+      dateWindow: null,
+      panOffset: 0,
+      zoomLevel: 18,
+      cursorX: null,
+      cursorY: null,
+      renderMode: "area" as const,
+    };
+
+    const nextView = applyZoomStepAroundAnchor(
+      stalePendingView,
+      CHART_ZOOM_STEP_FACTOR,
+      RIGHT_EDGE_ANCHOR_RATIO,
+      history.map((point) => point.date),
+      displayedDateWindow,
+    );
+
+    expect(nextView.zoomLevel).toBeCloseTo(1.8);
+    expect(nextView.panOffset).toBe(0);
+    expect(getVisiblePointCount(history.length, nextView.zoomLevel)).toBe(50);
+  });
+
+  test("keeps one zoom step modest on multi-year windows", () => {
+    const dates = Array.from(
+      { length: 2094 },
+      (_, index) => new Date(Date.UTC(2020, 8, 1 + index)),
+    );
+    const displayedDateWindow = {
+      start: dates[0]!,
+      end: dates[dates.length - 1]!,
+    };
+    const view = {
+      presetRange: "5Y" as const,
+      bufferRange: "ALL" as const,
+      activePreset: null,
+      dateWindow: displayedDateWindow,
+      panOffset: 0,
+      zoomLevel: 1,
+      cursorX: null,
+      cursorY: null,
+      renderMode: "area" as const,
+    };
+
+    const nextView = applyZoomStepAroundAnchor(
+      view,
+      CHART_ZOOM_STEP_FACTOR,
+      RIGHT_EDGE_ANCHOR_RATIO,
+      dates,
+      displayedDateWindow,
+      displayedDateWindow,
+    );
+
+    expect(nextView.dateWindow?.end.getTime()).toBe(displayedDateWindow.end.getTime());
+    expect(nextView.dateWindow?.start.getTime()).toBeLessThan(new Date("2021-09-01T00:00:00Z").getTime());
+  });
+
+  test("keeps manual zoom windows at least one rendered bar wide", () => {
+    const history = makeDailyHistory(1, 90);
+    const dates = history.map((point) => point.date);
+    const displayedDateWindow = {
+      start: history[89]!.date,
+      end: history[89]!.date,
+    };
+    const stalePendingView = {
+      presetRange: "3M" as const,
+      bufferRange: "6M" as const,
+      activePreset: null,
+      dateWindow: displayedDateWindow,
+      panOffset: 0,
+      zoomLevel: 45,
+      cursorX: null,
+      cursorY: null,
+      renderMode: "area" as const,
+    };
+
+    const nextView = applyZoomStepAroundAnchor(
+      stalePendingView,
+      1 / CHART_ZOOM_STEP_FACTOR,
+      RIGHT_EDGE_ANCHOR_RATIO,
+      dates,
+      displayedDateWindow,
+      { start: history[0]!.date, end: history[89]!.date },
+      24 * 60 * 60_000,
+    );
+
+    expect(nextView.dateWindow?.end.getTime()).toBe(history[89]!.date.getTime());
+    expect(nextView.dateWindow?.start.getTime()).toBe(history[88]!.date.getTime());
+    expect(getVisiblePointCount(history.length, nextView.zoomLevel)).toBe(2);
   });
 });
 
@@ -254,6 +358,27 @@ describe("stock chart auto helpers", () => {
     })).toBe(customWindow);
   });
 
+  test("keeps a committed custom auto window from looking pending", () => {
+    const customWindow = {
+      start: new Date("2026-01-03T00:00:00Z"),
+      end: new Date("2026-01-04T00:00:00Z"),
+    };
+
+    expect(isAutoWindowOverridePending(customWindow, {
+      window: customWindow,
+      resolution: "1d" as const,
+      data: [],
+    })).toBe(false);
+    expect(isAutoWindowOverridePending(customWindow, {
+      window: {
+        start: new Date("2026-01-02T00:00:00Z"),
+        end: new Date("2026-01-09T00:00:00Z"),
+      },
+      resolution: "1d" as const,
+      data: [],
+    })).toBe(true);
+  });
+
   test("zooms in by at least one visible point on every auto step when more detail is available", () => {
     const history = makeDailyHistory(1, 10);
 
@@ -269,7 +394,7 @@ describe("stock chart auto helpers", () => {
     });
 
     expect(nextWindow).toEqual({
-      start: new Date("2026-01-08T00:00:00Z"),
+      start: new Date("2026-01-07T00:00:00Z"),
       end: new Date("2026-01-10T00:00:00Z"),
     });
   });
@@ -290,7 +415,7 @@ describe("stock chart auto helpers", () => {
     });
 
     expect(nextWindow).toEqual({
-      start: new Date("2026-01-06T00:00:00Z"),
+      start: new Date("2026-01-07T00:00:00Z"),
       end: new Date("2026-01-10T00:00:00Z"),
     });
   });
@@ -312,7 +437,7 @@ describe("stock chart auto helpers", () => {
 
     expect(nextWindow?.start?.getTime()).toBeLessThan(boundsDates[0]!.getTime());
     expect(nextWindow).toEqual({
-      start: new Date("2025-12-27T00:00:00.000Z"),
+      start: new Date("2025-12-30T00:00:00.000Z"),
       end: new Date("2026-01-10T00:00:00.000Z"),
     });
   });
@@ -332,7 +457,7 @@ describe("stock chart auto helpers", () => {
     });
 
     expect(nextWindow).toEqual({
-      start: new Date("2026-01-09T08:00:00Z"),
+      start: new Date("2026-01-09T04:00:00Z"),
       end: new Date("2026-01-10T00:00:00Z"),
     });
   });

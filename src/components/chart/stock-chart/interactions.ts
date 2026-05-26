@@ -2,6 +2,8 @@ import { useCallback, useRef, type Dispatch, type MutableRefObject, type RefObje
 import type { BoxRenderable, NativeRendererHost } from "../../../ui";
 import type { PricePoint } from "../../../types/financials";
 import {
+  applyDateWindowViewport,
+  applyPanDateWindowViewport,
   clearActivePreset,
   shiftDateWindow,
   type DateWindowRange,
@@ -9,11 +11,11 @@ import {
 import {
   consumeScrollPanMovement,
   getDragPanWindowRatio,
-  resolveDragPanOffset,
 } from "../core/scroll";
 import type { ChartRenderMode, ChartResolution } from "../core/types";
 import {
   buildDisplayCursorState,
+  consumeChartMouseEvent,
   getGlobalMouseX,
   getLocalPlotPointer,
   resolveCursorMotionKind,
@@ -22,10 +24,8 @@ import {
   type LocalPlotPointer,
 } from "../core/pointer";
 import { getPointTerminalColumn } from "../core/renderer";
-import { getVisiblePointCount } from "../core/viewport";
 import type { ChartCursorMotionKind } from "../cursor-motion";
 import {
-  clamp,
   getMaxPanOffset,
   type PendingExpansionAction,
   type StockChartViewportState,
@@ -33,12 +33,13 @@ import {
 
 interface DragState {
   startGlobalX: number;
-  startPanOffset: number;
   startWindow: DateWindowRange | null;
 }
 
 interface StockChartPointerInteractionOptions {
+  baseDateBounds: DateWindowRange | null;
   boundsHistory: PricePoint[];
+  boundsHistoryDates: Date[];
   chartWidth: number;
   commitSelectionCursor: (next: { cursorX: number | null; cursorY: number | null }) => void;
   compact?: boolean;
@@ -61,7 +62,9 @@ interface StockChartPointerInteractionOptions {
 }
 
 export function useStockChartPointerInteractions({
+  baseDateBounds,
   boundsHistory,
+  boundsHistoryDates,
   chartWidth,
   commitSelectionCursor,
   compact,
@@ -120,12 +123,12 @@ export function useStockChartPointerInteractions({
   const handlePlotDown = useCallback((event: ChartMouseEvent) => {
     if (compact) return;
     if (!interactive) onActivate?.();
-    focusPaneForMouseInteraction(event);
+    consumeChartMouseEvent(event);
+    focusPaneForMouseInteraction(null);
     mouseCrosshairDisabledRef.current = false;
     if (!syncPointerCursor(event)) return;
     dragRef.current = {
       startGlobalX: getGlobalMouseX(event, renderer),
-      startPanOffset: viewState.panOffset,
       startWindow: navigableDateWindow,
     };
   }, [
@@ -142,6 +145,7 @@ export function useStockChartPointerInteractions({
 
   const handlePlotDrag = useCallback((event: ChartMouseEvent) => {
     if (compact || (!interactive && !dragRef.current)) return;
+    consumeChartMouseEvent(event);
     if (mouseCrosshairDisabledRef.current && !dragRef.current) return;
     syncPointerCursor(event);
     if (!dragRef.current) return;
@@ -155,21 +159,22 @@ export function useStockChartPointerInteractions({
       return;
     }
 
-    const visibleCount = getVisiblePointCount(boundsHistory.length, viewState.zoomLevel);
     const deltaCells = getGlobalMouseX(event, renderer) - dragRef.current.startGlobalX;
-    const nextPan = resolveDragPanOffset(
-      dragRef.current.startPanOffset,
-      deltaCells,
-      chartWidth,
-      visibleCount,
-      boundsHistory.length - visibleCount,
-    );
     setViewState((current) => {
-      const cleared = clearActivePreset(current);
-      return cleared.panOffset === nextPan ? cleared : { ...cleared, panOffset: nextPan };
+      const nextWindow = shiftDateWindow(
+        dragRef.current?.startWindow ?? navigableDateWindow,
+        getDragPanWindowRatio(deltaCells, chartWidth),
+      );
+      return applyDateWindowViewport(
+        clearActivePreset(current),
+        boundsHistoryDates,
+        nextWindow,
+        { bounds: baseDateBounds },
+      );
     });
   }, [
-    boundsHistory.length,
+    baseDateBounds,
+    boundsHistoryDates,
     chartWidth,
     compact,
     effectiveResolution,
@@ -179,14 +184,13 @@ export function useStockChartPointerInteractions({
     requestAutoWindow,
     setViewState,
     syncPointerCursor,
-    viewState.zoomLevel,
+    navigableDateWindow,
   ]);
 
   const handlePlotScroll = useCallback((event: ChartMouseEvent) => {
     if (compact) return;
-    event.stopPropagation?.();
-    event.preventDefault?.();
-    focusPaneForMouseInteraction(event);
+    consumeChartMouseEvent(event);
+    focusPaneForMouseInteraction(null);
     const direction = event.scroll?.direction;
     if (!direction) return;
     const scrollPan = consumeScrollPanMovement(
@@ -216,15 +220,17 @@ export function useStockChartPointerInteractions({
       return;
     }
     setViewState((current) => ({
-      ...clearActivePreset(current),
-      panOffset: clamp(
-        current.panOffset + scrollPanCells,
-        0,
-        getMaxPanOffset(boundsHistory, current.zoomLevel),
+      ...applyPanDateWindowViewport(
+        clearActivePreset(current),
+        boundsHistoryDates,
+        scrollPanRatio,
+        { bounds: baseDateBounds },
       ),
     }));
   }, [
+    baseDateBounds,
     boundsHistory,
+    boundsHistoryDates,
     chartWidth,
     compact,
     effectiveResolution,

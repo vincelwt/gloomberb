@@ -26,7 +26,7 @@ import {
   type CloudMarketResponse,
 } from "../../api-client";
 import type { NewsArticle, NewsQuery } from "../../types/news-source";
-import { resolveCurrencyUnit } from "../../utils/currency-units";
+import { resolvePriceHistoryCurrencyUnit } from "../../utils/currency-units";
 import { canonicalTickerKey, publicExchange } from "../../utils/exchanges";
 import { createProviderMiss } from "../provider-errors";
 import {
@@ -297,7 +297,7 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     if (isStaleCloudResponse(response)) {
       throw createProviderMiss(`Cloud chart data is stale for ${ticker}`);
     }
-    const { divisor } = resolveCurrencyUnit(response.currency ?? response.providerMeta?.currency);
+    const { divisor } = resolvePriceHistoryCurrencyUnit(response.currency ?? response.providerMeta?.currency, exchange);
     return unwrapRequiredCloudResponse(response, `Cloud chart data is unavailable for ${ticker}`)
       .map((point) => mapPricePoint(point, divisor, exchange));
   }
@@ -325,7 +325,7 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     if (isStaleCloudResponse(response)) {
       throw createProviderMiss(`Cloud chart data is stale for ${ticker}`);
     }
-    const { divisor } = resolveCurrencyUnit(response.currency ?? response.providerMeta?.currency);
+    const { divisor } = resolvePriceHistoryCurrencyUnit(response.currency ?? response.providerMeta?.currency, exchange);
     return unwrapRequiredCloudResponse(response, `Cloud chart data is unavailable for ${ticker}`)
       .map((point) => mapPricePoint(point, divisor, exchange));
   }
@@ -352,7 +352,7 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     if (isStaleCloudResponse(response)) {
       throw createProviderMiss(`Cloud detailed chart history is stale for ${ticker}`);
     }
-    const { divisor } = resolveCurrencyUnit(response.currency ?? response.providerMeta?.currency);
+    const { divisor } = resolvePriceHistoryCurrencyUnit(response.currency ?? response.providerMeta?.currency, exchange);
     return unwrapRequiredCloudResponse(response, `Cloud detailed chart history is unavailable for ${ticker}`)
       .map((point) => mapPricePoint(point, divisor, exchange));
   }

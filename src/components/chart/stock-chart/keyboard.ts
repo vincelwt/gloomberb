@@ -1,12 +1,14 @@
 import { useShortcut } from "../../../react/input";
 import type { PricePoint } from "../../../types/financials";
+import { resolveChartKeyboardKey } from "../core/keyboard";
 import {
+  applyPanDateWindowViewport,
   clearActivePreset,
   shiftDateWindow,
   type DateWindowRange,
 } from "../core/controller";
 import type { ManualChartResolution } from "../core/resolution";
-import { RIGHT_EDGE_ANCHOR_RATIO } from "../core/viewport";
+import { CHART_ZOOM_STEP_FACTOR, RIGHT_EDGE_ANCHOR_RATIO } from "../core/viewport";
 import type { ProjectedChartPoint } from "../core/data";
 import {
   getActivePointIndex,
@@ -14,7 +16,7 @@ import {
 } from "../core/renderer";
 import { resolveAutoZoomWindow, type AutoRenderedView } from "./auto";
 import {
-  applyZoomAroundAnchor,
+  applyZoomStepAroundAnchor,
   clamp,
   clearAutoViewportState,
   getMaxPanOffset,
@@ -36,21 +38,7 @@ import {
 import type { ChartCursorMotionKind } from "../cursor-motion";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
-export function resolveChartKeyboardKey(event: { name?: string; sequence?: string }): string {
-  const name = event.name ?? "";
-  const sequence = event.sequence ?? "";
-  const candidates = [name, sequence];
-
-  if (candidates.some((key) => key === "=" || key === "+" || key === "plus")) {
-    return "zoom-in";
-  }
-  if (candidates.some((key) => key === "-" || key === "_" || key === "minus")) {
-    return "zoom-out";
-  }
-
-  const key = name || sequence;
-  return key.length === 1 ? key.toLowerCase() : key;
-}
+export { resolveChartKeyboardKey } from "../core/keyboard";
 
 export function resolveAdjacentSelectionCursorX(
   cursorX: number | null,
@@ -69,6 +57,7 @@ export function resolveAdjacentSelectionCursorX(
 interface StockChartKeyboardShortcutArgs {
   boundsHistory: PricePoint[];
   boundsHistoryDates: Date[];
+  baseDateBounds: DateWindowRange | null;
   chartWidth: number;
   commitSelectionCursor: (next: { cursorX: number | null; cursorY: number | null }) => void;
   compact: boolean | undefined;
@@ -79,6 +68,7 @@ interface StockChartKeyboardShortcutArgs {
   history: PricePoint[];
   interactive: boolean | undefined;
   maxCursorX: number;
+  manualMinimumSpanMs: number | null;
   mouseCrosshairDisabledRef: MutableRefObject<boolean>;
   navigableDateWindow: DateWindowRange | null;
   panStep: number;
@@ -106,6 +96,7 @@ interface StockChartKeyboardShortcutArgs {
 export function useStockChartKeyboardShortcuts({
   boundsHistory,
   boundsHistoryDates,
+  baseDateBounds,
   chartWidth,
   commitSelectionCursor,
   compact,
@@ -116,6 +107,7 @@ export function useStockChartKeyboardShortcuts({
   history,
   interactive,
   maxCursorX,
+  manualMinimumSpanMs,
   mouseCrosshairDisabledRef,
   navigableDateWindow,
   panStep,
@@ -148,8 +140,12 @@ export function useStockChartKeyboardShortcuts({
       return;
     }
     setViewState((current) => {
-      const cleared = clearActivePreset(current);
-      return { ...cleared, panOffset: current.panOffset + panStep };
+      return applyPanDateWindowViewport(
+        clearActivePreset(current),
+        boundsHistoryDates,
+        panStep / Math.max(chartWidth, 1),
+        { bounds: baseDateBounds },
+      );
     });
   };
 
@@ -159,9 +155,12 @@ export function useStockChartKeyboardShortcuts({
       return;
     }
     setViewState((current) => {
-      const cleared = clearActivePreset(current);
-      const nextPanOffset = Math.max(current.panOffset - panStep, 0);
-      return cleared.panOffset === nextPanOffset ? cleared : { ...cleared, panOffset: nextPanOffset };
+      return applyPanDateWindowViewport(
+        clearActivePreset(current),
+        boundsHistoryDates,
+        -panStep / Math.max(chartWidth, 1),
+        { bounds: baseDateBounds },
+      );
     });
   };
 
@@ -181,7 +180,15 @@ export function useStockChartKeyboardShortcuts({
           }));
           return;
         }
-        setViewState((current) => applyZoomAroundAnchor(current, current.zoomLevel * 1.5, RIGHT_EDGE_ANCHOR_RATIO, boundsHistory));
+        setViewState((current) => applyZoomStepAroundAnchor(
+          current,
+          CHART_ZOOM_STEP_FACTOR,
+          RIGHT_EDGE_ANCHOR_RATIO,
+          boundsHistoryDates,
+          visibleDateWindow,
+          baseDateBounds,
+          manualMinimumSpanMs ?? undefined,
+        ));
         return;
       case "zoom-out":
         if (effectiveResolution === "auto") {
@@ -196,16 +203,19 @@ export function useStockChartKeyboardShortcuts({
         }
         if (viewState.zoomLevel <= 1.001 && expandBufferRange({
           kind: "zoom-out",
-          targetVisibleCount: Math.round(boundsHistory.length * 1.5),
+          targetVisibleCount: Math.round(boundsHistory.length * CHART_ZOOM_STEP_FACTOR),
           anchorRatio: RIGHT_EDGE_ANCHOR_RATIO,
         })) {
           return;
         }
-        setViewState((current) => applyZoomAroundAnchor(
+        setViewState((current) => applyZoomStepAroundAnchor(
           current,
-          current.zoomLevel / 1.5,
+          1 / CHART_ZOOM_STEP_FACTOR,
           RIGHT_EDGE_ANCHOR_RATIO,
-          boundsHistory,
+          boundsHistoryDates,
+          visibleDateWindow,
+          baseDateBounds,
+          manualMinimumSpanMs ?? undefined,
         ));
         return;
       case "0":
@@ -225,9 +235,11 @@ export function useStockChartKeyboardShortcuts({
             effectiveResolution,
             selectionSupportMap,
             visibleDateWindow,
+            boundsHistoryDates,
           ) ?? current;
           return {
             ...nextState,
+            dateWindow: null,
             panOffset: 0,
             zoomLevel: 1,
             cursorX: null,
@@ -303,14 +315,12 @@ export function useStockChartKeyboardShortcuts({
             return;
           }
           setViewState((current) => {
-            const maxPan = getMaxPanOffset(boundsHistory, current.zoomLevel);
             if (currentIndex <= 0) {
-              return {
+              return applyPanDateWindowViewport({
                 ...clearActivePreset(current),
                 cursorX: nextCursor,
                 cursorY: null,
-                panOffset: clamp(current.panOffset + 1, 0, maxPan),
-              };
+              }, boundsHistoryDates, 1 / Math.max(pointCount - 1, 1), { bounds: baseDateBounds });
             }
             return { ...current, cursorX: nextCursor, cursorY: null };
           });
@@ -348,12 +358,11 @@ export function useStockChartKeyboardShortcuts({
           }
           setViewState((current) => {
             if (currentIndex >= pointCount - 1) {
-              return {
+              return applyPanDateWindowViewport({
                 ...clearActivePreset(current),
                 cursorX: nextCursor,
                 cursorY: null,
-                panOffset: Math.max(current.panOffset - 1, 0),
-              };
+              }, boundsHistoryDates, -1 / Math.max(pointCount - 1, 1), { bounds: baseDateBounds });
             }
             return { ...current, cursorX: nextCursor, cursorY: null };
           });

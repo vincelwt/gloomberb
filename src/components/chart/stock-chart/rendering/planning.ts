@@ -26,7 +26,7 @@ export interface UseStockChartRenderPlanningOptions {
   effectiveResolution: ChartResolution;
   effectiveResolutionSupport: ChartResolutionSupport[];
   hasResolutionSupportApi: boolean;
-  manualVisibleDateWindow: DateWindowRange | null;
+  manualPlannedDateWindow: DateWindowRange | null;
   measurementChartWidth: number;
   pendingAutoWindowOverride: DateWindowRange | null;
   renderedAutoView: AutoRenderedView | null;
@@ -49,7 +49,7 @@ export function useStockChartRenderPlanning({
   effectiveResolution,
   effectiveResolutionSupport,
   hasResolutionSupportApi,
-  manualVisibleDateWindow,
+  manualPlannedDateWindow,
   measurementChartWidth,
   pendingAutoWindowOverride,
   renderedAutoView,
@@ -104,7 +104,7 @@ export function useStockChartRenderPlanning({
   }, [compact, plannedAutoWindow, effectiveResolution, hasResolutionSupportApi, measurementChartWidth, resolutionSupport, supportMap]);
   const plannedDateWindow = effectiveResolution === "auto"
     ? plannedAutoWindow
-    : manualVisibleDateWindow;
+    : manualPlannedDateWindow;
   const plannedManualResolution = effectiveResolution === "auto"
     ? plannedAutoResolution
     : effectiveResolution;

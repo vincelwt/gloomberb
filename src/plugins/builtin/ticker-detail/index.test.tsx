@@ -293,6 +293,21 @@ async function clickFrameText(text: string) {
   await flushFrame();
 }
 
+function spanLineText(line: { spans: Array<{ text: string }> }): string {
+  return line.spans.map((span) => span.text).join("");
+}
+
+function lineBackgroundKeys(line: { spans: Array<{ text: string; bg: { toInts(): number[] } }> }): Set<string> {
+  const keys: string[] = [];
+  for (const span of line.spans) {
+    const key = span.bg.toInts().join(",");
+    for (let index = 0; index < span.text.length; index += 1) keys.push(key);
+  }
+  keys.shift();
+  keys.pop();
+  return new Set(keys);
+}
+
 afterEach(() => {
   if (testSetup) {
     testSetup.renderer.destroy();
@@ -365,6 +380,31 @@ describe("FinancialsTab", () => {
     await flushFrame();
 
     expect(testSetup.captureCharFrame()).toContain("Operating Revenue");
+  });
+
+  test("uses one hover background across financial group rows", async () => {
+    testSetup = await testRender(createFinancialsTabFooterHarness(100, 20), {
+      width: 100,
+      height: 20,
+    });
+
+    await flushFrame();
+    await flushFrame();
+
+    const rows = testSetup.captureCharFrame().split("\n");
+    const groupRowY = rows.findIndex((line) => line.includes("Operating Inc"));
+    expect(groupRowY).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.moveTo(2, groupRowY);
+      await testSetup!.renderOnce();
+    });
+
+    const groupLine = testSetup.captureSpans().lines.find((line) => (
+      spanLineText(line).includes("Operating Inc")
+    ));
+    expect(groupLine).toBeDefined();
+    expect(lineBackgroundKeys(groupLine!).size).toBe(1);
   });
 
   test("switches financial statement sections with left and right arrows", async () => {

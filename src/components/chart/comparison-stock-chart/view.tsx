@@ -97,6 +97,7 @@ function useComparisonChartSettings({
     presetRange: storedRangePreset,
     bufferRange: storedRangePreset,
     activePreset: storedRangePreset,
+    dateWindow: null,
     resolution: storedResolution,
     panOffset: 0,
     zoomLevel: 1,
@@ -284,6 +285,7 @@ function ComparisonStockChartView({
     minimumAxisWidth,
     series,
     viewState.panOffset,
+    viewState.dateWindow,
     viewState.renderMode,
     viewState.selectedSymbol,
     viewState.zoomLevel,
@@ -407,11 +409,11 @@ function ComparisonStockChartView({
     renderer,
     scrollPanCellRemainderRef,
     series,
+    seriesDates,
     setViewState,
-    totalDateCount: visibleWindow.totalDates,
     updateDisplayCursorTarget,
     viewState,
-    visibleDateCount: visibleWindow.dates.length,
+    visibleDateWindow,
   });
 
   const {

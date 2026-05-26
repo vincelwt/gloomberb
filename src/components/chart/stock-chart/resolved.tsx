@@ -6,6 +6,7 @@ import { useStockChartRenderOutput } from "./rendering/output";
 import { useStockChartSurfaceRuntime } from "./surface-runtime";
 import { StockChartView } from "./view";
 import { useResolvedStockChartRuntime } from "./resolved/runtime";
+import { getChartResolutionStepMs } from "../core/resolution";
 import type { ResolvedStockChartProps } from "./types";
 
 type StockChartViewProps = ComponentProps<typeof StockChartView>;
@@ -26,8 +27,10 @@ function useResolvedStockChartKeyboard(runtime: ResolvedStockChartRuntime): void
     settings,
     viewportRuntime,
   } = runtime;
+  const manualMinimumSpanMs = getChartResolutionStepMs(dataRuntime.renderedResolution);
 
   useStockChartKeyboardShortcuts({
+    baseDateBounds: dataRuntime.baseDateBounds,
     boundsHistory: dataRuntime.boundsHistory,
     boundsHistoryDates: dataRuntime.boundsHistoryDates,
     chartWidth: geometryRuntime.chartWidth,
@@ -40,6 +43,7 @@ function useResolvedStockChartKeyboard(runtime: ResolvedStockChartRuntime): void
     history: dataRuntime.history,
     interactive,
     maxCursorX: geometryRuntime.maxCursorX,
+    manualMinimumSpanMs,
     mouseCrosshairDisabledRef: interactionRuntime.mouseCrosshairDisabledRef,
     navigableDateWindow: dataRuntime.navigableDateWindow,
     panStep: geometryRuntime.panStep,
@@ -134,11 +138,12 @@ function useResolvedStockChartControls(
     width,
   } = runtime;
   const { output, status } = render;
+  const manualMinimumSpanMs = getChartResolutionStepMs(dataRuntime.renderedResolution);
 
   useStockChartFooter({
     activePoint: output.activePoint,
     activePreset: viewportRuntime.activePreset,
-    boundsHistory: dataRuntime.boundsHistory,
+    baseDateBounds: dataRuntime.baseDateBounds,
     boundsHistoryDates: dataRuntime.boundsHistoryDates,
     chartAssetCategory,
     chartCurrency,
@@ -146,6 +151,7 @@ function useResolvedStockChartControls(
     effectiveResolution: dataRuntime.effectiveResolution,
     footerHints,
     history: dataRuntime.history,
+    manualMinimumSpanMs,
     navigableDateWindow: dataRuntime.navigableDateWindow,
     pendingAutoWindowRef: interactionRuntime.pendingAutoWindowRef,
     pendingCanonicalResetRef: interactionRuntime.pendingCanonicalResetRef,
@@ -200,8 +206,10 @@ function useResolvedStockChartSurface(
 
   return useStockChartSurfaceRuntime({
     axisMode,
+    baseDateBounds: dataRuntime.baseDateBounds,
     bodyMessage: status.bodyMessage,
     boundsHistory: dataRuntime.boundsHistory,
+    boundsHistoryDates: dataRuntime.boundsHistoryDates,
     canvasCharts: !!rendererRuntime.canvasCharts,
     cellHeightPx: rendererRuntime.cellHeightPx,
     cellWidthPx: rendererRuntime.cellWidthPx,

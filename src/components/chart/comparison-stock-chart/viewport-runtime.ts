@@ -1,20 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from "react";
 import {
-  getMaxComparisonPanOffset,
   getVisibleComparisonWindow,
   projectComparisonChartData,
 } from "../comparison/data";
 import { applyBufferedPanExpansion } from "../core/scroll";
 import {
+  applyDateWindowViewport,
+  applyPresetDateWindowViewport,
   buildVisibleDateWindow,
+  buildVisibleDateWindowFromRange,
   needsCanonicalPresetViewportReset,
   resolveCanonicalPresetViewport,
+  resolvePendingPresetRangeViewport,
   resolvePresetSelection,
-  resolvePresetRangeViewport,
   resolveResolutionSelection,
   resolveStoredChartSelection,
   resolveVisibleActivePreset,
 } from "../core/controller";
+import {
+  consumeStoredChartSelectionChange,
+  createStoredChartSelectionSyncState,
+  markStoredChartSelectionLocallyApplied,
+} from "../core/pane-settings";
 import {
   getExpandedBufferRange,
   getPresetResolution,
@@ -23,7 +30,6 @@ import {
   type ChartResolutionSupport,
   type ManualChartResolution,
 } from "../core/resolution";
-import { resolveAnchoredChartZoom } from "../core/viewport";
 import {
   EMPTY_DISPLAY_CURSOR,
   type DisplayCursorState,
@@ -36,10 +42,7 @@ import type {
   TimeRange,
 } from "../core/types";
 import type { ChartCursorMotionKind } from "../cursor-motion";
-import {
-  clamp,
-  getUniqueSortedSeriesDates,
-} from "./helpers";
+import { getUniqueSortedSeriesDates } from "./helpers";
 import type { PendingExpansionAction } from "./types";
 
 interface UseComparisonChartViewportRuntimeOptions {
@@ -77,41 +80,50 @@ export function useComparisonChartViewportRuntime({
 }: UseComparisonChartViewportRuntimeOptions) {
   const pendingCanonicalResetRef = useRef(1);
   const appliedCanonicalResetRef = useRef(0);
-  const lastAppliedStoredSelectionKeyRef = useRef<string | null>(null);
+  const storedSelectionSyncStateRef = useRef(
+    createStoredChartSelectionSyncState(storedRangePreset, storedResolution),
+  );
   const pendingExpansionRef = useRef<PendingExpansionAction>(null);
   const seriesDates = useMemo(() => getUniqueSortedSeriesDates(series), [series]);
   const visibleDateWindow = useMemo(
-    () => buildVisibleDateWindow(seriesDates, viewState.panOffset, viewState.zoomLevel),
-    [seriesDates, viewState.panOffset, viewState.zoomLevel],
+    () => (
+      viewState.dateWindow?.start && viewState.dateWindow.end
+        ? buildVisibleDateWindowFromRange(seriesDates, viewState.dateWindow)
+        : buildVisibleDateWindow(seriesDates, viewState.panOffset, viewState.zoomLevel)
+    ),
+    [seriesDates, viewState.dateWindow, viewState.panOffset, viewState.zoomLevel],
   );
   const activePreset = resolveVisibleActivePreset(seriesDates, {
     presetRange: viewState.presetRange,
     activePreset: viewState.activePreset,
+    dateWindow: viewState.dateWindow,
     panOffset: viewState.panOffset,
     zoomLevel: viewState.zoomLevel,
     resolution: effectiveResolution,
   });
 
   useEffect(() => {
-    const storedSelectionKey = `${storedRangePreset}:${storedResolution}`;
-    if (lastAppliedStoredSelectionKeyRef.current === storedSelectionKey) return;
+    if (!consumeStoredChartSelectionChange(
+      storedSelectionSyncStateRef.current,
+      storedRangePreset,
+      storedResolution,
+    )) return;
 
-    lastAppliedStoredSelectionKeyRef.current = storedSelectionKey;
     pendingCanonicalResetRef.current += 1;
     setViewState((current) => (
       storedResolution === "auto"
         ? resolveStoredChartSelection(current, storedRangePreset, storedResolution, selectionSupportMap)
-        : resolvePresetSelection(
+        : applyPresetDateWindowViewport(resolvePresetSelection(
           {
             ...current,
             resolution: storedResolution,
           },
           storedRangePreset,
           getSupportMaxRange(selectionSupportMap, storedResolution),
-        )
+        ), seriesDates, storedRangePreset, { clearCursor: true })
     ));
     updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
-  }, [selectionSupportMap, setViewState, storedRangePreset, storedResolution, updateDisplayCursorTarget]);
+  }, [selectionSupportMap, seriesDates, setViewState, storedRangePreset, storedResolution, updateDisplayCursorTarget]);
 
   useEffect(() => {
     if (seriesDates.length === 0) return;
@@ -124,7 +136,7 @@ export function useComparisonChartViewportRuntime({
       }
       setViewState((current) => (
         hasPendingCanonicalReset
-          ? resolvePresetRangeViewport(current, seriesDates)
+          ? resolvePendingPresetRangeViewport(current, seriesDates)
           : resolveCanonicalPresetViewport(current, seriesDates)
       ));
       return;
@@ -135,18 +147,13 @@ export function useComparisonChartViewportRuntime({
     setViewState((current) => {
       if (pendingExpansion.kind === "zoom-out") {
         const nextVisibleCount = Math.min(seriesDates.length, Math.max(pendingExpansion.targetVisibleCount, 1));
-        return {
-          ...current,
-          ...resolveAnchoredChartZoom(seriesDates.length, 1, 0, seriesDates.length / nextVisibleCount, pendingExpansion.anchorRatio),
-        };
+        const visibleWindow = buildVisibleDateWindow(seriesDates, 0, seriesDates.length / nextVisibleCount);
+        return applyDateWindowViewport(current, seriesDates, visibleWindow, { activePreset: null });
       }
-      return {
-        ...current,
-        panOffset: clamp(pendingExpansion.targetPanOffset, 0, getMaxComparisonPanOffset(series, current.zoomLevel)),
-      };
+      const visibleWindow = buildVisibleDateWindow(seriesDates, pendingExpansion.targetPanOffset, current.zoomLevel);
+      return applyDateWindowViewport(current, seriesDates, visibleWindow, { activePreset: null });
     });
   }, [
-    series,
     seriesDates,
     setViewState,
     viewState,
@@ -163,23 +170,38 @@ export function useComparisonChartViewportRuntime({
   const setRangePreset = useCallback((range: TimeRange) => {
     if (!isRangePresetSupported(range, effectiveResolutionSupport)) return;
     const supportMaxRange = getSupportMaxRange(effectiveResolutionSupport, getPresetResolution(range));
+    markStoredChartSelectionLocallyApplied(storedSelectionSyncStateRef.current, range, getPresetResolution(range));
     persistChartControls(range, getPresetResolution(range));
     pendingCanonicalResetRef.current += 1;
     updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
-    setViewState((current) => resolvePresetSelection(current, range, supportMaxRange));
-  }, [effectiveResolutionSupport, persistChartControls, setViewState, updateDisplayCursorTarget]);
+    setViewState((current) => applyPresetDateWindowViewport(
+      resolvePresetSelection(current, range, supportMaxRange),
+      seriesDates,
+      range,
+      { clearCursor: true },
+    ));
+  }, [effectiveResolutionSupport, persistChartControls, seriesDates, setViewState, updateDisplayCursorTarget]);
 
   const setResolution = useCallback((resolution: ChartResolution) => {
     if (resolution !== "auto" && !availableManualResolutions.includes(resolution)) return;
     const nextState = resolveResolutionSelection(viewState, resolution, supportMap, visibleDateWindow);
     if (!nextState) return;
     pendingCanonicalResetRef.current += 1;
+    markStoredChartSelectionLocallyApplied(storedSelectionSyncStateRef.current, nextState.presetRange, resolution);
     persistChartControls(nextState.presetRange, resolution);
     updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
-    setViewState(nextState);
+    setViewState(
+      nextState.activePreset
+        ? applyPresetDateWindowViewport(nextState, seriesDates, nextState.presetRange, { clearCursor: true })
+        : applyDateWindowViewport(nextState, seriesDates, nextState.dateWindow ?? visibleDateWindow, {
+          activePreset: null,
+          clearCursor: true,
+        }),
+    );
   }, [
     availableManualResolutions,
     persistChartControls,
+    seriesDates,
     setViewState,
     supportMap,
     updateDisplayCursorTarget,
@@ -188,10 +210,11 @@ export function useComparisonChartViewportRuntime({
   ]);
 
   const projectionViewState = useMemo(() => ({
+    dateWindow: viewState.dateWindow,
     panOffset: viewState.panOffset,
     zoomLevel: viewState.zoomLevel,
     renderMode: viewState.renderMode,
-  }), [viewState.panOffset, viewState.renderMode, viewState.zoomLevel]);
+  }), [viewState.dateWindow, viewState.panOffset, viewState.renderMode, viewState.zoomLevel]);
   const visibleWindow = useMemo(
     () => getVisibleComparisonWindow(series, projectionViewState),
     [projectionViewState, series],

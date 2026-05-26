@@ -1,18 +1,20 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useShortcut } from "../../../react/input";
 import { usePaneFooter, type PaneHint } from "../../layout/pane/footer";
+import { getMaxComparisonPanOffset } from "../comparison/data";
+import { resolveChartKeyboardKey } from "../core/keyboard";
 import {
-  applyComparisonZoomAroundAnchor,
-  getMaxComparisonPanOffset,
-} from "../comparison/data";
-import {
+  applyPanDateWindowViewport,
+  applyPresetDateWindowViewport,
+  applyZoomDateWindowViewport,
   clearActivePreset,
+  getDateWindowBounds,
   resolveResolutionSelection,
   type DateWindowRange,
 } from "../core/controller";
-import type { ManualChartResolution } from "../core/resolution";
+import { getChartResolutionStepMs, type ManualChartResolution } from "../core/resolution";
 import { getKeyboardPanCellCount } from "../core/scroll";
-import { RIGHT_EDGE_ANCHOR_RATIO } from "../core/viewport";
+import { CHART_ZOOM_STEP_FACTOR, RIGHT_EDGE_ANCHOR_RATIO } from "../core/viewport";
 import {
   EMPTY_DISPLAY_CURSOR,
   type DisplayCursorState,
@@ -25,7 +27,6 @@ import {
   type TimeRange,
 } from "../core/types";
 import type { ChartCursorMotionKind } from "../cursor-motion";
-import { clamp } from "./helpers";
 import type { PendingExpansionAction } from "./types";
 
 interface UseComparisonChartControlsOptions {
@@ -77,25 +78,32 @@ export function useComparisonChartControls({
   visibleDateWindow,
   width,
 }: UseComparisonChartControlsOptions): void {
+  const dateBounds = getDateWindowBounds(seriesDates);
+  const minimumSpanMs = getChartResolutionStepMs(effectiveResolution) ?? undefined;
   const zoomIn = () => {
-    setViewState((current) => applyComparisonZoomAroundAnchor(
+    setViewState((current) => applyZoomDateWindowViewport(
       clearActivePreset(current),
-      current.zoomLevel * 1.5,
+      seriesDates,
+      CHART_ZOOM_STEP_FACTOR,
       RIGHT_EDGE_ANCHOR_RATIO,
-      series,
+      { bounds: dateBounds, minimumSpanMs },
     ));
   };
 
   const resetView = () => {
     pendingCanonicalResetRef.current += 1;
     updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
-    setViewState((current) => ({
-      ...(resolveResolutionSelection(current, effectiveResolution, supportMap, visibleDateWindow) ?? current),
-      panOffset: 0,
-      zoomLevel: 1,
-      cursorX: null,
-      cursorY: null,
-    }));
+    setViewState((current) => {
+      const nextState = resolveResolutionSelection(current, effectiveResolution, supportMap, visibleDateWindow) ?? current;
+      return applyPresetDateWindowViewport({
+        ...nextState,
+        dateWindow: null,
+        panOffset: 0,
+        zoomLevel: 1,
+        cursorX: null,
+        cursorY: null,
+      }, seriesDates, nextState.presetRange, { clearCursor: true });
+    });
   };
 
   const cycleResolution = () => {
@@ -147,26 +155,26 @@ export function useComparisonChartControls({
 
   useShortcut((event) => {
     if (!focused || symbols.length === 0) return;
+    const key = resolveChartKeyboardKey(event);
 
-    switch (event.name) {
-      case "=":
-      case "+":
+    switch (key) {
+      case "zoom-in":
         zoomIn();
         return;
-      case "-":
-      case "_":
+      case "zoom-out":
         if (viewState.zoomLevel <= 1.001 && expandBufferRange({
           kind: "zoom-out",
-          targetVisibleCount: Math.round(seriesDates.length * 1.5),
+          targetVisibleCount: Math.round(seriesDates.length * CHART_ZOOM_STEP_FACTOR),
           anchorRatio: RIGHT_EDGE_ANCHOR_RATIO,
         })) {
           return;
         }
-        setViewState((current) => applyComparisonZoomAroundAnchor(
+        setViewState((current) => applyZoomDateWindowViewport(
           clearActivePreset(current),
-          current.zoomLevel / 1.5,
+          seriesDates,
+          1 / CHART_ZOOM_STEP_FACTOR,
           RIGHT_EDGE_ANCHOR_RATIO,
-          series,
+          { bounds: dateBounds, minimumSpanMs },
         ));
         return;
       case "0":
@@ -180,18 +188,22 @@ export function useComparisonChartControls({
         })) {
           return;
         }
-        setViewState((current) => ({
-          ...clearActivePreset(current),
-          panOffset: clamp(current.panOffset + panStep, 0, getMaxComparisonPanOffset(series, current.zoomLevel)),
-        }));
+        setViewState((current) => applyPanDateWindowViewport(
+          clearActivePreset(current),
+          seriesDates,
+          panStep / Math.max(chartWidth, 1),
+          { bounds: dateBounds },
+        ));
         return;
       }
       case "d": {
         const panStep = getKeyboardPanCellCount(chartWidth);
-        setViewState((current) => ({
-          ...clearActivePreset(current),
-          panOffset: clamp(current.panOffset - panStep, 0, getMaxComparisonPanOffset(series, current.zoomLevel)),
-        }));
+        setViewState((current) => applyPanDateWindowViewport(
+          clearActivePreset(current),
+          seriesDates,
+          -panStep / Math.max(chartWidth, 1),
+          { bounds: dateBounds },
+        ));
         return;
       }
       case "m":
@@ -230,9 +242,8 @@ export function useComparisonChartControls({
         return;
     }
 
-    const rangeKey = event.name ?? "";
-    if (rangeKey >= "1" && rangeKey <= "7") {
-      const index = parseInt(rangeKey, 10) - 1;
+    if (key >= "1" && key <= "7") {
+      const index = parseInt(key, 10) - 1;
       if (index < TIME_RANGES.length) {
         setRangePreset(TIME_RANGES[index]!);
       }

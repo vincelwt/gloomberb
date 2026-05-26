@@ -40,7 +40,7 @@ interface UseComparisonChartSurfaceRuntimeOptions {
   pixelRatio: number;
   plotRef: RefObject<BoxRenderable | null>;
   projection: ComparisonChartProjection;
-  projectionViewState: Pick<ComparisonChartViewState, "panOffset" | "renderMode" | "zoomLevel">;
+  projectionViewState: Pick<ComparisonChartViewState, "dateWindow" | "panOffset" | "renderMode" | "zoomLevel">;
   renderer: NativeRendererHost;
   resultLines: StyledContent[];
   selectedSymbol: string | null;

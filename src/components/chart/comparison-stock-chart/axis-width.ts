@@ -33,7 +33,7 @@ export interface ResolveComparisonChartAxisWidthOptions {
   minimumAxisWidth: number;
   selectedSymbol: string | null;
   series: ComparisonChartSeries[];
-  viewState: Pick<ComparisonChartViewState, "panOffset" | "renderMode" | "zoomLevel">;
+  viewState: Pick<ComparisonChartViewState, "dateWindow" | "panOffset" | "renderMode" | "zoomLevel">;
   width: number;
 }
 

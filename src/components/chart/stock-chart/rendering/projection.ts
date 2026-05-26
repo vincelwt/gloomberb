@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { PricePoint } from "../../../../types/financials";
 import {
   projectChartData,
@@ -11,14 +11,10 @@ import {
 import type { ChartRenderMode } from "../../core/types";
 import type { IndicatorConfig } from "../../indicators/types";
 import {
-  buildIndicatorProjectionKey,
   buildIndicatorRenderKey,
-  buildIndicatorSourceKey,
   computeIndicatorOverlays,
   reindexIndicatorOverlaysForProjection,
 } from "../indicators";
-
-const INDICATOR_RENDER_DEBOUNCE_MS = 120;
 
 type OhlcProjectionOptions = ReturnType<typeof resolveStableOhlcProjectionOptions>;
 
@@ -88,61 +84,20 @@ export function useStockChartProjectionModel({
     return computeIndicatorOverlays(history.map((point) => point.close), indicatorConfig);
   }, [history, hasIndicators, indicatorConfig]);
 
-  const indicatorSourceKey = useMemo(() => (
-    sourceIndicatorOverlays ? buildIndicatorSourceKey(history, indicatorConfig) : "none"
-  ), [history, indicatorConfig, sourceIndicatorOverlays]);
-
-  const indicatorProjectionKey = useMemo(() => {
-    if (!sourceIndicatorOverlays || !chartWindow.points.length || !projection.points.length) return "none";
-    return buildIndicatorProjectionKey({
-      sourceKey: indicatorSourceKey,
-      sourcePoints: chartWindow.points,
-      sourceIndexOffset: chartWindow.startIdx,
-      projectedPoints: projection.points,
-      mode: projection.effectiveMode,
-    });
+  const indicators = useMemo(() => {
+    if (!sourceIndicatorOverlays || !chartWindow.points.length || !projection.points.length) return null;
+    return reindexIndicatorOverlaysForProjection(
+      sourceIndicatorOverlays,
+      chartWindow.points,
+      projection.points,
+      chartWindow.startIdx,
+    );
   }, [
     chartWindow.points,
     chartWindow.startIdx,
-    indicatorSourceKey,
-    projection.effectiveMode,
     projection.points,
     sourceIndicatorOverlays,
   ]);
-
-  const [deferredIndicators, setDeferredIndicators] = useState<{
-    key: string;
-    overlays: NonNullable<typeof sourceIndicatorOverlays>;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!sourceIndicatorOverlays || indicatorProjectionKey === "none" || !chartWindow.points.length || !projection.points.length) {
-      setDeferredIndicators((current) => (current === null ? current : null));
-      return;
-    }
-
-    const timeout = setTimeout(() => {
-      setDeferredIndicators({
-        key: indicatorProjectionKey,
-        overlays: reindexIndicatorOverlaysForProjection(
-          sourceIndicatorOverlays,
-          chartWindow.points,
-          projection.points,
-          chartWindow.startIdx,
-        ),
-      });
-    }, INDICATOR_RENDER_DEBOUNCE_MS);
-
-    return () => clearTimeout(timeout);
-  }, [
-    chartWindow.points,
-    chartWindow.startIdx,
-    indicatorProjectionKey,
-    projection.points,
-    sourceIndicatorOverlays,
-  ]);
-
-  const indicators = deferredIndicators?.key === indicatorProjectionKey ? deferredIndicators.overlays : null;
   const indicatorRenderKey = useMemo(() => buildIndicatorRenderKey(indicators), [indicators]);
 
   return {

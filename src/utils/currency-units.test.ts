@@ -1,10 +1,32 @@
 import { describe, expect, test } from "bun:test";
-import { hasLikelyQuoteUnitMismatch, resolveCurrencyUnit } from "./currency-units";
+import {
+  hasLikelyQuoteUnitMismatch,
+  resolveCurrencyUnit,
+  resolveExchangeSubUnitCurrencyUnit,
+  resolvePriceHistoryCurrencyUnit,
+} from "./currency-units";
 
 describe("currency unit helpers", () => {
   test("normalizes known sub-unit currencies to their main currency", () => {
     expect(resolveCurrencyUnit("GBp")).toEqual({ currency: "GBP", divisor: 100 });
     expect(resolveCurrencyUnit("GBP")).toEqual({ currency: "GBP", divisor: 1 });
+  });
+
+  test("normalizes known sub-unit history exchanges reported as main currency", () => {
+    expect(resolvePriceHistoryCurrencyUnit("GBP", "LSE")).toEqual({ currency: "GBP", divisor: 100 });
+    expect(resolvePriceHistoryCurrencyUnit("USD", "LSE")).toEqual({ currency: "GBP", divisor: 100 });
+    expect(resolvePriceHistoryCurrencyUnit("GBP", "NASDAQ")).toEqual({ currency: "GBP", divisor: 1 });
+  });
+
+  test("finds sub-unit exchange rules across multiple exchange candidates", () => {
+    expect(resolveExchangeSubUnitCurrencyUnit("GBP", ["SMART", "LSE"])).toEqual({
+      currency: "GBP",
+      divisor: 100,
+    });
+    expect(resolveExchangeSubUnitCurrencyUnit("USD", ["SMART", "LSE"])).toEqual({
+      currency: "USD",
+      divisor: 1,
+    });
   });
 
   test("detects sub-unit quotes that match the same main-currency price", () => {

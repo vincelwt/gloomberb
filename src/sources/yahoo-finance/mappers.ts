@@ -8,14 +8,8 @@ import type {
   MarketState,
   SplitAction,
 } from "../../types/financials";
+import { resolveCurrencyUnit } from "../../utils/currency-units";
 import type { ChartResult, YahooEarningsTrend, YahooQuoteSummaryResult } from "./types";
-
-const SUB_UNIT_CURRENCIES: Record<string, { main: string; divisor: number }> = {
-  GBp: { main: "GBP", divisor: 100 },
-  GBX: { main: "GBP", divisor: 100 },
-  ILA: { main: "ILS", divisor: 100 },
-  ZAc: { main: "ZAR", divisor: 100 },
-};
 
 export type ExtendedHoursData = {
   preMarketPrice?: number;
@@ -27,9 +21,7 @@ export type ExtendedHoursData = {
 };
 
 export function normalizeSubUnitCurrency(currency: string): { currency: string; divisor: number } {
-  const sub = SUB_UNIT_CURRENCIES[currency];
-  if (sub) return { currency: sub.main, divisor: sub.divisor };
-  return { currency, divisor: 1 };
+  return resolveCurrencyUnit(currency);
 }
 
 export function financeRawNumber(value: unknown): number | undefined {

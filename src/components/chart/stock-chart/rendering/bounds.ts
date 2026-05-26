@@ -9,8 +9,10 @@ import { appendLiveQuotePoint } from "../../core/data";
 import {
   buildPresetDateWindow,
   buildVisibleDateWindow,
+  buildVisibleDateWindowFromRange,
   getDateWindowBounds,
   getPointDates,
+  resolveChartStateWindow,
   resolveChartBodyState,
   type ChartBodyState,
   type DateWindowRange,
@@ -32,6 +34,7 @@ export interface UseStockChartBoundsDataResult {
   boundsHistoryDates: Date[];
   canonicalAutoWindow: DateWindowRange | null;
   fallbackPriceHistory: PricePoint[];
+  manualPlannedDateWindow: DateWindowRange | null;
   manualVisibleDateWindow: ReturnType<typeof buildVisibleDateWindow>;
 }
 
@@ -83,9 +86,17 @@ export function useStockChartBoundsData({
   );
   const boundsHistoryDates = useMemo(() => getPointDates(boundsHistory), [boundsHistory]);
   const baseDateBounds = useMemo(() => getDateWindowBounds(boundsHistoryDates), [boundsHistoryDates]);
+  const manualPlannedDateWindow = useMemo(
+    () => resolveChartStateWindow(boundsHistoryDates, viewState),
+    [boundsHistoryDates, viewState.dateWindow, viewState.panOffset, viewState.zoomLevel],
+  );
   const manualVisibleDateWindow = useMemo(
-    () => buildVisibleDateWindow(boundsHistoryDates, viewState.panOffset, viewState.zoomLevel),
-    [boundsHistoryDates, viewState.panOffset, viewState.zoomLevel],
+    () => (
+      viewState.dateWindow?.start && viewState.dateWindow.end
+        ? buildVisibleDateWindowFromRange(boundsHistoryDates, viewState.dateWindow)
+        : buildVisibleDateWindow(boundsHistoryDates, viewState.panOffset, viewState.zoomLevel)
+    ),
+    [boundsHistoryDates, viewState.dateWindow, viewState.panOffset, viewState.zoomLevel],
   );
   const canonicalAutoWindow = useMemo(
     () => buildPresetDateWindow(boundsHistoryDates, viewState.presetRange),
@@ -99,6 +110,7 @@ export function useStockChartBoundsData({
     boundsHistoryDates,
     canonicalAutoWindow,
     fallbackPriceHistory,
+    manualPlannedDateWindow,
     manualVisibleDateWindow,
   };
 }

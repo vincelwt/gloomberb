@@ -36,6 +36,7 @@ export function useStockChartSettings({
     presetRange: compact ? "1Y" : storedRangePreset,
     bufferRange: compact ? "1Y" : storedRangePreset,
     activePreset: compact ? null : storedRangePreset,
+    dateWindow: null,
     panOffset: 0,
     zoomLevel: 1,
     cursorX: null,

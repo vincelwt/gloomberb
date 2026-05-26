@@ -137,12 +137,13 @@ export function TimeAxisLabel({
         overflow="hidden"
         style={{ position: "relative" }}
       >
-        <Text fg={colors.textDim} style={{ whiteSpace: "pre" }}>
+        <Text fg={colors.textDim} selectable={false} style={{ whiteSpace: "pre" }}>
           {overlay.baseText}
         </Text>
         <Text
           fg={cursorColor}
           bg={colors.bg}
+          selectable={false}
           style={{
             position: "absolute",
             left: `${overlay.leftPercent}%`,
@@ -160,7 +161,7 @@ export function TimeAxisLabel({
   }
 
   return (
-    <Text style={{ whiteSpace: "pre" }}>
+    <Text selectable={false} style={{ whiteSpace: "pre" }}>
       {segments.map((segment, index) => (
         <Span
           key={index}

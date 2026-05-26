@@ -8,6 +8,7 @@ import {
   type ManualChartResolution,
 } from "../../components/chart/core/resolution";
 import { canonicalExchange } from "../../utils/exchanges";
+import { resolvePriceHistoryCurrencyUnit } from "../../utils/currency-units";
 import { isPriceHistoryStaleForCurrentWindow, normalizePriceHistory } from "../../utils/price-history";
 import {
   buildVariantKey,
@@ -21,14 +22,23 @@ import { shouldLogProviderError } from "../provider-errors";
 import { withBrokerTimeout } from "./brokers";
 import type { ProviderRouterCoreDeps, SourceResult } from "./route-types";
 
+function buildPriceHistoryVariantKey(
+  parts: Array<[string, string | number | undefined | null]>,
+  exchange: string,
+): string {
+  const unit = resolvePriceHistoryCurrencyUnit(null, exchange);
+  const unitPart: Array<[string, string]> = unit.divisor === 1 ? [] : [["unit", unit.currency]];
+  return buildVariantKey([...parts, ...unitPart]);
+}
+
 export class ProviderRouterHistoryRoutes {
   constructor(private readonly deps: ProviderRouterCoreDeps) {}
 
   async getPriceHistory(ticker: string, exchange: string, range: TimeRange, context?: MarketDataRequestContext): Promise<PricePoint[]> {
     const entityKey = this.deps.getEntityKey(ticker, context?.instrument);
     const variantKeys = [
-      buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", range]]),
-      buildVariantKey([["range", range]]),
+      buildPriceHistoryVariantKey([["exchange", canonicalExchange(exchange)], ["range", range]], exchange),
+      buildPriceHistoryVariantKey([["range", range]], exchange),
     ];
     const sourceKeys = [
       ...this.deps.getBrokerCandidatesForContext(context, false).map((candidate) => this.deps.brokerSourceKey(candidate)),
@@ -65,8 +75,8 @@ export class ProviderRouterHistoryRoutes {
   ): Promise<PricePoint[]> {
     const entityKey = this.deps.getEntityKey(ticker, context?.instrument);
     const variantKeys = [
-      buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", bufferRange], ["resolution", resolution]]),
-      buildVariantKey([["range", bufferRange], ["resolution", resolution]]),
+      buildPriceHistoryVariantKey([["exchange", canonicalExchange(exchange)], ["range", bufferRange], ["resolution", resolution]], exchange),
+      buildPriceHistoryVariantKey([["range", bufferRange], ["resolution", resolution]], exchange),
     ];
     const sourceKeys = [
       ...this.deps.getBrokerCandidatesForContext(context, false).map((candidate) => this.deps.brokerSourceKey(candidate)),
@@ -126,8 +136,8 @@ export class ProviderRouterHistoryRoutes {
   ): Promise<PricePoint[]> {
     const entityKey = this.deps.getEntityKey(ticker, context?.instrument);
     const variantKeys = [
-      buildVariantKey([["exchange", canonicalExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]),
-      buildVariantKey([["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]),
+      buildPriceHistoryVariantKey([["exchange", canonicalExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]], exchange),
+      buildPriceHistoryVariantKey([["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]], exchange),
     ];
     const sourceKeys = [
       ...this.deps.getBrokerCandidatesForContext(context, false).map((candidate) => this.deps.brokerSourceKey(candidate)),
@@ -159,7 +169,7 @@ export class ProviderRouterHistoryRoutes {
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.deps.getEntityKey(ticker, context?.instrument);
-    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", range]]);
+    const variantKey = buildPriceHistoryVariantKey([["exchange", canonicalExchange(exchange)], ["range", range]], exchange);
     for (const candidate of this.deps.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getPriceHistory) continue;
       try {
@@ -195,7 +205,7 @@ export class ProviderRouterHistoryRoutes {
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.deps.getEntityKey(ticker, context?.instrument);
-    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", bufferRange], ["resolution", resolution]]);
+    const variantKey = buildPriceHistoryVariantKey([["exchange", canonicalExchange(exchange)], ["range", bufferRange], ["resolution", resolution]], exchange);
     for (const candidate of this.deps.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getPriceHistoryForResolution) continue;
       try {
@@ -231,7 +241,7 @@ export class ProviderRouterHistoryRoutes {
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.deps.getEntityKey(ticker, context?.instrument);
-    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", range]]);
+    const variantKey = buildPriceHistoryVariantKey([["exchange", canonicalExchange(exchange)], ["range", range]], exchange);
     let firstEmptyResult: SourceResult<PricePoint[]> | null = null;
 
     for (const provider of this.deps.providersInPriorityOrder()) {
@@ -269,7 +279,7 @@ export class ProviderRouterHistoryRoutes {
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.deps.getEntityKey(ticker, context?.instrument);
-    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", bufferRange], ["resolution", resolution]]);
+    const variantKey = buildPriceHistoryVariantKey([["exchange", canonicalExchange(exchange)], ["range", bufferRange], ["resolution", resolution]], exchange);
     let firstEmptyResult: SourceResult<PricePoint[]> | null = null;
 
     for (const provider of this.deps.providersInPriorityOrder()) {
@@ -366,7 +376,7 @@ export class ProviderRouterHistoryRoutes {
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.deps.getEntityKey(ticker, context?.instrument);
-    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]);
+    const variantKey = buildPriceHistoryVariantKey([["exchange", canonicalExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]], exchange);
     for (const candidate of this.deps.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getDetailedPriceHistory) continue;
       try {
@@ -405,7 +415,7 @@ export class ProviderRouterHistoryRoutes {
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.deps.getEntityKey(ticker, context?.instrument);
-    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]);
+    const variantKey = buildPriceHistoryVariantKey([["exchange", canonicalExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]], exchange);
     let firstEmptyResult: SourceResult<PricePoint[]> | null = null;
 
     for (const provider of this.deps.providersInPriorityOrder()) {

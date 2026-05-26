@@ -1,20 +1,24 @@
 import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-import type { PricePoint } from "../../../../types/financials";
 import { applyBufferedPanExpansion } from "../../core/scroll";
 import {
+  applyDateWindowViewport,
+  buildVisibleDateWindow,
   clampDateWindowToBounds,
   needsCanonicalPresetViewportReset,
   resolveCanonicalPresetViewport,
-  resolvePresetRangeViewport,
+  resolvePendingPresetRangeViewport,
   sameDateWindow,
   type DateWindowRange,
 } from "../../core/controller";
+import {
+  consumeStoredChartSelectionChange,
+  type StoredChartSelectionSyncState,
+} from "../../core/pane-settings";
 import {
   getNextBufferRange,
   getSupportMaxRange,
   type ManualChartResolution,
 } from "../../core/resolution";
-import { resolveAnchoredChartZoom } from "../../core/viewport";
 import {
   EMPTY_DISPLAY_CURSOR,
   type DisplayCursorState,
@@ -27,9 +31,7 @@ import type {
 import type { ChartCursorMotionKind } from "../../cursor-motion";
 import type { AutoRenderedView } from "../auto";
 import {
-  clamp,
   clearAutoViewportState,
-  getMaxPanOffset,
   resolveViewportPresetSelection,
   resolveViewportStoredSelection,
   type PendingExpansionAction,
@@ -37,6 +39,7 @@ import {
 } from "./index";
 
 interface StoredViewportSelectionSyncOptions {
+  boundsHistoryDates: Date[];
   compact?: boolean;
   pendingAutoWindowRef: MutableRefObject<DateWindowRange | null>;
   pendingCanonicalResetRef: MutableRefObject<number>;
@@ -47,10 +50,12 @@ interface StoredViewportSelectionSyncOptions {
   setViewState: Dispatch<SetStateAction<StockChartViewportState>>;
   storedRangePreset: TimeRange;
   storedResolution: ChartResolution;
+  storedSelectionSyncStateRef: MutableRefObject<StoredChartSelectionSyncState>;
   updateDisplayCursorTarget: (next: DisplayCursorState, motionKind: ChartCursorMotionKind) => void;
 }
 
 export function useStoredViewportSelectionSync({
+  boundsHistoryDates,
   compact,
   pendingAutoWindowRef,
   pendingCanonicalResetRef,
@@ -61,16 +66,17 @@ export function useStoredViewportSelectionSync({
   setViewState,
   storedRangePreset,
   storedResolution,
+  storedSelectionSyncStateRef,
   updateDisplayCursorTarget,
 }: StoredViewportSelectionSyncOptions) {
-  const lastAppliedStoredSelectionKeyRef = useRef<string | null>(null);
-
   useEffect(() => {
     if (compact) return;
-    const storedSelectionKey = `${storedRangePreset}:${storedResolution}`;
-    if (lastAppliedStoredSelectionKeyRef.current === storedSelectionKey) return;
+    if (!consumeStoredChartSelectionChange(
+      storedSelectionSyncStateRef.current,
+      storedRangePreset,
+      storedResolution,
+    )) return;
 
-    lastAppliedStoredSelectionKeyRef.current = storedSelectionKey;
     setRequestedResolution(storedResolution);
     pendingCanonicalResetRef.current += 1;
     pendingAutoWindowRef.current = null;
@@ -80,15 +86,17 @@ export function useStoredViewportSelectionSync({
     }
     setViewState((current) => (
       storedResolution === "auto"
-        ? resolveViewportStoredSelection(current, storedRangePreset, storedResolution, selectionSupportMap)
+        ? resolveViewportStoredSelection(current, storedRangePreset, storedResolution, selectionSupportMap, boundsHistoryDates)
         : resolveViewportPresetSelection(
           current,
           storedRangePreset,
           getSupportMaxRange(selectionSupportMap, storedResolution),
+          boundsHistoryDates,
         )
     ));
     updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
   }, [
+    boundsHistoryDates,
     compact,
     pendingAutoWindowRef,
     pendingCanonicalResetRef,
@@ -99,6 +107,7 @@ export function useStoredViewportSelectionSync({
     setViewState,
     storedRangePreset,
     storedResolution,
+    storedSelectionSyncStateRef,
     updateDisplayCursorTarget,
   ]);
 }
@@ -123,7 +132,6 @@ export function useStoredRenderModeSync({
 }
 
 interface ManualViewportReconcileOptions {
-  boundsHistory: PricePoint[];
   boundsHistoryDates: Date[];
   compact?: boolean;
   effectiveResolution: ChartResolution;
@@ -134,7 +142,6 @@ interface ManualViewportReconcileOptions {
 }
 
 export function useManualViewportReconcile({
-  boundsHistory,
   boundsHistoryDates,
   compact,
   effectiveResolution,
@@ -157,7 +164,7 @@ export function useManualViewportReconcile({
       }
       setViewState((current) => (
         hasPendingCanonicalReset
-          ? resolvePresetRangeViewport(current, boundsHistoryDates)
+          ? resolvePendingPresetRangeViewport(current, boundsHistoryDates)
           : resolveCanonicalPresetViewport(current, boundsHistoryDates)
       ));
       return;
@@ -169,24 +176,23 @@ export function useManualViewportReconcile({
     setViewState((current) => {
       if (pendingExpansion.kind === "zoom-out") {
         const nextVisibleCount = Math.min(boundsHistoryDates.length, Math.max(pendingExpansion.targetVisibleCount, 1));
+        const visibleWindow = buildVisibleDateWindow(
+          boundsHistoryDates,
+          0,
+          boundsHistoryDates.length / nextVisibleCount,
+        );
         return {
-          ...current,
-          ...resolveAnchoredChartZoom(
-            boundsHistoryDates.length,
-            1,
-            0,
-            boundsHistoryDates.length / nextVisibleCount,
-            pendingExpansion.anchorRatio,
-          ),
+          ...applyDateWindowViewport(current, boundsHistoryDates, visibleWindow, { activePreset: null }),
         };
       }
-      return {
-        ...current,
-        panOffset: clamp(pendingExpansion.targetPanOffset, 0, getMaxPanOffset(boundsHistory, current.zoomLevel)),
-      };
+      const visibleWindow = buildVisibleDateWindow(
+        boundsHistoryDates,
+        pendingExpansion.targetPanOffset,
+        current.zoomLevel,
+      );
+      return applyDateWindowViewport(current, boundsHistoryDates, visibleWindow, { activePreset: null });
     });
   }, [
-    boundsHistory,
     boundsHistoryDates,
     compact,
     effectiveResolution,
@@ -194,6 +200,7 @@ export function useManualViewportReconcile({
     pendingExpansionRef,
     setViewState,
     viewState.activePreset,
+    viewState.dateWindow,
     viewState.panOffset,
     viewState.presetRange,
     viewState.zoomLevel,

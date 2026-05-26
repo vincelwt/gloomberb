@@ -5,7 +5,8 @@ import type {
   ComparisonChartSeries,
   ComparisonChartViewState,
 } from "../core/types";
-import { getVisiblePointCount, resolveAnchoredChartZoom } from "../core/viewport";
+import { buildVisibleDateWindowFromRange } from "../core/date-window";
+import { getVisiblePointCount } from "../core/viewport";
 
 export interface ComparisonProjectedPoint {
   date: Date;
@@ -91,12 +92,22 @@ export function getMaxComparisonPanOffset(
 
 export function getVisibleComparisonWindow(
   series: ComparisonChartSeries[],
-  viewState: Pick<ComparisonChartViewState, "panOffset" | "zoomLevel">,
+  viewState: Pick<ComparisonChartViewState, "dateWindow" | "panOffset" | "zoomLevel">,
 ): ComparisonVisibleWindow {
   const dates = getUniqueSortedDates(series);
 
   if (dates.length === 0) {
     return { dates: [], startIdx: 0, endIdx: 0, totalDates: 0 };
+  }
+
+  if (viewState.dateWindow?.start && viewState.dateWindow.end) {
+    const visibleWindow = buildVisibleDateWindowFromRange(dates, viewState.dateWindow);
+    return {
+      dates: visibleWindow.dates,
+      startIdx: visibleWindow.startIdx,
+      endIdx: visibleWindow.endIdx,
+      totalDates: visibleWindow.totalDates,
+    };
   }
 
   const visibleCount = getVisiblePointCount(dates.length, viewState.zoomLevel);
@@ -110,29 +121,6 @@ export function getVisibleComparisonWindow(
     startIdx,
     endIdx,
     totalDates: dates.length,
-  };
-}
-
-export function applyComparisonZoomAroundAnchor(
-  view: ComparisonChartViewState,
-  nextZoomLevel: number,
-  anchorRatio: number,
-  series: ComparisonChartSeries[],
-): ComparisonChartViewState {
-  const dates = getUniqueSortedDates(series);
-  if (dates.length === 0) return view;
-
-  const nextZoom = resolveAnchoredChartZoom(
-    dates.length,
-    view.zoomLevel,
-    view.panOffset,
-    nextZoomLevel,
-    anchorRatio,
-  );
-
-  return {
-    ...view,
-    ...nextZoom,
   };
 }
 
@@ -206,7 +194,7 @@ function resolveComparisonAxisMode(
 export function projectComparisonChartData(
   series: ComparisonChartSeries[],
   chartWidth: number,
-  viewState: Pick<ComparisonChartViewState, "panOffset" | "zoomLevel" | "renderMode">,
+  viewState: Pick<ComparisonChartViewState, "dateWindow" | "panOffset" | "zoomLevel" | "renderMode">,
   requestedAxisMode: ChartAxisMode,
 ): ComparisonChartProjection {
   const normalizedSeries = series.map((entry) => ({ ...entry, points: normalizeSeriesPoints(entry.points) }));

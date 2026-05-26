@@ -74,7 +74,7 @@ export function useAppGlobalShortcuts({
       return;
     }
 
-    if (state.commandBarOpen || state.inputCaptured) return;
+    if (state.commandBarOpen) return;
 
     if (event.name === "tab") {
       const paneOrder = getVisiblePaneCycleOrder(
@@ -91,7 +91,12 @@ export function useAppGlobalShortcuts({
       }
       event.preventDefault();
       event.stopPropagation();
-    } else if (!isDetachedWindow && event.name === "q") {
+      return;
+    }
+
+    if (state.inputCaptured) return;
+
+    if (!isDetachedWindow && event.name === "q") {
       rendererHost.requestExit();
     } else if (event.name === "r") {
       if (focusedTickerSymbol) {

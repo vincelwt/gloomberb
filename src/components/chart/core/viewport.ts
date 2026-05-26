@@ -1,5 +1,6 @@
 
 const MIN_VISIBLE_POINTS = 2;
+export const CHART_ZOOM_STEP_FACTOR = 1.2;
 export const RIGHT_EDGE_ANCHOR_RATIO = 1;
 
 function clamp(value: number, min: number, max: number): number {

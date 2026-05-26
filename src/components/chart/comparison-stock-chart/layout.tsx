@@ -76,7 +76,7 @@ export function ComparisonChartLayout({
   const plotContent = hasCanvasContent
     ? null
     : plotLines.map((line, index) => (
-      <Text key={index} content={line as unknown as string} />
+      <Text key={index} content={line as unknown as string} selectable={false} />
     ));
 
   const plotBox = (
@@ -97,13 +97,13 @@ export function ComparisonChartLayout({
       {isBlockingBody
         ? (
           <Box flexGrow={1} alignItems="center" justifyContent="center">
-            <Text fg={colors.textDim}>Loading chart...</Text>
+            <Text fg={colors.textDim} selectable={false}>Loading chart...</Text>
           </Box>
         )
         : bodyMessage
           ? (
             <Box flexGrow={1} alignItems="center" justifyContent="center">
-              <Text fg={colors.textDim}>{bodyMessage}</Text>
+              <Text fg={colors.textDim} selectable={false}>{bodyMessage}</Text>
             </Box>
           )
           : plotContent}

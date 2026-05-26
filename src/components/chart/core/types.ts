@@ -9,6 +9,11 @@ export type ResolvedChartRenderer = "kitty" | "braille";
 export type ComparisonChartRenderMode = "area" | "line";
 export type ChartSessionBackgroundKind = "pre" | "post";
 
+export interface ChartDateWindow {
+  start: Date | null;
+  end: Date | null;
+}
+
 export const TIME_RANGES: TimeRange[] = ["1D", "1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"];
 export const CHART_RENDER_MODES: ChartRenderMode[] = ["area", "line", "candles", "ohlc", "hlc"];
 export const CHART_RENDERER_PREFERENCES: ChartRendererPreference[] = ["auto", "kitty", "braille"];
@@ -30,6 +35,7 @@ export interface ChartViewState {
   presetRange: TimeRange;
   bufferRange: TimeRange;
   activePreset: TimeRange | null;
+  dateWindow: ChartDateWindow | null;
   resolution: ChartResolution;
   panOffset: number;   // data points shifted left from right edge (0 = most recent)
   zoomLevel: number;   // 1.0 = full selected range, 2.0 = zoomed in 2x
@@ -97,6 +103,7 @@ export interface ComparisonChartViewState {
   presetRange: TimeRange;
   bufferRange: TimeRange;
   activePreset: TimeRange | null;
+  dateWindow: ChartDateWindow | null;
   resolution: ChartResolution;
   panOffset: number;
   zoomLevel: number; // 1.0 = full selected range, 2.0 = zoomed in 2x

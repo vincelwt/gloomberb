@@ -257,6 +257,7 @@ describe("StockChart renderer switching", () => {
     const afterLines = testSetup.captureCharFrame().split("\n");
     const afterAxis = afterLines[14] ?? "";
     expect(afterAxis).not.toBe(beforeAxis);
+    expect(testSetup.renderer.getSelection()).toBeNull();
   });
 
 });

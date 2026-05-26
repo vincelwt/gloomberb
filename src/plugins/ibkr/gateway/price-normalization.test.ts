@@ -18,6 +18,17 @@ describe("IBKR sub-unit price normalization", () => {
     })).toBe(1);
   });
 
+  test("detects sub-unit equities from valid exchanges", () => {
+    expect(getIbkrPriceDivisor({
+      currency: "GBP",
+      exchange: "SMART",
+      primaryExch: "SMART",
+      secType: "ETF",
+    }, {
+      validExchanges: "SMART,LSE",
+    })).toBe(100);
+  });
+
   test("prefers contract price magnifier when available", () => {
     expect(getIbkrPriceDivisor({
       currency: "GBP",

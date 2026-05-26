@@ -8,13 +8,21 @@ import {
 } from "react";
 import type { BoxRenderable, NativeRendererHost } from "../../../ui";
 import { getMaxComparisonPanOffset } from "../comparison/data";
-import { clearActivePreset } from "../core/controller";
+import {
+  applyDateWindowViewport,
+  applyPanDateWindowViewport,
+  clearActivePreset,
+  getDateWindowBounds,
+  shiftDateWindow,
+  type DateWindowRange,
+} from "../core/controller";
 import {
   consumeScrollPanMovement,
-  resolveDragPanOffset,
+  getDragPanWindowRatio,
 } from "../core/scroll";
 import {
   buildDisplayCursorState,
+  consumeChartMouseEvent,
   getGlobalMouseX,
   getLocalPlotPointer,
   resolveCursorMotionKind,
@@ -27,14 +35,13 @@ import type {
 } from "../core/types";
 import type { ChartCursorMotionKind } from "../cursor-motion";
 import {
-  clamp,
   resolveSelectionCursor,
 } from "./helpers";
 import type { PendingExpansionAction } from "./types";
 
 interface DragState {
   startGlobalX: number;
-  startPanOffset: number;
+  startWindow: DateWindowRange | null;
 }
 
 interface UseComparisonChartPointerInteractionsOptions {
@@ -47,11 +54,11 @@ interface UseComparisonChartPointerInteractionsOptions {
   renderer: NativeRendererHost;
   scrollPanCellRemainderRef: MutableRefObject<number>;
   series: ComparisonChartSeries[];
+  seriesDates: Date[];
   setViewState: Dispatch<SetStateAction<ComparisonChartViewState>>;
-  totalDateCount: number;
   updateDisplayCursorTarget: (next: DisplayCursorState, motionKind: ChartCursorMotionKind) => void;
   viewState: ComparisonChartViewState;
-  visibleDateCount: number;
+  visibleDateWindow: DateWindowRange | null;
 }
 
 export function useComparisonChartPointerInteractions({
@@ -64,13 +71,14 @@ export function useComparisonChartPointerInteractions({
   renderer,
   scrollPanCellRemainderRef,
   series,
+  seriesDates,
   setViewState,
-  totalDateCount,
   updateDisplayCursorTarget,
   viewState,
-  visibleDateCount,
+  visibleDateWindow,
 }: UseComparisonChartPointerInteractionsOptions) {
   const dragRef = useRef<DragState | null>(null);
+  const dateBounds = getDateWindowBounds(seriesDates);
 
   const syncPointerCursor = useCallback((event: ChartMouseEvent): boolean => {
     const localPointer = getLocalPlotPointer(event, plotRef.current, renderer);
@@ -104,41 +112,41 @@ export function useComparisonChartPointerInteractions({
   }, [mouseCrosshairDisabledRef, syncPointerCursor]);
 
   const handlePlotDown = useCallback((event: ChartMouseEvent) => {
+    consumeChartMouseEvent(event);
     mouseCrosshairDisabledRef.current = false;
     if (!syncPointerCursor(event)) return;
     dragRef.current = {
       startGlobalX: getGlobalMouseX(event, renderer),
-      startPanOffset: viewState.panOffset,
+      startWindow: visibleDateWindow,
     };
-  }, [mouseCrosshairDisabledRef, renderer, syncPointerCursor, viewState.panOffset]);
+  }, [mouseCrosshairDisabledRef, renderer, syncPointerCursor, visibleDateWindow]);
 
   const handlePlotDrag = useCallback((event: ChartMouseEvent) => {
+    consumeChartMouseEvent(event);
     if (mouseCrosshairDisabledRef.current && !dragRef.current) return;
     syncPointerCursor(event);
     if (!dragRef.current) return;
 
     const deltaCells = getGlobalMouseX(event, renderer) - dragRef.current.startGlobalX;
-    const nextPan = resolveDragPanOffset(
-      dragRef.current.startPanOffset,
-      deltaCells,
-      chartWidth,
-      visibleDateCount,
-      totalDateCount - visibleDateCount,
-    );
-    setViewState((current) => ({ ...clearActivePreset(current), panOffset: nextPan }));
+    setViewState((current) => applyDateWindowViewport(
+      clearActivePreset(current),
+      seriesDates,
+      shiftDateWindow(dragRef.current?.startWindow ?? visibleDateWindow, getDragPanWindowRatio(deltaCells, chartWidth)),
+      { bounds: dateBounds },
+    ));
   }, [
     chartWidth,
+    dateBounds,
     mouseCrosshairDisabledRef,
     renderer,
+    seriesDates,
     setViewState,
     syncPointerCursor,
-    totalDateCount,
-    visibleDateCount,
+    visibleDateWindow,
   ]);
 
   const handlePlotScroll = useCallback((event: ChartMouseEvent) => {
-    event.stopPropagation?.();
-    event.preventDefault?.();
+    consumeChartMouseEvent(event);
     const direction = event.scroll?.direction;
     if (!direction) return;
     const scrollPan = consumeScrollPanMovement(
@@ -161,19 +169,19 @@ export function useComparisonChartPointerInteractions({
     })) {
       return;
     }
-    setViewState((current) => ({
-      ...clearActivePreset(current),
-      panOffset: clamp(
-        current.panOffset + scrollPanCells,
-        0,
-        getMaxComparisonPanOffset(series, current.zoomLevel),
-      ),
-    }));
+    setViewState((current) => applyPanDateWindowViewport(
+      clearActivePreset(current),
+      seriesDates,
+      scrollPan.ratio,
+      { bounds: dateBounds },
+    ));
   }, [
     chartWidth,
+    dateBounds,
     expandBufferRange,
     scrollPanCellRemainderRef,
     series,
+    seriesDates,
     setViewState,
     syncPointerCursor,
     viewState.panOffset,

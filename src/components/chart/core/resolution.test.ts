@@ -4,6 +4,7 @@ import {
   clampTimeRangeForResolution,
   getActiveRangePreset,
   getBestSupportedResolutionForVisibleWindow,
+  getExpandedBufferRange,
   getPresetResolution,
   isRangePresetSupported,
   normalizeChartResolution,
@@ -39,6 +40,17 @@ describe("chart-resolution", () => {
     expect(clampTimeRangeForResolution("1M", "15m")).toBe("1M");
     expect(clampTimeRangeForResolution("5Y", "1d")).toBe("5Y");
     expect(clampTimeRangeForResolution("5Y", "auto")).toBe("5Y");
+  });
+
+  test("expands buffers only toward wider supported ranges", () => {
+    const support = new Map([
+      ["1h", "3M"],
+      ["1d", "5Y"],
+    ] as const);
+
+    expect(getExpandedBufferRange("1Y", "1d", support)).toBe("5Y");
+    expect(getExpandedBufferRange("5Y", "1h", support)).toBeNull();
+    expect(getExpandedBufferRange("5Y", "auto", support)).toBe("ALL");
   });
 
   test("normalizes and sorts chart resolution values", () => {

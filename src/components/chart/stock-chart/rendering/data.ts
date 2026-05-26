@@ -15,6 +15,7 @@ import {
 } from "../../core/resolution";
 import type { ChartResolution, TimeRange } from "../../core/types";
 import {
+  isAutoWindowOverridePending,
   resolveAutoDisplayState,
   type AutoRenderedView,
 } from "../auto";
@@ -59,6 +60,7 @@ export interface UseStockChartRenderDataResult {
   canonicalAutoWindow: DateWindowRange | null;
   displayedDateWindow: DateWindowRange | null;
   fallbackPriceHistory: PricePoint[];
+  manualPlannedDateWindow: DateWindowRange | null;
   manualVisibleDateWindow: ReturnType<typeof buildVisibleDateWindow>;
   pendingAutoWindowOverride: DateWindowRange | null;
   plannedDateWindow: DateWindowRange | null;
@@ -95,6 +97,7 @@ export function useStockChartRenderData({
     boundsHistoryDates,
     canonicalAutoWindow,
     fallbackPriceHistory,
+    manualPlannedDateWindow,
     manualVisibleDateWindow,
   } = useStockChartBoundsData({
     compact,
@@ -116,7 +119,7 @@ export function useStockChartRenderData({
     effectiveResolution,
     effectiveResolutionSupport,
     hasResolutionSupportApi,
-    manualVisibleDateWindow,
+    manualPlannedDateWindow,
     measurementChartWidth,
     pendingAutoWindowOverride,
     renderedAutoView,
@@ -225,9 +228,6 @@ export function useStockChartRenderData({
         ? current
         : nextRenderedAutoView
     ));
-    setPendingAutoWindowOverride((current) => (
-      sameDateWindow(current, plannedDateWindow) ? null : current
-    ));
   }, [
     canCommitPlannedAutoView,
     plannedDateWindow,
@@ -235,8 +235,10 @@ export function useStockChartRenderData({
     plannedResolvedManualResolution,
   ]);
 
+  const hasPendingAutoProposal = effectiveResolution === "auto"
+    && isAutoWindowOverridePending(pendingAutoWindowOverride, renderedAutoView);
   const shouldRejectPendingAutoView = effectiveResolution === "auto"
-    && pendingAutoWindowOverride !== null
+    && hasPendingAutoProposal
     && !plannedRenderBodyState.blocking
     && !plannedRenderBodyState.updating
     && !canCommitPlannedAutoView;
@@ -265,7 +267,6 @@ export function useStockChartRenderData({
     setLastReadyRenderView(null);
   }, [instrumentRef?.exchange, instrumentRef?.symbol]);
 
-  const hasPendingAutoProposal = effectiveResolution === "auto" && pendingAutoWindowOverride !== null;
   const shouldUseRenderedAutoView = effectiveResolution === "auto"
     && !!renderedAutoView
     && (
@@ -326,7 +327,12 @@ export function useStockChartRenderData({
     compact,
   ]);
 
-  const shouldUseLastReadyRenderView = !compact && baseRenderBodyState.blocking && !!lastReadyRenderView?.data.length;
+  const shouldUseLastReadyRenderView = !compact
+    && !!lastReadyRenderView?.data.length
+    && (
+      baseRenderBodyState.blocking
+      || (!!baseRenderBodyState.emptyMessage && boundsHistory.length > 0)
+    );
   const renderBodyState = shouldUseLastReadyRenderView
     ? {
       data: lastReadyRenderView!.data,

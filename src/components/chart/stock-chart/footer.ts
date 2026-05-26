@@ -15,10 +15,10 @@ import {
 } from "../core/types";
 import type { ChartCursorMotionKind } from "../cursor-motion";
 import { EMPTY_DISPLAY_CURSOR, type DisplayCursorState } from "../core/pointer";
-import { RIGHT_EDGE_ANCHOR_RATIO } from "../core/viewport";
+import { CHART_ZOOM_STEP_FACTOR, RIGHT_EDGE_ANCHOR_RATIO } from "../core/viewport";
 import { resolveAutoZoomWindow, type AutoRenderedView } from "./auto";
 import {
-  applyZoomAroundAnchor,
+  applyZoomStepAroundAnchor,
   clearAutoViewportState,
   resolveViewportResolutionSelection,
   type StockChartViewportState,
@@ -27,7 +27,7 @@ import {
 interface StockChartFooterOptions {
   activePoint: ProjectedChartPoint | null;
   activePreset: TimeRange | null;
-  boundsHistory: PricePoint[];
+  baseDateBounds: DateWindowRange | null;
   boundsHistoryDates: Date[];
   chartAssetCategory?: string;
   chartCurrency: string;
@@ -35,6 +35,7 @@ interface StockChartFooterOptions {
   effectiveResolution: ChartResolution;
   footerHints?: PaneHint[];
   history: PricePoint[];
+  manualMinimumSpanMs: number | null;
   navigableDateWindow: DateWindowRange | null;
   pendingAutoWindowRef: MutableRefObject<DateWindowRange | null>;
   pendingCanonicalResetRef: MutableRefObject<number>;
@@ -59,7 +60,7 @@ interface StockChartFooterOptions {
 export function useStockChartFooter({
   activePoint,
   activePreset,
-  boundsHistory,
+  baseDateBounds,
   boundsHistoryDates,
   chartAssetCategory,
   chartCurrency,
@@ -67,6 +68,7 @@ export function useStockChartFooter({
   effectiveResolution,
   footerHints,
   history,
+  manualMinimumSpanMs,
   navigableDateWindow,
   pendingAutoWindowRef,
   pendingCanonicalResetRef,
@@ -115,7 +117,15 @@ export function useStockChartFooter({
         }));
         return;
       }
-      setViewState((current) => applyZoomAroundAnchor(current, current.zoomLevel * 1.5, RIGHT_EDGE_ANCHOR_RATIO, boundsHistory));
+      setViewState((current) => applyZoomStepAroundAnchor(
+        current,
+        CHART_ZOOM_STEP_FACTOR,
+        RIGHT_EDGE_ANCHOR_RATIO,
+        boundsHistoryDates,
+        visibleDateWindow,
+        baseDateBounds,
+        manualMinimumSpanMs ?? undefined,
+      ));
     };
     const resetView = () => {
       if (effectiveResolution === "auto") {
@@ -134,9 +144,11 @@ export function useStockChartFooter({
           effectiveResolution,
           selectionSupportMap,
           visibleDateWindow,
+          boundsHistoryDates,
         ) ?? current;
         return {
           ...nextState,
+          dateWindow: null,
           panOffset: 0,
           zoomLevel: 1,
           cursorX: null,
@@ -160,12 +172,13 @@ export function useStockChartFooter({
     ];
   }, [
     activePreset,
-    boundsHistory,
+    baseDateBounds,
     boundsHistoryDates,
     compact,
     effectiveResolution,
     footerHints,
     history,
+    manualMinimumSpanMs,
     navigableDateWindow,
     persistRenderMode,
     requestAutoWindow,

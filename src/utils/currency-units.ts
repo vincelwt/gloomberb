@@ -17,9 +17,25 @@ const LIKELY_UNIT_MISMATCH_RATIOS: Record<string, number[]> = {
   ZAR: [100],
 };
 
+const SUB_UNIT_EXCHANGE_RULES = [
+  { exchanges: new Set(["LSE"]), currency: "GBP", divisor: 100 },
+  { exchanges: new Set(["TASE"]), currency: "ILS", divisor: 100 },
+  { exchanges: new Set(["JSE"]), currency: "ZAR", divisor: 100 },
+] as const;
+
 export interface CurrencyUnitInfo {
   currency: string;
   divisor: number;
+}
+
+interface ExchangeSubUnitOptions {
+  allowDefaultCurrency?: boolean;
+  allowMissingCurrency?: boolean;
+  defaultCurrency?: string;
+}
+
+function normalizeExchange(value?: string | null): string {
+  return (value ?? "").trim().toUpperCase();
 }
 
 export function resolveCurrencyUnit(currency?: string | null): CurrencyUnitInfo {
@@ -37,6 +53,46 @@ export function resolveCurrencyUnit(currency?: string | null): CurrencyUnitInfo 
     currency: raw.toUpperCase(),
     divisor: 1,
   };
+}
+
+export function resolveExchangeSubUnitCurrencyUnit(
+  currency?: string | null,
+  exchanges: Array<string | null | undefined> = [],
+  options: ExchangeSubUnitOptions = {},
+): CurrencyUnitInfo {
+  const unit = resolveCurrencyUnit(currency);
+  if (unit.divisor !== 1) return unit;
+
+  const normalizedExchanges = new Set(exchanges.map((exchange) => normalizeExchange(exchange)).filter(Boolean));
+  if (normalizedExchanges.size === 0) return unit;
+
+  const defaultCurrency = (options.defaultCurrency ?? "USD").trim().toUpperCase();
+  for (const rule of SUB_UNIT_EXCHANGE_RULES) {
+    const matchesCurrency = unit.currency === rule.currency
+      || (options.allowMissingCurrency === true && !unit.currency)
+      || (options.allowDefaultCurrency === true && unit.currency === defaultCurrency);
+    if (!matchesCurrency) continue;
+
+    const matchesExchange = [...normalizedExchanges].some((exchange) => rule.exchanges.has(exchange));
+    if (matchesExchange) {
+      return {
+        currency: unit.currency === rule.currency ? unit.currency : rule.currency,
+        divisor: rule.divisor,
+      };
+    }
+  }
+
+  return unit;
+}
+
+export function resolvePriceHistoryCurrencyUnit(
+  currency?: string | null,
+  exchange?: string | null,
+): CurrencyUnitInfo {
+  return resolveExchangeSubUnitCurrencyUnit(currency, [exchange], {
+    allowDefaultCurrency: true,
+    allowMissingCurrency: true,
+  });
 }
 
 export function normalizePriceValueByDivisor(value: number | undefined, divisor: number): number | undefined {

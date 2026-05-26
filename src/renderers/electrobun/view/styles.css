@@ -210,6 +210,9 @@ body.gloom-dragging {
 [data-gloom-role="chart-surface"] {
   cursor: crosshair;
 }
+body.gloom-dragging [data-gloom-role="chart-surface"] {
+  cursor: grabbing;
+}
 [data-gloom-role="tab-list"] {
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;

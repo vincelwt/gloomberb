@@ -1,6 +1,6 @@
 import type { PricePoint } from "../../../types/financials";
 import { clampChartZoom, getVisiblePointCount } from "./viewport";
-import { TIME_RANGES, type TimeRange, type VisibleWindow } from "./types";
+import { TIME_RANGES, type ChartDateWindow, type TimeRange, type VisibleWindow } from "./types";
 
 export interface VisibleDateWindow {
   start: Date | null;
@@ -11,9 +11,11 @@ export interface VisibleDateWindow {
   totalDates: number;
 }
 
-export interface DateWindowRange {
-  start: Date | null;
-  end: Date | null;
+export interface DateWindowRange extends ChartDateWindow {}
+
+export interface DateWindowViewport {
+  panOffset: number;
+  zoomLevel: number;
 }
 
 export function subtractTimeRange(endDate: Date, range: TimeRange): Date {
@@ -347,6 +349,26 @@ export function buildVisibleDateWindowFromRange(
     startIdx,
     endIdx,
     totalDates: dates.length,
+  };
+}
+
+export function resolveViewportForDateWindow(
+  dates: readonly Date[],
+  window: DateWindowRange | null | undefined,
+  minimumPoints = 2,
+): DateWindowViewport | null {
+  if (dates.length === 0) return null;
+  const visibleWindow = buildVisibleDateWindowFromRange(dates, window, minimumPoints);
+  if (visibleWindow.dates.length === 0) return null;
+
+  const visibleCount = Math.max(visibleWindow.dates.length, 1);
+  const zoomLevel = clampChartZoom(dates.length, dates.length / visibleCount);
+  const maxPanOffset = Math.max(dates.length - visibleCount, 0);
+  const panOffset = clamp(dates.length - visibleWindow.endIdx, 0, maxPanOffset);
+
+  return {
+    panOffset,
+    zoomLevel,
   };
 }
 

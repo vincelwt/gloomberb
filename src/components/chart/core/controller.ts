@@ -12,8 +12,11 @@ import {
   type ManualChartResolution,
 } from "./resolution";
 import {
+  buildPresetDateWindow,
   getCanonicalZoomLevel,
   isDateWindowWithinTimeRange,
+  resolveViewportForDateWindow,
+  sameDateWindow,
   type VisibleDateWindow,
 } from "./date-window";
 
@@ -28,15 +31,26 @@ export {
   getPointDates,
   getTimeRangeForDateWindow,
   getVisibleWindowForDateRange,
+  resolveViewportForDateWindow,
   sameDateWindow,
   shiftDateWindow,
   subtractTimeRange,
   type DateWindowRange,
+  type DateWindowViewport,
   type VisibleDateWindow,
 } from "./date-window";
 
-type ViewStateWithViewport = Pick<ChartViewState, "presetRange" | "bufferRange" | "activePreset" | "resolution" | "panOffset" | "zoomLevel" | "cursorX" | "cursorY">
-  | Pick<ComparisonChartViewState, "presetRange" | "bufferRange" | "activePreset" | "resolution" | "panOffset" | "zoomLevel" | "cursorX" | "cursorY">;
+export {
+  applyDateWindowViewport,
+  applyPanDateWindowViewport,
+  applyPresetDateWindowViewport,
+  applyZoomDateWindowViewport,
+  resolveChartStateWindow,
+  zoomDateWindow,
+} from "./window-viewport";
+
+type ViewStateWithViewport = Pick<ChartViewState, "presetRange" | "bufferRange" | "activePreset" | "dateWindow" | "resolution" | "panOffset" | "zoomLevel" | "cursorX" | "cursorY">
+  | Pick<ComparisonChartViewState, "presetRange" | "bufferRange" | "activePreset" | "dateWindow" | "resolution" | "panOffset" | "zoomLevel" | "cursorX" | "cursorY">;
 
 export interface ChartBodyState<T> {
   data: T | null;
@@ -48,22 +62,28 @@ export interface ChartBodyState<T> {
 
 function isCanonicalPresetViewport(
   dates: readonly Date[],
-  state: Pick<ViewStateWithViewport, "activePreset" | "panOffset" | "zoomLevel" | "resolution">,
+  state: Pick<ViewStateWithViewport, "activePreset" | "dateWindow" | "panOffset" | "zoomLevel" | "resolution">,
 ): boolean {
   if (!state.activePreset) return false;
+  if (state.dateWindow?.start && state.dateWindow.end) {
+    return sameDateWindow(state.dateWindow, buildPresetDateWindow(dates, state.activePreset));
+  }
   if (state.panOffset !== 0) return false;
   const canonicalZoom = getCanonicalZoomLevel(dates, state.activePreset);
   return Math.abs(state.zoomLevel - canonicalZoom) < 0.001;
 }
 
-type CanonicalPresetViewportState = Pick<ViewStateWithViewport, "presetRange" | "activePreset" | "panOffset" | "zoomLevel" | "cursorX" | "cursorY">;
+type CanonicalPresetViewportState = Pick<ViewStateWithViewport, "presetRange" | "activePreset" | "dateWindow" | "panOffset" | "zoomLevel" | "cursorX" | "cursorY">;
 
 export function needsCanonicalPresetViewportReset(
   dates: readonly Date[],
-  state: Pick<CanonicalPresetViewportState, "presetRange" | "activePreset" | "panOffset" | "zoomLevel">,
+  state: Pick<CanonicalPresetViewportState, "presetRange" | "activePreset" | "dateWindow" | "panOffset" | "zoomLevel">,
 ): boolean {
   if (dates.length === 0) return false;
   if (state.activePreset !== state.presetRange) return false;
+  if (state.dateWindow?.start && state.dateWindow.end) {
+    return !sameDateWindow(state.dateWindow, buildPresetDateWindow(dates, state.presetRange));
+  }
   if (state.panOffset !== 0) return false;
   const canonicalZoom = getCanonicalZoomLevel(dates, state.presetRange);
   return Math.abs(state.zoomLevel - canonicalZoom) >= 0.001;
@@ -74,15 +94,40 @@ export function resolvePresetRangeViewport<S extends CanonicalPresetViewportStat
   dates: readonly Date[],
 ): S {
   if (dates.length === 0) return state;
+  const dateWindow = buildPresetDateWindow(dates, state.presetRange);
+  const viewport = resolveViewportForDateWindow(dates, dateWindow);
   const canonicalZoom = getCanonicalZoomLevel(dates, state.presetRange);
-  if (state.zoomLevel === canonicalZoom && state.panOffset === 0) return state;
+  const nextPanOffset = viewport?.panOffset ?? 0;
+  const nextZoomLevel = viewport?.zoomLevel ?? canonicalZoom;
+  if (
+    state.panOffset === nextPanOffset
+    && Math.abs(state.zoomLevel - nextZoomLevel) < 0.001
+    && sameDateWindow(state.dateWindow, dateWindow)
+  ) {
+    return state;
+  }
   return {
     ...state,
-    panOffset: 0,
-    zoomLevel: canonicalZoom,
+    dateWindow,
+    panOffset: nextPanOffset,
+    zoomLevel: nextZoomLevel,
     cursorX: null,
     cursorY: null,
   };
+}
+
+export function resolvePendingPresetRangeViewport<S extends CanonicalPresetViewportState>(
+  state: S,
+  dates: readonly Date[],
+): S {
+  if (state.activePreset !== state.presetRange && (
+    !!state.dateWindow
+    || state.panOffset !== 0
+    || Math.abs(state.zoomLevel - 1) >= 0.001
+  )) {
+    return state;
+  }
+  return resolvePresetRangeViewport(state, dates);
 }
 
 export function resolveCanonicalPresetViewport<S extends CanonicalPresetViewportState>(
@@ -95,7 +140,7 @@ export function resolveCanonicalPresetViewport<S extends CanonicalPresetViewport
 
 export function resolveVisibleActivePreset(
   dates: readonly Date[],
-  state: Pick<ViewStateWithViewport, "presetRange" | "activePreset" | "panOffset" | "zoomLevel" | "resolution">,
+  state: Pick<ViewStateWithViewport, "presetRange" | "activePreset" | "dateWindow" | "panOffset" | "zoomLevel" | "resolution">,
 ): TimeRange | null {
   if (!state.activePreset) return null;
   if (isCanonicalPresetViewport(dates, state)) return state.activePreset;
@@ -113,6 +158,7 @@ function resolvePresetSelectionWithResolution<S extends ViewStateWithViewport>(
     presetRange,
     bufferRange: getCompatibleBufferRange(presetRange, supportMaxRange),
     activePreset: presetRange,
+    dateWindow: null,
     resolution,
     panOffset: 0,
     zoomLevel: 1,
@@ -146,6 +192,7 @@ export function resolveResolutionSelection<S extends ViewStateWithViewport>(
       resolution,
       bufferRange: getNextBufferRange(state.presetRange),
       activePreset: null,
+      dateWindow: null,
       panOffset: 0,
       zoomLevel: 1,
       cursorX: null,
@@ -169,6 +216,9 @@ export function resolveResolutionSelection<S extends ViewStateWithViewport>(
     presetRange,
     bufferRange: getCompatibleBufferRange(presetRange, maxRange),
     activePreset: shouldSnap ? presetRange : null,
+    dateWindow: shouldSnap
+      ? null
+      : (visibleWindow?.start && visibleWindow.end ? { start: visibleWindow.start, end: visibleWindow.end } : null),
     resolution,
     panOffset: 0,
     zoomLevel: 1,
@@ -186,6 +236,7 @@ export function resolveStoredChartSelection<S extends ViewStateWithViewport>(
   const resetState = {
     ...state,
     presetRange,
+    dateWindow: null,
     panOffset: 0,
     zoomLevel: 1,
     cursorX: null,

@@ -31,6 +31,11 @@ export interface ChartMouseEvent {
   };
 }
 
+export function consumeChartMouseEvent(event: Pick<ChartMouseEvent, "stopPropagation" | "preventDefault">): void {
+  event.stopPropagation?.();
+  event.preventDefault?.();
+}
+
 export interface LocalPlotPointer {
   cellX: number;
   cellY: number;

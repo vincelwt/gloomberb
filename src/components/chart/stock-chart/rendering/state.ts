@@ -224,12 +224,12 @@ export function resolveStockChartRender({
     };
   }
 
-  if (effectiveResolution === "auto" && firstBlockingState && boundsHistory.length > 0) {
+  if (effectiveResolution !== "auto" && boundsHistoryCompatible) {
     return {
       bodyState: {
         data: boundsHistory,
         blocking: false,
-        updating: true,
+        updating: boundsBodyState.updating || !!firstBlockingState,
         emptyMessage: null,
         errorMessage: null,
       },
@@ -237,7 +237,7 @@ export function resolveStockChartRender({
     };
   }
 
-  if (effectiveResolution !== "auto" && firstBlockingState && boundsHistoryCompatible) {
+  if (effectiveResolution === "auto" && firstBlockingState && boundsHistory.length > 0) {
     return {
       bodyState: {
         data: boundsHistory,

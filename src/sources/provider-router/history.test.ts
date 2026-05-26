@@ -135,6 +135,57 @@ describe("AssetDataRouter chart history", () => {
     persistence.close();
   });
 
+  test("ignores legacy unversioned sub-unit chart history caches", async () => {
+    const dbPath = createTempDbPath("subunit-chart-cache");
+    const persistence = new AppPersistence(dbPath);
+
+    persistence.resources.set(
+      {
+        namespace: "market",
+        kind: "price-history",
+        entityKey: "FTC",
+        variantKey: "exchange=LSE;range=ALL;resolution=1wk",
+        sourceKey: "provider:gloomberb-cloud",
+      },
+      [
+        { date: new Date("2026-05-21T00:00:00Z"), close: 405 },
+        { date: new Date("2026-05-22T00:00:00Z"), close: 379 },
+      ],
+      {
+        cachePolicy: { staleMs: 60_000, expireMs: 60_000 },
+      },
+    );
+
+    let providerCalls = 0;
+    const router = new AssetDataRouter({
+      ...fallbackProvider,
+      id: "gloomberb-cloud",
+      name: "Gloomberb Cloud",
+      async getPriceHistoryForResolution() {
+        providerCalls += 1;
+        return [
+          { date: new Date("2026-05-21T00:00:00Z"), close: 4.05 },
+          { date: new Date("2026-05-22T00:00:00Z"), close: 3.79 },
+        ];
+      },
+    }, [], persistence.resources);
+
+    const history = await router.getPriceHistoryForResolution("FTC", "LSE", "ALL", "1wk");
+
+    expect(providerCalls).toBe(1);
+    expect(history.map((point) => point.close)).toEqual([4.05, 3.79]);
+
+    const cachedRows = persistence.database.connection
+      .query("SELECT variant_key FROM resource_cache WHERE namespace = ? AND kind = ? AND entity_key = ? ORDER BY variant_key")
+      .all("market", "price-history", "FTC") as Array<{ variant_key: string }>;
+    expect(cachedRows.map((row) => row.variant_key)).toEqual([
+      "exchange=LSE;range=ALL;resolution=1wk",
+      "exchange=LSE;range=ALL;resolution=1wk;unit=GBP",
+    ]);
+
+    persistence.close();
+  });
+
   test("bypasses cached financials on explicit refresh requests", async () => {
     const dbPath = createTempDbPath("forced-financial-refresh");
     const persistence = new AppPersistence(dbPath);

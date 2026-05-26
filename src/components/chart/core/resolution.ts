@@ -77,6 +77,10 @@ export const CHART_RESOLUTION_STEP_MS: Record<ManualChartResolution, number> = {
   "1mo": 30 * 24 * 60 * 60_000,
 };
 
+export function getChartResolutionStepMs(resolution: ChartResolution): number | null {
+  return resolution === "auto" ? null : CHART_RESOLUTION_STEP_MS[resolution];
+}
+
 const CHART_RESOLUTION_POINTS_PER_DAY: Record<ManualChartResolution, number> = {
   "1m": 390,
   "5m": 78,
@@ -156,7 +160,7 @@ export function getExpandedBufferRange(
   const nextBufferRange = resolution === "auto"
     ? nextCandidate
     : clampTimeRangeToMaxRange(nextCandidate, supportMap.get(resolution) ?? bufferRange);
-  return nextBufferRange === bufferRange ? null : nextBufferRange;
+  return isTimeRangeAtOrBelow(nextBufferRange, bufferRange) ? null : nextBufferRange;
 }
 
 export function sortChartResolutions<T extends ChartResolution>(resolutions: readonly T[]): T[] {

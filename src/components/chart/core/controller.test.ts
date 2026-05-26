@@ -4,6 +4,7 @@ import {
   getCanonicalZoomLevel,
   needsCanonicalPresetViewportReset,
   resolveCanonicalPresetViewport,
+  resolvePendingPresetRangeViewport,
   resolveVisibleActivePreset,
   shiftDateWindow,
 } from "./controller";
@@ -106,5 +107,51 @@ describe("chart-controller date windows", () => {
 
     expect(needsCanonicalPresetViewportReset(dates, state)).toBe(false);
     expect(resolveVisibleActivePreset(dates, state)).toBeNull();
+  });
+
+  test("does not apply a pending preset reset after zoom clears the active preset", () => {
+    const dates = utcDates(300);
+    const state = {
+      presetRange: "1M" as const,
+      activePreset: null,
+      panOffset: 0,
+      zoomLevel: 2,
+      cursorX: null,
+      cursorY: null,
+    };
+
+    expect(resolvePendingPresetRangeViewport(state, dates)).toBe(state);
+  });
+
+  test("still applies a pending preset reset for untouched preset state", () => {
+    const dates = utcDates(300);
+    const state = {
+      presetRange: "1M" as const,
+      activePreset: "1M" as const,
+      panOffset: 0,
+      zoomLevel: 1,
+      cursorX: null,
+      cursorY: null,
+    };
+
+    const resolved = resolvePendingPresetRangeViewport(state, dates);
+    expect(resolved.zoomLevel).toBe(getCanonicalZoomLevel(dates, "1M"));
+    expect(resolved.panOffset).toBe(0);
+  });
+
+  test("still applies a pending preset reset for explicit reset state", () => {
+    const dates = utcDates(300);
+    const state = {
+      presetRange: "1M" as const,
+      activePreset: null,
+      panOffset: 0,
+      zoomLevel: 1,
+      cursorX: null,
+      cursorY: null,
+    };
+
+    const resolved = resolvePendingPresetRangeViewport(state, dates);
+    expect(resolved.zoomLevel).toBe(getCanonicalZoomLevel(dates, "1M"));
+    expect(resolved.panOffset).toBe(0);
   });
 });

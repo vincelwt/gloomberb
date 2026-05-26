@@ -9,6 +9,7 @@ export type {
 export { ResolvedStockChart } from "./resolved";
 
 export {
+  isAutoWindowOverridePending,
   resolveAutoDisplayState,
   resolveAutoPlanningWindow,
   resolveAutoZoomWindow,

@@ -57,7 +57,7 @@ export function useComparisonChartCanvasBitmaps({
   nativeCrosshair: NativeCrosshairOverlay | null;
   pixelRatio: number;
   plotRef: RefObject<BoxRenderable | null>;
-  projectionViewState: Pick<ComparisonChartViewState, "panOffset" | "renderMode" | "zoomLevel">;
+  projectionViewState: Pick<ComparisonChartViewState, "dateWindow" | "panOffset" | "renderMode" | "zoomLevel">;
   renderer: NativeRendererHost;
   selectedSymbol: string | null;
   series: ComparisonChartSeries[];

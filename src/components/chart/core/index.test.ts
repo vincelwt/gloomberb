@@ -226,6 +226,26 @@ describe("appendLiveQuotePoint", () => {
     expect(extended.at(-1)?.close).toBe(131);
   });
 
+  test("does not append a live quote tail with a likely unit mismatch", () => {
+    const history: PricePoint[] = [
+      { date: new Date("2026-05-18T00:00:00Z"), close: 405 },
+      { date: new Date("2026-05-22T00:00:00Z"), close: 379 },
+    ];
+
+    const extended = appendLiveQuotePoint(
+      history,
+      quoteFixture({
+        symbol: "FTC",
+        currency: "GBP",
+        price: 3.79,
+        lastUpdated: Date.parse("2026-05-22T16:39:00Z"),
+      }),
+      Date.parse("2026-05-22T16:45:00Z"),
+    );
+
+    expect(extended).toBe(history);
+  });
+
   test("does not append stale quotes from an older active session", () => {
     const history: PricePoint[] = [
       { date: new Date("2026-05-11T00:00:00Z"), close: 68 },

@@ -1,3 +1,7 @@
+import {
+  normalizePriceValueByDivisor,
+  resolveExchangeSubUnitCurrencyUnit,
+} from "../../../utils/currency-units";
 
 interface IbkrPriceContractLike {
   currency?: string;
@@ -10,12 +14,6 @@ interface IbkrPriceDetailsLike {
   priceMagnifier?: number;
   validExchanges?: string;
 }
-
-const IBKR_SUB_UNIT_PRICE_RULES = [
-  { exchanges: new Set(["LSE"]), currency: "GBP", divisor: 100 },
-  { exchanges: new Set(["TASE"]), currency: "ILS", divisor: 100 },
-  { exchanges: new Set(["JSE"]), currency: "ZAR", divisor: 100 },
-] as const;
 
 function normalizeIbkrExchange(value?: string): string {
   return (value ?? "").trim().toUpperCase();
@@ -37,24 +35,16 @@ export function getIbkrPriceDivisor(
     return magnifier;
   }
 
-  const currency = normalizeIbkrExchange(contract.currency);
-  const exchanges = new Set([
-    normalizeIbkrExchange(contract.primaryExch),
-    normalizeIbkrExchange(contract.exchange),
-    ...(details?.validExchanges?.split(",").map((exchange) => normalizeIbkrExchange(exchange)) ?? []),
+  const validExchanges = details?.validExchanges
+    ?.split(",")
+    .map((exchange) => exchange.trim())
+    .filter(Boolean) ?? [];
+  const unit = resolveExchangeSubUnitCurrencyUnit(contract.currency, [
+    contract.primaryExch,
+    contract.exchange,
+    ...validExchanges,
   ]);
-
-  for (const rule of IBKR_SUB_UNIT_PRICE_RULES) {
-    if (currency !== rule.currency) continue;
-    if ([...exchanges].some((exchange) => rule.exchanges.has(exchange))) {
-      return rule.divisor;
-    }
-  }
-
-  return 1;
+  return unit.divisor;
 }
 
-export function normalizeIbkrPriceValue(value: number | undefined, divisor: number): number | undefined {
-  if (value == null || !Number.isFinite(value) || divisor === 1) return value;
-  return value / divisor;
-}
+export const normalizeIbkrPriceValue = normalizePriceValueByDivisor;

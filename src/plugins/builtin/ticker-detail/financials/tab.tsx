@@ -306,7 +306,6 @@ export function ResolvedFinancialsTab({
           text: `${indent}${marker} ${row.unitLabel}`,
           color: row.depth === 0 ? colors.textBright : colors.textDim,
           attributes: row.depth === 0 ? TextAttributes.BOLD : TextAttributes.NONE,
-          backgroundColor: row.depth === 0 ? colors.panel : undefined,
           onMouseDown: row.toggleable
             ? (event) => {
               event.preventDefault?.();
@@ -326,7 +325,6 @@ export function ResolvedFinancialsTab({
     const key = row.kind === "group" ? row.summaryKey : undefined;
     if (row.kind === "group" && !key) return {
       text: "",
-      backgroundColor: row.depth === 0 ? colors.panel : undefined,
     };
 
     const previous = previousStatementMap.get(column.statement.date);
@@ -345,7 +343,6 @@ export function ResolvedFinancialsTab({
 
     return {
       text: `${cell.valueText}${cell.growthText}`,
-      backgroundColor: row.kind === "group" && row.depth === 0 ? colors.panel : undefined,
       content: (
         <Box flexDirection="row" width={FINANCIAL_COL_W}>
           <Text

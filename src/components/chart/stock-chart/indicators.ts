@@ -1,7 +1,7 @@
 import { getChartIndicatorColor } from "../../../theme/colors";
 import type { PricePoint } from "../../../types/financials";
 import type { ChartIndicatorOverlays } from "../core/types";
-import { RANGE_DAYS, type ChartRenderMode, type TimeRange } from "../core/types";
+import { RANGE_DAYS, type TimeRange } from "../core/types";
 import { computeBollingerBands } from "../indicators/bands";
 import { computeSMA, computeEMA } from "../indicators/moving-averages";
 import { computeRSI, computeMACD } from "../indicators/oscillators";
@@ -223,55 +223,4 @@ export function buildIndicatorRenderKey(indicators: ChartIndicatorOverlays | nul
       ].join(":")
       : "",
   ].join("|");
-}
-
-function buildIndicatorConfigKey(config: IndicatorConfig): string {
-  return [
-    `sma:${(config.sma ?? []).join(",")}`,
-    `ema:${(config.ema ?? []).join(",")}`,
-    config.bollinger ? `bb:${config.bollinger.period}:${config.bollinger.stdDev}` : "bb:",
-    `rsi:${config.rsi ?? ""}`,
-    config.macd ? `macd:${config.macd.fast}:${config.macd.slow}:${config.macd.signal}` : "macd:",
-  ].join("|");
-}
-
-export function buildIndicatorSourceKey(
-  sourcePoints: readonly PricePoint[],
-  config: IndicatorConfig,
-): string {
-  const first = sourcePoints[0];
-  const last = sourcePoints[sourcePoints.length - 1];
-  return [
-    buildIndicatorConfigKey(config),
-    sourcePoints.length,
-    first ? getPricePointTime(first) : "",
-    first?.close ?? "",
-    last ? getPricePointTime(last) : "",
-    last?.close ?? "",
-  ].join(":");
-}
-
-export function buildIndicatorProjectionKey(options: {
-  sourceKey: string;
-  sourcePoints: readonly PricePoint[];
-  sourceIndexOffset: number;
-  projectedPoints: readonly ProjectedChartPoint[];
-  mode: ChartRenderMode;
-}): string {
-  const firstSource = options.sourcePoints[0];
-  const lastSource = options.sourcePoints[options.sourcePoints.length - 1];
-  const firstProjected = options.projectedPoints[0];
-  const lastProjected = options.projectedPoints[options.projectedPoints.length - 1];
-
-  return [
-    options.sourceKey,
-    options.sourceIndexOffset,
-    options.sourcePoints.length,
-    firstSource ? getPricePointTime(firstSource) : "",
-    lastSource ? getPricePointTime(lastSource) : "",
-    options.projectedPoints.length,
-    firstProjected ? getPricePointTime(firstProjected) : "",
-    lastProjected ? getPricePointTime(lastProjected) : "",
-    options.mode,
-  ].join(":");
 }

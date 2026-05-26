@@ -3,10 +3,12 @@ import {
   buildVisibleDateWindowFromRange,
   getMinimumDateStepMs,
   getPointDates,
+  sameDateWindow,
   type ChartBodyState,
   type DateWindowRange,
 } from "../core/controller";
 import type { ManualChartResolution } from "../core/resolution";
+import { CHART_ZOOM_STEP_FACTOR } from "../core/viewport";
 
 export interface AutoRenderedView {
   window: DateWindowRange;
@@ -73,6 +75,13 @@ export function resolveAutoPlanningWindow(options: {
     ?? null;
 }
 
+export function isAutoWindowOverridePending(
+  autoWindowOverride: DateWindowRange | null,
+  renderedAutoView: { window: DateWindowRange } | null,
+): boolean {
+  return !!autoWindowOverride && !sameDateWindow(autoWindowOverride, renderedAutoView?.window ?? null);
+}
+
 function buildDateWindowFromIndices(dates: readonly Date[], startIdx: number, endIdx: number): DateWindowRange | null {
   if (dates.length === 0 || endIdx <= startIdx) return null;
   return {
@@ -120,7 +129,7 @@ export function resolveAutoZoomWindow(options: {
     currentWindow,
     direction,
     anchorRatio,
-    zoomFactor = 1.5,
+    zoomFactor = CHART_ZOOM_STEP_FACTOR,
   } = options;
 
   if (!currentWindow?.start || !currentWindow.end) return currentWindow ?? null;

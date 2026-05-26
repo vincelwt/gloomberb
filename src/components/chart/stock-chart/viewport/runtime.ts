@@ -1,6 +1,9 @@
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-import type { PricePoint } from "../../../../types/financials";
+import { useCallback, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { applyBufferedPanExpansion } from "../../core/scroll";
+import {
+  createStoredChartSelectionSyncState,
+  markStoredChartSelectionLocallyApplied,
+} from "../../core/pane-settings";
 import {
   clampDateWindowToBounds,
   resolveVisibleActivePreset,
@@ -46,7 +49,6 @@ interface UseStockChartViewportRuntimeOptions {
   availableManualResolutions: readonly ChartResolution[];
   autoMinimumSpanMs: number;
   baseDateBounds: DateWindowRange | null;
-  boundsHistory: PricePoint[];
   boundsHistoryDates: Date[];
   canonicalAutoWindow: DateWindowRange | null;
   chartWidth: number;
@@ -63,6 +65,7 @@ interface UseStockChartViewportRuntimeOptions {
   pendingCanonicalResetRef: MutableRefObject<number>;
   pendingExpansionRef: MutableRefObject<PendingExpansionAction>;
   persistChartControls: (range: TimeRange, resolution: ChartResolution) => void;
+  renderedResolution: ChartResolution;
   selectionSupportMap: ReadonlyMap<ManualChartResolution, TimeRange>;
   setPendingAutoWindowOverride: Dispatch<SetStateAction<DateWindowRange | null>>;
   setRenderedAutoView: Dispatch<SetStateAction<AutoRenderedView | null>>;
@@ -82,7 +85,6 @@ export function useStockChartViewportRuntime({
   availableManualResolutions,
   autoMinimumSpanMs,
   baseDateBounds,
-  boundsHistory,
   boundsHistoryDates,
   canonicalAutoWindow,
   chartWidth,
@@ -99,6 +101,7 @@ export function useStockChartViewportRuntime({
   pendingCanonicalResetRef,
   pendingExpansionRef,
   persistChartControls,
+  renderedResolution,
   selectionSupportMap,
   setPendingAutoWindowOverride,
   setRenderedAutoView,
@@ -113,7 +116,12 @@ export function useStockChartViewportRuntime({
   viewState,
   visibleDateWindow,
 }: UseStockChartViewportRuntimeOptions) {
+  const storedSelectionSyncStateRef = useRef(
+    createStoredChartSelectionSyncState(storedRangePreset, storedResolution),
+  );
+
   useStoredViewportSelectionSync({
+    boundsHistoryDates,
     compact,
     pendingAutoWindowRef,
     pendingCanonicalResetRef,
@@ -124,6 +132,7 @@ export function useStockChartViewportRuntime({
     setViewState,
     storedRangePreset,
     storedResolution,
+    storedSelectionSyncStateRef,
     updateDisplayCursorTarget,
   });
 
@@ -134,7 +143,6 @@ export function useStockChartViewportRuntime({
   });
 
   useManualViewportReconcile({
-    boundsHistory,
     boundsHistoryDates,
     compact,
     effectiveResolution,
@@ -171,7 +179,8 @@ export function useStockChartViewportRuntime({
 
   const expandBufferRange = useCallback((action: PendingExpansionAction): boolean => {
     if (compact) return false;
-    const nextBufferRange = getExpandedBufferRange(viewState.bufferRange, effectiveResolution, supportMap);
+    const expansionResolution = effectiveResolution === "auto" ? "auto" : renderedResolution;
+    const nextBufferRange = getExpandedBufferRange(viewState.bufferRange, expansionResolution, supportMap);
     if (!nextBufferRange) return false;
     pendingExpansionRef.current = action;
     setViewState((current) => applyBufferedPanExpansion(current, nextBufferRange));
@@ -180,6 +189,7 @@ export function useStockChartViewportRuntime({
     compact,
     effectiveResolution,
     pendingExpansionRef,
+    renderedResolution,
     setViewState,
     supportMap,
     viewState.bufferRange,
@@ -237,14 +247,16 @@ export function useStockChartViewportRuntime({
     const nextResolution = getPresetResolution(range);
     setRequestedResolution(nextResolution);
     if (!compact) {
+      markStoredChartSelectionLocallyApplied(storedSelectionSyncStateRef.current, range, nextResolution);
       persistChartControls(range, nextResolution);
     }
     pendingCanonicalResetRef.current += 1;
     pendingAutoWindowRef.current = null;
     setPendingAutoWindowOverride(null);
     updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
-    setViewState((current) => resolveViewportPresetSelection(current, range, supportMaxRange));
+    setViewState((current) => resolveViewportPresetSelection(current, range, supportMaxRange, boundsHistoryDates));
   }, [
+    boundsHistoryDates,
     compact,
     effectiveResolutionSupport,
     pendingAutoWindowRef,
@@ -273,6 +285,7 @@ export function useStockChartViewportRuntime({
         setRenderedAutoView(null);
       }
       setRequestedResolution(resolution);
+      markStoredChartSelectionLocallyApplied(storedSelectionSyncStateRef.current, viewState.presetRange, resolution);
       persistChartControls(viewState.presetRange, resolution);
       updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
       setViewState((current) => ({
@@ -282,12 +295,19 @@ export function useStockChartViewportRuntime({
       return;
     }
 
-    const nextState = resolveViewportResolutionSelection(viewState, resolution, selectionSupportMap, visibleDateWindow);
+    const nextState = resolveViewportResolutionSelection(
+      viewState,
+      resolution,
+      selectionSupportMap,
+      visibleDateWindow,
+      boundsHistoryDates,
+    );
     if (!nextState) return;
     setRequestedResolution(resolution);
     pendingAutoWindowRef.current = null;
     setPendingAutoWindowOverride(null);
     pendingCanonicalResetRef.current += 1;
+    markStoredChartSelectionLocallyApplied(storedSelectionSyncStateRef.current, nextState.presetRange, resolution);
     persistChartControls(nextState.presetRange, resolution);
     updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
     setViewState(nextState);
@@ -311,6 +331,7 @@ export function useStockChartViewportRuntime({
     updateDisplayCursorTarget,
     viewState,
     visibleDateWindow,
+    boundsHistoryDates,
   ]);
 
   const setRenderMode = useCallback((mode: ChartRenderMode) => {
@@ -335,6 +356,7 @@ export function useStockChartViewportRuntime({
       : resolveVisibleActivePreset(boundsHistoryDates, {
         presetRange: viewState.presetRange,
         activePreset: viewState.activePreset,
+        dateWindow: viewState.dateWindow,
         panOffset: viewState.panOffset,
         zoomLevel: viewState.zoomLevel,
         resolution: effectiveResolution,

@@ -78,12 +78,12 @@ export function PriceAxisLabels({
     fractionalViewport ? (
       <Box flexDirection="row" width={axisSectionWidth} height={1}>
         <Box flexDirection="row" width={axisWidth} justifyContent={axisLabelJustify} overflow="hidden">
-          {label ? <Text fg={fg}>{formatAxisCell(label, axisWidth).trimStart()}</Text> : null}
+          {label ? <Text fg={fg} selectable={false}>{formatAxisCell(label, axisWidth).trimStart()}</Text> : null}
         </Box>
         {axisPaddingWidth > 0 ? <Box width={axisPaddingWidth} /> : null}
       </Box>
     ) : (
-      <Text fg={fg}>{formatAxisCell(label, axisWidth).padEnd(axisSectionWidth)}</Text>
+      <Text fg={fg} selectable={false}>{formatAxisCell(label, axisWidth).padEnd(axisSectionWidth)}</Text>
     )
   );
 
@@ -120,7 +120,7 @@ export function PriceAxisLabels({
           }}
         >
           <Box flexDirection="row" width={axisWidth} justifyContent={axisLabelJustify} overflow="hidden">
-            <Text fg={cursorColor}>{overlay.labelText}</Text>
+            <Text fg={cursorColor} selectable={false}>{overlay.labelText}</Text>
           </Box>
           {axisPaddingWidth > 0 ? <Box width={axisPaddingWidth} /> : null}
         </Box>

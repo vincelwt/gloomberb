@@ -1,13 +1,25 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { TestDialogProvider, testRender } from "../renderers/opentui/test-utils";
+import { createTestRenderer } from "@opentui/core/testing";
+import { act } from "react";
+import { createOpenTuiTestRoot as createRoot, TestDialogProvider } from "../renderers/opentui/test-utils";
 import { createDefaultConfig } from "../types/config";
 import { createInitialState, type AppAction, type AppState } from "../state/app/context";
 import type { PluginRegistry } from "../plugins/registry";
 import { useAppGlobalShortcuts } from "./global-shortcuts";
 
-let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
+let testSetup: Awaited<ReturnType<typeof createTestRenderer>> | undefined;
+let root: ReturnType<typeof createRoot> | undefined;
+const actEnvironment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
 
-afterEach(() => {
+afterEach(async () => {
+  if (root) {
+    await act(async () => {
+      root!.unmount();
+      await Promise.resolve();
+    });
+    root = undefined;
+  }
   if (testSetup) {
     testSetup.renderer.destroy();
     testSetup = undefined;
@@ -19,6 +31,13 @@ function createRegistry(shortcutExecute?: () => void): PluginRegistry {
     shortcuts: new Map(shortcutExecute
       ? [["test-shortcut", { id: "test-shortcut", key: "x", execute: shortcutExecute }]]
       : []),
+    panes: new Map([
+      ["portfolio-list", {}],
+      ["ticker-research", {}],
+      ["chat", {}],
+      ["help", {}],
+    ]),
+    getPluginPaneIds: () => [],
     getShortcutPluginId: () => null,
   } as unknown as PluginRegistry;
 }
@@ -45,17 +64,22 @@ function ShortcutHarness({
 }
 
 async function renderHarness(state: AppState, registry: PluginRegistry, dispatch: (action: AppAction) => void) {
-  testSetup = await testRender(
-    <TestDialogProvider>
-      <ShortcutHarness
-        dispatch={dispatch}
-        pluginRegistry={registry}
-        state={state}
-      />
-    </TestDialogProvider>,
-    { width: 40, height: 8 },
-  );
-  await testSetup.renderOnce();
+  testSetup = await createTestRenderer({ width: 40, height: 8 });
+  root = createRoot(testSetup.renderer);
+  act(() => {
+    root!.render(
+      <TestDialogProvider>
+        <ShortcutHarness
+          dispatch={dispatch}
+          pluginRegistry={registry}
+          state={state}
+        />
+      </TestDialogProvider>,
+    );
+  });
+  await act(async () => {
+    await testSetup.renderOnce();
+  });
 }
 
 async function emitKeypress(event: { name?: string; ctrl?: boolean; meta?: boolean; super?: boolean; shift?: boolean }) {
@@ -77,8 +101,10 @@ async function emitKeypress(event: { name?: string; ctrl?: boolean; meta?: boole
     },
     ...event,
   };
-  testSetup!.renderer.keyInput.emit("keypress", keyEvent as any);
-  await testSetup!.renderOnce();
+  await act(async () => {
+    testSetup!.renderer.keyInput.emit("keypress", keyEvent as any);
+    await testSetup!.renderOnce();
+  });
   return keyEvent;
 }
 
@@ -112,5 +138,29 @@ describe("useAppGlobalShortcuts", () => {
     expect(actions).toEqual([]);
     expect(event.defaultPrevented).toBe(false);
     expect(event.propagationStopped).toBe(false);
+  });
+
+  test("cycles panes with Tab while input is captured", async () => {
+    const actions: AppAction[] = [];
+    const state = {
+      ...createInitialState(createDefaultConfig("/tmp/gloomberb-global-shortcuts-tab-captured")),
+      inputCaptured: true,
+    };
+    await renderHarness(state, createRegistry(), (action) => actions.push(action));
+
+    const event = await emitKeypress({ name: "tab" });
+
+    expect(actions).toEqual([{
+      type: "FOCUS_NEXT",
+      paneOrder: [
+        "portfolio-list:main",
+        "chat:main",
+        "ticker-detail:main",
+        "ticker-detail:nvda",
+        "help:main",
+      ],
+    }]);
+    expect(event.defaultPrevented).toBe(true);
+    expect(event.propagationStopped).toBe(true);
   });
 });
