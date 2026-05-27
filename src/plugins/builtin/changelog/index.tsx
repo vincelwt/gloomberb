@@ -16,11 +16,16 @@ import { fetchChangelogReleases, type ChangelogRelease } from "../../../updater/
 import { colors } from "../../../theme/colors";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { isPlainKey } from "../../../utils/keyboard";
-import { usePluginPaneState } from "../../runtime";
+import {
+  DEFAULT_CHANGELOG_SORT,
+  nextChangelogSortPreference,
+  resolveSelectedReleaseIndex,
+  sortChangelogReleases,
+  type ChangelogColumnId,
+} from "./model";
 
 const CHANGELOG_LIMIT = 40;
 
-type ChangelogColumnId = "date" | "version" | "title";
 type ChangelogColumn = DataTableColumn & { id: ChangelogColumnId };
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
@@ -103,7 +108,8 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
   const [releases, setReleases] = useState<ChangelogRelease[]>([]);
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>("selectedIdx", 0);
+  const [selectedReleaseId, setSelectedReleaseId] = useState<string | null>(null);
+  const [sortPreference, setSortPreference] = useState(DEFAULT_CHANGELOG_SORT);
   const [openReleaseId, setOpenReleaseId] = useState<string | null>(null);
   const detailScrollRef = useRef<ScrollBoxRenderable>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -143,11 +149,18 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     };
   }, [loadReleases]);
 
+  const sortedReleases = useMemo(
+    () => sortChangelogReleases(releases, sortPreference),
+    [releases, sortPreference],
+  );
+  const activeSelectedIdx = resolveSelectedReleaseIndex(sortedReleases, selectedReleaseId);
+  const activeSelectedReleaseId = sortedReleases[activeSelectedIdx]?.id ?? null;
+
   useEffect(() => {
-    if (releases.length > 0 && selectedIdx >= releases.length) {
-      setSelectedIdx(Math.max(0, releases.length - 1));
+    if (activeSelectedReleaseId !== selectedReleaseId) {
+      setSelectedReleaseId(activeSelectedReleaseId);
     }
-  }, [releases.length, selectedIdx, setSelectedIdx]);
+  }, [activeSelectedReleaseId, selectedReleaseId]);
 
   const openRelease = useMemo(
     () =>
@@ -177,9 +190,6 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
   });
 
   const columns = useMemo(() => buildColumns(width, releases), [releases, width]);
-  const activeSelectedIdx = releases.length > 0
-    ? Math.max(0, Math.min(selectedIdx, releases.length - 1))
-    : -1;
 
   const scrollDetailBy = useCallback((delta: number) => {
     const scrollBox = detailScrollRef.current;
@@ -237,6 +247,14 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     }
   }, []);
 
+  const handleHeaderClick = useCallback((columnId: string) => {
+    setSortPreference((current) => nextChangelogSortPreference(current, columnId));
+  }, []);
+
+  const selectRelease = useCallback((release: ChangelogRelease) => {
+    setSelectedReleaseId(release.id);
+  }, []);
+
   const footerInfo = useMemo<PaneFooterSegment[]>(() => {
     const segments: PaneFooterSegment[] = [];
     if (status === "loading") {
@@ -251,17 +269,8 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
         parts: [{ text: "error", tone: "warning" }],
       });
     }
-    if (releases.length > 0) {
-      segments.push({
-        id: "versions",
-        parts: [
-          { text: "versions", tone: "label" },
-          { text: String(releases.length), tone: "value" },
-        ],
-      });
-    }
     return segments;
-  }, [releases.length, status]);
+  }, [status]);
 
   const footerHints = useMemo<PaneHint[]>(() => [{
     id: "refresh",
@@ -296,7 +305,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     );
   }
 
-  if (releases.length === 0) {
+  if (sortedReleases.length === 0) {
     return (
       <Box paddingX={1} paddingY={1}>
         <Text fg={colors.textDim}>No changelog entries found.</Text>
@@ -320,16 +329,19 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
       )}
       detailTitle={openRelease ? releaseDetailTitle(openRelease) : undefined}
       selectedIndex={activeSelectedIdx}
-      onSelectIndex={(index) => setSelectedIdx(index)}
+      onSelectIndex={(_index, release) => selectRelease(release)}
       onActivateIndex={(_index, release) => setOpenReleaseId(release.id)}
       onDetailKeyDown={handleDetailKeyDown}
       rootWidth={width}
       rootHeight={height}
       columns={columns}
-      items={releases}
+      items={sortedReleases}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={handleHeaderClick}
       getItemKey={(release) => release.id}
-      isSelected={(_release, index) => index === activeSelectedIdx}
-      onSelect={(_release, index) => setSelectedIdx(index)}
+      isSelected={(release) => release.id === activeSelectedReleaseId}
+      onSelect={selectRelease}
       onActivate={(release) => setOpenReleaseId(release.id)}
       renderCell={renderCell}
       emptyStateTitle="No changelog entries."
