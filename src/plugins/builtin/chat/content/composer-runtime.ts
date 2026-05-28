@@ -154,9 +154,13 @@ export function useChatComposerRuntime({
       }).catch(() => {});
       return;
     }
+    const sendChannelId = useDefaultControllerChannel ? channelId : channelIdRef.current;
+    const replyToId = replyToRef.current?.channelId === sendChannelId
+      ? replyToRef.current.id
+      : undefined;
     const accepted = useDefaultControllerChannel
-      ? controller.send(content, replyToRef.current?.id)
-      : controller.sendToChannel(channelId, content, replyToRef.current?.id);
+      ? controller.send(content, replyToId)
+      : controller.sendToChannel(sendChannelId, content, replyToId);
     if (!accepted) return;
     clearLocalComposer();
     setSelectedIdx(-1);

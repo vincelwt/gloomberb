@@ -251,6 +251,7 @@ function createRuntime(payload: CliPaneShotPayload): PluginRuntimeAccess {
     openCommandBar: () => {},
     showPane: () => {},
     hidePane: () => {},
+    focusPane: () => {},
     openPaneSettings: () => {},
     openPluginCommandWorkflow: () => {},
     notify: () => {},

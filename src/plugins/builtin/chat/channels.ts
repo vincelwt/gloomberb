@@ -1,5 +1,6 @@
 import type { CommandResultDef, GloomPluginContext } from "../../../types/plugin";
-import type { ChatChannel } from "../../../api-client";
+import type { ChatChannel, ChatChannelState } from "../../../api-client";
+import type { AppConfig, PaneInstanceConfig } from "../../../types/config";
 import { chatController } from "./controller";
 
 export const DEFAULT_CHAT_CHANNEL_ID = "everyone";
@@ -19,6 +20,30 @@ export function normalizeShortcutChannelId(channelId: string | null | undefined)
 
 export function getLastVisitedChatChannelId(config: { pluginConfig: Record<string, Record<string, unknown>> }) {
   return normalizeChannelId(config.pluginConfig["gloomberb-cloud"]?.[LAST_VISITED_CHAT_CHANNEL_KEY] as string | undefined);
+}
+
+export function findChatPaneInstanceForChannel(config: AppConfig, channelId: string): PaneInstanceConfig | undefined {
+  const normalizedChannelId = normalizeChannelId(channelId);
+  return config.layout.instances.find((instance) => (
+    instance.paneId === "chat"
+    && normalizeChannelId(typeof instance.settings?.channelId === "string" ? instance.settings.channelId : null) === normalizedChannelId
+  ));
+}
+
+export function getPreferredChatOpenChannelId(
+  config: AppConfig,
+  snapshot?: { channels: ChatChannel[]; channelStates: ChatChannelState[] },
+) {
+  if (!snapshot) return getLastVisitedChatChannelId(config);
+  const channelById = new Map(snapshot.channels.map((channel) => [channel.id, channel]));
+  const unreadStates = snapshot.channelStates
+    .filter((state) => state.unreadCount > 0 && channelById.has(state.channelId))
+    .sort((a, b) => b.unreadCount - a.unreadCount);
+  const unreadConversation = unreadStates.find((state) => {
+    const kind = channelById.get(state.channelId)?.kind ?? "public";
+    return kind === "direct" || kind === "group";
+  });
+  return normalizeChannelId(unreadConversation?.channelId ?? unreadStates[0]?.channelId ?? getLastVisitedChatChannelId(config));
 }
 
 export function formatChannelLabel(channel: ChatChannel | undefined, fallbackId: string) {
@@ -63,20 +88,20 @@ export function hasOnlyDmUsernameArgs(value: string): boolean {
   return parts.length > 0 && parts.every((part) => CHAT_USERNAME_ARG.test(part));
 }
 
-function openChatChannelFromCommand(ctx: GloomPluginContext, channelId: string): void {
+function openChatChannelFromCommand(ctx: Pick<GloomPluginContext, "createPaneFromTemplate" | "focusPane" | "getConfig">, channelId: string): void {
+  const existingInstance = findChatPaneInstanceForChannel(ctx.getConfig(), channelId);
+  if (existingInstance) {
+    ctx.focusPane(existingInstance.instanceId);
+    return;
+  }
   ctx.createPaneFromTemplate("new-chat-pane", { arg: channelId });
 }
 
 export function openDefaultChatFromCommand(
-  ctx: Pick<GloomPluginContext, "createPaneFromTemplate" | "getConfig" | "showPane">,
+  ctx: Pick<GloomPluginContext, "createPaneFromTemplate" | "focusPane" | "getConfig">,
 ): void {
   const config = ctx.getConfig();
-  const hasChatPane = config.layout.instances.some((instance) => instance.paneId === "chat");
-  if (hasChatPane) {
-    ctx.showPane("chat");
-    return;
-  }
-  ctx.createPaneFromTemplate("new-chat-pane", { arg: getLastVisitedChatChannelId(config) });
+  openChatChannelFromCommand(ctx, getPreferredChatOpenChannelId(config, chatController.getSnapshot()));
 }
 
 export async function openDmTargetFromCommand(ctx: GloomPluginContext, usernames: string[]): Promise<void> {

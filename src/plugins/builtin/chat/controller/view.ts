@@ -80,7 +80,7 @@ export class ChatControllerView {
 
   emit(channelId?: string): void {
     for (const entry of this.listeners) {
-      if (channelId && entry.channelId !== channelId) continue;
+      if (channelId && entry.channelId !== channelId && entry.channelId !== DEFAULT_CHAT_CHANNEL_ID) continue;
       const snapshot = this.options.getListenerSnapshot(entry.channelId);
       try {
         entry.listener(snapshot);

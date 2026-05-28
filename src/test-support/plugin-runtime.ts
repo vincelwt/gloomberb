@@ -26,6 +26,7 @@ export function createTestPluginRuntime(
     showPane() {},
     createPaneFromTemplate() {},
     hidePane() {},
+    focusPane() {},
     openPaneSettings() {},
     openPluginCommandWorkflow() {},
     notify() {},

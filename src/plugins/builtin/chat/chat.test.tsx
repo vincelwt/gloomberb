@@ -17,6 +17,7 @@ import {
   createHarness,
   hexToRgbaInts,
   installChatApiTestDefaults,
+  installServerChannels,
   lineText,
   makeMessage,
   type ChatTestSetup,
@@ -993,13 +994,17 @@ describe("ChatContent", () => {
       sessionToken: "token-123",
       user: { id: "u1", username: "vince", emailVerified: true },
     });
-    const openedPanes: string[] = [];
+    const openedTemplates: Array<{ templateId: string; options?: { arg?: string } }> = [];
+    const focusedPanes: string[] = [];
     const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
     state.config.disabledPlugins = [];
 
     const runtime = createTestPluginRuntime({
-      showPane(paneId: string) {
-        openedPanes.push(paneId);
+      createPaneFromTemplate(templateId: string, options?: { arg?: string }) {
+        openedTemplates.push({ templateId, options });
+      },
+      focusPane(paneId: string) {
+        focusedPanes.push(paneId);
       },
     });
 
@@ -1042,7 +1047,78 @@ describe("ChatContent", () => {
       await setup().renderOnce();
     });
 
-    expect(openedPanes).toEqual(["chat"]);
+    expect(openedTemplates).toEqual([]);
+    expect(focusedPanes).toHaveLength(1);
+    expect(focusedPanes[0]?.startsWith("chat:")).toBe(true);
+  });
+
+  test("opens an unread direct-message channel from the status widget", async () => {
+    const controller = createController({
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    });
+    const dmChannelId = "dm:test";
+    installServerChannels(controller, [
+      { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
+      {
+        id: dmChannelId,
+        name: "@bob",
+        kind: "direct",
+        created_at: "2026-05-27T10:30:03.712Z",
+        dmUser: { id: "u2", username: "bob", displayName: "Bob" },
+      },
+    ]);
+    const openedTemplates: Array<{ templateId: string; options?: { arg?: string } }> = [];
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+    state.config.disabledPlugins = [];
+
+    const runtime = createTestPluginRuntime({
+      createPaneFromTemplate(templateId: string, options?: { arg?: string }) {
+        openedTemplates.push({ templateId, options });
+      },
+    });
+
+    await act(async () => {
+      testSetup = await testRender(
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={runtime}>
+            <ChatStatusWidget controller={controller} />
+          </PluginRenderProvider>
+        </AppContext>,
+        { width: 40, height: 1 },
+      );
+    });
+
+    await flushFrame();
+
+    await act(async () => {
+      (controller as any).mergeMessages(dmChannelId, [{
+        id: "dm-m1",
+        channelId: dmChannelId,
+        content: "private ping",
+        replyToId: null,
+        createdAt: "2026-05-27T10:31:00.000Z",
+        user: { id: "u2", username: "bob", displayName: "Bob" },
+      } satisfies ChatMessage]);
+    });
+    await flushFrame();
+
+    const frame = setup().captureCharFrame();
+    expect(frame).toContain("vince");
+    expect(frame).toContain("[1]");
+
+    const line = frame.split("\n")[0] ?? "";
+    const badgeCol = line.indexOf("[1]");
+
+    expect(badgeCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await setup().mockMouse.click(badgeCol + 1, 0);
+      await setup().renderOnce();
+      await setup().renderOnce();
+    });
+
+    expect(openedTemplates).toEqual([{ templateId: "new-chat-pane", options: { arg: dmChannelId } }]);
   });
 
 });

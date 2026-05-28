@@ -69,6 +69,9 @@ export function usePluginAppActions() {
   const hidePane = useCallback((paneId: string) => {
     runtime.hidePane(paneId);
   }, [runtime]);
+  const focusPane = useCallback((paneId: string) => {
+    runtime.focusPane(paneId);
+  }, [runtime]);
   const openPaneSettings = useCallback((paneId?: string) => {
     runtime.openPaneSettings(paneId);
   }, [runtime]);
@@ -84,6 +87,7 @@ export function usePluginAppActions() {
     showPane,
     createPaneFromTemplate,
     hidePane,
+    focusPane,
     openPaneSettings,
     openPluginCommandWorkflow,
     notify,

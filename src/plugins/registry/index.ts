@@ -147,6 +147,9 @@ export class PluginRegistry implements PluginRuntimeAccess {
   hidePane = (paneId: string) => {
     this.hidePaneFn(paneId);
   };
+  focusPane = (paneId: string) => {
+    this.focusPaneFn(paneId);
+  };
 
   getLayoutFn: (() => LayoutConfig) = () => ({ dockRoot: null, instances: [], floating: [], detached: [] });
   updateLayoutFn: ((layout: LayoutConfig) => void) = () => {};

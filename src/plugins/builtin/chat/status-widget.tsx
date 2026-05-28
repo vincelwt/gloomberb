@@ -4,10 +4,20 @@ import { colors, hoverBg } from "../../../theme/colors";
 import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../../ui";
 import { usePluginAppActions } from "../../runtime";
 import { InlineAuthActions } from "../cloud/auth-actions";
+import {
+  findChatPaneInstanceForChannel,
+  getPreferredChatOpenChannelId,
+} from "./channels";
 import { chatController, type ChatController } from "./controller";
 
 interface ChatStatusWidgetProps {
   controller?: Pick<ChatController, "getSnapshot" | "refreshSession" | "subscribe">;
+}
+
+type ChatStatusSnapshot = ReturnType<ChatController["getSnapshot"]>;
+
+function getTotalUnreadCount(snapshot: ChatStatusSnapshot) {
+  return snapshot.channelStates.reduce((total, state) => total + Math.max(0, state.unreadCount), 0);
 }
 
 function CloudStatusIcon() {
@@ -43,25 +53,33 @@ function CloudStatusIcon() {
 }
 
 export function ChatStatusWidget({ controller = chatController }: ChatStatusWidgetProps) {
-  const { showPane } = usePluginAppActions();
-  const cloudPluginDisabled = useAppSelector((state) => state.config.disabledPlugins.includes("gloomberb-cloud"));
+  const { createPaneFromTemplate, focusPane } = usePluginAppActions();
+  const config = useAppSelector((state) => state.config);
+  const cloudPluginDisabled = config.disabledPlugins.includes("gloomberb-cloud");
   const initialSnapshot = controller.getSnapshot();
   const [username, setUsername] = useState<string | null>(initialSnapshot.user?.username ?? null);
   const [hasSavedSession, setHasSavedSession] = useState(initialSnapshot.hasSavedSession);
-  const [unreadMentionCount, setUnreadMentionCount] = useState(initialSnapshot.unreadMentionCount);
+  const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const unreadCount = getTotalUnreadCount(snapshot);
   const [hovered, setHovered] = useState(false);
 
   const openChat = (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
-    showPane("chat");
+    const channelId = getPreferredChatOpenChannelId(config, snapshot);
+    const existingInstance = findChatPaneInstanceForChannel(config, channelId);
+    if (existingInstance) {
+      focusPane(existingInstance.instanceId);
+      return;
+    }
+    createPaneFromTemplate("new-chat-pane", { arg: channelId });
   };
 
   useEffect(() => {
-    const unsubscribe = controller.subscribe((snapshot) => {
-      setUsername(snapshot.user?.username ?? null);
-      setHasSavedSession(snapshot.hasSavedSession);
-      setUnreadMentionCount(snapshot.unreadMentionCount);
+    const unsubscribe = controller.subscribe((nextSnapshot) => {
+      setSnapshot(nextSnapshot);
+      setUsername(nextSnapshot.user?.username ?? null);
+      setHasSavedSession(nextSnapshot.hasSavedSession);
     });
     void controller.refreshSession().catch(() => {});
     return unsubscribe;
@@ -84,7 +102,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
           onMouseOut={() => setHovered((current) => (current ? false : current))}
           onMouseDown={openChat}
         >
-          <Text fg={unreadMentionCount > 0 ? colors.text : colors.textDim}>
+          <Text fg={unreadCount > 0 ? colors.text : colors.textDim}>
             <Span fg={colors.positive}>@</Span>
             {username ? (
               <>
@@ -93,8 +111,8 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
               </>
             ) : null}
           </Text>
-          {unreadMentionCount > 0 ? (
-            <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{` [${unreadMentionCount}]`}</Text>
+          {unreadCount > 0 ? (
+            <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{` [${unreadCount}]`}</Text>
           ) : null}
         </Box>
       )}

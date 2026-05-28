@@ -33,6 +33,7 @@ export interface PluginRuntimeAccess {
   showPane(paneId: string): void;
   createPaneFromTemplate(templateId: string, options?: PaneTemplateCreateOptions): void;
   hidePane(paneId: string): void;
+  focusPane(paneId: string): void;
   openPaneSettings(paneId?: string): void;
   openPluginCommandWorkflow(commandId: string): void;
   notify(notification: AppNotificationRequest): void;
