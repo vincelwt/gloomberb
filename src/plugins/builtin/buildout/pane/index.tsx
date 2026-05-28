@@ -373,16 +373,16 @@ export function BuildoutPane({ focused, width, height }: PaneProps) {
       )}
       columns={columns}
       items={rows}
-      selectedIndex={selectedIndex}
-      onSelectIndex={(index) => setSelectedIndex(index)}
-      onActivateIndex={(_index, row) => activateRow(row)}
+      selection={{
+        kind: "index",
+        selectedIndex,
+        onChange: (index) => setSelectedIndex(index),
+      }}
+      onActivate={activateRow}
       sortColumnId={sortColumnId}
       sortDirection={sortDirection}
       onHeaderClick={handleHeaderClick}
       getItemKey={rowKey}
-      isSelected={(row) => selectedRow ? rowKey(row) === rowKey(selectedRow) : false}
-      onSelect={(_row, index) => setSelectedIndex(index)}
-      onActivate={activateRow}
       renderCell={renderCell}
       bodyAfter={hiddenCompanyCount > 0 ? (
         <CompaniesUpgradeCta

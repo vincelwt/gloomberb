@@ -1,4 +1,4 @@
-import type { DataProvider, SecFilingItem } from "../../types/data-provider";
+import type { DataProvider, SecFilingDocument, SecFilingItem } from "../../types/data-provider";
 import type { NewsArticle } from "../../news/types";
 import type { OptionsChain } from "../../types/financials";
 import type { NewsRequest, OptionsRequest, SecFilingsRequest } from "../request-types";
@@ -26,6 +26,7 @@ import {
   buildNewsKey,
   buildOptionsKey,
   buildSecContentKey,
+  buildSecDocumentsKey,
   buildSecFilingsKey,
   toMarketDataContext,
 } from "../selectors";
@@ -166,6 +167,33 @@ export function loadSecFilingContentEntry(options: {
       const status = data ? "success" : "empty";
       const attempts = [createAttempt(dataProvider.id, startedAt, status, data ? undefined : "NO_DATA")];
       return store.update(key, (current) => readyEntry(current, data, dataProvider.id, attempts, { keepLastGoodOnEmpty: true }));
+    },
+  });
+}
+
+export function loadSecFilingDocumentsEntry(options: {
+  dataProvider: DataProvider;
+  filing: SecFilingItem;
+  store: QueryStore<SecFilingDocument[]>;
+  runSingleFlight: RunSingleFlight;
+}): Promise<QueryEntry<SecFilingDocument[]>> {
+  const { dataProvider, filing, store, runSingleFlight } = options;
+  const key = buildSecDocumentsKey(filing.accessionNumber);
+  return loadAuxiliaryEntry({
+    dataProvider,
+    key,
+    store,
+    ttlMs: SEC_CONTENT_CACHE_TTL_MS,
+    runSingleFlight,
+    load: async (startedAt) => {
+      if (!dataProvider.getSecFilingDocuments) {
+        const attempt = createAttempt(dataProvider.id, startedAt, "unsupported", "UNSUPPORTED_RANGE", "SEC filing documents are not available");
+        return store.update(key, (current) => errorEntry(current, attempt));
+      }
+      const data = await dataProvider.getSecFilingDocuments(filing);
+      const status = data.length > 0 ? "success" : "empty";
+      const attempts = [createAttempt(dataProvider.id, startedAt, status, data.length > 0 ? undefined : "NO_DATA")];
+      return store.update(key, (current) => readyEntry(current, data.length > 0 ? data : null, dataProvider.id, attempts, { keepLastGoodOnEmpty: true }));
     },
   });
 }

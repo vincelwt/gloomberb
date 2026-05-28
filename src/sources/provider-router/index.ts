@@ -219,6 +219,10 @@ export class AssetDataRouter implements DataProvider {
     return this.documentRoutes.getSecFilings(ticker, count, exchange, context);
   }
 
+  async getSecFilingDocuments(filing: SecFilingItem) {
+    return this.documentRoutes.getSecFilingDocuments(filing);
+  }
+
   async getSecFilingContent(filing: SecFilingItem): Promise<string | null> {
     return this.documentRoutes.getSecFilingContent(filing);
   }

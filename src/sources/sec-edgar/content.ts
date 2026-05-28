@@ -1,7 +1,7 @@
 const MAX_CONTENT_CHARS = 16_000;
 const OWNERSHIP_FORMS = new Set(["3", "3/A", "4", "4/A", "5", "5/A"]);
 
-export const PDF_FALLBACK_MESSAGE = "This filing's primary document is a PDF. Inline PDF extraction is not supported here; open the filing URL below to view the full document.";
+export const PDF_FALLBACK_MESSAGE = "This SEC document is a PDF. Inline PDF text extraction is not supported here.";
 
 export function isPdfDocument(body: string, contentType = "", url = ""): boolean {
   return /pdf/i.test(contentType)
@@ -43,11 +43,17 @@ function collapseDocumentLines(text: string): string[] {
 }
 
 function trimLeadingNoise(lines: string[]): string[] {
-  const startIndex = lines.findIndex((line) => /^(UNITED STATES|FORM [0-9A-Z-]+|SCHEDULE 14A|PROXY STATEMENT|NOTICE OF|ANNUAL REPORT|QUARTERLY REPORT|CURRENT REPORT)/i.test(line));
+  const startIndex = lines.findIndex((line) => /^(UNITED STATES|FORM [0-9A-Z-]+|SCHEDULE 14A|PROXY STATEMENT|NOTICE OF|ANNUAL REPORT|QUARTERLY REPORT|CURRENT REPORT|EXHIBIT\s+\d)/i.test(line));
   if (startIndex <= 0) return lines;
 
   const prefix = lines.slice(0, startIndex);
-  const noiseCount = prefix.filter((line) => /^Table of Contents$/i.test(line) || line.length < 5).length;
+  const noiseCount = prefix.filter((line) => (
+    /^Table of Contents$/i.test(line)
+    || /^EX[-\s]?\d/i.test(line)
+    || /\.(?:html?|xml|xsd|txt|pdf)$/i.test(line)
+    || /^\d+$/.test(line)
+    || line.length < 5
+  )).length;
   return noiseCount >= Math.max(1, prefix.length - 1)
     ? lines.slice(startIndex)
     : lines;

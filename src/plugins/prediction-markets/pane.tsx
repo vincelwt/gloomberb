@@ -260,12 +260,16 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       rootWidth={width}
       rootHeight={height}
       rootBackgroundColor={colors.panel}
-      selectedIndex={controller.selectedIndex}
-      onSelectIndex={(_index, row) =>
-        controller.actions.setBrowseSelection(row.key, {
-          debounceDetail: true,
-        })}
-      onActivateIndex={(_index, row) =>
+      selection={{
+        kind: "id",
+        selectedId: controller.selectedRow?.key ?? null,
+        getId: (row) => row.key,
+        onChange: (key, _row, _index, reason) =>
+          controller.actions.setBrowseSelection(key, {
+            debounceDetail: reason === "keyboard",
+          }),
+      }}
+      onActivate={(row) =>
         controller.actions.openSelectedRow(row.key)}
       columns={controller.visibleColumns}
       items={controller.visibleRows}
@@ -275,9 +279,6 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       headerScrollRef={controller.headerScrollRef}
       scrollRef={controller.scrollRef}
       getItemKey={(row) => row.key}
-      isSelected={(row) => controller.selectedRow?.key === row.key}
-      onSelect={(row) => controller.actions.setBrowseSelection(row.key)}
-      onActivate={(row) => controller.actions.openSelectedRow(row.key)}
       virtualize
       renderCell={renderCell}
       emptyStateTitle="No markets matched."

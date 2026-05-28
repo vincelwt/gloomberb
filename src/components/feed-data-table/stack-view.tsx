@@ -327,9 +327,12 @@ export function FeedDataTableStackView({
       onBack={() => setOpenItemId(null)}
       detailContent={detailContent}
       detailTitle={openItem ? openItem.detailTitle ?? openItem.title : undefined}
-      selectedIndex={activeRowIndex}
-      onSelectIndex={(_index, row) => onSelect(row.itemIndex)}
-      onActivateIndex={(_index, row) => openRow(row)}
+      selection={{
+        kind: "index",
+        selectedIndex: activeRowIndex,
+        onChange: (_index, row) => onSelect(row.itemIndex),
+      }}
+      onActivate={(row) => openRow(row)}
       rootBefore={rootBefore}
       rootAfter={rootAfter}
       rootWidth={width}
@@ -345,11 +348,6 @@ export function FeedDataTableStackView({
           nextSortPreference(current, columnId as DetailColumnId)
         )}
       getItemKey={(row) => row.item.id}
-      isSelected={(row, index) =>
-        row.itemIndex === selectedIdx || (selectedIdx < 0 && index === 0)
-      }
-      onSelect={(row) => onSelect(row.itemIndex)}
-      onActivate={openRow}
       renderCell={renderCell}
       emptyStateTitle={emptyStateTitle}
       emptyStateHint={emptyStateHint}

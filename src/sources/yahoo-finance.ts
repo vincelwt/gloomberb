@@ -226,6 +226,10 @@ export class YahooFinanceClient implements DataProvider {
     return this.secClient.getRecentFilings(ticker, count);
   }
 
+  async getSecFilingDocuments(filing: SecFilingItem) {
+    return this.secClient.getFilingDocuments(filing);
+  }
+
   async getSecFilingContent(filing: SecFilingItem): Promise<string | null> {
     return this.secClient.getFilingContent(filing);
   }

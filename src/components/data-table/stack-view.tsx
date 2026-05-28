@@ -10,13 +10,12 @@ import { PageStackView, type DataTableColumn } from "../ui";
 export interface DataTableStackViewProps<
   T,
   C extends DataTableColumn = DataTableColumn,
-> extends Omit<DataTableViewProps<T, C>, "focused" | "selectedIndex"> {
+> extends Omit<DataTableViewProps<T, C>, "focused"> {
   focused: boolean;
   detailOpen: boolean;
   onBack: () => void;
   detailContent: ReactNode;
   detailTitle?: string;
-  selectedIndex: number;
   onDetailKeyDown?: (event: DataTableKeyEvent) => boolean | void;
 }
 

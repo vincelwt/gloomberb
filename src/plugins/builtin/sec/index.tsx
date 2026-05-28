@@ -1,10 +1,10 @@
 import { Text } from "../../../ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GloomPlugin } from "../../../types/plugin";
-import type { SecFilingItem } from "../../../types/data-provider";
-import { useResolvedEntryValue, useSecFilingContent, useSecFilingsQuery } from "../../../market-data/hooks";
+import type { SecFilingDocument, SecFilingItem } from "../../../types/data-provider";
+import { useResolvedEntryValue, useSecFilingContent, useSecFilingDocuments, useSecFilingsQuery } from "../../../market-data/hooks";
 import { instrumentFromTicker } from "../../../market-data/request-types";
-import { usePluginPaneState } from "../../runtime";
+import { useDebouncedPluginPaneState } from "../../runtime";
 import { usePaneTicker } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import { FeedDataTableStackView, Spinner, useExternalLinkFooter, type FeedDataTableItem } from "../../../components";
@@ -17,6 +17,14 @@ import {
   formatFilingMetaDate,
   renderFilingNotice,
 } from "./filing-display";
+import {
+  documentContentKey,
+  documentContentTarget,
+  documentHeading,
+  formatCompactDocumentLabel,
+  isDefaultVisibleFilingDocument,
+  isInlineExhibitDocument,
+} from "./filing-documents";
 
 const SEC_FILING_LIMIT = 50;
 const OWNERSHIP_FORMS = new Set(["3", "4", "5"]);
@@ -80,6 +88,50 @@ function buildDetailBody(filing: SecFilingItem): string {
     : "No additional SEC filing description is available for this entry.";
 }
 
+function buildDetailBodyWithDocuments({
+  filing,
+  documents,
+  documentsLoading,
+  contentCache,
+  primaryContent,
+}: {
+  filing: SecFilingItem;
+  documents: SecFilingDocument[];
+  documentsLoading: boolean;
+  contentCache: Map<string, string | null>;
+  primaryContent: string;
+}): string {
+  const lines: string[] = [];
+  lines.push("Documents");
+  if (documentsLoading && documents.length === 0) {
+    lines.push("Loading filing documents...");
+  } else if (documents.length === 0) {
+    lines.push("No filing documents were listed for this filing.");
+  } else {
+    const visibleDocuments = documents.filter(isDefaultVisibleFilingDocument);
+    lines.push(...visibleDocuments.map(formatCompactDocumentLabel));
+    const hiddenCount = documents.length - visibleDocuments.length;
+    if (hiddenCount > 0) lines.push(`+ ${hiddenCount} support documents hidden`);
+  }
+
+  const exhibits = documents.filter(isInlineExhibitDocument);
+  if (exhibits.length > 0) {
+    lines.push("", "Inline Exhibits");
+    for (const document of exhibits) {
+      const key = documentContentKey(filing, document);
+      const hasContent = contentCache.has(key);
+      const content = contentCache.get(key);
+      lines.push("", documentHeading(document));
+      lines.push(hasContent
+        ? content || "Readable document content was not available for this exhibit."
+        : "Loading exhibit content...");
+    }
+  }
+
+  lines.push("", "Primary Filing Content", primaryContent);
+  return lines.join("\n");
+}
+
 function buildForm4Preview(content: string | null): string | null {
   if (!content) return null;
   const tx = parseForm4Xml(content);
@@ -134,6 +186,8 @@ function toFeedItems(
   selectedAccessionNumber: string | undefined,
   contentCache: Map<string, string | null>,
   loadingContent: boolean,
+  selectedDocuments: SecFilingDocument[],
+  loadingDocuments: boolean,
 ): FeedDataTableItem[] {
   return filings.map((filing) => {
     const displayTitle = getFilingDisplayTitle(filing);
@@ -152,6 +206,19 @@ function toFeedItems(
     const form4Detail = isOwnership && hasFetchedContent
       ? buildForm4Detail(fetchedContent ?? null, filing)
       : null;
+    const selected = filing.accessionNumber === selectedAccessionNumber;
+    const primaryDetailBody = loadingContent && selected
+      ? "Loading filing content..."
+      : form4Detail ?? fetchedContent ?? fallbackBody;
+    const detailBody = selected
+      ? buildDetailBodyWithDocuments({
+          filing,
+          documents: selectedDocuments,
+          documentsLoading: loadingDocuments,
+          contentCache,
+          primaryContent: primaryDetailBody,
+        })
+      : form4Detail ?? fallbackBody;
 
     const enrichedTitle = formDesc
       ? `${displayTitle} — ${formDesc}`
@@ -170,13 +237,7 @@ function toFeedItems(
         `Accession ${filing.accessionNumber}`,
         ...(filing.items ? [`Items ${filing.items}`] : []),
       ],
-      detailBody: filing.accessionNumber === selectedAccessionNumber
-        ? (
-            loadingContent
-              ? "Loading filing content..."
-              : form4Detail ?? fetchedContent ?? fallbackBody
-          )
-        : form4Detail ?? fallbackBody,
+      detailBody,
     };
   });
 }
@@ -184,7 +245,7 @@ function toFeedItems(
 function SecView({ width, height, focused }: { width: number; height: number; focused: boolean }) {
   const { ticker } = usePaneTicker();
   const selectionKey = `selectedIdx:${ticker?.metadata.ticker ?? "none"}`;
-  const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>(selectionKey, 0);
+  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>(selectionKey, 0);
   const [contentCache, setContentCache] = useState<Map<string, string | null>>(new Map());
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const contentFetchRef = useRef(0);
@@ -204,28 +265,67 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
     contentFetchRef.current += 1;
   }, [eligibleTicker, ticker?.metadata.exchange, ticker?.metadata.ticker]);
 
-  const selected = filings[selectedIdx];
   const openFiling = openItemId
     ? filings.find((filing) => filing.accessionNumber === openItemId) ?? null
     : null;
-  const cachedSelectedContent = selected ? contentCache.get(selected.accessionNumber) : undefined;
+  const cachedOpenContent = openFiling ? contentCache.get(openFiling.accessionNumber) : undefined;
   const filingContentEntry = useSecFilingContent(
-    selected && cachedSelectedContent === undefined ? selected : null,
+    openFiling && cachedOpenContent === undefined ? openFiling : null,
   );
   const filingContent = useResolvedEntryValue(filingContentEntry);
   const loadingContent = filingContentEntry?.phase === "loading" || filingContentEntry?.phase === "refreshing";
+  const documentsEntry = useSecFilingDocuments(openFiling ?? null);
+  const openDocuments = useResolvedEntryValue(documentsEntry) ?? [];
+  const loadingDocuments = !!openFiling && (
+    documentsEntry?.phase === "idle"
+    || documentsEntry?.phase === "loading"
+    || documentsEntry?.phase === "refreshing"
+  );
 
   useEffect(() => {
-    if (!selected) return;
-    if (cachedSelectedContent !== undefined) return;
+    if (!openFiling) return;
+    if (cachedOpenContent !== undefined) return;
     if (filingContentEntry?.phase === "error") {
-      setContentCache((prev) => new Map(prev).set(selected.accessionNumber, null));
+      setContentCache((prev) => new Map(prev).set(openFiling.accessionNumber, null));
       return;
     }
     if (filingContent !== null) {
-      setContentCache((prev) => new Map(prev).set(selected.accessionNumber, filingContent));
+      setContentCache((prev) => new Map(prev).set(openFiling.accessionNumber, filingContent));
     }
-  }, [cachedSelectedContent, filingContent, filingContentEntry?.phase, selected]);
+  }, [cachedOpenContent, filingContent, filingContentEntry?.phase, openFiling]);
+
+  const documentFetchStartedRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!openFiling || openDocuments.length === 0) return;
+    const coordinator = getSharedMarketDataCoordinator();
+    if (!coordinator) return;
+    const gen = contentFetchRef.current;
+    const documentsToFetch = openDocuments.filter((document) => {
+      if (!isInlineExhibitDocument(document)) return false;
+      const key = documentContentKey(openFiling, document);
+      return !contentCache.has(key) && !documentFetchStartedRef.current.has(key);
+    });
+    if (documentsToFetch.length === 0) return;
+
+    for (const document of documentsToFetch) {
+      documentFetchStartedRef.current.add(documentContentKey(openFiling, document));
+    }
+
+    (async () => {
+      for (const document of documentsToFetch) {
+        if (contentFetchRef.current !== gen) return;
+        const key = documentContentKey(openFiling, document);
+        try {
+          const entry = await coordinator.loadSecFilingContent(documentContentTarget(openFiling, document));
+          if (contentFetchRef.current !== gen) return;
+          setContentCache((prev) => new Map(prev).set(key, entry.data ?? entry.lastGoodData ?? null));
+        } catch {
+          if (contentFetchRef.current !== gen) return;
+          setContentCache((prev) => new Map(prev).set(key, null));
+        }
+      }
+    })();
+  }, [contentCache, openFiling, openDocuments]);
 
   useEffect(() => {
     if (filings.length > 0 && selectedIdx >= filings.length) {
@@ -235,6 +335,11 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
 
   // Background prefetch Form 4 content for enriched previews
   const prefetchStartedRef = useRef(new Set<string>());
+  useEffect(() => {
+    prefetchStartedRef.current.clear();
+    documentFetchStartedRef.current.clear();
+  }, [eligibleTicker, ticker?.metadata.exchange, ticker?.metadata.ticker]);
+
   useEffect(() => {
     if (filings.length === 0) return;
     const coordinator = getSharedMarketDataCoordinator();
@@ -288,7 +393,14 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
       width={width}
       height={height}
       focused={focused}
-      items={toFeedItems(filings, selected?.accessionNumber, contentCache, loadingContent)}
+      items={toFeedItems(
+        filings,
+        openFiling?.accessionNumber,
+        contentCache,
+        loadingContent,
+        openDocuments,
+        loadingDocuments,
+      )}
       selectedIdx={selectedIdx}
       onSelect={setSelectedIdx}
       onOpenItemIdChange={setOpenItemId}

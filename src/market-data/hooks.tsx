@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
-import type { SecFilingItem } from "../types/data-provider";
+import type { SecFilingDocument, SecFilingItem } from "../types/data-provider";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
 import type { ChartRequest, InstrumentRef, OptionsRequest, SecFilingsRequest } from "./request-types";
@@ -17,6 +17,7 @@ import {
   buildOptionsKey,
   buildQuoteKey,
   buildSecContentKey,
+  buildSecDocumentsKey,
   buildSecFilingsKey,
   buildSnapshotKey,
 } from "./selectors";
@@ -310,6 +311,21 @@ export function useSecFilingContent(filing: SecFilingItem | null | undefined): Q
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !filing) return;
     void coordinator.loadSecFilingContent(filing).catch(() => {});
+  }, [key]);
+
+  return entry;
+}
+
+export function useSecFilingDocuments(filing: SecFilingItem | null | undefined): QueryEntry<SecFilingDocument[]> | null {
+  const key = filing ? buildSecDocumentsKey(filing.accessionNumber) : null;
+  useCoordinatorKeysVersion(key ? [key] : []);
+  const coordinator = getSharedMarketDataCoordinator();
+  const entry = coordinator && filing ? coordinator.getSecDocumentsEntry(filing.accessionNumber) : null;
+
+  useEffect(() => {
+    const coordinator = getSharedMarketDataCoordinator();
+    if (!coordinator || !filing) return;
+    void coordinator.loadSecFilingDocuments(filing).catch(() => {});
   }, [key]);
 
   return entry;

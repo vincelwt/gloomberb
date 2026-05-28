@@ -67,18 +67,18 @@ function Harness() {
             )
           }
           detailTitle={openRow?.title}
-          selectedIndex={selectedIndex}
-          onSelectIndex={(index) => setSelectedIndex(index)}
-          onActivateIndex={(_index, row) => setOpenRow(row)}
+          selection={{
+            kind: "index",
+            selectedIndex,
+            onChange: (index) => setSelectedIndex(index),
+          }}
+          onActivate={(row) => setOpenRow(row)}
           columns={columns}
           items={rows}
           sortColumnId={null}
           sortDirection="asc"
           onHeaderClick={() => {}}
           getItemKey={(row) => row.id}
-          isSelected={(_row, index) => index === selectedIndex}
-          onSelect={(_row, index) => setSelectedIndex(index)}
-          onActivate={(row) => setOpenRow(row)}
           renderCell={(row): DataTableCell => ({ text: row.title })}
           emptyStateTitle="No rows"
           showHorizontalScrollbar={false}
@@ -90,13 +90,14 @@ function Harness() {
 
 function GroupedHarness() {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [cursorIndex, setCursorIndex] = useState(0);
   const state = createInitialState(
     createDefaultConfig("/tmp/gloomberb-data-table-stack-view-grouped-test"),
   );
   const columns: Column[] = [
     { id: "title", label: "Title", width: 20, align: "left" },
   ];
-  const selectedTitle = groupedRows[selectedIndex]?.title ?? "none";
+  const selectedTitle = groupedRows[cursorIndex]?.title ?? "none";
 
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
@@ -106,8 +107,12 @@ function GroupedHarness() {
           detailOpen={false}
           onBack={() => {}}
           detailContent={<Box flexGrow={1} />}
-          selectedIndex={selectedIndex}
-          onSelectIndex={(index) => setSelectedIndex(index)}
+          selection={{
+            kind: "index",
+            selectedIndex,
+            onChange: (index) => setSelectedIndex(index),
+          }}
+          onCursorChange={(_row, index) => setCursorIndex(index)}
           isNavigable={(row) => row.type !== "section"}
           rootAfter={
             <Box height={1}>
@@ -120,8 +125,6 @@ function GroupedHarness() {
           sortDirection="asc"
           onHeaderClick={() => {}}
           getItemKey={(row) => row.id}
-          isSelected={(_row, index) => index === selectedIndex}
-          onSelect={(_row, index) => setSelectedIndex(index)}
           renderSectionHeader={(row) => row.type === "section"
             ? { text: row.title }
             : null}

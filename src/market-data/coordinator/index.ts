@@ -1,4 +1,4 @@
-import type { DataProvider, SecFilingItem } from "../../types/data-provider";
+import type { DataProvider, SecFilingDocument, SecFilingItem } from "../../types/data-provider";
 import type { NewsArticle } from "../../news/types";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../../types/financials";
 import type { ChartRequest, InstrumentRef, NewsRequest, OptionsRequest, SecFilingsRequest } from "../request-types";
@@ -13,6 +13,7 @@ import {
   buildOptionsKey,
   buildQuoteKey,
   buildSecContentKey,
+  buildSecDocumentsKey,
   buildSecFilingsKey,
   buildSnapshotKey,
   resolveEntryData,
@@ -41,6 +42,7 @@ import {
   loadNewsEntry,
   loadOptionsEntry,
   loadSecFilingContentEntry,
+  loadSecFilingDocumentsEntry,
   loadSecFilingsEntry,
 } from "./auxiliary";
 import {
@@ -72,6 +74,7 @@ export class MarketDataCoordinator {
   private readonly newsStore = new QueryStore<NewsArticle[]>((key) => this.events.bump(key));
   private readonly optionsStore = new QueryStore<OptionsChain>((key) => this.events.bump(key));
   private readonly secFilingsStore = new QueryStore<SecFilingItem[]>((key) => this.events.bump(key));
+  private readonly secDocumentsStore = new QueryStore<SecFilingDocument[]>((key) => this.events.bump(key));
   private readonly secContentStore = new QueryStore<string | null>((key) => this.events.bump(key));
   private readonly articleSummaryStore = new QueryStore<string | null>((key) => this.events.bump(key));
   private readonly fxStore = new QueryStore<number>((key) => this.events.bump(key));
@@ -133,6 +136,10 @@ export class MarketDataCoordinator {
 
   getSecContentEntry(accessionNumber: string): QueryEntry<string | null> {
     return this.secContentStore.get(buildSecContentKey(accessionNumber));
+  }
+
+  getSecDocumentsEntry(accessionNumber: string): QueryEntry<SecFilingDocument[]> {
+    return this.secDocumentsStore.get(buildSecDocumentsKey(accessionNumber));
   }
 
   getArticleSummaryEntry(url: string): QueryEntry<string | null> {
@@ -332,6 +339,15 @@ export class MarketDataCoordinator {
       dataProvider: this.dataProvider,
       filing,
       store: this.secContentStore,
+      runSingleFlight: (key, task) => this.runSingleFlight(key, task),
+    });
+  }
+
+  async loadSecFilingDocuments(filing: SecFilingItem): Promise<QueryEntry<SecFilingDocument[]>> {
+    return loadSecFilingDocumentsEntry({
+      dataProvider: this.dataProvider,
+      filing,
+      store: this.secDocumentsStore,
       runSingleFlight: (key, task) => this.runSingleFlight(key, task),
     });
   }

@@ -11,6 +11,7 @@ export function useBoundTicker() {
   const { symbol, ticker } = usePaneTicker();
   return {
     symbol,
+    ticker,
     exchange: ticker?.metadata.exchange ?? "",
     currency: ticker?.metadata.currency ?? "USD",
   };

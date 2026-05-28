@@ -172,8 +172,11 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
   return (
     <DataTableView<HistoricalPriceRow, HistoryColumn>
       focused={focused}
-      selectedIndex={boundedSelectedIdx}
-      onSelectIndex={(index) => setSelectedIdx(index)}
+      selection={{
+        kind: "index",
+        selectedIndex: boundedSelectedIdx,
+        onChange: (index) => setSelectedIdx(index),
+      }}
       onRootKeyDown={handleKeyDown}
       rootWidth={width}
       rootHeight={height}
@@ -183,8 +186,6 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
       sortDirection="desc"
       onHeaderClick={() => {}}
       getItemKey={(row) => row.key}
-      isSelected={(_row, index) => index === boundedSelectedIdx}
-      onSelect={(_row, index) => setSelectedIdx(index)}
       renderCell={renderCell}
       emptyStateTitle={loading ? "Loading historical prices..." : "No historical prices"}
     />

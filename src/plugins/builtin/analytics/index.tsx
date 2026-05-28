@@ -198,8 +198,6 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   const effectiveSelectedSectorId = selectedSectorId && sortedSectorRows.some((row) => row.id === selectedSectorId)
     ? selectedSectorId
     : sortedSectorRows[0]?.id ?? null;
-  const selectedSectorIdx = sortedSectorRows.findIndex((row) => row.id === effectiveSelectedSectorId);
-  const safeSelectedSectorIdx = selectedSectorIdx >= 0 ? selectedSectorIdx : 0;
   const sectorColumns = useMemo(() => buildSectorColumns(width), [width]);
   const hasPositions = portfolioTickers.length > 0;
 
@@ -302,7 +300,6 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
 
               <SectorAllocationTable
                 focused={focused}
-                selectedIndex={safeSelectedSectorIdx}
                 resetScrollKey={activePortfolioId}
                 columns={sectorColumns}
                 rows={sortedSectorRows}

@@ -344,9 +344,13 @@ export function ThirteenFPane({ focused, width, height }: PaneProps) {
         ) : (
           <Box flexGrow={1} />
         )}
-        selectedIndex={selectedIndex}
-        onSelectIndex={(_index, row) => setSelectedId(row.id)}
-        onActivateIndex={(_index, row) => openDetail(row)}
+        selection={{
+          kind: "id",
+          selectedId,
+          getId: (row) => row.id,
+          onChange: (id) => setSelectedId(id),
+        }}
+        onActivate={openDetail}
         onRootKeyDown={handleRootKeyDown}
         rootWidth={width}
         rootBefore={rootBefore}
@@ -365,9 +369,6 @@ export function ThirteenFPane({ focused, width, height }: PaneProps) {
           ));
         }}
         getItemKey={(row) => row.id}
-        isSelected={(row) => row.id === selectedId}
-        onSelect={(row) => setSelectedId(row.id)}
-        onActivate={openDetail}
         renderCell={renderBrowserCell}
         emptyStateTitle={emptyTitle}
         showHorizontalScrollbar={false}
@@ -625,11 +626,13 @@ function FundDetailView({
           ) : (
             <Box flexGrow={1} />
           )}
-          selectedIndex={selectedFilingIndex}
-          onSelectIndex={(_index, row) => setFilingSelectedId(row.id)}
-          onActivateIndex={(_index, row) => {
-            openFilingInPane(row);
+          selection={{
+            kind: "id",
+            selectedId: filingSelectedId,
+            getId: (row) => row.id,
+            onChange: (id) => setFilingSelectedId(id),
           }}
+          onActivate={openFilingInPane}
           onDetailKeyDown={(event) => {
             if (event.name !== "o" || !openFiling?.url) return false;
             event.preventDefault?.();
@@ -648,11 +651,6 @@ function FundDetailView({
             columnId === "period" || columnId === "filed" ? "desc" : "desc",
           ))}
           getItemKey={(row) => row.id}
-          isSelected={(row) => row.id === filingSelectedId}
-          onSelect={(row) => setFilingSelectedId(row.id)}
-          onActivate={(row) => {
-            openFilingInPane(row);
-          }}
           renderCell={renderTimelineCell}
           emptyStateTitle="No 13F filings."
           showHorizontalScrollbar={false}
@@ -660,8 +658,12 @@ function FundDetailView({
       ) : (
         <DataTableView<FundHoldingRow, FundHoldingColumn>
           focused={focused}
-          selectedIndex={selectedHoldingIndex}
-          onSelectIndex={(_index, row) => setHoldingSelectedId(row.id)}
+          selection={{
+            kind: "id",
+            selectedId: holdingSelectedId,
+            getId: (row) => row.id,
+            onChange: (id) => setHoldingSelectedId(id),
+          }}
           rootWidth={width}
           columns={buildHoldingColumns(width)}
           items={visibleHoldingRows}
@@ -675,8 +677,6 @@ function FundDetailView({
             ));
           }}
           getItemKey={(row) => row.id}
-          isSelected={(row) => row.id === holdingSelectedId}
-          onSelect={(row) => setHoldingSelectedId(row.id)}
           onActivate={(row) => {
             if (row.ticker) pinTicker(row.ticker, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
           }}
@@ -795,9 +795,13 @@ function FilingDetailView({
     <Box flexDirection="column" width={width} flexGrow={1} overflow="hidden">
       <DataTableView<FilingPositionRow, FilingPositionColumn>
         focused={focused}
-        selectedIndex={selectedPositionIndex}
-        onSelectIndex={(_index, row) => setSelectedPositionId(row.id)}
-        onActivateIndex={(_index, row) => openPositionTicker(row)}
+        selection={{
+          kind: "id",
+          selectedId: selectedPositionId,
+          getId: (row) => row.id,
+          onChange: (id) => setSelectedPositionId(id),
+        }}
+        onActivate={openPositionTicker}
         onRootKeyDown={handlePositionKeyDown}
         rootWidth={width}
         rootBefore={summary}
@@ -814,9 +818,6 @@ function FilingDetailView({
           ));
         }}
         getItemKey={(row) => row.id}
-        isSelected={(row) => row.id === selectedPositionId}
-        onSelect={(row) => setSelectedPositionId(row.id)}
-        onActivate={openPositionTicker}
         renderCell={renderFilingPositionCell}
         emptyStateTitle={emptyTitle}
         showHorizontalScrollbar={false}

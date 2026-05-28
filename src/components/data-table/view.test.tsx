@@ -45,21 +45,27 @@ afterEach(async () => {
 
 function Harness() {
   const [selectedIndex, setSelectedIndex] = useState(1);
+  const [cursorIndex, setCursorIndex] = useState(1);
   const [activatedTitle, setActivatedTitle] = useState("");
   const state = createInitialState(
     createDefaultConfig("/tmp/gloomberb-data-table-view-test"),
   );
   const selectedTitle = rows[selectedIndex]?.title ?? "none";
+  const cursorTitle = rows[cursorIndex]?.title ?? "none";
 
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
       <PaneInstanceProvider paneId="data-table-view-test">
         <DataTableView<Row, Column>
           focused
-          selectedIndex={selectedIndex}
           isNavigable={(row) => row.type === "row"}
-          onSelectIndex={(index) => setSelectedIndex(index)}
-          onActivateIndex={(_index, row) => {
+          selection={{
+            kind: "index",
+            selectedIndex,
+            onChange: (index) => setSelectedIndex(index),
+          }}
+          onCursorChange={(_row, index) => setCursorIndex(index)}
+          onActivate={(row) => {
             if (row.type === "row") setActivatedTitle(row.title);
           }}
           columns={columns}
@@ -68,8 +74,6 @@ function Harness() {
           sortDirection="asc"
           onHeaderClick={() => {}}
           getItemKey={(row) => row.id}
-          isSelected={(_row, index) => index === selectedIndex}
-          onSelect={(_row, index) => setSelectedIndex(index)}
           renderSectionHeader={(row) => row.type === "section"
             ? { text: row.title }
             : null}
@@ -79,7 +83,7 @@ function Harness() {
           emptyStateTitle="No rows"
           rootAfter={
             <Box height={1}>
-              <Text>{`selected=${selectedTitle} activated=${activatedTitle}`}</Text>
+              <Text>{`cursor=${cursorTitle} selected=${selectedTitle} activated=${activatedTitle}`}</Text>
             </Box>
           }
         />
@@ -102,19 +106,21 @@ function LargeSelectionHarness({
       <PaneInstanceProvider paneId="data-table-view-large-test">
         <DataTableView<Row, Column>
           focused
-          selectedIndex={500}
+          selection={{
+            kind: "index",
+            selectedIndex: 500,
+            onChange: () => {},
+          }}
           columns={columns}
           items={largeRows}
           sortColumnId={null}
           sortDirection="asc"
           onHeaderClick={() => {}}
           getItemKey={(row) => row.id}
-          isSelected={(_row, index) => {
+          renderCell={(row, _column, index): DataTableCell => {
             onIsSelected();
-            return index === 500;
+            return { text: row.title + (index === 500 ? "" : "") };
           }}
-          onSelect={() => {}}
-          renderCell={(row): DataTableCell => ({ text: row.title })}
           emptyStateTitle="No rows"
         />
       </PaneInstanceProvider>
@@ -190,24 +196,24 @@ describe("DataTableView", () => {
     testSetup = await testRender(<Harness />, { width: 60, height: 12 });
 
     await renderSettled();
-    expect(testSetup.captureCharFrame()).toContain("selected=First row");
+    expect(testSetup.captureCharFrame()).toContain("cursor=First row selected=First row");
 
     await emitKeypress({ name: "down", sequence: "\u001B[B" });
     await renderSettled();
-    expect(testSetup.captureCharFrame()).toContain("selected=Second row");
+    expect(testSetup.captureCharFrame()).toContain("cursor=Second row selected=First row");
 
     await emitKeypress({ name: "up", sequence: "\u001B[A", meta: true });
     await renderSettled();
-    expect(testSetup.captureCharFrame()).toContain("selected=Second row");
+    expect(testSetup.captureCharFrame()).toContain("cursor=Second row selected=First row");
 
     await emitKeypress({ name: "up", sequence: "\u001B[A" });
     await renderSettled();
-    expect(testSetup.captureCharFrame()).toContain("selected=First row");
+    expect(testSetup.captureCharFrame()).toContain("cursor=First row selected=First row");
 
     await emitKeypress({ name: "j", sequence: "j" });
     await emitKeypress({ name: "k", sequence: "k" });
     await renderSettled();
-    expect(testSetup.captureCharFrame()).toContain("selected=First row");
+    expect(testSetup.captureCharFrame()).toContain("cursor=First row selected=First row");
 
     await emitKeypress({ name: "enter", sequence: "\r" });
     await renderSettled();
@@ -215,11 +221,11 @@ describe("DataTableView", () => {
 
     await emitKeypress({ name: "j", sequence: "j" });
     await renderSettled();
-    expect(testSetup.captureCharFrame()).toContain("selected=Second row activated=First row");
+    expect(testSetup.captureCharFrame()).toContain("cursor=Second row selected=First row activated=First row");
 
     await emitKeypress({ name: "enter", sequence: "\r", defaultPrevented: true });
     await renderSettled();
-    expect(testSetup.captureCharFrame()).toContain("selected=Second row activated=First row");
+    expect(testSetup.captureCharFrame()).toContain("cursor=Second row selected=First row activated=First row");
   });
 
   test("keeps selection current across repeated keypresses before the next render", async () => {

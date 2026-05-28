@@ -3,7 +3,6 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -61,8 +60,6 @@ export interface TickerListTableViewProps {
   setHoveredIdx?: (index: number | null) => void;
   keyboardNavigation?: boolean;
   onRootKeyDown?: (event: DataTableKeyEvent) => boolean | void;
-  onSelectIndex?: (index: number, ticker: TickerRecord) => void;
-  onActivateIndex?: (index: number, ticker: TickerRecord) => void;
   onVisibleRangeChange?: (range: TickerListVisibleRange) => void;
   visibleRangeBuffer?: number;
   resetScrollKey?: unknown;
@@ -120,8 +117,6 @@ export function TickerListTableView({
   setHoveredIdx,
   keyboardNavigation = true,
   onRootKeyDown,
-  onSelectIndex,
-  onActivateIndex,
   onVisibleRangeChange,
   visibleRangeBuffer = 0,
   resetScrollKey,
@@ -153,8 +148,6 @@ export function TickerListTableView({
     () => tickers.findIndex((ticker) => ticker.metadata.ticker === cursorSymbol),
     [cursorSymbol, tickers],
   );
-  const [scrollToIndex, setScrollToIndex] = useState<number | null>(null);
-  const [scrollToIndexVersion, setScrollToIndexVersion] = useState(0);
   const lastScrollCursorSymbolRef = useRef<string | null | undefined>(undefined);
 
   const emitVisibleRange = useCallback(() => {
@@ -177,16 +170,12 @@ export function TickerListTableView({
   useEffect(() => {
     const shouldScrollToCursor = lastScrollCursorSymbolRef.current !== cursorSymbol;
     lastScrollCursorSymbolRef.current = cursorSymbol;
-    if (shouldScrollToCursor && selectedIndex >= 0) {
-      setScrollToIndex(selectedIndex);
-      setScrollToIndexVersion((current) => current + 1);
-    }
-    queueMicrotask(emitVisibleRange);
+    if (shouldScrollToCursor && selectedIndex >= 0) queueMicrotask(emitVisibleRange);
   }, [cursorSymbol, emitVisibleRange, selectedIndex]);
 
   useEffect(() => {
     queueMicrotask(emitVisibleRange);
-  }, [emitVisibleRange, scrollToIndexVersion]);
+  }, [emitVisibleRange]);
 
   const renderCell = useCallback((
     ticker: TickerRecord,
@@ -236,18 +225,16 @@ export function TickerListTableView({
   }, [financialsMap, renderer, showContextMenu]);
 
   const handleRowMouseDown = useCallback((ticker: TickerRecord, _index: number, event: TableMouseEvent) => {
-    setCursorSymbol(ticker.metadata.ticker);
     if (event.button !== 2) return false;
     if (nativeContextMenu !== true) {
       showTickerContextMenu(ticker, event);
     }
     return true;
-  }, [nativeContextMenu, setCursorSymbol, showTickerContextMenu]);
+  }, [nativeContextMenu, showTickerContextMenu]);
 
   const handleRowContextMenu = useCallback((ticker: TickerRecord, _index: number, event: TableMouseEvent) => {
-    setCursorSymbol(ticker.metadata.ticker);
     showTickerContextMenu(ticker, event);
-  }, [setCursorSymbol, showTickerContextMenu]);
+  }, [showTickerContextMenu]);
 
   return (
     <DataTableView<TickerRecord, ColumnConfig>
@@ -258,9 +245,13 @@ export function TickerListTableView({
       sortDirection={sortDirection}
       onHeaderClick={onHeaderClick ?? (() => {})}
       getItemKey={(ticker) => ticker.metadata.ticker}
-      isSelected={(ticker) => ticker.metadata.ticker === cursorSymbol}
-      onSelect={(ticker) => {
-        setCursorSymbol(ticker.metadata.ticker);
+      selection={{
+        kind: "id",
+        selectedId: cursorSymbol,
+        getId: (ticker) => ticker.metadata.ticker,
+        onChange: (symbol) => {
+          setCursorSymbol(symbol);
+        },
       }}
       onActivate={(ticker) => {
         onRowActivate?.(ticker);
@@ -273,9 +264,6 @@ export function TickerListTableView({
       emptyStateHint={emptyHint}
       virtualize={virtualize}
       overscan={overscan}
-      selectedIndex={selectedIndex}
-      onSelectIndex={onSelectIndex}
-      onActivateIndex={onActivateIndex}
       rootBefore={rootBefore}
       rootAfter={rootAfter}
       rootWidth={rootWidth}
@@ -290,8 +278,6 @@ export function TickerListTableView({
       keyboardNavigation={keyboardNavigation}
       onRootKeyDown={onRootKeyDown}
       resetScrollKey={resetScrollKey}
-      scrollToIndex={scrollToIndex}
-      scrollToIndexVersion={scrollToIndexVersion}
     />
   );
 }

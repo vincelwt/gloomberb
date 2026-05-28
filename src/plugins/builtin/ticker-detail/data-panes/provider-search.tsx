@@ -121,9 +121,12 @@ export function ProviderSearchPane({ focused, width, height }: PaneProps) {
   return (
     <DataTableView<InstrumentSearchResult, DataTableColumn & { id: "symbol" | "name" | "exchange" | "type" }>
       focused={focused}
-      selectedIndex={boundedSelectedIdx}
-      onSelectIndex={(index) => setSelectedIdx(index)}
-      onActivateIndex={(_index, row) => openResult(row)}
+      selection={{
+        kind: "index",
+        selectedIndex: boundedSelectedIdx,
+        onChange: (index) => setSelectedIdx(index),
+      }}
+      onActivate={(row) => openResult(row)}
       onRootKeyDown={handleKeyDown}
       rootWidth={width}
       rootHeight={height}
@@ -133,8 +136,6 @@ export function ProviderSearchPane({ focused, width, height }: PaneProps) {
       sortDirection="asc"
       onHeaderClick={() => {}}
       getItemKey={(row, index) => `${row.providerId}:${row.symbol}:${row.exchange}:${row.type}:${index}`}
-      isSelected={(_row, index) => index === boundedSelectedIdx}
-      onSelect={(_row, index) => setSelectedIdx(index)}
       renderCell={renderCell}
       emptyStateTitle={state.loading ? "Searching..." : query ? "No search results" : "No search query"}
     />

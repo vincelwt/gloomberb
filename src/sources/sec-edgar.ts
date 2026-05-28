@@ -1,4 +1,4 @@
-import type { SecFilingItem } from "../types/data-provider";
+import type { SecFilingDocument, SecFilingItem } from "../types/data-provider";
 import { truncateWithEllipsis } from "../utils/text-wrap";
 import {
   PDF_FALLBACK_MESSAGE,
@@ -82,6 +82,56 @@ function parseDate(value: unknown): Date | undefined {
 
 function stripAccessionDashes(accessionNumber: string): string {
   return accessionNumber.replace(/-/g, "");
+}
+
+function documentNameFromUrl(url: string): string {
+  try {
+    return decodeURIComponent(new URL(url).pathname.split("/").pop() ?? "");
+  } catch {
+    return url.split("/").pop() ?? url;
+  }
+}
+
+function normalizeDocumentName(value: string | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function decodeSecHtmlEntities(text: string): string {
+  return text
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;|&#x27;/gi, "'")
+    .replace(/&#(\d+);/g, (_match, digits: string) => String.fromCodePoint(Number(digits)))
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex: string) => String.fromCodePoint(parseInt(hex, 16)));
+}
+
+function cleanSecTableText(value: string): string {
+  return decodeSecHtmlEntities(
+    value
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+}
+
+function resolveSecArchiveUrl(href: string, filingUrl: string): string | null {
+  const trimmed = href.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed, filingUrl);
+    const ixviewerDocument = url.searchParams.get("doc");
+    if (ixviewerDocument?.startsWith("/Archives/")) {
+      return new URL(ixviewerDocument, "https://www.sec.gov").toString();
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 function isHtmlResponse(body: string): boolean {
@@ -201,6 +251,52 @@ export function parseRecentFilings(payload: unknown, count = 15): SecFilingItem[
   return results;
 }
 
+export function parseFilingDocuments(indexHtml: string, filing: SecFilingItem): SecFilingDocument[] {
+  const documents: SecFilingDocument[] = [];
+  const primaryUrl = normalizeDocumentName(filing.primaryDocumentUrl);
+  const primaryDocument = normalizeDocumentName(filing.primaryDocument);
+  const rows = [...indexHtml.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)];
+
+  for (const rowMatch of rows) {
+    const rowHtml = rowMatch[1] ?? "";
+    const cells = [...rowHtml.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map((match) => match[1] ?? "");
+    if (cells.length < 3) continue;
+
+    const hrefMatch = rowHtml.match(/<a\b[^>]*href="([^"]+)"[^>]*>/i);
+    if (!hrefMatch?.[1]) continue;
+    const url = resolveSecArchiveUrl(hrefMatch[1], filing.filingUrl);
+    if (!url || !url.includes("/Archives/edgar/data/")) continue;
+
+    const sequence = cleanSecTableText(cells[0] ?? "") || undefined;
+    const description = cleanSecTableText(cells[1] ?? "") || undefined;
+    const linkedDocument = cleanSecTableText(cells[2] ?? "") || documentNameFromUrl(url);
+    const type = cleanSecTableText(cells[3] ?? "") || linkedDocument;
+    const size = cleanSecTableText(cells[4] ?? "") || undefined;
+    const document = linkedDocument || documentNameFromUrl(url);
+    const normalizedDocument = normalizeDocumentName(document);
+    const normalizedUrl = normalizeDocumentName(url);
+
+    documents.push({
+      sequence,
+      type,
+      description,
+      document,
+      url,
+      size,
+      isPrimary: (
+        (primaryDocument.length > 0 && normalizedDocument === primaryDocument)
+        || (primaryUrl.length > 0 && normalizedUrl === primaryUrl)
+        || (
+          documents.length === 0
+          && normalizeDocumentName(type) === normalizeDocumentName(filing.form)
+        )
+      ),
+    });
+  }
+
+  return documents;
+}
+
 export class SecEdgarClient {
   private lookupPromise: Promise<Map<string, LookupEntry>> | null = null;
 
@@ -311,6 +407,11 @@ export class SecEdgarClient {
     return parseRecentFilings(payload, count);
   }
 
+  async getFilingDocuments(filing: SecFilingItem): Promise<SecFilingDocument[]> {
+    const { body } = await this.fetchText(filing.filingUrl);
+    return parseFilingDocuments(body, filing);
+  }
+
   async getFilingContent(filing: Pick<SecFilingItem, "primaryDocumentUrl" | "filingUrl" | "form">): Promise<string | null> {
     let targetUrl = filing.primaryDocumentUrl || filing.filingUrl;
     if (!targetUrl) return null;
@@ -328,6 +429,9 @@ export class SecEdgarClient {
     }
 
     if (filing.primaryDocumentUrl && isPdfDocument("", "", filing.primaryDocumentUrl)) {
+      if (filing.filingUrl === filing.primaryDocumentUrl) {
+        return PDF_FALLBACK_MESSAGE;
+      }
       const alternativeUrl = filing.filingUrl
         ? await this.findAlternativeHtmlDocumentUrl(filing.filingUrl, filing.primaryDocumentUrl)
         : null;

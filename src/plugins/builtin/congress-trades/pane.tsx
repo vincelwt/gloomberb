@@ -262,11 +262,13 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
           onBack={() => setDetailMode(null)}
           detailTitle={detailTitle}
           detailContent={detailContent}
-          selectedIndex={selectedTradeIndex}
-          onSelectIndex={(index) => setSelectedTradeId(tradeRows[index]?.id ?? null)}
-          onActivateIndex={(index) => {
-            const trade = tradeRows[index];
-            if (!trade) return;
+          selection={{
+            kind: "id",
+            selectedId: selectedTradeId,
+            getId: (trade) => trade.id,
+            onChange: (id) => setSelectedTradeId(id),
+          }}
+          onActivate={(trade) => {
             setSelectedTradeId(trade.id, { immediate: true });
             setDetailMode({ kind: "trade", tradeId: trade.id });
           }}
@@ -280,12 +282,6 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
           sortDirection={tradeSort.direction}
           onHeaderClick={(columnId) => setTradeSort((current) => nextSort(current, columnId as TradeColumnId, columnId === "member" || columnId === "ticker" ? "asc" : "desc"))}
           getItemKey={(trade) => trade.id}
-          isSelected={(trade) => trade.id === selectedTradeId}
-          onSelect={(trade) => setSelectedTradeId(trade.id)}
-          onActivate={(trade) => {
-            setSelectedTradeId(trade.id, { immediate: true });
-            setDetailMode({ kind: "trade", tradeId: trade.id });
-          }}
           renderCell={renderCongressTradeCell}
           emptyStateTitle="No House PTR trades."
           emptyStateHint="Press r to refresh."
@@ -297,11 +293,13 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
           onBack={() => setDetailMode(null)}
           detailTitle={detailTitle}
           detailContent={detailContent}
-          selectedIndex={selectedMemberIndex}
-          onSelectIndex={(index) => setSelectedMemberId(memberRows[index]?.id ?? null)}
-          onActivateIndex={(index) => {
-            const member = memberRows[index];
-            if (!member) return;
+          selection={{
+            kind: "id",
+            selectedId: selectedMemberId,
+            getId: (member) => member.id,
+            onChange: (id) => setSelectedMemberId(id),
+          }}
+          onActivate={(member) => {
             setSelectedMemberId(member.id, { immediate: true });
             setDetailMode({ kind: "member", memberId: member.id });
           }}
@@ -315,12 +313,6 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
           sortDirection={memberSort.direction}
           onHeaderClick={(columnId) => setMemberSort((current) => nextSort(current, columnId as MemberColumnId, columnId === "member" || columnId === "district" ? "asc" : "desc"))}
           getItemKey={(member) => member.id}
-          isSelected={(member) => member.id === selectedMemberId}
-          onSelect={(member) => setSelectedMemberId(member.id)}
-          onActivate={(member) => {
-            setSelectedMemberId(member.id, { immediate: true });
-            setDetailMode({ kind: "member", memberId: member.id });
-          }}
           renderCell={renderCongressMemberCell}
           emptyStateTitle="No House PTR members."
           emptyStateHint="Press r to refresh."

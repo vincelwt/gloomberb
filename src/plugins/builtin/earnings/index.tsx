@@ -132,12 +132,15 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   return (
     <DataTableView<EarningsDisplayRow, EarningsColumn>
       focused={focused}
-      selectedIndex={selectedRowIndex}
-      isNavigable={(row) => row.kind === "event"}
-      onSelectIndex={(_index, row) => {
-        if (row.kind === "event") setSelectedIdx(row.eventIdx);
+      selection={{
+        kind: "index",
+        selectedIndex: selectedRowIndex,
+        onChange: (_index, row) => {
+          if (row.kind === "event") setSelectedIdx(row.eventIdx);
+        },
       }}
-      onActivateIndex={(_index, row) => {
+      isNavigable={(row) => row.kind === "event"}
+      onActivate={(row) => {
         if (row.kind === "event") openEvent(row.event);
       }}
       onRootKeyDown={handleTableKeyDown}
@@ -149,8 +152,6 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
       sortDirection="asc"
       onHeaderClick={() => {}}
       getItemKey={(row) => row.key}
-      isSelected={(row) => row.kind === "event" && row.eventIdx === activeEventIdx}
-      onSelect={selectDisplayRow}
       renderSectionHeader={renderEarningsSectionHeader}
       renderCell={renderCell}
       emptyStateTitle={loading ? "Loading earnings..." : "No upcoming earnings found"}

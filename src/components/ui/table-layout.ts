@@ -8,6 +8,7 @@ export interface TableWidthColumn {
 }
 
 const TRAILING_COLUMN_GUTTER_WIDTH = 1;
+const WEB_CELL_UNIT = "var(--cell-w)";
 
 export function getTableWidth(columns: readonly TableWidthColumn[]): number {
   return columns.reduce((sum, column) => sum + column.width + 1, 2);
@@ -57,15 +58,20 @@ function columnFlexWeight(column: TableWidthColumn): number {
   return flexGrow > 0 ? baseWeight * Math.max(1, flexGrow) : baseWeight;
 }
 
+function cellWidthCss(width: number): string {
+  return `calc(${width} * ${WEB_CELL_UNIT})`;
+}
+
 export function buildTableGridTemplateColumns(columns: readonly TableWidthColumn[]): string {
   const hasFlexColumn = columns.some((column) => (column.flexGrow ?? 0) > 0);
   return columns
     .map((column) => {
       const width = normalizedColumnWidth(column);
+      const minWidth = cellWidthCss(columnMinCh(column));
       if (!hasFlexColumn || (column.flexGrow ?? 0) > 0) {
-        return `minmax(${columnMinCh(column)}ch, ${columnFlexWeight(column)}fr)`;
+        return `minmax(${minWidth}, ${columnFlexWeight(column)}fr)`;
       }
-      return `minmax(${columnMinCh(column)}ch, ${width}ch)`;
+      return `minmax(${minWidth}, ${cellWidthCss(width)})`;
     })
     .join(" ");
 }

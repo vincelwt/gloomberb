@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   SecEdgarClient,
   extractFilingContent,
+  parseFilingDocuments,
   parseRecentFilings,
   parseTickerLookup,
 } from "./sec-edgar";
@@ -65,6 +66,59 @@ describe("parseRecentFilings", () => {
   });
 });
 
+describe("parseFilingDocuments", () => {
+  test("maps filing index document rows into primary and exhibit documents", () => {
+    const documents = parseFilingDocuments(`
+      <html>
+        <body>
+          <table class="tableFile" summary="Document Format Files">
+            <tr>
+              <th>Seq</th><th>Description</th><th>Document</th><th>Type</th><th>Size</th>
+            </tr>
+            <tr>
+              <td>1</td>
+              <td>Current report</td>
+              <td><a href="/ixviewer/doc/action?doc=/Archives/edgar/data/320193/000032019324000123/aapl-8k.htm">aapl-8k.htm</a></td>
+              <td>8-K</td>
+              <td>10000</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>Results of Operations and Financial Condition</td>
+              <td><a href="/Archives/edgar/data/320193/000032019324000123/aapl-ex991.htm">aapl-ex991.htm</a></td>
+              <td>EX-99.1</td>
+              <td>42000</td>
+            </tr>
+          </table>
+        </body>
+      </html>
+    `, {
+      accessionNumber: "0000320193-24-000123",
+      form: "8-K",
+      filingDate: new Date("2024-08-01T00:00:00Z"),
+      cik: "0000320193",
+      filingUrl: "https://www.sec.gov/Archives/edgar/data/320193/0000320193-24-000123-index.htm",
+      primaryDocument: "aapl-8k.htm",
+      primaryDocumentUrl: "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-8k.htm",
+    });
+
+    expect(documents).toMatchObject([
+      {
+        type: "8-K",
+        document: "aapl-8k.htm",
+        isPrimary: true,
+        url: "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-8k.htm",
+      },
+      {
+        type: "EX-99.1",
+        description: "Results of Operations and Financial Condition",
+        document: "aapl-ex991.htm",
+        isPrimary: false,
+      },
+    ]);
+  });
+});
+
 describe("SecEdgarClient", () => {
   test("extracts readable text from filing html", () => {
     const content = extractFilingContent(`
@@ -79,6 +133,30 @@ describe("SecEdgarClient", () => {
 
     expect(content).toContain("FORM 8-K");
     expect(content).toContain("Revenue increased 12% year over year.");
+  });
+
+  test("trims SEC document wrapper metadata before exhibit content", () => {
+    const content = extractFilingContent(`
+      <SEC-DOCUMENT>
+      <DOCUMENT>
+      <TYPE>EX-99.1
+      <SEQUENCE>2
+      <FILENAME>q42026er-991.htm
+      <DESCRIPTION>EX-99.1
+      <TEXT>
+        <html><body>
+          <p>Exhibit 99.1</p>
+          <h1>e.l.f. Beauty Announces Fourth Quarter Fiscal 2026 Results</h1>
+          <p>Delivered fiscal 2026 net sales growth of 25% year over year.</p>
+        </body></html>
+      </TEXT>
+      </DOCUMENT>
+      </SEC-DOCUMENT>
+    `, "text/html", { form: "EX-99.1" });
+
+    expect(content?.startsWith("Exhibit 99.1")).toBe(true);
+    expect(content).toContain("Fourth Quarter Fiscal 2026 Results");
+    expect(content).not.toContain("q42026er-991.htm");
   });
 
   test("drops hidden inline xbrl boilerplate from filing html", () => {
@@ -119,7 +197,7 @@ describe("SecEdgarClient", () => {
       sourceUrl: "https://www.sec.gov/Archives/edgar/data/2488/example.pdf",
     });
 
-    expect(content).toContain("primary document is a PDF");
+    expect(content).toContain("document is a PDF");
     expect(content).not.toContain("%PDF-1.6");
   });
 
@@ -282,5 +360,34 @@ describe("SecEdgarClient", () => {
 
     expect(content).toContain("Proxy Statement");
     expect(content).toContain("Annual meeting details.");
+  });
+
+  test("loads filing documents from the filing index", async () => {
+    globalThis.fetch = (async () => new Response(`
+      <html>
+        <body>
+          <table class="tableFile">
+            <tr><td>1</td><td>Current report</td><td><a href="/Archives/edgar/data/320193/000032019324000123/aapl-8k.htm">aapl-8k.htm</a></td><td>8-K</td><td>10000</td></tr>
+            <tr><td>2</td><td>Investor presentation</td><td><a href="/Archives/edgar/data/320193/000032019324000123/aapl-ex992.pdf">aapl-ex992.pdf</a></td><td>EX-99.2</td><td>90000</td></tr>
+          </table>
+        </body>
+      </html>
+    `, {
+      status: 200,
+      headers: { "content-type": "text/html" },
+    })) as unknown as typeof fetch;
+
+    const client = new SecEdgarClient();
+    const documents = await client.getFilingDocuments({
+      accessionNumber: "0000320193-24-000123",
+      form: "8-K",
+      filingDate: new Date("2024-08-01T00:00:00Z"),
+      cik: "0000320193",
+      filingUrl: "https://www.sec.gov/Archives/edgar/data/320193/0000320193-24-000123-index.htm",
+      primaryDocument: "aapl-8k.htm",
+    });
+
+    expect(documents.map((document) => document.type)).toEqual(["8-K", "EX-99.2"]);
+    expect(documents[1]?.description).toBe("Investor presentation");
   });
 });

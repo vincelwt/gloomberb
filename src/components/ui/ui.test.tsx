@@ -151,6 +151,7 @@ function DataTableHorizontalScrollHarness({
     <DataTableView
       rootWidth={containerWidth}
       rootHeight={containerHeight}
+      selection={{ kind: "none" }}
       columns={columns}
       items={items}
       sortColumnId={null}
@@ -159,8 +160,6 @@ function DataTableHorizontalScrollHarness({
       headerScrollRef={headerScrollRef}
       scrollRef={scrollRef}
       getItemKey={(row) => row.id}
-      isSelected={() => false}
-      onSelect={() => {}}
       renderCell={(row) => ({ text: row.name })}
       emptyStateTitle="No rows."
       showHorizontalScrollbar={showHorizontalScrollbar}
@@ -318,6 +317,7 @@ describe("shared UI kit", () => {
 
   test("moves focused tabs with arrow keys and leaves Tab for pane focus", async () => {
     let lastSelected = "overview";
+    const selectedValues: string[] = [];
 
     function KeyboardTabsHarness() {
       const [activeValue, setActiveValue] = useState("overview");
@@ -331,6 +331,7 @@ describe("shared UI kit", () => {
           activeValue={activeValue}
           onSelect={(value) => {
             lastSelected = value;
+            selectedValues.push(value);
             setActiveValue(value);
           }}
           focused
@@ -343,17 +344,19 @@ describe("shared UI kit", () => {
     await act(async () => {
       await testSetup!.renderOnce();
       testSetup!.mockInput.pressArrow("right");
+      testSetup!.mockInput.pressArrow("right");
       await testSetup!.renderOnce();
     });
 
-    expect(lastSelected).toBe("news");
+    expect(selectedValues).toEqual(["news", "chart"]);
+    expect(lastSelected).toBe("chart");
 
     await act(async () => {
       testSetup!.mockInput.pressTab();
       await testSetup!.renderOnce();
     });
 
-    expect(lastSelected).toBe("news");
+    expect(lastSelected).toBe("chart");
   });
 
   test("renders tab actions for editable tab sets", async () => {

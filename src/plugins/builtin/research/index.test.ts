@@ -8,7 +8,7 @@ import {
   sortRatingRows,
   type RatingSortPreference,
 } from "./analyst-pane";
-import { buildEventRows } from "./corporate-actions-pane";
+import { buildEventRows, matchEarningsSecFiling } from "./corporate-actions-pane";
 
 const ratings: AnalystRatingRecord[] = [
   {
@@ -336,5 +336,34 @@ describe("event rows", () => {
     expect(rows[0]?.annualEps).toBeUndefined();
     expect(rows[2]?.qEps).toBeUndefined();
     expect(rows[2]?.annualEps).toBeUndefined();
+  });
+
+  test("matches reported earnings to nearby SEC earnings-release filings", () => {
+    const row = buildEventRows({
+      symbol: "AAPL",
+      dividends: [],
+      splits: [],
+      earnings: [{ date: "2026-01-30", epsActual: 2.4 }],
+    }, null, null, "USD").find((candidate) => candidate.status === "Earnings");
+    const filings = [
+      {
+        accessionNumber: "0000320193-26-000010",
+        form: "10-Q",
+        filingDate: new Date("2026-02-04T00:00:00Z"),
+        cik: "0000320193",
+        filingUrl: "https://www.sec.gov/Archives/edgar/data/320193/0000320193-26-000010-index.htm",
+      },
+      {
+        accessionNumber: "0000320193-26-000009",
+        form: "8-K",
+        filingDate: "2026-01-31T00:00:00.000Z" as unknown as Date,
+        items: "2.02,9.01",
+        primaryDocDescription: "Results of Operations and Financial Condition",
+        cik: "0000320193",
+        filingUrl: "https://www.sec.gov/Archives/edgar/data/320193/0000320193-26-000009-index.htm",
+      },
+    ];
+
+    expect(matchEarningsSecFiling(row, filings)?.accessionNumber).toBe("0000320193-26-000009");
   });
 });

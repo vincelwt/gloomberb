@@ -137,8 +137,11 @@ export function FundamentalGraphContent({
       <StaticBarChartSurface width={width} height={chartHeight} series={chartSeries} />
       <DataTableView<FundamentalGraphRow, FundamentalColumn>
         focused={focused}
-        selectedIndex={boundedSelectedIdx}
-        onSelectIndex={(index) => setSelectedIdx(index)}
+        selection={{
+          kind: "index",
+          selectedIndex: boundedSelectedIdx,
+          onChange: (index) => setSelectedIdx(index),
+        }}
         onRootKeyDown={handleKeyDown}
         rootWidth={width}
         rootHeight={tableHeight}
@@ -148,8 +151,6 @@ export function FundamentalGraphContent({
         sortDirection="asc"
         onHeaderClick={() => {}}
         getItemKey={(row) => row.key}
-        isSelected={(_row, index) => index === boundedSelectedIdx}
-        onSelect={(_row, index) => setSelectedIdx(index)}
         renderCell={renderCell}
         emptyStateTitle={loading ? "Loading fundamentals..." : "No graph data"}
       />

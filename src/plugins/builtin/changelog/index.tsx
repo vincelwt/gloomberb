@@ -328,9 +328,13 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
         <Box flexGrow={1} />
       )}
       detailTitle={openRelease ? releaseDetailTitle(openRelease) : undefined}
-      selectedIndex={activeSelectedIdx}
-      onSelectIndex={(_index, release) => selectRelease(release)}
-      onActivateIndex={(_index, release) => setOpenReleaseId(release.id)}
+      selection={{
+        kind: "id",
+        selectedId: activeSelectedReleaseId,
+        getId: (release) => release.id,
+        onChange: (_id, release) => selectRelease(release),
+      }}
+      onActivate={(release) => setOpenReleaseId(release.id)}
       onDetailKeyDown={handleDetailKeyDown}
       rootWidth={width}
       rootHeight={height}
@@ -340,9 +344,6 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
       sortDirection={sortPreference.direction}
       onHeaderClick={handleHeaderClick}
       getItemKey={(release) => release.id}
-      isSelected={(release) => release.id === activeSelectedReleaseId}
-      onSelect={selectRelease}
-      onActivate={(release) => setOpenReleaseId(release.id)}
       renderCell={renderCell}
       emptyStateTitle="No changelog entries."
       showHorizontalScrollbar={false}

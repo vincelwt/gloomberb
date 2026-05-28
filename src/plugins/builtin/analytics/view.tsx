@@ -143,7 +143,6 @@ export function PortfolioHistorySection({
 
 export function SectorAllocationTable({
   focused,
-  selectedIndex,
   resetScrollKey,
   columns,
   rows,
@@ -153,7 +152,6 @@ export function SectorAllocationTable({
   onSelectSector,
 }: {
   focused: boolean;
-  selectedIndex: number;
   resetScrollKey: string;
   columns: SectorTableColumn[];
   rows: SectorTableRow[];
@@ -165,7 +163,12 @@ export function SectorAllocationTable({
   return (
     <DataTableView<SectorTableRow, SectorTableColumn>
       focused={focused}
-      selectedIndex={selectedIndex}
+      selection={{
+        kind: "id",
+        selectedId: selectedSectorId,
+        getId: (row) => row.id,
+        onChange: (id) => onSelectSector(id),
+      }}
       resetScrollKey={resetScrollKey}
       columns={columns}
       items={rows}
@@ -173,8 +176,6 @@ export function SectorAllocationTable({
       sortDirection={sort.direction}
       onHeaderClick={onHeaderClick}
       getItemKey={(row) => row.id}
-      isSelected={(row) => selectedSectorId === row.id}
-      onSelect={(row) => onSelectSector(row.id)}
       emptyStateTitle="No sector data available"
       emptyStateHint="Load profile data or add sectors to the portfolio positions."
       renderCell={(row, column) => {

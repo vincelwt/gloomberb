@@ -276,18 +276,18 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
           detailTitle={selectedRow?.label}
           rootWidth={tableWidth}
           rootHeight={bodyHeight}
-          selectedIndex={Math.min(selectedIndex, Math.max(0, rows.length - 1))}
-          onSelectIndex={selectBrokerRow}
-          onActivateIndex={openSelectedDetail}
+          selection={{
+            kind: "index",
+            selectedIndex: Math.min(selectedIndex, Math.max(0, rows.length - 1)),
+            onChange: (index, row) => selectBrokerRow(index, row),
+          }}
+          onActivate={(row, index) => openSelectedDetail(index, row)}
           columns={columns}
           items={rows}
           sortColumnId={null}
           sortDirection="asc"
           onHeaderClick={() => {}}
           getItemKey={(row) => row.id}
-          isSelected={(row) => selectedRow?.id === row.id}
-          onSelect={(row, index) => selectBrokerRow(index, row)}
-          onActivate={(row, index) => openSelectedDetail(index, row)}
           renderCell={renderBrokerCell}
           emptyStateTitle="No broker profiles."
           emptyStateHint="Add a broker profile to test connections and sync positions."

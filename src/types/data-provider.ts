@@ -34,6 +34,16 @@ export interface SecFilingItem {
   primaryDocumentUrl?: string;
 }
 
+export interface SecFilingDocument {
+  sequence?: string;
+  type: string;
+  description?: string;
+  document: string;
+  url: string;
+  size?: string;
+  isPrimary: boolean;
+}
+
 export interface EarningsEvent {
   symbol: string;
   name: string;
@@ -127,6 +137,7 @@ export interface AssetDataProvider {
   getAnalystResearch?(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<AnalystResearchData>;
   getCorporateActions?(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<CorporateActionsData>;
   getEarningsCalendar?(symbols: string[], context?: MarketDataRequestContext): Promise<EarningsEvent[]>;
+  getSecFilingDocuments?(filing: SecFilingItem): Promise<SecFilingDocument[]>;
   getSecFilingContent?(filing: SecFilingItem): Promise<string | null>;
   /** Fetch article summary/description by URL (lazy-loaded on selection) */
   getArticleSummary(url: string): Promise<string | null>;

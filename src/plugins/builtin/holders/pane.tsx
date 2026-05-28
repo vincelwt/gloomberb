@@ -296,9 +296,13 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
       {viewMode === "table" ? (
         <DataTableView<HolderRow, HolderColumn>
           focused={focused}
-          selectedIndex={activeIdx}
-          onSelectIndex={selectIndex}
-          onActivateIndex={(_index, row) => openFundDetail(row)}
+          selection={{
+            kind: "id",
+            selectedId,
+            getId: (row) => row.id,
+            onChange: (id) => setSelectedId(id),
+          }}
+          onActivate={openFundDetail}
           onRootKeyDown={handleKeyDown}
           resetScrollKey={data?.symbol}
           rootWidth={width}
@@ -308,9 +312,6 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
           sortDirection={sortPreference.direction}
           onHeaderClick={handleHeaderClick}
           getItemKey={(row) => row.id}
-          isSelected={(row) => row.id === selectedId}
-          onSelect={(row) => setSelectedId(row.id)}
-          onActivate={(row) => openFundDetail(row)}
           renderCell={renderCell}
           emptyStateTitle={emptyTitle}
         />

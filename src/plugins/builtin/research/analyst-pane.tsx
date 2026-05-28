@@ -364,6 +364,7 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
   return (
     <DataTableView<AnalystResearchData["ratings"][number], RatingColumn>
       focused={focused}
+      selection={{ kind: "none" }}
       rootWidth={width}
       rootHeight={height}
       rootBefore={<AnalystSummary data={data} />}
@@ -374,8 +375,6 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
       sortDirection={sortPreference.direction}
       onHeaderClick={handleHeaderClick}
       getItemKey={(row, index) => `${row.date}:${row.firm}:${index}`}
-      isSelected={() => false}
-      onSelect={() => {}}
       renderCell={renderCell}
       emptyStateTitle={loading ? "Loading analyst data..." : error ?? "No analyst data"}
     />

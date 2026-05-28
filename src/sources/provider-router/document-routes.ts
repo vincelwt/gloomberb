@@ -1,5 +1,6 @@
 import type {
   MarketDataRequestContext,
+  SecFilingDocument,
   SecFilingItem,
 } from "../../types/data-provider";
 import { canonicalExchange } from "../../utils/exchanges";
@@ -57,6 +58,23 @@ export class ProviderRouterDocumentRoutes {
     const result = await this.fetchProviderSecFilingContent(filing);
     if (!result) {
       throw new Error("No SEC filing content provider available");
+    }
+    return result.value;
+  }
+
+  async getSecFilingDocuments(filing: SecFilingItem): Promise<SecFilingDocument[]> {
+    const entityKey = compactUrl(filing.filingUrl);
+    const cached = selectCachedResource<SecFilingDocument[]>(this.deps.resources, "sec-filing-documents", entityKey, [""], this.deps.getProviderSourceKeys(), false);
+    if (cached) {
+      scheduleRouterRevalidation(this.revalidationInFlight, `sec-filing-documents:${entityKey}`, async () => {
+        await this.revalidateSecFilingDocuments(filing);
+      });
+      return cached.value;
+    }
+
+    const result = await this.fetchProviderSecFilingDocuments(filing);
+    if (!result) {
+      throw new Error("No SEC filing documents provider available");
     }
     return result.value;
   }
@@ -134,12 +152,39 @@ export class ProviderRouterDocumentRoutes {
     return null;
   }
 
+  private async fetchProviderSecFilingDocuments(filing: SecFilingItem): Promise<SourceResult<SecFilingDocument[]> | null> {
+    const entityKey = compactUrl(filing.filingUrl);
+    let lastError: unknown = null;
+
+    for (const provider of this.deps.providersInPriorityOrder()) {
+      if (!provider.getSecFilingDocuments) continue;
+      try {
+        const value = await provider.getSecFilingDocuments(filing);
+        const sourceKey = this.deps.providerSourceKey(provider);
+        this.deps.cacheResource("sec-filing-documents", entityKey, "", sourceKey, value, this.deps.resolveProviderPolicy("secFilingDocuments", provider));
+        return { sourceKey, value };
+      } catch (error) {
+        lastError = error;
+        if (shouldLogProviderError(error)) {
+          this.deps.logProviderError(`${provider.id} failed: ${error}`);
+        }
+      }
+    }
+
+    if (lastError) throw lastError;
+    return null;
+  }
+
   private async revalidateSecFilings(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<void> {
     await this.fetchProviderSecFilings(ticker, count, exchange, context);
   }
 
   private async revalidateSecFilingContent(filing: SecFilingItem): Promise<void> {
     await this.fetchProviderSecFilingContent(filing);
+  }
+
+  private async revalidateSecFilingDocuments(filing: SecFilingItem): Promise<void> {
+    await this.fetchProviderSecFilingDocuments(filing);
   }
 
   private async revalidateArticleSummary(url: string): Promise<void> {

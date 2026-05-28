@@ -165,9 +165,12 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
   return (
     <DataTableView<RelativeRow, RelativeColumn>
       focused={focused}
-      selectedIndex={rows.length > 0 ? selectedIdx : -1}
-      onSelectIndex={(index) => setSelectedIdx(index)}
-      onActivateIndex={(_index, row) => navigateTicker(row.symbol)}
+      selection={{
+        kind: "index",
+        selectedIndex: rows.length > 0 ? selectedIdx : -1,
+        onChange: (index) => setSelectedIdx(index),
+      }}
+      onActivate={(row) => navigateTicker(row.symbol)}
       onRootKeyDown={handleKeyDown}
       rootWidth={width}
       rootHeight={height}
@@ -177,11 +180,6 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
       sortDirection="asc"
       onHeaderClick={() => {}}
       getItemKey={(row) => row.symbol}
-      isSelected={(row) => rows[selectedIdx]?.symbol === row.symbol}
-      onSelect={(row, index) => {
-        setSelectedIdx(index);
-        navigateTicker(row.symbol);
-      }}
       renderCell={renderCell}
       emptyStateTitle={loading ? "Loading peers..." : error ?? "No peers"}
     />

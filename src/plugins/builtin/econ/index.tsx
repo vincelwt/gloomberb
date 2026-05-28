@@ -328,12 +328,12 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
       rootWidth={width}
       rootHeight={height}
       onRootKeyDown={handleRootKeyDown}
-      selectedIndex={eventIdxToRowIdx.get(selectedIdx) ?? selectedIdx}
-      onSelectIndex={(_index, row) => {
-        if (row.kind === "event") setSelectedIdx(row.eventIdx);
-      }}
-      onActivateIndex={(_index, row) => {
-        if (row.kind === "event") setDetailEvent(row.event);
+      selection={{
+        kind: "index",
+        selectedIndex: eventIdxToRowIdx.get(selectedIdx) ?? selectedIdx,
+        onChange: (_index, row) => {
+          if (row.kind === "event") setSelectedIdx(row.eventIdx);
+        },
       }}
       columns={columns}
       items={rows}
@@ -344,8 +344,6 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
       headerScrollRef={headerScrollRef}
       scrollRef={scrollRef}
       getItemKey={(row) => row.key}
-      isSelected={(row) => row.kind === "event" && row.eventIdx === selectedIdx}
-      onSelect={selectDisplayRow}
       onActivate={openDisplayRow}
       renderSectionHeader={renderSectionHeader}
       renderCell={renderCell}

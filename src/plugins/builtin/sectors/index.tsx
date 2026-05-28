@@ -71,11 +71,6 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
     label: collection.label,
     value: collection.id,
   })), []);
-  const selectedIdx = selectedEtf
-    ? sortedRows.findIndex((row) => row.etf === selectedEtf)
-    : -1;
-  const activeIdx = selectedIdx >= 0 ? selectedIdx : (sortedRows.length > 0 ? 0 : -1);
-
   const fetchAll = useCallback(() => {
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
@@ -189,19 +184,6 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
     setSortPreference((current) => nextSortPreference(current, columnId));
   }, [setSortPreference]);
 
-  const selectIndex = useCallback((index: number) => {
-    const row = sortedRows[index];
-    if (row) setSelectedEtf(row.etf);
-  }, [setSelectedEtf, sortedRows]);
-
-  const selectRow = useCallback((row: SectorRow) => {
-    if (row.etf === selectedEtf) {
-      openRow(row);
-      return;
-    }
-    setSelectedEtf(row.etf);
-  }, [openRow, selectedEtf, setSelectedEtf]);
-
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (event.name === "r") {
       event.preventDefault?.();
@@ -291,9 +273,19 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
   return (
     <DataTableView<SectorRow, SectorColumn>
       focused={focused}
-      selectedIndex={activeIdx}
-      onSelectIndex={selectIndex}
-      onActivateIndex={(_index, row) => openRow(row)}
+      selection={{
+        kind: "id",
+        selectedId: selectedEtf,
+        getId: (row) => row.etf,
+        onChange: (id, row, _index, reason) => {
+          if (reason === "pointer" && id === selectedEtf) {
+            openRow(row);
+            return;
+          }
+          setSelectedEtf(id);
+        },
+      }}
+      onActivate={openRow}
       onRootKeyDown={handleTableKeyDown}
       rootBefore={rootBefore}
       rootWidth={width}
@@ -305,8 +297,6 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
       sortDirection={sortPreference.direction}
       onHeaderClick={handleHeaderClick}
       getItemKey={(row) => row.etf}
-      isSelected={(row) => row.etf === selectedEtf}
-      onSelect={selectRow}
       renderCell={renderCell}
       emptyStateTitle="No sector data available"
       showHorizontalScrollbar={false}

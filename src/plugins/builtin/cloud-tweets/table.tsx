@@ -297,11 +297,13 @@ export function TweetSearchTable({
       onBack={() => setDetailOpen(false)}
       detailTitle={selectedTweet ? `@${selectedTweet.author.userName || selectedTweet.author.name} - ${formatTimeAgo(selectedTweet.createdAt)}` : "Tweet"}
       detailContent={selectedTweet ? <TweetDetail tweet={selectedTweet} width={width} onOpenUsername={openUsernameFeed} /> : null}
-      selectedIndex={activeIndex}
-      onSelectIndex={(index) => setSelectedTweetId(rows[index]?.id ?? null)}
-      onActivateIndex={(index) => {
-        const tweet = rows[index];
-        if (!tweet) return;
+      selection={{
+        kind: "id",
+        selectedId: selectedTweetId,
+        getId: (tweet) => tweet.id,
+        onChange: (id) => setSelectedTweetId(id),
+      }}
+      onActivate={(tweet) => {
         setSelectedTweetId(tweet.id);
         setDetailOpen(true);
       }}
@@ -316,12 +318,6 @@ export function TweetSearchTable({
       sortDirection={sort.direction}
       onHeaderClick={handleHeaderClick}
       getItemKey={(tweet) => tweet.id}
-      isSelected={(tweet) => tweet.id === selectedTweetId}
-      onSelect={(tweet) => setSelectedTweetId(tweet.id)}
-      onActivate={(tweet) => {
-        setSelectedTweetId(tweet.id);
-        setDetailOpen(true);
-      }}
       renderCell={renderCell}
       emptyContent={emptyContent}
       emptyStateTitle={loading ? "Loading tweets..." : error ?? emptyStateTitle ?? "No tweets"}

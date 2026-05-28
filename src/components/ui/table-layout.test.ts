@@ -27,7 +27,7 @@ describe("table layout", () => {
     ]);
 
     expect(template).toBe(
-      "minmax(4ch, 4ch) minmax(14ch, 40fr) minmax(8ch, 24ch) minmax(5ch, 5ch)",
+      "minmax(calc(4 * var(--cell-w)), calc(4 * var(--cell-w))) minmax(calc(14 * var(--cell-w)), 40fr) minmax(calc(8 * var(--cell-w)), calc(24 * var(--cell-w))) minmax(calc(5 * var(--cell-w)), calc(5 * var(--cell-w)))",
     );
   });
 
@@ -37,6 +37,6 @@ describe("table layout", () => {
       { width: 8, align: "right" },
     ]);
 
-    expect(template).toBe("minmax(8ch, 12fr) minmax(8ch, 8fr)");
+    expect(template).toBe("minmax(calc(8 * var(--cell-w)), 12fr) minmax(calc(8 * var(--cell-w)), 8fr)");
   });
 });

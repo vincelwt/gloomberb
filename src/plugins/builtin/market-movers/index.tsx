@@ -227,7 +227,12 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
 
       <DataTableView<MarketMoverRow, MarketMoverColumn>
         focused={focused}
-        selectedIndex={activeIdx}
+        selection={{
+          kind: "id",
+          selectedId: selectedSymbol,
+          getId: (row) => row.symbol,
+          onChange: (symbol) => setSelectedSymbol(symbol),
+        }}
         onRootKeyDown={handleTableKeyDown}
         resetScrollKey={activeTab}
         columns={columns}
@@ -236,8 +241,6 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
         sortDirection={sortPreference.direction}
         onHeaderClick={handleHeaderClick}
         getItemKey={(row) => `${row.symbol}-${row.rank}`}
-        isSelected={(row) => row.symbol === selectedSymbol}
-        onSelect={(row) => setSelectedSymbol(row.symbol)}
         onActivate={(row) => openSymbol(row.symbol)}
         renderCell={renderMarketMoverCell}
         emptyStateTitle={loading ? "Loading movers..." : loadError ?? "No data"}

@@ -52,6 +52,10 @@ export function assetDataProvider(provider: AssetDataProvider): AssetDataCapabil
         if (!provider.getEarningsCalendar) throw new Error(`${provider.name} does not provide earnings calendar.`);
         return provider.getEarningsCalendar(input.symbols ?? [], input.context);
       }, "query"),
+      getSecFilingDocuments: op((input: any) => {
+        if (!provider.getSecFilingDocuments) throw new Error(`${provider.name} does not provide SEC filing documents.`);
+        return provider.getSecFilingDocuments(input.filing);
+      }, "query"),
       getSecFilingContent: op((input: any) => {
         if (!provider.getSecFilingContent) throw new Error(`${provider.name} does not provide SEC filing content.`);
         return provider.getSecFilingContent(input.filing);

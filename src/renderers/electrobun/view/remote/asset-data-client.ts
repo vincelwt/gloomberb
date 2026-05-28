@@ -34,6 +34,7 @@ const assetDataPayloads: Record<string, PayloadBuilder> = {
   getHolders: (ticker, exchange, context) => ({ ticker, exchange, context }),
   getAnalystResearch: (ticker, exchange, context) => ({ ticker, exchange, context }),
   getCorporateActions: (ticker, exchange, context) => ({ ticker, exchange, context }),
+  getSecFilingDocuments: (filing) => ({ filing }),
   getSecFilingContent: (filing) => ({ filing }),
   getEarningsCalendar: (symbols, context) => ({ symbols, context }),
   getArticleSummary: (url) => ({ url }),

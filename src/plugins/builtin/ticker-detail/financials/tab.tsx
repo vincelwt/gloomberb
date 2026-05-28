@@ -380,19 +380,21 @@ export function ResolvedFinancialsTab({
         bodyScrollId={bodyScrollId}
         columns={columns}
         items={rows}
-        selectedIndex={effectiveSelectedIndex}
-        onSelectIndex={(_index, row) => {
-          setSelectedRowId(row.id);
+        selection={{
+          kind: "id",
+          selectedId: selectedRowId,
+          getId: (row) => row.id,
+          onChange: (_id, row, _index, reason) => {
+            setSelectedRowId(row.id);
+            if (reason === "pointer" && row.kind === "group" && row.toggleable) {
+              toggleGroup(row.id);
+            }
+          },
         }}
         sortColumnId={null}
         sortDirection="desc"
         onHeaderClick={() => {}}
         getItemKey={(row) => row.id}
-        isSelected={(_row, index) => index === effectiveSelectedIndex}
-        onSelect={(row) => {
-          setSelectedRowId(row.id);
-          if (row.kind === "group" && row.toggleable) toggleGroup(row.id);
-        }}
         onActivate={(row) => {
           if (row.kind === "group" && row.toggleable) toggleGroup(row.id);
         }}

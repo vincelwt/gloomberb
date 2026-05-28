@@ -1,12 +1,13 @@
-import { useCallback, useMemo } from "react";
-import { TextAttributes } from "../../../ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box, ScrollBox, Text, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import {
-  DataTableView,
+  DataTableStackView,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
 } from "../../../components";
+import type { SecFilingDocument, SecFilingItem } from "../../../types/data-provider";
 import type {
   AnalystEstimateRecord,
   AnalystResearchData,
@@ -16,9 +17,23 @@ import type {
 } from "../../../types/financials";
 import { blendHex, colors } from "../../../theme/colors";
 import { formatCompact, formatCurrency, formatNumber, formatPercent, formatPercentRaw } from "../../../utils/format";
+import { isPlainKey } from "../../../utils/keyboard";
+import { wrapTextLines } from "../../../utils/text-wrap";
+import { useResolvedEntryValue, useSecFilingContent, useSecFilingDocuments, useSecFilingsQuery } from "../../../market-data/hooks";
+import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
+import { instrumentFromTicker } from "../../../market-data/request-types";
+import { isUsEquityTicker } from "../../../utils/sec";
 import { useAssetData } from "../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint } from "../shared/table-pane";
 import { useBoundTicker as useSymbolBinding, useTickerRequest } from "../shared/ticker-request";
+import {
+  documentContentKey,
+  documentContentTarget,
+  documentHeading,
+  formatCompactDocumentLabel,
+  isDefaultVisibleFilingDocument,
+  isInlineExhibitDocument,
+} from "../sec/filing-documents";
 
 type EventStatus = "Earnings" | "Q Est" | "FY Est" | "TTM" | "Dividend" | "Split";
 
@@ -45,6 +60,9 @@ type EstimatePair = {
   eps?: AnalystEstimateRecord;
   revenue?: AnalystEstimateRecord;
 };
+
+const SEC_EVENT_FILING_LIMIT = 50;
+const SEC_EVENT_MATCH_WINDOW_DAYS = 7;
 
 function todayDateKey(): string {
   const now = new Date();
@@ -82,6 +100,75 @@ function daysBetween(leftDate: string, rightDate: string): number {
   const right = new Date(`${rightDate}T00:00:00Z`).getTime();
   if (!Number.isFinite(left) || !Number.isFinite(right)) return Number.POSITIVE_INFINITY;
   return Math.abs(left - right) / 86_400_000;
+}
+
+function dateKeyToEpochDay(dateKey: string): number | null {
+  const timestamp = new Date(`${dateKey}T00:00:00Z`).getTime();
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.floor(timestamp / 86_400_000);
+}
+
+function signedDaysBetween(leftDate: string, rightDate: string): number {
+  const left = dateKeyToEpochDay(leftDate);
+  const right = dateKeyToEpochDay(rightDate);
+  if (left == null || right == null) return Number.POSITIVE_INFINITY;
+  return right - left;
+}
+
+function filingDateKey(filing: SecFilingItem): string {
+  const value = filing.filingDate as Date | string | number;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const date = new Date(value);
+  if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
+function isSecEarningsFilingCandidate(filing: SecFilingItem): boolean {
+  const form = filing.form.trim().toUpperCase();
+  return form === "8-K"
+    || form === "8-K/A"
+    || form === "10-Q"
+    || form === "10-Q/A"
+    || form === "10-K"
+    || form === "10-K/A";
+}
+
+function filingSearchText(filing: SecFilingItem): string {
+  return [
+    filing.form,
+    filing.items,
+    filing.primaryDocument,
+    filing.primaryDocDescription,
+  ].filter(Boolean).join(" ").toUpperCase();
+}
+
+function scoreFilingForEarnings(filing: SecFilingItem, earningsDate: string): number | null {
+  if (!isSecEarningsFilingCandidate(filing)) return null;
+  const delta = signedDaysBetween(earningsDate, filingDateKey(filing));
+  if (!Number.isFinite(delta) || delta < -1 || delta > SEC_EVENT_MATCH_WINDOW_DAYS) return null;
+
+  const form = filing.form.trim().toUpperCase();
+  const text = filingSearchText(filing);
+  let score = Math.abs(delta) * 10;
+  if (delta < 0) score += 12;
+  if (form.startsWith("10-")) score += 30;
+  if (text.includes("2.02")) score -= 18;
+  if (text.includes("9.01")) score -= 5;
+  if (/RESULTS OF OPERATIONS|FINANCIAL CONDITION|EARNINGS/i.test(text)) score -= 6;
+  return score;
+}
+
+export function matchEarningsSecFiling(row: { status: string; date: string } | null | undefined, filings: readonly SecFilingItem[]): SecFilingItem | null {
+  if (!row || row.status !== "Earnings") return null;
+  let best: { filing: SecFilingItem; score: number } | null = null;
+  for (const filing of filings) {
+    const score = scoreFilingForEarnings(filing, row.date);
+    if (score == null) continue;
+    if (!best || score < best.score) {
+      best = { filing, score };
+    }
+  }
+  return best?.filing ?? null;
 }
 
 function statementForEarningsDate(
@@ -293,6 +380,98 @@ function toneColor(tone: EventRow["tone"]): string {
   return colors.text;
 }
 
+function eventDetailTitle(row: EventRow): string {
+  return `${row.status} | ${row.date}`;
+}
+
+function eventSummaryLine(row: EventRow): string {
+  return [
+    row.date,
+    row.period,
+    row.qEps != null ? `EPS ${formatNumber(row.qEps, 2)}` : null,
+    row.qRevenue != null ? `Rev ${formatCompact(row.qRevenue)}` : null,
+    row.annualEps != null ? `Ann EPS ${formatNumber(row.annualEps, 2)}` : null,
+    row.annualRevenue != null ? `Ann Rev ${formatCompact(row.annualRevenue)}` : null,
+    row.value !== "-" ? row.value : null,
+    row.detail || null,
+  ].filter((line): line is string => !!line).join(" | ");
+}
+
+function buildEventDetailBody({
+  row,
+  secFilingsLoading,
+  filing,
+  documents,
+  documentsLoading,
+  inlineContent,
+  primaryContent,
+  primaryContentLoading,
+}: {
+  row: EventRow;
+  secFilingsLoading: boolean;
+  filing: SecFilingItem | null;
+  documents: SecFilingDocument[];
+  documentsLoading: boolean;
+  inlineContent: Map<string, string | null>;
+  primaryContent: string | null | undefined;
+  primaryContentLoading: boolean;
+}): string {
+  const lines: string[] = ["Summary", eventSummaryLine(row)];
+  if (row.status !== "Earnings") {
+    return lines.join("\n");
+  }
+
+  lines.push("", "SEC Filing");
+  if (secFilingsLoading && !filing) {
+    lines.push("Loading recent SEC filings...");
+    return lines.join("\n");
+  }
+  if (!filing) {
+    lines.push("No related SEC filing found in recent filings.");
+    return lines.join("\n");
+  }
+
+  lines.push([
+    `${filing.form} filed ${filingDateKey(filing)}`,
+    filing.items ? `Items ${filing.items}` : null,
+    `Accession ${filing.accessionNumber}`,
+  ].filter(Boolean).join(" | "));
+
+  lines.push("", "Documents");
+  if (documentsLoading && documents.length === 0) {
+    lines.push("Loading filing documents...");
+  } else if (documents.length === 0) {
+    lines.push("No filing documents were listed for this filing.");
+  } else {
+    const visibleDocuments = documents.filter(isDefaultVisibleFilingDocument);
+    lines.push(...visibleDocuments.map(formatCompactDocumentLabel));
+    const hiddenCount = documents.length - visibleDocuments.length;
+    if (hiddenCount > 0) lines.push(`+ ${hiddenCount} support documents hidden`);
+  }
+
+  const exhibits = documents.filter(isInlineExhibitDocument);
+  if (exhibits.length > 0) {
+    lines.push("", "Inline Exhibits");
+    for (const document of exhibits) {
+      const key = documentContentKey(filing, document);
+      const hasContent = inlineContent.has(key);
+      const content = inlineContent.get(key);
+      lines.push("", documentHeading(document));
+      lines.push(hasContent
+        ? content || "Readable document content was not available for this exhibit."
+        : "Loading exhibit content...");
+    }
+  }
+
+  if (!documentsLoading && exhibits.length === 0) {
+    lines.push("", "Primary Filing Content");
+    lines.push(primaryContentLoading
+      ? "Loading filing content..."
+      : primaryContent || "Readable filing content was not available.");
+  }
+  return lines.join("\n");
+}
+
 export function CorporateActionsView({
   focused,
   width,
@@ -305,7 +484,7 @@ export function CorporateActionsView({
   footerPaneId?: string;
 }) {
   const dataProvider = useAssetData();
-  const { symbol, exchange, currency } = useSymbolBinding();
+  const { symbol, ticker, exchange, currency } = useSymbolBinding();
   const actionsLoader = useCallback((nextSymbol: string, nextExchange: string, forceRefresh: boolean) => {
     if (!dataProvider?.getCorporateActions) throw new Error("Corporate actions source unavailable");
     return dataProvider.getCorporateActions(nextSymbol, nextExchange, forceRefresh ? { cacheMode: "refresh" } : undefined);
@@ -341,6 +520,12 @@ export function CorporateActionsView({
     buildEventRows(actionsData, analystData, financialsData, displayCurrency)
   ), [actionsData, analystData, displayCurrency, financialsData]);
   const columns = useMemo(() => buildEventColumns(), []);
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [openRowId, setOpenRowId] = useState<string | null>(null);
+  const detailScrollRef = useRef<ScrollBoxRenderable>(null);
+  const [inlineContent, setInlineContent] = useState<Map<string, string | null>>(new Map());
+  const documentFetchStartedRef = useRef(new Set<string>());
+  const documentFetchGenRef = useRef(0);
   const todayKey = todayDateKey();
   const futureRowBackground = blendHex(colors.bg, colors.positive, 0.16);
   const loading = actionsLoading || analystLoading || financialsLoading;
@@ -350,6 +535,163 @@ export function CorporateActionsView({
     reloadAnalyst();
     reloadFinancials();
   }, [reloadActions, reloadAnalyst, reloadFinancials]);
+  const openRow = openRowId
+    ? rows.find((row) => row.id === openRowId) ?? null
+    : null;
+  const instrument = useMemo(() => instrumentFromTicker(ticker, symbol), [symbol, ticker]);
+  const secFilingsEntry = useSecFilingsQuery(
+    openRow?.status === "Earnings" && instrument && isUsEquityTicker(ticker)
+      ? { instrument, count: SEC_EVENT_FILING_LIMIT }
+      : null,
+  );
+  const secFilings = useResolvedEntryValue(secFilingsEntry) ?? [];
+  const secFilingsLoading = openRow?.status === "Earnings" && (
+    secFilingsEntry?.phase === "idle"
+    || secFilingsEntry?.phase === "loading"
+    || secFilingsEntry?.phase === "refreshing"
+  );
+  const matchedFiling = useMemo(
+    () => matchEarningsSecFiling(openRow, secFilings),
+    [openRow, secFilings],
+  );
+  const documentsEntry = useSecFilingDocuments(matchedFiling);
+  const documents = useResolvedEntryValue(documentsEntry) ?? [];
+  const documentsLoading = !!matchedFiling && (
+    documentsEntry?.phase === "idle"
+    || documentsEntry?.phase === "loading"
+    || documentsEntry?.phase === "refreshing"
+  );
+  const hasInlineExhibits = documents.some(isInlineExhibitDocument);
+  const filingContentEntry = useSecFilingContent(
+    matchedFiling && !documentsLoading && !hasInlineExhibits ? matchedFiling : null,
+  );
+  const primaryContent = useResolvedEntryValue(filingContentEntry);
+  const primaryContentLoading = !!matchedFiling && (
+    filingContentEntry?.phase === "idle"
+    || filingContentEntry?.phase === "loading"
+    || filingContentEntry?.phase === "refreshing"
+  );
+
+  useEffect(() => {
+    if (rows.length > 0 && selectedIdx >= rows.length) {
+      setSelectedIdx(Math.max(0, rows.length - 1));
+    }
+  }, [rows.length, selectedIdx]);
+
+  useEffect(() => {
+    if (openRowId && !rows.some((row) => row.id === openRowId)) {
+      setOpenRowId(null);
+    }
+  }, [openRowId, rows]);
+
+  useEffect(() => {
+    if (!openRowId) return;
+    const scrollBox = detailScrollRef.current;
+    if (scrollBox) scrollBox.scrollTop = 0;
+  }, [openRowId]);
+
+  useEffect(() => {
+    setInlineContent(new Map());
+    documentFetchStartedRef.current.clear();
+    documentFetchGenRef.current += 1;
+  }, [exchange, symbol]);
+
+  useEffect(() => {
+    if (!matchedFiling || documents.length === 0) return;
+    const coordinator = getSharedMarketDataCoordinator();
+    if (!coordinator) return;
+    const gen = documentFetchGenRef.current;
+    const documentsToFetch = documents.filter((document) => {
+      if (!isInlineExhibitDocument(document)) return false;
+      const key = documentContentKey(matchedFiling, document);
+      return !inlineContent.has(key) && !documentFetchStartedRef.current.has(key);
+    });
+    if (documentsToFetch.length === 0) return;
+
+    for (const document of documentsToFetch) {
+      documentFetchStartedRef.current.add(documentContentKey(matchedFiling, document));
+    }
+
+    (async () => {
+      for (const document of documentsToFetch) {
+        if (documentFetchGenRef.current !== gen) return;
+        const key = documentContentKey(matchedFiling, document);
+        try {
+          const entry = await coordinator.loadSecFilingContent(documentContentTarget(matchedFiling, document));
+          if (documentFetchGenRef.current !== gen) return;
+          setInlineContent((prev) => new Map(prev).set(key, entry.data ?? entry.lastGoodData ?? null));
+        } catch {
+          if (documentFetchGenRef.current !== gen) return;
+          setInlineContent((prev) => new Map(prev).set(key, null));
+        }
+      }
+    })();
+  }, [documents, inlineContent, matchedFiling]);
+  const detailBody = openRow
+    ? buildEventDetailBody({
+        row: openRow,
+        secFilingsLoading,
+        filing: matchedFiling,
+        documents,
+        documentsLoading,
+        inlineContent,
+        primaryContent,
+        primaryContentLoading,
+      })
+    : "";
+  const detailTextWidth = Math.max(width - 2, 12);
+  const scrollDetailBy = useCallback((delta: number) => {
+    const scrollBox = detailScrollRef.current;
+    if (!scrollBox?.viewport) return;
+    const maxScrollTop = Math.max(0, scrollBox.scrollHeight - scrollBox.viewport.height);
+    scrollBox.scrollTop = Math.max(0, Math.min(maxScrollTop, scrollBox.scrollTop + delta));
+  }, []);
+
+  const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (isPlainKey(event, "j", "down")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      scrollDetailBy(1);
+      return true;
+    }
+    if (isPlainKey(event, "k", "up")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      scrollDetailBy(-1);
+      return true;
+    }
+    return false;
+  }, [scrollDetailBy]);
+  const detailContent = openRow ? (
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      flexBasis={0}
+      minHeight={0}
+      overflow="hidden"
+      paddingX={1}
+      paddingY={1}
+    >
+      <ScrollBox
+        ref={detailScrollRef}
+        flexGrow={1}
+        flexBasis={0}
+        minHeight={0}
+        scrollY
+        focusable={false}
+      >
+        <Box flexDirection="column">
+          {wrapTextLines(detailBody, detailTextWidth).map((line, index) => (
+            <Box key={`event-detail-${index}`} height={1}>
+              <Text fg={colors.text}>{line}</Text>
+            </Box>
+          ))}
+        </Box>
+      </ScrollBox>
+    </Box>
+  ) : (
+    <Box flexGrow={1} />
+  );
 
   const renderCell = useCallback((
     row: EventRow,
@@ -390,8 +732,19 @@ export function CorporateActionsView({
   }), [error, footerPaneId, loading, reload]);
 
   return (
-    <DataTableView<EventRow, EventColumn>
+    <DataTableStackView<EventRow, EventColumn>
       focused={focused}
+      detailOpen={!!openRow}
+      onBack={() => setOpenRowId(null)}
+      detailContent={detailContent}
+      detailTitle={openRow ? eventDetailTitle(openRow) : undefined}
+      selection={{
+        kind: "index",
+        selectedIndex: selectedIdx,
+        onChange: (index) => setSelectedIdx(index),
+      }}
+      onActivate={(row) => setOpenRowId(row.id)}
+      onDetailKeyDown={handleDetailKeyDown}
       rootWidth={width}
       rootHeight={height}
       onRootKeyDown={handleKeyDown}
@@ -401,8 +754,6 @@ export function CorporateActionsView({
       sortDirection="desc"
       onHeaderClick={() => {}}
       getItemKey={(row) => row.id}
-      isSelected={() => false}
-      onSelect={() => {}}
       renderCell={renderCell}
       getRowBackgroundColor={(row) => (
         row.date > todayKey ? futureRowBackground : undefined

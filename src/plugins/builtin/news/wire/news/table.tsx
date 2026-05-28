@@ -245,9 +245,13 @@ export function NewsArticleStackView({
       onBack={onBack}
       detailContent={detailContent}
       detailTitle={detailTitle}
-      selectedIndex={activeIdx}
-      onSelectIndex={selectIndex}
-      onActivateIndex={openIndex}
+      selection={{
+        kind: "id",
+        selectedId: selectedArticleId,
+        getId: (article) => article.id,
+        onChange: (id) => setSelectedArticleId(id),
+      }}
+      onActivate={openArticle}
       rootBefore={rootBefore}
       rootHeight={rootHeight}
       onRootKeyDown={onRootKeyDown}
@@ -257,9 +261,6 @@ export function NewsArticleStackView({
       sortDirection={sortPreference.direction}
       onHeaderClick={(columnId) => setSortPreference(nextSortPreference(sortPreference, columnId as NewsColumnId))}
       getItemKey={(item) => item.id}
-      isSelected={(item, index) => item.id === selectedArticleId || (selectedArticleId === null && index === 0)}
-      onSelect={(article) => setSelectedArticleId(article.id)}
-      onActivate={openArticle}
       renderCell={renderCell}
       emptyContent={emptyContent}
       emptyStateTitle={emptyStateTitle}

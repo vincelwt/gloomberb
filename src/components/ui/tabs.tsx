@@ -48,6 +48,12 @@ export function Tabs({
 }: TabsProps) {
   const ui = useUiHost();
   const NativeTabs = ui.Tabs;
+  const navigationValueRef = useRef<string | null>(activeValue);
+  const renderedActiveValueRef = useRef<string | null>(activeValue);
+  if (renderedActiveValueRef.current !== activeValue) {
+    renderedActiveValueRef.current = activeValue;
+    navigationValueRef.current = activeValue;
+  }
   const palette = {
     activeFg: variant === "bare" ? colors.textBright : colors.text,
     inactiveFg: colors.textDim,
@@ -62,18 +68,26 @@ export function Tabs({
     closeFg: colors.textMuted,
     addFg: colors.textMuted,
   };
+  const handleSelect = useCallback((value: string) => {
+    navigationValueRef.current = value;
+    onSelect(value);
+  }, [onSelect]);
+
   const selectAdjacentTab = useCallback((direction: -1 | 1) => {
     const enabledTabs = tabs.filter((tab) => !tab.disabled);
     if (enabledTabs.length === 0) return;
 
-    const activeIndex = enabledTabs.findIndex((tab) => tab.value === activeValue);
+    const navigationValue = enabledTabs.some((tab) => tab.value === navigationValueRef.current)
+      ? navigationValueRef.current
+      : activeValue;
+    const activeIndex = enabledTabs.findIndex((tab) => tab.value === navigationValue);
     const nextIndex = activeIndex >= 0
       ? Math.max(0, Math.min(activeIndex + direction, enabledTabs.length - 1))
       : direction > 0 ? 0 : enabledTabs.length - 1;
     const nextTab = enabledTabs[nextIndex];
-    if (!nextTab || nextTab.value === activeValue) return;
-    onSelect(nextTab.value);
-  }, [activeValue, onSelect, tabs]);
+    if (!nextTab || nextTab.value === navigationValue) return;
+    handleSelect(nextTab.value);
+  }, [activeValue, handleSelect, tabs]);
 
   useShortcut((event) => {
     if (event.ctrl || event.meta || event.alt || event.targetEditable) return;
@@ -96,7 +110,7 @@ export function Tabs({
       <NativeTabs
         tabs={tabs}
         activeValue={activeValue}
-        onSelect={onSelect}
+        onSelect={handleSelect}
         compact={compact}
         variant={variant}
         closeMode={closeMode}
@@ -111,7 +125,7 @@ export function Tabs({
     <OpenTuiTabs
       tabs={tabs}
       activeValue={activeValue}
-      onSelect={onSelect}
+      onSelect={handleSelect}
       compact={compact}
       variant={variant}
       closeMode={closeMode}

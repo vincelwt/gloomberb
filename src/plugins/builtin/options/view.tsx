@@ -238,7 +238,22 @@ export function OptionsView({ width, focused, onCapture = () => {} }: OptionsVie
 
       <DataTableView<OptionTableRow, OptionColumn>
         focused={focused}
-        selectedIndex={strikeIdx}
+        selection={{
+          kind: "index",
+          selectedIndex: strikeIdx,
+          onChange: (index) => {
+            userSelectedStrikeRef.current = true;
+            setScrollToIndexAlign("nearest");
+            enterInteractive();
+            setStrikeIdx(index);
+          },
+        }}
+        onCursorChange={(_row, index) => {
+          userSelectedStrikeRef.current = true;
+          setScrollToIndexAlign("nearest");
+          enterInteractive();
+          setStrikeIdx(index);
+        }}
         onRootKeyDown={handleTableKeyDown}
         columns={optionColumns}
         items={rows}
@@ -246,13 +261,6 @@ export function OptionsView({ width, focused, onCapture = () => {} }: OptionsVie
         sortDirection="asc"
         onHeaderClick={() => {}}
         getItemKey={(row) => String(row.strike)}
-        isSelected={(_row, index) => index === strikeIdx}
-        onSelect={(_row, index) => {
-          userSelectedStrikeRef.current = true;
-          setScrollToIndexAlign("nearest");
-          enterInteractive();
-          setStrikeIdx(index);
-        }}
         renderCell={renderOptionCell}
         emptyStateTitle="No strikes available."
         scrollToIndex={strikeIdx}

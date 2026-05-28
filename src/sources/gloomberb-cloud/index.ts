@@ -279,6 +279,10 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     throw createProviderMiss("Cloud SEC filings are not available");
   }
 
+  async getSecFilingDocuments(_filing: SecFilingItem) {
+    throw createProviderMiss("Cloud filing documents are not available");
+  }
+
   async getSecFilingContent(_filing: SecFilingItem): Promise<string | null> {
     throw createProviderMiss("Cloud filing content is not available");
   }

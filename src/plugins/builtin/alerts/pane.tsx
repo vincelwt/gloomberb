@@ -279,7 +279,11 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
   return (
     <DataTableView<AlertRule, AlertColumn>
       focused={focused}
-      selectedIndex={selectedIdx}
+      selection={{
+        kind: "index",
+        selectedIndex: selectedIdx,
+        onChange: (index) => setSelectedIdx(index),
+      }}
       onRootKeyDown={handleTableKeyDown}
       rootWidth={width}
       rootHeight={height}
@@ -290,8 +294,6 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
       sortDirection="asc"
       onHeaderClick={() => {}}
       getItemKey={(alert) => alert.id}
-      isSelected={(_alert, index) => index === selectedIdx}
-      onSelect={(_alert, index) => setSelectedIdx(index)}
       onActivate={(alert) => {
         if (alert.status === "triggered") rearmAlert(alert.id);
       }}

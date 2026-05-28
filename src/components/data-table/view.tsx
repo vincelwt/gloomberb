@@ -24,6 +24,41 @@ import {
 
 export type DataTableKeyEvent = TableViewKeyEvent;
 
+const DATA_TABLE_SELECTION_COMMIT_DELAY_MS = 150;
+
+export type DataTableSelectionChangeReason =
+  | "keyboard"
+  | "pointer"
+  | "activation";
+
+export type DataTableSelection<T> =
+  | { kind: "none" }
+  | {
+      kind: "index";
+      selectedIndex: number | null;
+      onChange: (
+        index: number,
+        item: T,
+        reason: DataTableSelectionChangeReason,
+      ) => void;
+    }
+  | {
+      kind: "id";
+      selectedId: string | null;
+      getId: (item: T, index: number) => string;
+      onChange: (
+        id: string,
+        item: T,
+        index: number,
+        reason: DataTableSelectionChangeReason,
+      ) => void;
+    };
+
+interface SelectionCommitTarget {
+  index: number;
+  id?: string;
+}
+
 export interface DataTableViewProps<
   T,
   C extends DataTableColumn = DataTableColumn,
@@ -35,11 +70,18 @@ export interface DataTableViewProps<
     | "onBodyScrollActivity"
     | "hoveredIdx"
     | "setHoveredIdx"
+    | "isSelected"
+    | "onSelect"
+    | "onActivate"
   > {
   focused?: boolean;
-  selectedIndex?: number | null;
-  onSelectIndex?: (index: number, item: T) => void;
-  onActivateIndex?: (index: number, item: T) => void;
+  selection: DataTableSelection<T>;
+  onActivate?: (item: T, index: number) => void;
+  onCursorChange?: (
+    item: T,
+    index: number,
+    reason: DataTableSelectionChangeReason,
+  ) => void;
   isNavigable?: (item: T, index: number) => boolean;
   rootBefore?: ReactNode;
   rootAfter?: ReactNode;
@@ -62,9 +104,9 @@ export function DataTableView<
   C extends DataTableColumn = DataTableColumn,
 >({
   focused = false,
-  selectedIndex,
-  onSelectIndex,
-  onActivateIndex,
+  selection,
+  onActivate,
+  onCursorChange,
   isNavigable,
   rootBefore,
   rootAfter,
@@ -97,29 +139,32 @@ export function DataTableView<
     hoveredIdx,
     setHoveredIdx,
   });
-  const [fallbackSelectedIndex, setFallbackSelectedIndex] = useState<
-    number | null
-  >(null);
-  const selectedIndexFromPredicate = useMemo(
-    () => selectedIndex == null
-      ? tableProps.items.findIndex(tableProps.isSelected)
-      : -1,
-    [selectedIndex, tableProps.items, tableProps.isSelected],
+  const [cursorIndex, setCursorIndex] = useState<number | null>(null);
+  const pendingCommitRef = useRef(false);
+  const pendingCommitTargetRef = useRef<SelectionCommitTarget | null>(null);
+  const pendingCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
   );
-  const usesFallbackSelection =
-    selectedIndex == null && selectedIndexFromPredicate < 0;
-  const effectiveSelectedIndex = selectedIndex
-    ?? (selectedIndexFromPredicate >= 0
-      ? selectedIndexFromPredicate
-      : fallbackSelectedIndex ?? -1);
-  const effectiveSelectedIndexRef = useRef(effectiveSelectedIndex);
-  effectiveSelectedIndexRef.current = effectiveSelectedIndex;
-  const effectiveScrollToIndex = scrollToIndex ?? (
-    effectiveSelectedIndex >= 0 ? effectiveSelectedIndex : null
-  );
-  const [selectionScrollVersion, setSelectionScrollVersion] = useState(0);
-  const lastSelectionScrollIndexRef = useRef<number | null>(null);
-
+  const selectionKey = selection.kind === "id"
+    ? selection.selectedId
+    : selection.kind === "index"
+      ? selection.selectedIndex
+      : null;
+  const selectedIndexFromSelection = useMemo(() => {
+    if (selection.kind === "none") return -1;
+    if (selection.kind === "index") {
+      const index = selection.selectedIndex;
+      return typeof index === "number"
+        && index >= 0
+        && index < tableProps.items.length
+        ? index
+        : -1;
+    }
+    if (selection.selectedId == null) return -1;
+    return tableProps.items.findIndex(
+      (item, index) => selection.getId(item, index) === selection.selectedId,
+    );
+  }, [selection, selectionKey, tableProps.items]);
   const navigableIndices = useMemo(() => {
     if (!isNavigable) return null;
     return tableProps.items.reduce<number[]>((indices, item, index) => {
@@ -128,38 +173,81 @@ export function DataTableView<
     }, []);
   }, [isNavigable, tableProps.items]);
 
-  useEffect(() => {
-    if (!usesFallbackSelection) {
-      if (fallbackSelectedIndex !== null) setFallbackSelectedIndex(null);
-      return;
+  const isValidCursorIndex = useCallback((index: number | null) => {
+    if (index == null || index < 0 || index >= tableProps.items.length) {
+      return false;
     }
-    if (fallbackSelectedIndex == null) return;
-    if (!navigableIndices) {
-      if (
-        fallbackSelectedIndex >= 0
-        && fallbackSelectedIndex < tableProps.items.length
-      ) {
-        return;
-      }
-      setFallbackSelectedIndex(tableProps.items.length > 0
-        ? Math.min(fallbackSelectedIndex, tableProps.items.length - 1)
-        : null);
-      return;
-    }
-    if (navigableIndices.includes(fallbackSelectedIndex)) return;
+    if (!isNavigable) return true;
+    const item = tableProps.items[index];
+    return item !== undefined && isNavigable(item, index);
+  }, [isNavigable, tableProps.items]);
 
-    const nextIndex = navigableIndices.find(
-      (index) => index >= fallbackSelectedIndex,
-    )
-      ?? navigableIndices.at(-1)
-      ?? null;
-    setFallbackSelectedIndex(nextIndex);
+  const defaultCursorIndex = selection.kind === "none"
+    ? -1
+    : isValidCursorIndex(selectedIndexFromSelection)
+      ? selectedIndexFromSelection
+      : navigableIndices
+        ? navigableIndices[0] ?? -1
+        : tableProps.items.length > 0
+          ? 0
+          : -1;
+  const effectiveSelectedIndex = selection.kind === "none"
+    ? -1
+    : isValidCursorIndex(cursorIndex)
+      ? cursorIndex!
+      : defaultCursorIndex;
+  const effectiveSelectedIndexRef = useRef(effectiveSelectedIndex);
+  effectiveSelectedIndexRef.current = effectiveSelectedIndex;
+  const [selectionScrollVersion, setSelectionScrollVersion] = useState(0);
+  const [selectionScrollTarget, setSelectionScrollTarget] = useState<number | null>(null);
+  const lastExternalSelectionScrollRef = useRef<{
+    kind: DataTableSelection<T>["kind"];
+    key: string | number | null;
+    resolved: boolean;
+  } | null>(null);
+  const effectiveScrollToIndex = scrollToIndex !== undefined
+    ? scrollToIndex
+    : selectionScrollTarget;
+
+  const requestSelectionScroll = useCallback((index: number) => {
+    if (scrollToIndex !== undefined || index < 0) return;
+    setSelectionScrollTarget(index);
+    setSelectionScrollVersion((current) => current + 1);
+  }, [scrollToIndex]);
+
+  const clearPendingCommit = useCallback(() => {
+    if (pendingCommitTimerRef.current) {
+      clearTimeout(pendingCommitTimerRef.current);
+      pendingCommitTimerRef.current = null;
+    }
+    pendingCommitRef.current = false;
+    pendingCommitTargetRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (selection.kind === "none") {
+      clearPendingCommit();
+      setCursorIndex(null);
+      return;
+    }
+    if (pendingCommitRef.current) return;
+    setCursorIndex(defaultCursorIndex >= 0 ? defaultCursorIndex : null);
   }, [
-    fallbackSelectedIndex,
+    clearPendingCommit,
+    defaultCursorIndex,
     navigableIndices,
+    selectedIndexFromSelection,
+    selection.kind,
+    selectionKey,
     tableProps.items.length,
-    usesFallbackSelection,
   ]);
+
+  useEffect(() => () => {
+    if (pendingCommitTimerRef.current) {
+      clearTimeout(pendingCommitTimerRef.current);
+      pendingCommitTimerRef.current = null;
+    }
+  }, []);
 
   const handleBodyScrollActivity = useTableBodyScrollActivity({
     onBodyScrollActivity,
@@ -173,40 +261,156 @@ export function DataTableView<
   });
 
   useEffect(() => {
-    if (effectiveScrollToIndex == null) {
-      lastSelectionScrollIndexRef.current = null;
+    const current = {
+      kind: selection.kind,
+      key: selectionKey,
+      resolved: selectedIndexFromSelection >= 0,
+    };
+    const previous = lastExternalSelectionScrollRef.current;
+    lastExternalSelectionScrollRef.current = current;
+
+    if (selection.kind === "none") {
+      if (scrollToIndex === undefined) setSelectionScrollTarget(null);
       return;
     }
-    if (lastSelectionScrollIndexRef.current === effectiveScrollToIndex) return;
-    lastSelectionScrollIndexRef.current = effectiveScrollToIndex;
-    setSelectionScrollVersion((current) => current + 1);
-  }, [effectiveScrollToIndex]);
+    if (effectiveSelectedIndex < 0) return;
 
-  const selectIndex = useCallback((index: number) => {
+    const selectionChanged = !previous
+      || previous.kind !== current.kind
+      || previous.key !== current.key;
+    const selectedRowAppeared = !previous?.resolved && current.resolved;
+    if (selectionChanged || selectedRowAppeared) {
+      requestSelectionScroll(effectiveSelectedIndex);
+    }
+  }, [
+    effectiveSelectedIndex,
+    requestSelectionScroll,
+    scrollToIndex,
+    selectedIndexFromSelection,
+    selection.kind,
+    selectionKey,
+  ]);
+
+  const commitIndex = useCallback((
+    index: number,
+    reason: DataTableSelectionChangeReason,
+  ) => {
+    if (selection.kind === "none") return;
+    if (index < 0 || index >= tableProps.items.length) return;
+    const item = tableProps.items[index]!;
+    if (isNavigable && !isNavigable(item, index)) return;
+
+    if (selection.kind === "index") {
+      selection.onChange(index, item, reason);
+      return;
+    }
+
+    selection.onChange(selection.getId(item, index), item, index, reason);
+  }, [isNavigable, selection, tableProps.items]);
+  const commitIndexRef = useRef(commitIndex);
+
+  useEffect(() => {
+    commitIndexRef.current = commitIndex;
+  }, [commitIndex]);
+
+  const getCommitTarget = useCallback((index: number): SelectionCommitTarget | null => {
+    if (selection.kind === "none") return null;
+    if (index < 0 || index >= tableProps.items.length) return null;
+    const item = tableProps.items[index]!;
+    if (isNavigable && !isNavigable(item, index)) return null;
+    return selection.kind === "id"
+      ? { index, id: selection.getId(item, index) }
+      : { index };
+  }, [isNavigable, selection, tableProps.items]);
+
+  const commitTarget = useCallback((
+    target: SelectionCommitTarget | null,
+    reason: DataTableSelectionChangeReason,
+  ) => {
+    if (!target) return;
+    if (selection.kind !== "id" || target.id == null) {
+      commitIndexRef.current(target.index, reason);
+      return;
+    }
+    const currentIndex = tableProps.items.findIndex(
+      (item, index) => selection.getId(item, index) === target.id,
+    );
+    if (currentIndex < 0) return;
+    commitIndexRef.current(currentIndex, reason);
+  }, [selection, tableProps.items]);
+
+  const commitIndexImmediately = useCallback((
+    index: number,
+    reason: DataTableSelectionChangeReason,
+  ) => {
+    const target = getCommitTarget(index);
+    clearPendingCommit();
+    commitTarget(target, reason);
+  }, [clearPendingCommit, commitTarget, getCommitTarget]);
+
+  const scheduleCommitIndex = useCallback((index: number) => {
+    if (selection.kind === "none") return;
+    const target = getCommitTarget(index);
+    if (!target) return;
+    if (pendingCommitTimerRef.current) {
+      clearTimeout(pendingCommitTimerRef.current);
+    }
+    pendingCommitRef.current = true;
+    pendingCommitTargetRef.current = target;
+    pendingCommitTimerRef.current = setTimeout(() => {
+      pendingCommitTimerRef.current = null;
+      pendingCommitRef.current = false;
+      const pendingTarget = pendingCommitTargetRef.current;
+      pendingCommitTargetRef.current = null;
+      commitTarget(pendingTarget, "keyboard");
+    }, DATA_TABLE_SELECTION_COMMIT_DELAY_MS);
+  }, [commitTarget, getCommitTarget, selection.kind]);
+
+  const updateCursorIndex = useCallback((
+    index: number,
+    options: {
+      commit: "deferred" | "immediate" | "none";
+      reason?: DataTableSelectionChangeReason;
+    },
+  ) => {
+    if (selection.kind === "none") return;
     if (index < 0 || index >= tableProps.items.length) return;
     const item = tableProps.items[index]!;
     if (isNavigable && !isNavigable(item, index)) return;
     effectiveSelectedIndexRef.current = index;
-    if (usesFallbackSelection) {
-      setFallbackSelectedIndex(index);
+    setCursorIndex(index);
+    const reason = options.reason ?? (options.commit === "deferred"
+      ? "keyboard"
+      : options.commit === "immediate"
+        ? "pointer"
+        : "keyboard");
+    onCursorChange?.(item, index, reason);
+    if (options.commit === "deferred") {
+      requestSelectionScroll(index);
     }
-    if (onSelectIndex) {
-      onSelectIndex(index, item);
-      return;
+    if (options.commit === "immediate") {
+      commitIndexImmediately(index, reason);
+    } else if (options.commit === "deferred") {
+      scheduleCommitIndex(index);
     }
-    tableProps.onSelect(item, index);
-  }, [isNavigable, onSelectIndex, tableProps, usesFallbackSelection]);
+  }, [
+    commitIndexImmediately,
+    isNavigable,
+    onCursorChange,
+    requestSelectionScroll,
+    scheduleCommitIndex,
+    selection.kind,
+    tableProps.items,
+  ]);
 
   const activateIndex = useCallback((index: number) => {
     if (index < 0 || index >= tableProps.items.length) return;
     const item = tableProps.items[index]!;
     if (isNavigable && !isNavigable(item, index)) return;
-    if (onActivateIndex) {
-      onActivateIndex(index, item);
-      return;
-    }
-    tableProps.onActivate?.(item, index);
-  }, [isNavigable, onActivateIndex, tableProps]);
+    updateCursorIndex(index, { commit: "none", reason: "activation" });
+    commitIndexImmediately(index, "activation");
+    onActivate?.(item, index);
+  }, [commitIndexImmediately, isNavigable, onActivate, tableProps.items, updateCursorIndex]);
 
   const selectByOffset = useCallback((offset: -1 | 1) => {
     if (!navigableIndices) {
@@ -218,7 +422,7 @@ export function DataTableView<
             Math.min(selectedIndex + offset, tableProps.items.length - 1),
           )
         : 0;
-      selectIndex(nextIndex);
+      updateCursorIndex(nextIndex, { commit: "deferred" });
       return;
     }
     if (navigableIndices.length === 0) return;
@@ -230,8 +434,10 @@ export function DataTableView<
         )
       : 0;
     const nextIndex = navigableIndices[nextPosition];
-    if (nextIndex !== undefined) selectIndex(nextIndex);
-  }, [navigableIndices, selectIndex, tableProps.items.length]);
+    if (nextIndex !== undefined) {
+      updateCursorIndex(nextIndex, { commit: "deferred" });
+    }
+  }, [navigableIndices, tableProps.items.length, updateCursorIndex]);
 
   const activateSelection = useCallback(() => {
     if (!navigableIndices) {
@@ -249,6 +455,32 @@ export function DataTableView<
     const selectedIsNavigable = navigableIndices.includes(selectedIndex);
     activateIndex(selectedIsNavigable ? selectedIndex : navigableIndices[0]!);
   }, [activateIndex, navigableIndices, tableProps.items.length]);
+
+  const isItemSelected = useCallback((item: T, index: number) => (
+    index === effectiveSelectedIndex
+    && (!isNavigable || isNavigable(item, index))
+  ), [effectiveSelectedIndex, isNavigable]);
+
+  const handleTableSelect = useCallback((_item: T, index: number) => {
+    updateCursorIndex(index, { commit: "immediate" });
+  }, [updateCursorIndex]);
+
+  const handleTableActivate = useCallback((_item: T, index: number) => {
+    activateIndex(index);
+  }, [activateIndex]);
+
+  const handleRowMouseDown = useCallback((item: T, index: number, event: any) => {
+    const handled = tableProps.onRowMouseDown?.(item, index, event);
+    if (handled === true) {
+      updateCursorIndex(index, { commit: "immediate" });
+    }
+    return handled;
+  }, [tableProps.onRowMouseDown, updateCursorIndex]);
+
+  const handleRowContextMenu = useCallback((item: T, index: number, event: any) => {
+    updateCursorIndex(index, { commit: "immediate" });
+    tableProps.onRowContextMenu?.(item, index, event);
+  }, [tableProps.onRowContextMenu, updateCursorIndex]);
 
   useShortcut((event) => {
     if (event.defaultPrevented || event.propagationStopped) return;
@@ -293,13 +525,11 @@ export function DataTableView<
         setHoveredIdx={effectiveSetHoveredIdx}
         scrollToIndex={effectiveScrollToIndex}
         scrollToIndexVersion={scrollToIndexVersion + selectionScrollVersion}
-        isSelected={(item, index) => (
-          tableProps.isSelected(item, index)
-          || (
-            index === effectiveSelectedIndex
-            && (!isNavigable || isNavigable(item, index))
-          )
-        )}
+        isSelected={isItemSelected}
+        onSelect={handleTableSelect}
+        onActivate={handleTableActivate}
+        onRowMouseDown={handleRowMouseDown}
+        onRowContextMenu={handleRowContextMenu}
       />
     </TableViewFrame>
   );

@@ -77,6 +77,10 @@ export function buildSecContentKey(accessionNumber: string): string {
   return `sec-content:${accessionNumber}`;
 }
 
+export function buildSecDocumentsKey(accessionNumber: string): string {
+  return `sec-documents:${accessionNumber}`;
+}
+
 export function buildArticleSummaryKey(url: string): string {
   return `article-summary:${url.trim()}`;
 }

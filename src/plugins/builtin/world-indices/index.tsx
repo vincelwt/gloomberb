@@ -162,10 +162,16 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
   return (
     <DataTableView<WorldIndexTableRow, WorldIndexColumn>
       focused={focused}
-      selectedIndex={activeFlatIdx}
+      selection={{
+        kind: "id",
+        selectedId: selectedSymbol,
+        getId: (row) => row.type === "row" ? row.entry.symbol : `header-${row.region}`,
+        onChange: (_id, row, index) => {
+          if (row.type === "row") selectFlatIndex(index);
+        },
+      }}
       isNavigable={(row) => row.type === "row"}
-      onSelectIndex={selectFlatIndex}
-      onActivateIndex={(index) => openSelected(index)}
+      onActivate={(_row, index) => openSelected(index)}
       rootWidth={width}
       rootHeight={height}
       columns={columns}
@@ -174,9 +180,6 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
       sortDirection={sortPreference.direction}
       onHeaderClick={handleHeaderClick}
       getItemKey={(row) => row.type === "header" ? `header-${row.region}` : row.entry.symbol}
-      isSelected={(row) => row.type === "row" && row.entry.symbol === selectedSymbol}
-      onSelect={(_row, index) => selectFlatIndex(index)}
-      onActivate={(_row, index) => openSelected(index)}
       renderSectionHeader={(row) => row.type === "header"
         ? { text: REGION_LABELS[row.region] }
         : null}
