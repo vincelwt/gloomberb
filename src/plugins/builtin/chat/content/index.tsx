@@ -31,6 +31,7 @@ import {
 import { buildChatUserByUsername } from "./user-map";
 import { useChatComposerRuntime } from "./composer-runtime";
 import { useChatMessageSelection } from "./selection-runtime";
+import type { ChatMessage } from "../../../../api-client";
 
 interface ChatContentProps {
   width: number;
@@ -60,12 +61,14 @@ export function ChatContent({
   const [inputFocused, setInputFocused] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(-1);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [followMessages, setFollowMessages] = useState(true);
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const messageElementsRef = useRef(new Map<string, unknown>());
   const applyingExternalDraftRef = useRef(false);
   const prependAnchorRef = useRef<ChatPrependAnchor | null>(null);
+  const previousEditingChannelIdRef = useRef(channelId);
   const useDefaultControllerChannel = channelId === DEFAULT_CHAT_CHANNEL_ID && !onChannelChange;
   const initialWidthMetrics = resolveChatContentWidthMetrics({
     width,
@@ -125,12 +128,20 @@ export function ChatContent({
   const selectionActive = selectedIdx >= 0 && selectedIdx < messages.length;
   const stickyTranscript = followMessages && !selectionActive;
   const latestMessageId = messages[messages.length - 1]?.id ?? null;
+  const latestEditableMessageId = useMemo(() => {
+    if (!user?.id) return null;
+    return [...messages]
+      .reverse()
+      .find((message) => message.user.id === user.id && !message.clientStatus)
+      ?.id ?? null;
+  }, [messages, user?.id]);
   const {
     composerHeight,
     messageAreaHeight,
   } = resolveChatContentHeightMetrics({
     canSend,
     composerRows,
+    editingMessage,
     height,
     nativePaneChrome,
     replyTo,
@@ -161,6 +172,12 @@ export function ChatContent({
   useEffect(() => {
     onChannelTitleChange?.(activeChannelTitle);
   }, [activeChannelTitle, onChannelTitleChange]);
+
+  useEffect(() => {
+    if (previousEditingChannelIdRef.current === channelId) return;
+    previousEditingChannelIdRef.current = channelId;
+    setEditingMessage(null);
+  }, [channelId]);
 
   const {
     moveMessageSelection,
@@ -209,9 +226,13 @@ export function ChatContent({
   }, [dispatch, setSidebarFocused]);
 
   const {
+    beginEditLatestMessage,
+    beginEditMessage,
     beginReplyTo,
+    cancelEditMessage,
     clearReplyTarget,
     commitLocalDraft,
+    editingPreview,
     focusComposer,
     inputPlaceholder,
     replyPreview,
@@ -232,7 +253,10 @@ export function ChatContent({
     inputValueRef,
     messages,
     onChannelChange,
+    editingMessage,
+    latestEditableMessageId,
     replyTo,
+    setEditingMessage,
     setDirectExpanded,
     setFollowMessages,
     setReplyTo,
@@ -272,9 +296,11 @@ export function ChatContent({
   });
 
   useChatContentShortcuts({
+    beginEditLatestMessage,
     beginReplyTo,
     blurInput,
     canSend,
+    cancelEditMessage,
     clearReplyTarget,
     cycleChannel,
     focusChannelSidebar,
@@ -289,6 +315,7 @@ export function ChatContent({
     moveMessageSelection,
     moveSidebarChannelSelection,
     nativePaneChrome,
+    editingMessage,
     replyTo,
     requestOlderMessages,
     requestOlderMessagesIfNeeded,
@@ -356,6 +383,7 @@ export function ChatContent({
 
       <ChatTranscript
         beginReplyTo={beginReplyTo}
+        beginEditMessage={beginEditMessage}
         canSend={canSend}
         catalog={catalog}
         cancelProfilePopoverClose={cancelProfilePopoverClose}
@@ -370,6 +398,7 @@ export function ChatContent({
         messageBodyWidth={messageBodyWidth}
         messages={messages}
         nativePaneChrome={nativePaneChrome}
+        latestEditableMessageId={latestEditableMessageId}
         openDirectMessage={openDirectMessage}
         openTicker={openTicker}
         profilePopoverUser={profilePopoverUser}
@@ -392,6 +421,7 @@ export function ChatContent({
 
       <ChatComposerArea
         canSend={canSend}
+        cancelEditMessage={cancelEditMessage}
         clearReplyTarget={clearReplyTarget}
         commitLocalDraft={commitLocalDraft}
         composerHeight={composerHeight}
@@ -405,6 +435,8 @@ export function ChatContent({
         inputRef={inputRef}
         inputValueRef={inputValueRef}
         nativePaneChrome={nativePaneChrome}
+        editingMessage={editingMessage}
+        editingPreview={editingPreview}
         replyPreview={replyPreview}
         replyTo={replyTo}
         sendMessage={sendMessage}

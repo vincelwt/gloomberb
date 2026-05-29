@@ -379,6 +379,36 @@ describe("apiClient chat timestamps", () => {
     expect(sentMessage.createdAt).toBe("2026-04-08T07:29:27.625Z");
   });
 
+  test("edits a chat message and normalizes the edit timestamp", async () => {
+    const requests: Array<{ path: string; method: string; body: unknown }> = [];
+    globalThis.fetch = mockFetch(async (input: Request | string | URL, init?: RequestInit) => {
+      requests.push({
+        path: new URL(String(input)).pathname,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      });
+      return createResponse({
+        id: "m2",
+        channelId: "everyone",
+        content: "hello edited",
+        replyToId: null,
+        createdAt: "2026-04-08 07:29:27.625",
+        editedAt: "2026-04-08 07:30:27.625",
+        user: { id: "u1", username: "alice", displayName: "Alice" },
+        replyTo: null,
+      });
+    });
+
+    const editedMessage = await apiClient.editMessage("everyone", "m2", "hello edited");
+
+    expect(requests).toEqual([{
+      path: "/chat/channels/everyone/messages/m2",
+      method: "PATCH",
+      body: { content: "hello edited" },
+    }]);
+    expect(editedMessage.editedAt).toBe("2026-04-08T07:30:27.625Z");
+  });
+
   test("normalizes websocket chat timestamps before notifying listeners", async () => {
     const seenCreatedAts: string[] = [];
     const channel = apiClient.connectChannel("everyone", (message) => {

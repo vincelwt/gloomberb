@@ -41,7 +41,11 @@ export function getChatMessageRenderState({
   const isSending = msg.clientStatus === "sending";
   const hasFailed = msg.clientStatus === "failed";
   const selectedTextColor = hasFailed ? colors.negative : colors.selectedText;
-  const headerStatus = isSending ? "sending..." : hasFailed ? "failed" : formatTimeAgo(msg.createdAt);
+  const headerStatus = isSending
+    ? "sending..."
+    : hasFailed
+      ? "failed"
+      : `${formatTimeAgo(msg.createdAt)}${msg.editedAt ? " edited" : ""}`;
 
   return {
     isSelected,

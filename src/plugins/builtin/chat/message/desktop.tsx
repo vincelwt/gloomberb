@@ -22,14 +22,20 @@ export const DesktopChatMessage = memo(function DesktopChatMessage({
   onUserHover,
   onUserHoverEnd,
   beginReplyTo,
+  beginEditMessage,
   jumpToMessage,
+  latestEditableMessageId,
   registerMessageElement,
 }: ChatMessageBaseProps & {
   registerMessageElement: (messageId: string, node: unknown | null) => void;
 }) {
   const state = getChatMessageRenderState({ msg, index, messages, selectedIdx, hoveredIdx, canSend });
+  const canEditMessage = msg.id === latestEditableMessageId;
   const showInlineReplyAction = !state.grouped && canSend;
+  const showInlineEditAction = !state.grouped && canSend && canEditMessage;
   const showGroupedReplyAction = state.grouped && canSend;
+  const showGroupedEditAction = state.grouped && canSend && canEditMessage;
+  const groupedActionWidth = MESSAGE_ACTION_WIDTH * Number(showGroupedReplyAction) + MESSAGE_ACTION_WIDTH * Number(showGroupedEditAction);
   const rowProps = {
     width: "100%",
     paddingRight: DESKTOP_MESSAGE_RIGHT_PADDING,
@@ -98,21 +104,37 @@ export const DesktopChatMessage = memo(function DesktopChatMessage({
             {msg.user.username ?? "anon"}
           </Text>
           <Text fg={state.headerStatusColor}> {state.headerStatus}</Text>
-          {showInlineReplyAction && (
+          {(showInlineReplyAction || showInlineEditAction) && (
             <>
               <Text fg={state.headerStatusColor}> </Text>
-              <Box
-                width={MESSAGE_ACTION_WIDTH}
-                height={1}
-                data-gloom-role="chat-message-reply-action"
-              >
-                <ChatActionChip
-                  label="Reply"
+              {showInlineReplyAction && (
+                <Box
                   width={MESSAGE_ACTION_WIDTH}
-                  emphasized={state.isSelected}
-                  onPress={() => beginReplyTo(index)}
-                />
-              </Box>
+                  height={1}
+                  data-gloom-role="chat-message-reply-action"
+                >
+                  <ChatActionChip
+                    label="Reply"
+                    width={MESSAGE_ACTION_WIDTH}
+                    emphasized={state.isSelected}
+                    onPress={() => beginReplyTo(index)}
+                  />
+                </Box>
+              )}
+              {showInlineEditAction && (
+                <Box
+                  width={MESSAGE_ACTION_WIDTH}
+                  height={1}
+                  data-gloom-role="chat-message-reply-action"
+                >
+                  <ChatActionChip
+                    label="Edit"
+                    width={MESSAGE_ACTION_WIDTH}
+                    emphasized={state.isSelected}
+                    onPress={() => beginEditMessage(index)}
+                  />
+                </Box>
+              )}
             </>
           )}
         </Box>
@@ -135,21 +157,32 @@ export const DesktopChatMessage = memo(function DesktopChatMessage({
             onUserHoverEnd={onUserHoverEnd}
           />
         </Box>
-        {showGroupedReplyAction && (
+        {(showGroupedReplyAction || showGroupedEditAction) && (
           <Box
             position="absolute"
             top={0}
             right={0}
-            width={MESSAGE_ACTION_WIDTH}
+            width={groupedActionWidth}
             height={1}
+            flexDirection="row"
             data-gloom-role="chat-message-reply-action"
           >
-            <ChatActionChip
-              label="Reply"
-              width={MESSAGE_ACTION_WIDTH}
-              emphasized={state.isSelected}
-              onPress={() => beginReplyTo(index)}
-            />
+            {showGroupedReplyAction && (
+              <ChatActionChip
+                label="Reply"
+                width={MESSAGE_ACTION_WIDTH}
+                emphasized={state.isSelected}
+                onPress={() => beginReplyTo(index)}
+              />
+            )}
+            {showGroupedEditAction && (
+              <ChatActionChip
+                label="Edit"
+                width={MESSAGE_ACTION_WIDTH}
+                emphasized={state.isSelected}
+                onPress={() => beginEditMessage(index)}
+              />
+            )}
           </Box>
         )}
       </Box>

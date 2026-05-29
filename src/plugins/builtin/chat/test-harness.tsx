@@ -20,6 +20,7 @@ const originalConnectChannel = apiClient.connectChannel.bind(apiClient);
 const originalGetChannels = apiClient.getChannels.bind(apiClient);
 const originalGetChatPresence = apiClient.getChatPresence.bind(apiClient);
 const originalUpdateChatChannelState = apiClient.updateChatChannelState.bind(apiClient);
+const originalEditMessage = apiClient.editMessage.bind(apiClient);
 
 export type ChatTestSetup = Awaited<ReturnType<typeof testRender>>;
 
@@ -50,6 +51,7 @@ export async function cleanupChatTest(testSetup: ChatTestSetup | undefined): Pro
   apiClient.getChannels = originalGetChannels;
   apiClient.getChatPresence = originalGetChatPresence;
   apiClient.updateChatChannelState = originalUpdateChatChannelState;
+  apiClient.editMessage = originalEditMessage;
   apiClient.setSessionToken(null);
 
   if (testSetup) {

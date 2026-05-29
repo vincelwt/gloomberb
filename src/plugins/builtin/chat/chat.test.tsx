@@ -180,6 +180,86 @@ describe("ChatContent", () => {
     expect(bodyLine).not.toContain("Reply");
   });
 
+  test("shows the edit action next to reply for the latest own message", async () => {
+    const ownMessage: ChatMessage = {
+      id: "m-own",
+      channelId: "everyone",
+      content: "typo",
+      replyToId: null,
+      createdAt: "2026-03-30T00:00:03.000Z",
+      user: { id: "u0", username: "vince", displayName: "Vince" },
+    };
+    const controller = createController({
+      messages: [makeMessage(1), ownMessage],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    await emitKeypress({ name: "up", sequence: "\u001b[A" });
+    await flushFrame();
+
+    const lines = setup().captureCharFrame().split("\n");
+    const headerLine = lines.find((line) => line.includes("vince"));
+
+    expect(headerLine).toContain("Reply");
+    expect(headerLine).toContain("Edit");
+  });
+
+  test("up arrow from an empty focused composer edits the latest own message", async () => {
+    const ownMessage: ChatMessage = {
+      id: "m-own",
+      channelId: "everyone",
+      content: "typo",
+      replyToId: null,
+      createdAt: "2026-03-30T00:00:03.000Z",
+      user: { id: "u0", username: "vince", displayName: "Vince" },
+    };
+    const controller = createController({
+      messages: [makeMessage(1), ownMessage],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const lines = setup().captureCharFrame().split("\n");
+    const inputRow = lines.findIndex((line) => line.includes("Type a message..."));
+    const inputCol = lines[inputRow]?.indexOf("Type a message...") ?? -1;
+    expect(inputRow).toBeGreaterThanOrEqual(0);
+    expect(inputCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await setup().mockMouse.click(inputCol + 1, inputRow);
+      await setup().renderOnce();
+      await setup().renderOnce();
+    });
+
+    await emitKeypress({ name: "up", sequence: "\u001b[A" });
+    await flushFrame();
+
+    const frame = setup().captureCharFrame();
+    expect(frame).toContain("editing");
+    expect(frame).toContain("> typo");
+  });
+
   test("down arrow from the newest selected message returns focus to the composer", async () => {
     const controller = createController({
       messages: [makeMessage(1), makeMessage(2)],

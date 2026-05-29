@@ -6,9 +6,11 @@ import { isPlainKey } from "../../../../utils/keyboard";
 import { scrollToBottom } from "../layout";
 
 export function useChatContentShortcuts({
+  beginEditLatestMessage,
   beginReplyTo,
   blurInput,
   canSend,
+  cancelEditMessage,
   clearReplyTarget,
   cycleChannel,
   focusChannelSidebar,
@@ -23,6 +25,7 @@ export function useChatContentShortcuts({
   moveMessageSelection,
   moveSidebarChannelSelection,
   nativePaneChrome,
+  editingMessage,
   replyTo,
   requestOlderMessages,
   requestOlderMessagesIfNeeded,
@@ -35,9 +38,11 @@ export function useChatContentShortcuts({
   showChannelSidebar,
   sidebarFocusedRef,
 }: {
+  beginEditLatestMessage: (options?: { deferFocus?: boolean }) => boolean;
   beginReplyTo: (index: number, options?: { deferFocus?: boolean }) => void;
   blurInput: () => void;
   canSend: boolean;
+  cancelEditMessage: () => void;
   clearReplyTarget: () => void;
   cycleChannel: (direction: 1 | -1) => boolean;
   focusChannelSidebar: () => boolean;
@@ -52,6 +57,7 @@ export function useChatContentShortcuts({
   moveMessageSelection: (direction: "up" | "down") => boolean;
   moveSidebarChannelSelection: (direction: "up" | "down") => boolean;
   nativePaneChrome?: boolean;
+  editingMessage: ChatMessage | null;
   replyTo: ChatMessage | null;
   requestOlderMessages: () => void;
   requestOlderMessagesIfNeeded: () => void;
@@ -107,7 +113,9 @@ export function useChatContentShortcuts({
       if (event.name === "escape") {
         event.preventDefault?.();
         event.stopPropagation?.();
-        if (replyTo) {
+        if (editingMessage) {
+          cancelEditMessage();
+        } else if (replyTo) {
           clearReplyTarget();
         } else {
           blurInput();
@@ -116,6 +124,17 @@ export function useChatContentShortcuts({
       }
 
       const verticalDirection = event.name === "up" || event.name === "down" ? event.name : null;
+      if (
+        verticalDirection === "up"
+        && canSend
+        && isPlainKey(event, "up")
+        && inputValueRef.current.trim().length === 0
+        && beginEditLatestMessage({ deferFocus: true })
+      ) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        return;
+      }
       if (verticalDirection && isPlainKey(event, "up", "down") && shouldLeaveComposerForSelection(verticalDirection)) {
         const moved = moveMessageSelection(verticalDirection);
         if (moved) {

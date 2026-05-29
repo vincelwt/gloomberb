@@ -367,6 +367,38 @@ export class ChatController {
     });
   }
 
+  async editChannelMessage(channelId: string, messageId: string, content: string): Promise<boolean> {
+    const normalizedChannelId = normalizeChannelId(channelId);
+    const channel = this.ensureChannelState(normalizedChannelId);
+    const messageContent = content.trim();
+    if (!messageContent) return false;
+    if (!this.session.user?.emailVerified || !this.session.sessionToken) return false;
+
+    const latestOwnMessage = [...getVisibleMessages(channel)]
+      .reverse()
+      .find((message) => (
+        message.user.id === this.session.user?.id
+        && !message.clientStatus
+      ));
+    if (!latestOwnMessage || latestOwnMessage.id !== messageId) {
+      this.notifyFn({ body: "Only your latest sent message can be edited.", type: "error" });
+      return false;
+    }
+    if (latestOwnMessage.content === messageContent) return true;
+
+    try {
+      const message = await apiClient.editMessage(normalizedChannelId, messageId, messageContent);
+      this.mergeMessages(normalizedChannelId, [message]);
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error && error.message
+        ? error.message
+        : "Failed to edit message.";
+      this.notifyFn({ body: errorMessage, type: "error" });
+      return false;
+    }
+  }
+
   ensureConnection(channelId = DEFAULT_CHAT_CHANNEL_ID): void {
     const normalizedChannelId = normalizeChannelId(channelId);
     const channel = this.ensureChannelState(normalizedChannelId);

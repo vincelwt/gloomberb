@@ -13,6 +13,7 @@ interface MutableRef<T> {
 
 interface ChatTranscriptProps {
   beginReplyTo: (index: number, options?: { deferFocus?: boolean }) => void;
+  beginEditMessage: (index: number, options?: { deferFocus?: boolean }) => boolean;
   canSend: boolean;
   catalog: Record<string, InlineTickerCatalogEntry>;
   cancelProfilePopoverClose: () => void;
@@ -27,6 +28,7 @@ interface ChatTranscriptProps {
   messageBodyWidth: number;
   messages: ChatMessage[];
   nativePaneChrome: boolean | undefined;
+  latestEditableMessageId: string | null;
   openDirectMessage: (target: ChatUserSummary) => void;
   openTicker: (symbol: string) => void;
   profilePopoverUser: ChatUserSummary | null;
@@ -43,6 +45,7 @@ interface ChatTranscriptProps {
 
 export function ChatTranscript({
   beginReplyTo,
+  beginEditMessage,
   canSend,
   catalog,
   cancelProfilePopoverClose,
@@ -57,6 +60,7 @@ export function ChatTranscript({
   messageBodyWidth,
   messages,
   nativePaneChrome,
+  latestEditableMessageId,
   openDirectMessage,
   openTicker,
   profilePopoverUser,
@@ -113,7 +117,9 @@ export function ChatTranscript({
               onUserHover={showProfilePopover}
               onUserHoverEnd={scheduleProfilePopoverClose}
               beginReplyTo={beginReplyTo}
+              beginEditMessage={beginEditMessage}
               jumpToMessage={jumpToMessage}
+              latestEditableMessageId={latestEditableMessageId}
               registerMessageElement={registerMessageElement}
             />
           ) : (
@@ -133,7 +139,9 @@ export function ChatTranscript({
               onUserHover={showProfilePopover}
               onUserHoverEnd={scheduleProfilePopoverClose}
               beginReplyTo={beginReplyTo}
+              beginEditMessage={beginEditMessage}
               jumpToMessage={jumpToMessage}
+              latestEditableMessageId={latestEditableMessageId}
               setHoveredIdx={setHoveredIdx}
             />
           )

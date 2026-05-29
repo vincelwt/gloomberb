@@ -28,6 +28,7 @@ export interface ChatMessage {
   content: string;
   replyToId: string | null;
   createdAt: string;
+  editedAt?: string | null;
   user: ChatUserSummary;
   replyTo?: { content: string; user: { id?: string; username: string } } | null;
   clientStatus?: "sending" | "failed";
