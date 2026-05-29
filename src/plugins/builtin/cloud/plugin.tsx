@@ -13,6 +13,7 @@ import {
 import { registerTwitterFeedFeature } from "../cloud-tweets";
 import {
   buildDmCommandResults,
+  formatChatPaneTitle,
   getLastVisitedChatChannelId,
   hasOnlyDmUsernameArgs,
   normalizeShortcutChannelId,
@@ -50,8 +51,10 @@ export function createGloomberbCloudPlugin({
           const channelId = options?.arg
             ? await chatController.resolveRequiredChannelId(normalizeShortcutChannelId(options.arg))
             : await chatController.resolvePreferredChannelId(getLastVisitedChatChannelId(context.config));
+          const channel = chatController.getChannels().find((entry) => entry.id === channelId);
           return {
             placement: "floating",
+            title: formatChatPaneTitle(channel, channelId),
             settings: { channelId },
           };
         },

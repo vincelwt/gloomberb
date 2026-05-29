@@ -11,7 +11,11 @@ export function getPaneDisplayTitle(
     const channelId = typeof instance.settings?.channelId === "string" && instance.settings.channelId.trim()
       ? instance.settings.channelId.trim()
       : "everyone";
-    return instance.title ?? `#${channelId}`;
+    const title = typeof instance.title === "string" ? instance.title.trim() : "";
+    const displayTitle = title && !title.startsWith("dm:") && !title.startsWith("group:") ? title : undefined;
+    if (channelId.startsWith("dm:")) return displayTitle ?? "DM";
+    if (channelId.startsWith("group:")) return displayTitle ?? "Group";
+    return displayTitle ?? `#${channelId}`;
   }
 
   if (instance.paneId === TICKER_RESEARCH_PANE_ID) {

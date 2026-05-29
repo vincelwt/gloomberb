@@ -10,6 +10,7 @@ import {
 } from "../layout";
 import {
   DEFAULT_CHAT_CHANNEL_ID,
+  formatChatPaneTitle,
   normalizeChannelId,
 } from "../channels";
 import { ChatComposerArea } from "./composer";
@@ -37,6 +38,7 @@ interface ChatContentProps {
   focused: boolean;
   channelId?: string;
   onChannelChange?: (channelId: string) => void;
+  onChannelTitleChange?: (title: string) => void;
   controller?: ChatContentController;
 }
 
@@ -46,6 +48,7 @@ export function ChatContent({
   focused,
   channelId: rawChannelId,
   onChannelChange,
+  onChannelTitleChange,
   controller = chatController,
 }: ChatContentProps) {
   const dispatch = useAppDispatch();
@@ -140,6 +143,8 @@ export function ChatContent({
   const messageContents = useMemo(() => messages.map((message) => message.content), [messages]);
   const { catalog, openTicker } = useInlineTickers(messageContents);
   const userByUsername = useMemo(() => buildChatUserByUsername(channels, messages), [channels, messages]);
+  const activeChannel = useMemo(() => channels.find((channel) => channel.id === channelId), [channelId, channels]);
+  const activeChannelTitle = useMemo(() => formatChatPaneTitle(activeChannel, channelId), [activeChannel, channelId]);
   const {
     cancelProfilePopoverClose,
     closeProfilePopover,
@@ -152,6 +157,10 @@ export function ChatContent({
     setInputFocused(false);
     dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
   }, [dispatch]);
+
+  useEffect(() => {
+    onChannelTitleChange?.(activeChannelTitle);
+  }, [activeChannelTitle, onChannelTitleChange]);
 
   const {
     moveMessageSelection,
