@@ -32,6 +32,10 @@ import { buildChatUserByUsername } from "./user-map";
 import { useChatComposerRuntime } from "./composer-runtime";
 import { useChatMessageSelection } from "./selection-runtime";
 import type { ChatMessage } from "../../../../api-client";
+import {
+  CHAT_MESSAGE_EDIT_WINDOW_MS,
+  findLatestEditableChatMessage,
+} from "../edit-window";
 
 interface ChatContentProps {
   width: number;
@@ -128,13 +132,29 @@ export function ChatContent({
   const selectionActive = selectedIdx >= 0 && selectedIdx < messages.length;
   const stickyTranscript = followMessages && !selectionActive;
   const latestMessageId = messages[messages.length - 1]?.id ?? null;
-  const latestEditableMessageId = useMemo(() => {
+  const [editWindowNowMs, setEditWindowNowMs] = useState(() => Date.now());
+  const latestOwnMessage = useMemo(() => {
     if (!user?.id) return null;
     return [...messages]
       .reverse()
-      .find((message) => message.user.id === user.id && !message.clientStatus)
-      ?.id ?? null;
+      .find((message) => message.user.id === user.id && !message.clientStatus) ?? null;
   }, [messages, user?.id]);
+
+  useEffect(() => {
+    if (!latestOwnMessage) return;
+    const createdMs = Date.parse(latestOwnMessage.createdAt);
+    if (!Number.isFinite(createdMs)) return;
+    const expiresInMs = createdMs + CHAT_MESSAGE_EDIT_WINDOW_MS - Date.now();
+    if (expiresInMs <= 0) return;
+    const timer = setTimeout(() => {
+      setEditWindowNowMs(Date.now());
+    }, Math.min(expiresInMs + 250, 60_000));
+    return () => clearTimeout(timer);
+  }, [editWindowNowMs, latestOwnMessage]);
+
+  const latestEditableMessageId = useMemo(() => {
+    return findLatestEditableChatMessage(messages, user?.id, editWindowNowMs)?.id ?? null;
+  }, [editWindowNowMs, messages, user?.id]);
   const {
     composerHeight,
     messageAreaHeight,

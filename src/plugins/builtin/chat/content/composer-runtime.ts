@@ -12,6 +12,26 @@ interface MutableRef<T> {
   current: T;
 }
 
+function moveComposerCursorToEnd(textarea: TextareaRenderable, draft: string) {
+  const offset = draft.length;
+  const editBuffer = textarea.editBuffer as typeof textarea.editBuffer & {
+    setCursorByOffset?: (offset: number) => void;
+  };
+  if (typeof editBuffer.setCursorByOffset === "function") {
+    editBuffer.setCursorByOffset(offset);
+    return;
+  }
+  if (typeof textarea.setCursorOffset === "function") {
+    textarea.setCursorOffset(offset);
+    return;
+  }
+  try {
+    textarea.cursorOffset = offset;
+  } catch {
+    // Some host renderers expose cursorOffset as read-only.
+  }
+}
+
 export function useChatComposerRuntime({
   applyingExternalDraftRef,
   blurInput,
@@ -100,9 +120,12 @@ export function useChatComposerRuntime({
       applyingExternalDraftRef.current = true;
       try {
         textarea.setText(draft);
+        moveComposerCursorToEnd(textarea, draft);
       } finally {
         applyingExternalDraftRef.current = false;
       }
+    } else if (textarea) {
+      moveComposerCursorToEnd(textarea, draft);
     }
   }, [applyingExternalDraftRef, inputRef, inputValueRef, updateComposerRows]);
 

@@ -42,6 +42,10 @@ import {
 import {
   handleChatNotification as handleChatNotificationEvent,
 } from "./notifications";
+import {
+  CHAT_MESSAGE_EDIT_WINDOW_LABEL,
+  isWithinChatMessageEditWindow,
+} from "../edit-window";
 import { ChatControllerRealtime } from "./realtime";
 import { ChatControllerChannels } from "./channels";
 import { ChatControllerView } from "./view";
@@ -382,6 +386,10 @@ export class ChatController {
       ));
     if (!latestOwnMessage || latestOwnMessage.id !== messageId) {
       this.notifyFn({ body: "Only your latest sent message can be edited.", type: "error" });
+      return false;
+    }
+    if (!isWithinChatMessageEditWindow(latestOwnMessage)) {
+      this.notifyFn({ body: `Messages can only be edited within ${CHAT_MESSAGE_EDIT_WINDOW_LABEL}.`, type: "error" });
       return false;
     }
     if (latestOwnMessage.content === messageContent) return true;

@@ -53,6 +53,15 @@ function callTextHandler(handler: unknown, value: string): void {
   }
 }
 
+function applyDomCursorOffset(
+  element: HTMLInputElement | HTMLTextAreaElement | null,
+  offset: number,
+) {
+  if (!element) return;
+  const clampedOffset = Math.max(0, Math.min(offset, element.value.length));
+  element.setSelectionRange(clampedOffset, clampedOffset);
+}
+
 function useEditableValue(props: Record<string, unknown>) {
   const controlledValue = getStringProp(props, "value");
   const [internalValue, setInternalValue] = useState(getStringProp(props, "initialValue") ?? "");
@@ -142,6 +151,11 @@ export const WebInput = forwardRef<InputRenderable, Record<string, unknown>>(fun
   const elementRef = useRef<HTMLInputElement | null>(null);
   const { value, valueRef, setValue } = useEditableValue(props);
   const [cursorOffset, setCursorOffset] = useState(value.length);
+  const applyCursorOffset = (offset: number) => {
+    setCursorOffset(offset);
+    queueMicrotask(() => applyDomCursorOffset(elementRef.current, offset));
+    globalThis.requestAnimationFrame?.(() => applyDomCursorOffset(elementRef.current, offset));
+  };
 
   useEffect(() => {
     if (props.focused === true) {
@@ -157,8 +171,9 @@ export const WebInput = forwardRef<InputRenderable, Record<string, unknown>>(fun
     get cursorOffset() {
       return cursorOffset;
     },
+    setCursorOffset: applyCursorOffset,
     focus: () => elementRef.current?.focus(),
-  }), [cursorOffset, setValue, valueRef]);
+  }), [applyCursorOffset, cursorOffset, setValue, valueRef]);
 
   const handleValueChange = (nextValue: string) => {
     setValue(nextValue);
@@ -207,6 +222,11 @@ export const WebTextarea = forwardRef<TextareaRenderable, Record<string, unknown
   const elementRef = useRef<HTMLTextAreaElement | null>(null);
   const { value, valueRef, setValue } = useEditableValue(props);
   const [cursorOffset, setCursorOffset] = useState(value.length);
+  const applyCursorOffset = (offset: number) => {
+    setCursorOffset(offset);
+    queueMicrotask(() => applyDomCursorOffset(elementRef.current, offset));
+    globalThis.requestAnimationFrame?.(() => applyDomCursorOffset(elementRef.current, offset));
+  };
 
   useEffect(() => {
     if (props.focused === true) {
@@ -222,6 +242,7 @@ export const WebTextarea = forwardRef<TextareaRenderable, Record<string, unknown
     get cursorOffset() {
       return cursorOffset;
     },
+    setCursorOffset: applyCursorOffset,
     get virtualLineCount() {
       const metrics = textareaMetrics(
         valueRef.current,
@@ -248,7 +269,7 @@ export const WebTextarea = forwardRef<TextareaRenderable, Record<string, unknown
     syntaxStyle: null,
     addHighlight: () => {},
     clearLineHighlights: () => {},
-  }), [cursorOffset, props, setValue, valueRef]);
+  }), [applyCursorOffset, cursorOffset, props, setValue, valueRef]);
 
   const handleValueChange = (nextValue: string) => {
     setValue(nextValue);

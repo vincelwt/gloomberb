@@ -32,6 +32,10 @@ async function flushMicrotasks() {
   await Promise.resolve();
 }
 
+function recentChatTimestamp(offsetMs = 60_000) {
+  return new Date(Date.now() - offsetMs).toISOString();
+}
+
 class TrackingPersistence extends MemoryPersistence {
   stateWrites = 0;
 
@@ -727,7 +731,7 @@ describe("ChatController", () => {
       channelId: "everyone",
       content: "helo",
       replyToId: null,
-      createdAt: "2026-03-28T00:00:00.000Z",
+      createdAt: recentChatTimestamp(),
       user: { id: "u1", username: "vince", displayName: "Vince" },
     };
 
@@ -759,6 +763,42 @@ describe("ChatController", () => {
       content: "hello",
       editedAt: "2026-03-28T00:01:00.000Z",
     });
+  });
+
+  test("refuses to edit after the edit window expires", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const notifications: AppNotificationRequest[] = [];
+    const original: ChatMessage = {
+      id: "m1",
+      channelId: "everyone",
+      content: "old typo",
+      replyToId: null,
+      createdAt: recentChatTimestamp(16 * 60_000),
+      user: { id: "u1", username: "vince", displayName: "Vince" },
+    };
+
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+    persistence.setResource(TRANSCRIPT_KIND, TRANSCRIPT_KEY, {
+      messages: [original],
+    }, {
+      sourceKey: TRANSCRIPT_SOURCE,
+      schemaVersion: TRANSCRIPT_SCHEMA_VERSION,
+      cachePolicy: { staleMs: 1_000, expireMs: 2_000 },
+    });
+    controller.setNotifier((notification) => notifications.push(notification));
+    controller.attachPersistence(persistence);
+    apiClient.editMessage = async () => {
+      throw new Error("should not call server");
+    };
+
+    await expect(controller.editChannelMessage("everyone", "m1", "old fix")).resolves.toBe(false);
+
+    expect(controller.getSnapshot().messages[0]?.content).toBe("old typo");
+    expect(notifications).toEqual([{ body: "Messages can only be edited within 15 minutes.", type: "error" }]);
   });
 
   test("refuses to edit an older message from the current user", async () => {
