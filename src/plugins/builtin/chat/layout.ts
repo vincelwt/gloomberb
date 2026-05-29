@@ -30,6 +30,10 @@ export function formatInlinePreview(text: string, width: number) {
   return truncateWithEllipsis(normalizeInlinePreview(text), width);
 }
 
+export type ChatBodyInlineToken = InlineContentToken;
+
+export type ChatBodyLine = ChatBodyInlineToken[];
+
 function wrapTextLines(text: string, width: number) {
   const safeWidth = Math.max(width, 1);
   const lines: string[] = [];
@@ -78,50 +82,106 @@ function inlineTokenWidth(
   return Math.max(baseWidth, hoverWidth);
 }
 
+function tokenWithValue(token: InlineContentToken, value: string): InlineContentToken {
+  if (token.kind === "link") return { ...token, value };
+  if (token.kind === "username") return { ...token, value };
+  if (token.kind === "ticker") return { ...token, value };
+  return { kind: "text", value };
+}
+
+function firstDisplayWidthChunk(value: string, width: number): string {
+  return splitLongTextSegmentByDisplayWidth(value, Math.max(width, 1))[0] ?? "";
+}
+
+function trimLineEnd(line: ChatBodyLine): ChatBodyLine {
+  const next = [...line];
+  while (next.length > 0) {
+    const last = next[next.length - 1]!;
+    if (last.kind !== "text") break;
+    const trimmed = last.value.trimEnd();
+    if (trimmed) {
+      next[next.length - 1] = { ...last, value: trimmed };
+      break;
+    }
+    next.pop();
+  }
+  return next;
+}
+
 function wrapInlineContentLine(
   text: string,
   width: number,
   catalog: Record<string, InlineTickerCatalogEntry>,
-): string[] {
+): ChatBodyLine[] {
   const safeWidth = Math.max(width, 1);
-  const lines: string[] = [];
-  let current = "";
+  const lines: ChatBodyLine[] = [];
+  let current: ChatBodyLine = [];
   let currentWidth = 0;
 
   const finishLine = () => {
-    lines.push(current.trimEnd());
-    current = "";
+    lines.push(trimLineEnd(current));
+    current = [];
     currentWidth = 0;
   };
 
-  const appendTextPart = (rawPart: string) => {
-    let part = currentWidth === 0 ? rawPart.trimStart() : rawPart;
-    if (!part) return;
+  const appendSegment = (token: InlineContentToken, rawValue: string, trimStartOnWrap: boolean) => {
+    let value = currentWidth === 0 && trimStartOnWrap ? rawValue.trimStart() : rawValue;
+    if (!value) return;
 
-    while (part) {
-      const partWidth = displayWidth(part);
-      if (currentWidth > 0 && currentWidth + partWidth > safeWidth) {
+    while (value) {
+      const tokenWidth = token.kind === "ticker"
+        ? inlineTokenWidth(tokenWithValue(token, value), catalog)
+        : displayWidth(value);
+      const available = safeWidth - currentWidth;
+
+      if (currentWidth > 0 && tokenWidth > available) {
+        if (available <= 0) {
+          finishLine();
+          if (trimStartOnWrap) value = value.trimStart();
+          continue;
+        }
+
+        if (token.kind === "ticker") {
+          finishLine();
+          continue;
+        }
+
+        const chunk = firstDisplayWidthChunk(value, Math.max(available, 1));
+        if (chunk) {
+          current.push(tokenWithValue(token, chunk));
+          currentWidth += displayWidth(chunk);
+          value = value.slice(chunk.length);
+        }
         finishLine();
-        part = part.trimStart();
-        if (!part) return;
+        if (trimStartOnWrap) value = value.trimStart();
         continue;
       }
 
-      if (partWidth <= safeWidth - currentWidth) {
-        current += part;
-        currentWidth += partWidth;
+      if (tokenWidth <= safeWidth - currentWidth || token.kind === "ticker") {
+        current.push(tokenWithValue(token, value));
+        currentWidth += tokenWidth;
         return;
       }
 
-      const available = Math.max(safeWidth - currentWidth, 1);
-      const [chunk = "", ...rest] = splitLongTextSegmentByDisplayWidth(part, available);
+      const chunk = firstDisplayWidthChunk(value, Math.max(safeWidth - currentWidth, 1));
       if (chunk) {
-        current += chunk;
+        current.push(tokenWithValue(token, chunk));
         currentWidth += displayWidth(chunk);
+        value = value.slice(chunk.length);
       }
       finishLine();
-      part = rest.join("").trimStart();
+      if (trimStartOnWrap) value = value.trimStart();
     }
+  };
+
+  const appendTextPart = (rawPart: string) => {
+    let part = rawPart;
+    const partWidth = displayWidth(part);
+    if (currentWidth > 0 && partWidth > safeWidth - currentWidth && partWidth <= safeWidth) {
+      finishLine();
+      part = part.trimStart();
+    }
+    appendSegment({ kind: "text", value: part }, part, true);
   };
 
   const appendText = (value: string) => {
@@ -134,8 +194,7 @@ function wrapInlineContentLine(
   const appendInlineToken = (token: InlineContentToken) => {
     const tokenWidth = inlineTokenWidth(token, catalog);
     if (currentWidth > 0 && currentWidth + tokenWidth > safeWidth) finishLine();
-    current += token.value;
-    currentWidth += tokenWidth;
+    appendSegment(token, token.value, false);
   };
 
   for (const token of tokenizeInlineContent(text)) {
@@ -146,24 +205,24 @@ function wrapInlineContentLine(
     appendInlineToken(token);
   }
 
-  if (current || lines.length === 0) lines.push(current.trimEnd());
+  if (current.length > 0 || lines.length === 0) lines.push(trimLineEnd(current));
   return lines;
 }
 
-function wrapInlineContentLines(
+export function getMessageBodyTokenLines(
   text: string,
   width: number,
   catalog: Record<string, InlineTickerCatalogEntry>,
-): string[] {
-  const lines: string[] = [];
+): ChatBodyLine[] {
+  const lines: ChatBodyLine[] = [];
   for (const paragraph of text.split("\n")) {
     if (!paragraph) {
-      lines.push("");
+      lines.push([]);
       continue;
     }
     lines.push(...wrapInlineContentLine(paragraph, width, catalog));
   }
-  return lines.length > 0 ? lines : [""];
+  return lines.length > 0 ? lines : [[]];
 }
 
 export function getMessageBodyLines(
@@ -172,7 +231,7 @@ export function getMessageBodyLines(
   catalog?: Record<string, InlineTickerCatalogEntry>,
 ) {
   const contentLineWidth = Math.max(width - 4, 1);
-  if (catalog) return wrapInlineContentLines(message.content, contentLineWidth, catalog);
+  if (catalog) return getMessageBodyTokenLines(message.content, contentLineWidth, catalog).map((line) => line.map((token) => token.value).join(""));
   return wrapTextLines(message.content, contentLineWidth);
 }
 
@@ -183,7 +242,11 @@ export function estimateMessageHeight(
   catalog?: Record<string, InlineTickerCatalogEntry>,
 ) {
   const headerHeight = grouped ? 0 : 1;
-  return headerHeight + (message.replyTo ? 1 : 0) + getMessageBodyLines(message, width, catalog).length;
+  const contentLineWidth = Math.max(width - 4, 1);
+  const bodyLineCount = catalog
+    ? getMessageBodyTokenLines(message.content, contentLineWidth, catalog).length
+    : getMessageBodyLines(message, width, catalog).length;
+  return headerHeight + (message.replyTo ? 1 : 0) + bodyLineCount;
 }
 
 export function estimateComposerHeight(text: string, width: number) {
