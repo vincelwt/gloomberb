@@ -442,6 +442,7 @@ describe("ChatContent channel sidebar", () => {
       await flushFrame();
 
       expect(findPaneInstance(latestState.config.layout, paneInstanceId)?.settings?.channelId).toBe("options");
+      expect(findPaneInstance(latestState.config.layout, paneInstanceId)?.title).toBe("#options");
       expect(latestState.config.pluginConfig["gloomberb-cloud"]?.lastChatChannelId).toBe("options");
       expect(setup().captureCharFrame()).toContain("#options");
     } finally {

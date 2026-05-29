@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { setPaneSetting } from "../../../pane-settings";
+import { updatePaneInstance } from "../../../pane-settings";
 import {
   syncConfigActiveLayoutState,
   useAppDispatch,
@@ -12,6 +12,7 @@ import { scheduleConfigSave } from "../../../state/config-save-scheduler";
 import type { PaneProps } from "../../../types/plugin";
 import {
   DEFAULT_CHAT_CHANNEL_ID,
+  formatChatPaneTitle,
   LAST_VISITED_CHAT_CHANNEL_KEY,
   normalizeChannelId,
 } from "./channels";
@@ -22,6 +23,7 @@ interface ChatPaneContentProps {
   focused: boolean;
   channelId?: string;
   onChannelChange?: (channelId: string) => void;
+  onChannelTitleChange?: (title: string) => void;
 }
 
 export function createChatPane(ChatContent: (props: ChatPaneContentProps) => ReactNode) {
@@ -37,9 +39,30 @@ export function createChatPane(ChatContent: (props: ChatPaneContentProps) => Rea
     ));
     const initialChannelIdRef = useRef(normalizeChannelId(rawPaneChannelId ?? lastVisitedChannelId));
     const persistedChannelId = normalizeChannelId(rawPaneChannelId ?? initialChannelIdRef.current);
-    const persistChannelId = useCallback((nextChannelId: string) => {
+    const persistChatPaneState = useCallback((nextChannelId: string, nextTitle?: string) => {
       const currentState = stateRef.current;
-      const layout = setPaneSetting(currentState.config.layout, paneId, "channelId", nextChannelId);
+      const currentPane = currentState.config.layout.instances.find((instance) => instance.instanceId === paneId);
+      const nextTitleValue = nextTitle?.trim() || undefined;
+      const currentPaneChannelId = typeof currentPane?.settings?.channelId === "string"
+        ? normalizeChannelId(currentPane.settings.channelId)
+        : null;
+      const currentLastVisitedChannelId = currentState.config.pluginConfig["gloomberb-cloud"]?.[LAST_VISITED_CHAT_CHANNEL_KEY];
+      if (
+        currentPaneChannelId === nextChannelId
+        && (!nextTitleValue || currentPane?.title === nextTitleValue)
+        && currentLastVisitedChannelId === nextChannelId
+      ) {
+        return;
+      }
+
+      const layout = updatePaneInstance(currentState.config.layout, paneId, (instance) => ({
+        ...instance,
+        title: nextTitleValue ?? instance.title,
+        settings: {
+          ...(instance.settings ?? {}),
+          channelId: nextChannelId,
+        },
+      }));
       const pluginConfig = {
         ...currentState.config.pluginConfig,
         "gloomberb-cloud": {
@@ -66,8 +89,8 @@ export function createChatPane(ChatContent: (props: ChatPaneContentProps) => Rea
 
     useEffect(() => {
       if (rawPaneChannelId) return;
-      persistChannelId(initialChannelIdRef.current);
-    }, [persistChannelId, rawPaneChannelId]);
+      persistChatPaneState(initialChannelIdRef.current, formatChatPaneTitle(undefined, initialChannelIdRef.current));
+    }, [persistChatPaneState, rawPaneChannelId]);
 
     useEffect(() => {
       const normalizedPersisted = normalizeChannelId(persistedChannelId);
@@ -84,8 +107,12 @@ export function createChatPane(ChatContent: (props: ChatPaneContentProps) => Rea
       const normalized = normalizeChannelId(nextChannelId);
       pendingChannelIdRef.current = normalized;
       setLocalChannelId((current) => (current === normalized ? current : normalized));
-      persistChannelId(normalized);
-    }, [persistChannelId]);
+      persistChatPaneState(normalized, formatChatPaneTitle(undefined, normalized));
+    }, [persistChatPaneState]);
+
+    const setChannelTitle = useCallback((nextTitle: string) => {
+      persistChatPaneState(channelId, nextTitle);
+    }, [channelId, persistChatPaneState]);
 
     return (
       <ChatContent
@@ -94,6 +121,7 @@ export function createChatPane(ChatContent: (props: ChatPaneContentProps) => Rea
         focused={focused}
         channelId={channelId}
         onChannelChange={setChannelId}
+        onChannelTitleChange={setChannelTitle}
       />
     );
   };
