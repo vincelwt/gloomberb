@@ -17,9 +17,113 @@ Available as a desktop app or TUI.
 
 </div>
 
-## Functions
+## Install
 
-Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command name. Use `HELP` for the live in-app shortcut list.
+macOS desktop app + terminal command:
+
+```bash
+brew install --cask vincelwt/tap/gloomberb
+# or
+curl -fsSL gloomberb.com/install | bash
+```
+
+Both install `Gloomberb.app` and a `gloomberb` terminal command that runs the TUI through the app bundle, so the Bun runtime is stored once.
+
+Desktop-only download:
+
+- [Download Gloomberb for Mac](https://gloomberb.com/download/desktop)
+
+Terminal-only install:
+
+```bash
+bun install -g gloomberb
+```
+
+Then run:
+
+```bash
+gloomberb
+```
+
+On macOS, app updates replace the app bundle in place and keep the terminal command pointing at the updated bundle. Homebrew users can also update through `brew upgrade --cask gloomberb`.
+
+For the best terminal experience, use a [Kitty](https://sw.kovidgoyal.net/kitty/)-compatible terminal such as Ghostty, Kitty, or WezTerm.
+
+## Start
+
+Open the command bar with `Ctrl+P` or `` ` ``, then type a command.
+
+| Try | Opens |
+|-----|-------|
+| `DES AAPL` | Security details |
+| `GP NVDA` | Price chart |
+| `TOP` | Ranked market stories |
+| `MOST` | Market movers |
+| `PF` | Portfolios and watchlists |
+| `HELP` | Full in-app shortcut list |
+
+## What It Does
+
+- Research companies with quotes, charts, financials, filings, holders, insiders, options, analyst ratings, events, and relative valuation.
+- Follow markets with top stories, breaking news, sector feeds, global indices, FX, macro events, yield curves, market movers, and fear/greed.
+- Track portfolios and watchlists, connect brokers, set alerts, keep notes, run AI screens, browse prediction markets, and use Gloom Cloud chat.
+
+## CLI
+
+Running `gloomberb` with no arguments launches the terminal UI. Use `gloomberb help` to see the full command list.
+
+| Command | Use |
+|---------|-----|
+| `gloomberb` | Launch the terminal UI |
+| `gloomberb help` | Show all CLI commands |
+| `gloomberb search <query>` | Search tickers and company names |
+| `gloomberb ticker <symbol>` | Show quote, ownership, and financials |
+| `gloomberb portfolio [action]` | Manage manual portfolios |
+| `gloomberb watchlist [action]` | Manage watchlists |
+| `gloomberb predictions [...]` | Launch Prediction Markets |
+| `gloomberb plugins` | List installed plugins |
+| `gloomberb install <user/repo>` | Install a plugin from GitHub |
+| `gloomberb remove <name>` | Remove an installed plugin |
+| `gloomberb update [name]` | Update plugins |
+
+## Plugins
+
+Everything from the portfolio list to broker integrations is a plugin. Plugins can add panes, tabs, columns, command bar commands, CLI commands, status bar widgets, and data providers.
+
+Core plugin areas include:
+
+- Portfolios, watchlists, manual entry, and broker connections
+- Ticker details, quotes, charts, options, filings, holders, insiders, and research
+- News, market movers, global indices, sectors, FX, earnings, macro data, and yield curves
+- Prediction markets, alerts, notes, chat, AI screeners, and external plugins
+
+See [PLUGINS.md](PLUGINS.md) for the plugin API and the shared UI surface available through `gloomberb/components`.
+
+## Keyboard
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+P` or `` ` `` | Open command bar |
+| `Ctrl+,` | Open focused pane settings |
+| `Ctrl+W` | Close focused pane |
+| `Ctrl+Shift+M` | Move focused window (`WIN resize` starts resize mode) |
+| `Ctrl+Shift+D` | Dock or float focused pane |
+| `Ctrl+Shift+L` | Layout actions |
+| `Ctrl+Shift+G` | Gridlock all windows |
+| `Tab` | Switch panes |
+| `j` / `k` | Navigate lists |
+| `h` / `l` | Switch tabs |
+| `m` | Cycle chart mode |
+| `q` | Quit |
+
+Desktop builds also accept `Cmd/Ctrl+K` for the command bar, the matching `Cmd` shortcuts on macOS, `Cmd/Ctrl+Shift+O` to pop out a pane, and `Cmd/Ctrl+Shift+C` to copy a focused pane screenshot.
+
+## Command Reference
+
+Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar prefixes are listed here for quick scanning.
+
+<details>
+<summary>Show market and workflow shortcuts</summary>
 
 | Shortcut | Function |
 |----------|----------|
@@ -74,7 +178,10 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | `BR` | Broker connections |
 | `CHG` | Changelog |
 
-## Command Bar Utilities
+</details>
+
+<details>
+<summary>Show command-bar utilities</summary>
 
 | Shortcut | Command |
 |----------|---------|
@@ -92,87 +199,7 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | `CR` | Cycle chart renderer |
 | `PL <plugin>` | Manage plugins |
 
-## Install
-
-macOS desktop app + terminal command:
-
-```bash
-brew install --cask vincelwt/tap/gloomberb
-# or
-curl -fsSL gloomberb.com/install | bash
-```
-
-Both install `Gloomberb.app` and a `gloomberb` terminal command that runs the TUI through the app bundle, so the Bun runtime is stored once.
-
-Desktop-only download:
-
-- [Download Gloomberb for Mac](https://gloomberb.com/download/desktop)
-
-Terminal-only install:
-
-```bash
-bun install -g gloomberb
-```
-
-Then run:
-
-```bash
-gloomberb
-```
-
-On macOS, app updates replace the app bundle in place and keep the terminal command pointing at the updated bundle. Homebrew users can also update through `brew upgrade --cask gloomberb`.
-
-For the best terminal experience, use a [Kitty](https://sw.kovidgoyal.net/kitty/)-compatible terminal such as Ghostty, Kitty, or WezTerm.
-
-## CLI
-
-Running `gloomberb` with no arguments launches the terminal UI. Use `gloomberb help` to see the full command list.
-
-| Command | Use |
-|---------|-----|
-| `gloomberb` | Launch the terminal UI |
-| `gloomberb help` | Show all CLI commands |
-| `gloomberb search <query>` | Search tickers and company names |
-| `gloomberb ticker <symbol>` | Show quote, ownership, and financials |
-| `gloomberb portfolio [action]` | Manage manual portfolios |
-| `gloomberb watchlist [action]` | Manage watchlists |
-| `gloomberb predictions [...]` | Launch Prediction Markets |
-| `gloomberb plugins` | List installed plugins |
-| `gloomberb install <user/repo>` | Install a plugin from GitHub |
-| `gloomberb remove <name>` | Remove an installed plugin |
-| `gloomberb update [name]` | Update plugins |
-
-## Plugins
-
-Everything from the portfolio list to broker integrations is a plugin. Plugins can add panes, tabs, columns, command bar commands, CLI commands, status bar widgets, and data providers.
-
-Core plugin areas include:
-
-- Portfolios, watchlists, manual entry, and broker connections
-- Ticker details, quotes, charts, options, filings, holders, insiders, and research
-- News, market movers, global indices, sectors, FX, earnings, macro data, and yield curves
-- Prediction markets, alerts, notes, chat, AI screeners, and external plugins
-
-See [PLUGINS.md](PLUGINS.md) for the plugin API and the shared UI surface available through `gloomberb/components`.
-
-## Keyboard
-
-| Key | Action |
-|-----|--------|
-| `Ctrl+P` or `` ` `` | Open command bar |
-| `Ctrl+,` | Open focused pane settings |
-| `Ctrl+W` | Close focused pane |
-| `Ctrl+Shift+M` | Move focused window (`WIN resize` starts resize mode) |
-| `Ctrl+Shift+D` | Dock or float focused pane |
-| `Ctrl+Shift+L` | Layout actions |
-| `Ctrl+Shift+G` | Gridlock all windows |
-| `Tab` | Switch panes |
-| `j` / `k` | Navigate lists |
-| `h` / `l` | Switch tabs |
-| `m` | Cycle chart mode |
-| `q` | Quit |
-
-Desktop builds also accept `Cmd/Ctrl+K` for the command bar, the matching `Cmd` shortcuts on macOS, `Cmd/Ctrl+Shift+O` to pop out a pane, and `Cmd/Ctrl+Shift+C` to copy a focused pane screenshot.
+</details>
 
 ## License
 
