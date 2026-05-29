@@ -6,10 +6,12 @@ import { TickerBadge } from "../../../../components/ticker/badge";
 import type { InlineTickerCatalogEntry } from "../../../../state/hooks/inline-tickers";
 import { blendHex, colors } from "../../../../theme/colors";
 import type { ChatUserSummary } from "../../../../api-client";
-import { tokenizeInlineContent } from "../../../../utils/inline-content-tokenizer";
+import { tokenizeInlineContent, type InlineContentToken } from "../../../../utils/inline-content-tokenizer";
 
 export function ResponsiveTickerBadgeText({
-  text,
+  text = "",
+  tokens: providedTokens,
+  prewrapped = false,
   catalog,
   textColor,
   openTicker,
@@ -17,7 +19,9 @@ export function ResponsiveTickerBadgeText({
   onUserHover,
   onUserHoverEnd,
 }: {
-  text: string;
+  text?: string;
+  tokens?: readonly InlineContentToken[];
+  prewrapped?: boolean;
   catalog: Record<string, InlineTickerCatalogEntry>;
   textColor: string;
   openTicker: (symbol: string) => void;
@@ -26,19 +30,21 @@ export function ResponsiveTickerBadgeText({
   onUserHoverEnd?: () => void;
 }) {
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
-  const tokens = useMemo(() => tokenizeInlineContent(text), [text]);
+  const tokens = useMemo(() => providedTokens ?? tokenizeInlineContent(text), [providedTokens, text]);
   const renderTextToken = (value: string, tokenIndex: number) => {
     if (!value) return null;
     return (
       <Text
         key={`text:${tokenIndex}`}
         fg={textColor}
-        wrapText
-        style={{
-          minWidth: 0,
-          whiteSpace: "pre-wrap",
-          overflowWrap: "anywhere",
-        }}
+        wrapText={!prewrapped}
+        style={prewrapped
+          ? undefined
+          : {
+            minWidth: 0,
+            whiteSpace: "pre-wrap",
+            overflowWrap: "anywhere",
+          }}
       >
         {value}
       </Text>
