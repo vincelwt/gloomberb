@@ -1,6 +1,7 @@
 import type { AppNotificationRequest } from "../../../../types/plugin";
-import { apiClient, type ChatMessage, type ChatNotification } from "../../../../api-client";
+import { apiClient, type ChatChannel, type ChatMessage, type ChatNotification } from "../../../../api-client";
 import type { ChannelRuntimeState, MergeMessagesOptions } from "./state";
+import { formatChatPaneTitle } from "../channel-labels";
 import {
   formatChannelToast,
   formatMentionToast,
@@ -9,23 +10,26 @@ import {
 
 function notifyChatServerMessage({
   notification,
+  channel,
   notifiedMessageIds,
   notify,
 }: {
   notification: ChatNotification;
+  channel: ChatChannel | undefined;
   notifiedMessageIds: Set<string>;
   notify: (notification: AppNotificationRequest) => void;
 }): void {
   if (notifiedMessageIds.has(notification.messageId)) return;
   notifiedMessageIds.add(notification.messageId);
+  const channelTitle = formatChatPaneTitle(channel, notification.channelId);
   const body = notification.type === "reply"
     ? formatReplyToast(notification.message)
     : notification.type === "mention"
       ? formatMentionToast(notification.message)
-      : formatChannelToast(notification.channelId, notification.message);
+      : formatChannelToast(channelTitle, notification.message, channel?.kind);
   notify({
     title: "Gloomberb chat",
-    subtitle: `#${notification.channelId}`,
+    subtitle: channelTitle,
     body,
     type: "info",
     desktop: "when-inactive",
@@ -37,6 +41,7 @@ export function handleChatNotification({
   options = {},
   ensureChannelState,
   mergeMessages,
+  getChannel,
   notifiedMessageIds,
   notify,
 }: {
@@ -44,13 +49,14 @@ export function handleChatNotification({
   options?: { countUnread?: boolean };
   ensureChannelState: (channelId: string) => ChannelRuntimeState;
   mergeMessages: (channelId: string, messages: ChatMessage[], options?: MergeMessagesOptions) => void;
+  getChannel: (channelId: string) => ChatChannel | undefined;
   notifiedMessageIds: Set<string>;
   notify: (notification: AppNotificationRequest) => void;
 }): void {
   mergeMessages(notification.channelId, [notification.message], { countUnread: options.countUnread });
   const channel = ensureChannelState(notification.channelId);
   if (channel.openViewCount === 0) {
-    notifyChatServerMessage({ notification, notifiedMessageIds, notify });
+    notifyChatServerMessage({ notification, channel: getChannel(notification.channelId), notifiedMessageIds, notify });
   }
   void apiClient.markChatNotificationsDelivered([notification.id]).catch(() => {});
 }

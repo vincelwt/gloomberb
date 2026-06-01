@@ -1219,6 +1219,65 @@ describe("ChatController", () => {
     }]);
   });
 
+  test("uses direct channel labels in server-issued notification subtitles", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const notifications: AppNotificationRequest[] = [];
+    const directChannel: ChatChannel = {
+      id: "dm:u2",
+      name: "u2",
+      kind: "direct",
+      created_at: "2026-03-28T00:00:00.000Z",
+      dmUser: { id: "u2", username: "bob", displayName: "Bob" },
+    };
+    const message: ChatMessage = {
+      id: "m1",
+      channelId: directChannel.id,
+      content: "ping",
+      replyToId: null,
+      createdAt: "2026-03-28T00:00:00.000Z",
+      user: { id: "u2", username: "bob", displayName: "Bob" },
+    };
+
+    apiClient.getChatState = async () => ({
+      channels: [...SERVER_CHAT_CHANNELS, directChannel],
+      onlineCount: 0,
+      channelStates: [...SERVER_CHAT_CHANNELS, directChannel].map((channel) => ({
+        channelId: channel.id,
+        notificationsEnabled: false,
+        lastReadMessageId: null,
+        unreadCount: 0,
+      })),
+      notifications: [],
+    });
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+    controller.setNotifier((entry) => {
+      notifications.push(entry);
+    });
+    controller.attachPersistence(persistence);
+    await controller.refreshChatState();
+
+    (controller as any).handleChatNotification({
+      id: "n1",
+      type: "channel",
+      channelId: directChannel.id,
+      messageId: "m1",
+      createdAt: "2026-03-28T00:00:00.000Z",
+      message,
+    } satisfies ChatNotification);
+
+    expect(notifications).toEqual([{
+      title: "Gloomberb chat",
+      subtitle: "@bob",
+      body: "@bob: ping",
+      type: "info",
+      desktop: "when-inactive",
+    }]);
+  });
+
   test("tracks unread channel messages and clears them when the channel opens", () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();

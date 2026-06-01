@@ -7,6 +7,10 @@ import {
 } from "../channels";
 import type { ChatContentController } from "./types";
 
+function isConversationChannelId(channelId: string): boolean {
+  return channelId.startsWith("dm:") || channelId.startsWith("grp:") || channelId.startsWith("group:");
+}
+
 export function useChatChannelNavigation({
   blurInput,
   channelId,
@@ -83,6 +87,8 @@ export function useChatChannelNavigation({
   useEffect(() => {
     if (!onChannelChange || channelsLoading || channels.length === 0) return;
     if (channels.some((channel) => channel.id === channelId)) return;
+    // DM/group panes can remount before the private channel catalog is refreshed.
+    if (isConversationChannelId(channelId)) return;
     const fallbackChannelId = channels.find((channel) => channel.id === DEFAULT_CHAT_CHANNEL_ID)?.id
       ?? channels[0]?.id;
     if (fallbackChannelId) {
