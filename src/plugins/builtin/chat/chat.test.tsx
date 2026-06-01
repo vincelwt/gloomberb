@@ -9,7 +9,7 @@ import type { ChatMessage } from "../../../api-client";
 import { apiClient } from "../../../api-client";
 import { PluginRenderProvider } from "../../runtime";
 import { setSharedRegistryForTests } from "../../registry";
-import { ChatStatusWidget } from ".";
+import { ChatContent, ChatStatusWidget } from ".";
 import {
   cleanupChatTest,
   createChatTestControls,
@@ -55,6 +55,42 @@ afterEach(async () => {
 });
 
 describe("ChatContent", () => {
+  test("keeps a persisted DM selected while private channels refresh", async () => {
+    const controller = createController();
+    const dmChannelId = "dm:test";
+    installServerChannels(controller, [
+      { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
+    ]);
+    controller.refreshChannels = async () => {};
+    controller.refreshPresence = async () => {};
+    controller.refreshSession = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    const channelChanges: string[] = [];
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+
+    await act(async () => {
+      testSetup = await testRender(
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+            <ChatContent
+              controller={controller}
+              width={60}
+              height={12}
+              focused
+              channelId={dmChannelId}
+              onChannelChange={(nextChannelId) => channelChanges.push(nextChannelId)}
+            />
+          </PluginRenderProvider>
+        </AppContext>,
+        { width: 60, height: 12 },
+      );
+    });
+
+    await flushFrame();
+
+    expect(channelChanges).toEqual([]);
+  });
+
   test("focuses the prompt on click and preserves typing order", async () => {
     const controller = createController();
 

@@ -491,6 +491,7 @@ export class ChatController {
       options,
       ensureChannelState: (channelId) => this.ensureChannelState(channelId),
       mergeMessages: (channelId, messages, mergeOptions) => this.mergeMessages(channelId, messages, mergeOptions),
+      getChannel: (channelId) => this.channelCatalog.getChannels().find((channel) => channel.id === channelId),
       notifiedMessageIds: this.notifiedMessageIds,
       notify: this.notifyFn,
     });

@@ -21,4 +21,8 @@ describe("chat channel labels", () => {
     expect(formatChatPaneTitle(channel, channel.id)).toBe("@risto");
     expect(formatChatPaneTitle(undefined, channel.id)).toBe("DM");
   });
+
+  test("uses a neutral group title before private channel metadata loads", () => {
+    expect(formatChatPaneTitle(undefined, "grp:93f14c6b9827c30f")).toBe("Group");
+  });
 });
