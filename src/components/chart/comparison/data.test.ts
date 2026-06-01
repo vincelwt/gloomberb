@@ -57,6 +57,60 @@ describe("projectComparisonChartData", () => {
     expect(projection.series[1]?.points.map((point) => point.rawValue)).toEqual([null, null, 20, 22]);
   });
 
+  test("carries the latest series value across shared timestamps from other markets", () => {
+    const projection = projectComparisonChartData([
+      makeSeries("DAX", "EUR", [
+        ["2024-01-02T08:00:00.000Z", 100],
+        ["2024-01-02T08:15:00.000Z", 101],
+        ["2024-01-03T08:00:00.000Z", 102],
+      ]),
+      makeSeries("AAPL", "USD", [
+        ["2024-01-02T14:30:00.000Z", 200],
+        ["2024-01-02T14:45:00.000Z", 201],
+      ]),
+    ], 8, {
+      panOffset: 0,
+      zoomLevel: 1,
+      renderMode: "line",
+    }, "price");
+
+    expect(projection.dates.map((date) => date.toISOString())).toEqual([
+      "2024-01-02T08:00:00.000Z",
+      "2024-01-02T08:15:00.000Z",
+      "2024-01-02T14:30:00.000Z",
+      "2024-01-02T14:45:00.000Z",
+      "2024-01-03T08:00:00.000Z",
+    ]);
+    expect(projection.series[0]?.points.map((point) => point.rawValue)).toEqual([100, 101, 101, 101, 102]);
+    expect(projection.series[1]?.points.map((point) => point.rawValue)).toEqual([null, null, 200, 201, 201]);
+  });
+
+  test("uses the same alternating close bucket selection as stock chart projection", () => {
+    const projection = projectComparisonChartData([
+      makeSeries("DAX", "EUR", [
+        ["2024-01-02T08:00:00.000Z", 100],
+        ["2024-01-02T08:15:00.000Z", 105],
+        ["2024-01-02T14:30:00.000Z", 101],
+        ["2024-01-02T14:45:00.000Z", 99],
+      ]),
+      makeSeries("AAPL", "USD", [
+        ["2024-01-02T14:30:00.000Z", 200],
+        ["2024-01-02T14:45:00.000Z", 201],
+      ]),
+    ], 2, {
+      panOffset: 0,
+      zoomLevel: 1,
+      renderMode: "line",
+    }, "price");
+
+    expect(projection.dates.map((date) => date.toISOString())).toEqual([
+      "2024-01-02T08:15:00.000Z",
+      "2024-01-02T14:45:00.000Z",
+    ]);
+    expect(projection.series[0]?.points.map((point) => point.rawValue)).toEqual([105, 99]);
+    expect(projection.series[1]?.points.map((point) => point.rawValue)).toEqual([null, 200]);
+  });
+
   test("normalizes percent mode from each series first visible point", () => {
     const projection = projectComparisonChartData([
       makeSeries("AAPL", "USD", [

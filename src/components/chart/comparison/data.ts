@@ -7,6 +7,11 @@ import type {
 } from "../core/types";
 import { buildVisibleDateWindowFromRange } from "../core/date-window";
 import { getVisiblePointCount } from "../core/viewport";
+import {
+  buildIndexProjectionBuckets,
+  selectRepresentativeCloseValue,
+  type IndexProjectionBucket,
+} from "../core/projection";
 
 export interface ComparisonProjectedPoint {
   date: Date;
@@ -37,6 +42,14 @@ interface ComparisonAxisModeResolution {
   effectiveAxisMode: ChartAxisMode;
   warning: string | null;
 }
+
+type ComparisonWindowViewState =
+  Pick<ComparisonChartViewState, "panOffset" | "zoomLevel">
+  & Partial<Pick<ComparisonChartViewState, "dateWindow">>;
+
+type ComparisonProjectionViewState =
+  ComparisonWindowViewState
+  & Pick<ComparisonChartViewState, "renderMode">;
 
 export interface ComparisonChartProjection {
   dates: Date[];
@@ -92,7 +105,7 @@ export function getMaxComparisonPanOffset(
 
 export function getVisibleComparisonWindow(
   series: ComparisonChartSeries[],
-  viewState: Pick<ComparisonChartViewState, "dateWindow" | "panOffset" | "zoomLevel">,
+  viewState: ComparisonWindowViewState,
 ): ComparisonVisibleWindow {
   const dates = getUniqueSortedDates(series);
 
@@ -138,10 +151,7 @@ function transformRawValue(rawValue: number | null, axisMode: ChartAxisMode, bas
 }
 
 function resolveRepresentativeValue(values: number[], index: number): number {
-  if (values.length === 1) return values[0]!;
-  return index % 2 === 0
-    ? Math.max(...values)
-    : Math.min(...values);
+  return selectRepresentativeCloseValue(values, index, (value) => value);
 }
 
 function buildSeriesMap(points: PricePoint[]): Map<number, number> {
@@ -153,6 +163,28 @@ function buildSeriesMap(points: PricePoint[]): Map<number, number> {
     map.set(timestamp, point.close);
   }
   return map;
+}
+
+function buildFilledRawValuesByDate(
+  rawByDate: ReadonlyMap<number, number>,
+  dates: readonly Date[],
+): Array<number | null> {
+  let latestRawValue: number | null = null;
+  return dates.map((date) => {
+    const timestamp = date.getTime();
+    if (rawByDate.has(timestamp)) {
+      latestRawValue = rawByDate.get(timestamp)!;
+      return latestRawValue;
+    }
+    return latestRawValue;
+  });
+}
+
+function getBucketDate(
+  dates: readonly Date[],
+  bucket: IndexProjectionBucket,
+): Date {
+  return dates[Math.max(bucket.end - 1, 0)] ?? dates[dates.length - 1] ?? new Date(0);
 }
 
 function resolveComparisonAxisMode(
@@ -194,7 +226,7 @@ function resolveComparisonAxisMode(
 export function projectComparisonChartData(
   series: ComparisonChartSeries[],
   chartWidth: number,
-  viewState: Pick<ComparisonChartViewState, "dateWindow" | "panOffset" | "zoomLevel" | "renderMode">,
+  viewState: ComparisonProjectionViewState,
   requestedAxisMode: ChartAxisMode,
 ): ComparisonChartProjection {
   const normalizedSeries = series.map((entry) => ({ ...entry, points: normalizeSeriesPoints(entry.points) }));
@@ -221,31 +253,26 @@ export function projectComparisonChartData(
       warning: axisResolution.warning,
     };
   }
-  const bucketCount = Math.min(Math.max(chartWidth, 1), Math.max(window.dates.length, 1));
-  const bucketSize = window.dates.length > 0 ? window.dates.length / bucketCount : 1;
+  const buckets = buildIndexProjectionBuckets(window.dates.length, chartWidth);
 
   const projectedSeries = normalizedSeries.map((entry) => {
     const rawByDate = buildSeriesMap(entry.points);
-    const visibleRawValues = window.dates
-      .map((date) => rawByDate.get(date.getTime()) ?? null)
+    const filledRawValues = buildFilledRawValuesByDate(rawByDate, window.dates);
+    const visibleRawValues = filledRawValues
       .filter((value): value is number => value !== null);
     const baseValue = visibleRawValues[0] ?? null;
     const latestRawValue = visibleRawValues[visibleRawValues.length - 1] ?? null;
 
-    const points = Array.from({ length: bucketCount }, (_, index) => {
-      const start = Math.floor(index * bucketSize);
-      const end = Math.min(window.dates.length, Math.max(Math.floor((index + 1) * bucketSize), start + 1));
-      const bucketDates = window.dates.slice(start, end);
-      const date = bucketDates[bucketDates.length - 1] ?? window.dates[window.dates.length - 1] ?? new Date(0);
-      const bucketRawValues = bucketDates
-        .map((bucketDate) => rawByDate.get(bucketDate.getTime()) ?? null)
+    const points = buckets.map((bucket) => {
+      const bucketRawValues = filledRawValues
+        .slice(bucket.start, bucket.end)
         .filter((value): value is number => value !== null);
       const rawValue = bucketRawValues.length > 0
-        ? resolveRepresentativeValue(bucketRawValues, index)
+        ? resolveRepresentativeValue(bucketRawValues, bucket.index)
         : null;
 
       return {
-        date,
+        date: getBucketDate(window.dates, bucket),
         rawValue,
         value: transformRawValue(rawValue, axisResolution.effectiveAxisMode, baseValue),
       };
@@ -264,11 +291,7 @@ export function projectComparisonChartData(
   });
 
   return {
-    dates: Array.from({ length: bucketCount }, (_, index) => {
-      const start = Math.floor(index * bucketSize);
-      const end = Math.min(window.dates.length, Math.max(Math.floor((index + 1) * bucketSize), start + 1));
-      return window.dates[Math.max(end - 1, 0)] ?? new Date(0);
-    }),
+    dates: buckets.map((bucket) => getBucketDate(window.dates, bucket)),
     series: projectedSeries,
     requestedMode,
     effectiveMode: requestedMode,
