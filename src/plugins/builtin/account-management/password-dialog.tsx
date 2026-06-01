@@ -78,7 +78,7 @@ export function PasswordChangeDialog({
 
   const fieldWidth = 42;
   return (
-    <DialogFrame title="Change Password" footer="Esc cancel">
+    <DialogFrame title="Change Password">
       <Box flexDirection="column" gap={1}>
         <TextField
           label={activeField === "current" ? "> Current Password" : "  Current Password"}

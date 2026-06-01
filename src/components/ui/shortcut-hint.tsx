@@ -1,5 +1,6 @@
 import { StyledText, Text, TextAttributes } from "../../ui";
 import { colors } from "../../theme/colors";
+import { useRef } from "react";
 
 type ShortcutHintMouseEvent = {
   stopPropagation?: () => void;
@@ -36,6 +37,17 @@ export function ShortcutHint({
   const keyColor = disabled ? colors.textMuted : colors.textBright;
   const labelColor = disabled ? colors.textMuted : colors.textDim;
   const keyText = `[${hotkey}]`;
+  const triggerMouseDownRef = useRef(false);
+  const startPress = (event?: ShortcutHintMouseEvent) => {
+    triggerMouseDownRef.current = true;
+    stopMouseEvent(event);
+  };
+  const finishPress = (event?: ShortcutHintMouseEvent) => {
+    const startedOnTrigger = triggerMouseDownRef.current;
+    triggerMouseDownRef.current = false;
+    if (startedOnTrigger) onPress?.(event);
+    else stopMouseEvent(event);
+  };
 
   return (
     <Text
@@ -47,8 +59,8 @@ export function ShortcutHint({
       ])}
       fg={disabled ? colors.textMuted : colors.textDim}
       attributes={interactive ? TextAttributes.BOLD : 0}
-      onMouseDown={interactive ? stopMouseEvent : undefined}
-      onMouseUp={interactive ? onPress : undefined}
+      onMouseDown={interactive ? startPress : undefined}
+      onMouseUp={interactive ? finishPress : undefined}
       {...(dataGloomRole ? { "data-gloom-role": dataGloomRole } : {})}
     />
   );

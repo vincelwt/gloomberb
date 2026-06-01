@@ -90,10 +90,6 @@ export function PickerRow({
         event?.stopPropagation?.();
         event?.preventDefault?.();
         onFocus();
-      }}
-      onMouseUp={(event?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
-        event?.stopPropagation?.();
-        event?.preventDefault?.();
         onOpen();
       }}
     >

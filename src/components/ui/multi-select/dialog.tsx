@@ -2,7 +2,7 @@ import { Box, Text, useUiHost } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { type AlertContext, useDialog, useDialogKeyboard } from "../../../ui/dialog";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { colors } from "../../../theme/colors";
 import { isDetailBackNavigationKey } from "../../../utils/back-navigation";
 import { isPlainKey } from "../../../utils/keyboard";
@@ -253,6 +253,7 @@ export function MultiSelectDialogButton({
 }: MultiSelectDialogButtonProps) {
   const isDesktopWeb = useUiHost().kind === "desktop-web";
   const dialog = useDialog();
+  const triggerMouseDownRef = useRef(false);
   const summary = summarizeMultiSelectValues({ options, selectedValues, emptyLabel });
   const buttonLabel = `${label}: ${summary}`;
   const buttonText = ` ${buttonLabel} `;
@@ -311,6 +312,17 @@ export function MultiSelectDialogButton({
     );
   }
 
+  const startTriggerPress = (event?: DialogTriggerEvent) => {
+    triggerMouseDownRef.current = true;
+    stopMouseEvent(event);
+  };
+  const finishTriggerPress = (event?: DialogTriggerEvent) => {
+    const startedOnTrigger = triggerMouseDownRef.current;
+    triggerMouseDownRef.current = false;
+    if (startedOnTrigger) openDialog(event);
+    else stopMouseEvent(event);
+  };
+
   return (
     <Box
       id={idPrefix ? `${idPrefix}:button` : undefined}
@@ -318,14 +330,14 @@ export function MultiSelectDialogButton({
       width={buttonText.length}
       flexDirection="row"
       backgroundColor={disabled ? colors.panel : colors.selected}
-      onMouseDown={stopMouseEvent}
-      onMouseUp={openDialog}
+      onMouseDown={startTriggerPress}
+      onMouseUp={finishTriggerPress}
     >
       <Text
         fg={disabled ? colors.textMuted : colors.selectedText}
         attributes={TextAttributes.BOLD}
-        onMouseDown={stopMouseEvent}
-        onMouseUp={openDialog}
+        onMouseDown={startTriggerPress}
+        onMouseUp={finishTriggerPress}
       >
         {buttonText}
       </Text>
