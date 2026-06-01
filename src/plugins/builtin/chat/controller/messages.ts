@@ -30,6 +30,24 @@ function mergeStoredMessages(channel: ChannelRuntimeState, messages: ChatMessage
     }
     merged.set(message.id, message);
   }
+  for (const message of messages) {
+    for (const [id, current] of merged) {
+      if (current.replyToId !== message.id || current.replyTo?.content === message.content) continue;
+      merged.set(id, {
+        ...current,
+        replyTo: current.replyTo
+          ? {
+            ...current.replyTo,
+            content: message.content,
+            user: {
+              id: message.user.id,
+              username: message.user.username ?? current.replyTo.user.username,
+            },
+          }
+          : current.replyTo,
+      });
+    }
+  }
   channel.messages = [...merged.values()]
     .sort(compareMessages);
   channel.lastCursor = channel.messages[channel.messages.length - 1]?.id ?? channel.lastCursor;

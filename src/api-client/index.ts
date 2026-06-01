@@ -244,6 +244,10 @@ class GloomApiClient {
     return this.chat.sendMessage(channelId, content, replyToId, clientMessageId);
   }
 
+  async editMessage(channelId: string, messageId: string, content: string): Promise<ChatMessage> {
+    return this.chat.editMessage(channelId, messageId, content);
+  }
+
   connectChannel(
     channelId: string,
     onMessage: (msg: ChatMessage) => void,

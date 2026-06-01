@@ -30,6 +30,21 @@ function setup(): ChatTestSetup {
 }
 const { flushFrame, emitKeypress } = createChatTestControls(setup);
 
+function recentChatTimestamp(offsetMs = 60_000) {
+  return new Date(Date.now() - offsetMs).toISOString();
+}
+
+function makeOwnMessage(content = "typo", createdAt = recentChatTimestamp()): ChatMessage {
+  return {
+    id: "m-own",
+    channelId: "everyone",
+    content,
+    replyToId: null,
+    createdAt,
+    user: { id: "u0", username: "vince", displayName: "Vince" },
+  };
+}
+
 beforeEach(() => {
   installChatApiTestDefaults();
 });
@@ -178,6 +193,108 @@ describe("ChatContent", () => {
 
     expect(headerLine).toContain("Reply");
     expect(bodyLine).not.toContain("Reply");
+  });
+
+  test("shows the edit action next to reply for the latest own message", async () => {
+    const ownMessage = makeOwnMessage();
+    const controller = createController({
+      messages: [makeMessage(1), ownMessage],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    await emitKeypress({ name: "up", sequence: "\u001b[A" });
+    await flushFrame();
+
+    const lines = setup().captureCharFrame().split("\n");
+    const headerLine = lines.find((line) => line.includes("vince"));
+
+    expect(headerLine).toContain("Reply");
+    expect(headerLine).toContain("Edit");
+  });
+
+  test("hides the edit action after the edit window expires", async () => {
+    const ownMessage = makeOwnMessage("typo", recentChatTimestamp(16 * 60_000));
+    const controller = createController({
+      messages: [makeMessage(1), ownMessage],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    await emitKeypress({ name: "up", sequence: "\u001b[A" });
+    await flushFrame();
+
+    const lines = setup().captureCharFrame().split("\n");
+    const headerLine = lines.find((line) => line.includes("vince"));
+
+    expect(headerLine).toContain("Reply");
+    expect(headerLine).not.toContain("Edit");
+  });
+
+  test("up arrow from an empty focused composer edits the latest own message", async () => {
+    const ownMessage = makeOwnMessage();
+    const controller = createController({
+      messages: [makeMessage(1), ownMessage],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const lines = setup().captureCharFrame().split("\n");
+    const inputRow = lines.findIndex((line) => line.includes("Type a message..."));
+    const inputCol = lines[inputRow]?.indexOf("Type a message...") ?? -1;
+    expect(inputRow).toBeGreaterThanOrEqual(0);
+    expect(inputCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await setup().mockMouse.click(inputCol + 1, inputRow);
+      await setup().renderOnce();
+      await setup().renderOnce();
+    });
+
+    await emitKeypress({ name: "up", sequence: "\u001b[A" });
+    await flushFrame();
+
+    const frame = setup().captureCharFrame();
+    expect(frame).toContain("editing");
+    expect(frame).toContain("> typo");
+
+    await act(async () => {
+      await setup().mockInput.typeText(" fix");
+      await setup().renderOnce();
+      await setup().renderOnce();
+    });
+
+    expect(setup().captureCharFrame()).toContain("> typo fix");
   });
 
   test("down arrow from the newest selected message returns focus to the composer", async () => {

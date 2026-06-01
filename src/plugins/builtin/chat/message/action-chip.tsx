@@ -25,6 +25,7 @@ export function ChatActionChip({
       height={1}
       backgroundColor={emphasized ? colors.borderFocused : colors.panel}
       onMouseDown={handlePress}
+      style={{ cursor: "pointer" }}
     >
       <Text
         fg={emphasized ? colors.bg : colors.text}

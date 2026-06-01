@@ -26,13 +26,19 @@ export function TerminalChatMessage({
   onUserHover,
   onUserHoverEnd,
   beginReplyTo,
+  beginEditMessage,
   jumpToMessage,
+  latestEditableMessageId,
   setHoveredIdx,
 }: TerminalChatMessageProps) {
   const state = getChatMessageRenderState({ msg, index, messages, selectedIdx, hoveredIdx, canSend });
   const bodyLines = getMessageBodyTokenLines(msg.content, messageBodyWidth, catalog);
+  const canEditMessage = msg.id === latestEditableMessageId;
   const showInlineReplyAction = !state.grouped && state.showReplyAction;
+  const showInlineEditAction = !state.grouped && state.showReplyAction && canEditMessage;
   const showGroupedReplyAction = state.grouped && state.showReplyAction;
+  const showGroupedEditAction = state.grouped && state.showReplyAction && canEditMessage;
+  const groupedActionWidth = MESSAGE_ACTION_WIDTH * Number(showGroupedReplyAction) + MESSAGE_ACTION_WIDTH * Number(showGroupedEditAction);
   const setHovered = () => setHoveredIdx((current) => (current === index ? current : index));
   const clearHovered = () => setHoveredIdx((current) => (current === index ? null : current));
   const messageRowProps = {
@@ -80,17 +86,29 @@ export function TerminalChatMessage({
             {msg.user.username ?? "anon"}
           </Text>
           <Text fg={state.headerStatusColor}> {state.headerStatus}</Text>
-          {showInlineReplyAction && (
+          {(showInlineReplyAction || showInlineEditAction) && (
             <>
               <Text fg={state.headerStatusColor}> </Text>
-              <Box width={MESSAGE_ACTION_WIDTH} height={1}>
-                <ChatActionChip
-                  label="Reply"
-                  width={MESSAGE_ACTION_WIDTH}
-                  emphasized={state.isSelected}
-                  onPress={() => beginReplyTo(index)}
-                />
-              </Box>
+              {showInlineReplyAction && (
+                <Box width={MESSAGE_ACTION_WIDTH} height={1}>
+                  <ChatActionChip
+                    label="Reply"
+                    width={MESSAGE_ACTION_WIDTH}
+                    emphasized={state.isSelected}
+                    onPress={() => beginReplyTo(index)}
+                  />
+                </Box>
+              )}
+              {showInlineEditAction && (
+                <Box width={MESSAGE_ACTION_WIDTH} height={1}>
+                  <ChatActionChip
+                    label="Edit"
+                    width={MESSAGE_ACTION_WIDTH}
+                    emphasized={state.isSelected}
+                    onPress={() => beginEditMessage(index)}
+                  />
+                </Box>
+              )}
             </>
           )}
         </Box>
@@ -116,14 +134,24 @@ export function TerminalChatMessage({
               onUserHoverEnd={onUserHoverEnd}
             />
           </Box>
-          {lineIndex === 0 && showGroupedReplyAction && (
-            <Box position="absolute" top={0} right={0} width={MESSAGE_ACTION_WIDTH} height={1}>
-              <ChatActionChip
-                label="Reply"
-                width={MESSAGE_ACTION_WIDTH}
-                emphasized={state.isSelected}
-                onPress={() => beginReplyTo(index)}
-              />
+          {lineIndex === 0 && (showGroupedReplyAction || showGroupedEditAction) && (
+            <Box position="absolute" top={0} right={0} width={groupedActionWidth} height={1} flexDirection="row">
+              {showGroupedReplyAction && (
+                <ChatActionChip
+                  label="Reply"
+                  width={MESSAGE_ACTION_WIDTH}
+                  emphasized={state.isSelected}
+                  onPress={() => beginReplyTo(index)}
+                />
+              )}
+              {showGroupedEditAction && (
+                <ChatActionChip
+                  label="Edit"
+                  width={MESSAGE_ACTION_WIDTH}
+                  emphasized={state.isSelected}
+                  onPress={() => beginEditMessage(index)}
+                />
+              )}
             </Box>
           )}
         </Box>

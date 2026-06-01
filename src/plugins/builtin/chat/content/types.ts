@@ -15,6 +15,7 @@ export type ChatContentController = Pick<
   | "refreshSession"
   | "send"
   | "sendToChannel"
+  | "editChannelMessage"
   | "openDirectChannel"
   | "openGroupChannel"
   | "setDraft"

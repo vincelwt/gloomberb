@@ -12,6 +12,26 @@ interface MutableRef<T> {
   current: T;
 }
 
+function moveComposerCursorToEnd(textarea: TextareaRenderable, draft: string) {
+  const offset = draft.length;
+  const editBuffer = textarea.editBuffer as typeof textarea.editBuffer & {
+    setCursorByOffset?: (offset: number) => void;
+  };
+  if (typeof editBuffer.setCursorByOffset === "function") {
+    editBuffer.setCursorByOffset(offset);
+    return;
+  }
+  if (typeof textarea.setCursorOffset === "function") {
+    textarea.setCursorOffset(offset);
+    return;
+  }
+  try {
+    textarea.cursorOffset = offset;
+  } catch {
+    // Some host renderers expose cursorOffset as read-only.
+  }
+}
+
 export function useChatComposerRuntime({
   applyingExternalDraftRef,
   blurInput,
@@ -27,7 +47,10 @@ export function useChatComposerRuntime({
   inputValueRef,
   messages,
   onChannelChange,
+  editingMessage,
+  latestEditableMessageId,
   replyTo,
+  setEditingMessage,
   setDirectExpanded,
   setFollowMessages,
   setReplyTo,
@@ -49,7 +72,10 @@ export function useChatComposerRuntime({
   inputValueRef: MutableRef<string>;
   messages: ChatMessage[];
   onChannelChange?: (channelId: string) => void;
+  editingMessage: ChatMessage | null;
+  latestEditableMessageId: string | null;
   replyTo: ChatMessage | null;
+  setEditingMessage: Dispatch<SetStateAction<ChatMessage | null>>;
   setDirectExpanded: Dispatch<SetStateAction<boolean>>;
   setFollowMessages: Dispatch<SetStateAction<boolean>>;
   setReplyTo: Dispatch<SetStateAction<ChatMessage | null>>;
@@ -59,6 +85,9 @@ export function useChatComposerRuntime({
 }) {
   const replyToRef = useRef(replyTo);
   replyToRef.current = replyTo;
+  const editingMessageRef = useRef(editingMessage);
+  editingMessageRef.current = editingMessage;
+  const editSubmittingRef = useRef(false);
 
   const focusComposer = useCallback(() => {
     setSelectedIdx(-1);
@@ -75,10 +104,40 @@ export function useChatComposerRuntime({
     }
   }, [channelId, controller, setReplyTo, useDefaultControllerChannel]);
 
+  const persistDraft = useCallback((draft: string) => {
+    if (useDefaultControllerChannel) {
+      controller.setDraft(draft);
+    } else {
+      controller.setChannelDraft(channelId, draft);
+    }
+  }, [channelId, controller, useDefaultControllerChannel]);
+
+  const replaceLocalComposer = useCallback((draft: string) => {
+    inputValueRef.current = draft;
+    updateComposerRows(draft);
+    const textarea = inputRef.current;
+    if (textarea && textarea.editBuffer.getText() !== draft) {
+      applyingExternalDraftRef.current = true;
+      try {
+        textarea.setText(draft);
+        moveComposerCursorToEnd(textarea, draft);
+      } finally {
+        applyingExternalDraftRef.current = false;
+      }
+    } else if (textarea) {
+      moveComposerCursorToEnd(textarea, draft);
+    }
+  }, [applyingExternalDraftRef, inputRef, inputValueRef, updateComposerRows]);
+
   const beginReplyTo = useCallback((index: number, options?: { deferFocus?: boolean }) => {
     if (!canSend || index < 0 || index >= messages.length) return;
     const nextReplyTo = messages[index] ?? null;
     if (!nextReplyTo) return;
+    if (editingMessageRef.current) {
+      replaceLocalComposer("");
+      persistDraft("");
+    }
+    setEditingMessage(null);
     setSelectedIdx(index);
     setFollowMessages(index === messages.length - 1);
     setReplyTo(nextReplyTo);
@@ -98,11 +157,57 @@ export function useChatComposerRuntime({
     controller,
     focusInput,
     messages,
+    persistDraft,
+    replaceLocalComposer,
+    setEditingMessage,
     setFollowMessages,
     setReplyTo,
     setSelectedIdx,
     useDefaultControllerChannel,
   ]);
+
+  const beginEditMessage = useCallback((index: number, options?: { deferFocus?: boolean }) => {
+    if (!canSend || index < 0 || index >= messages.length) return false;
+    const message = messages[index] ?? null;
+    if (!message || message.id !== latestEditableMessageId) return false;
+    clearReplyTarget();
+    setEditingMessage(message);
+    setSelectedIdx(index);
+    setFollowMessages(index === messages.length - 1);
+    replaceLocalComposer(message.content);
+    persistDraft(message.content);
+    if (options?.deferFocus) {
+      queueMicrotask(() => focusInput());
+    } else {
+      focusInput();
+    }
+    return true;
+  }, [
+    canSend,
+    clearReplyTarget,
+    focusInput,
+    latestEditableMessageId,
+    messages,
+    persistDraft,
+    replaceLocalComposer,
+    setEditingMessage,
+    setFollowMessages,
+    setSelectedIdx,
+  ]);
+
+  const beginEditLatestMessage = useCallback((options?: { deferFocus?: boolean }) => {
+    if (!latestEditableMessageId) return false;
+    const index = messages.findIndex((message) => message.id === latestEditableMessageId);
+    return beginEditMessage(index, options);
+  }, [beginEditMessage, latestEditableMessageId, messages]);
+
+  const cancelEditMessage = useCallback(() => {
+    if (!editingMessageRef.current) return;
+    setEditingMessage(null);
+    replaceLocalComposer("");
+    persistDraft("");
+    focusInput();
+  }, [focusInput, persistDraft, replaceLocalComposer, setEditingMessage]);
 
   const returnToComposer = useCallback(() => {
     setSelectedIdx(-1);
@@ -113,22 +218,30 @@ export function useChatComposerRuntime({
   }, [canSend, focusInput, setFollowMessages, setSelectedIdx]);
 
   const clearLocalComposer = useCallback(() => {
-    inputValueRef.current = "";
-    updateComposerRows("");
-    const textarea = inputRef.current;
-    if (textarea && textarea.editBuffer.getText() !== "") {
-      applyingExternalDraftRef.current = true;
-      try {
-        textarea.setText("");
-      } finally {
-        applyingExternalDraftRef.current = false;
-      }
-    }
-  }, [applyingExternalDraftRef, inputRef, inputValueRef, updateComposerRows]);
+    replaceLocalComposer("");
+  }, [replaceLocalComposer]);
 
   const sendMessage = useCallback(() => {
     const content = inputValueRef.current.trim();
     if (!content) return;
+    const editing = editingMessageRef.current;
+    if (editing) {
+      if (editSubmittingRef.current) return;
+      const sendChannelId = useDefaultControllerChannel ? channelId : channelIdRef.current;
+      if (editing.channelId !== sendChannelId) return;
+      editSubmittingRef.current = true;
+      void controller.editChannelMessage(sendChannelId, editing.id, content).then((accepted) => {
+        if (!accepted) return;
+        setEditingMessage(null);
+        clearLocalComposer();
+        persistDraft("");
+        setSelectedIdx(-1);
+        setFollowMessages(true);
+      }).finally(() => {
+        editSubmittingRef.current = false;
+      });
+      return;
+    }
     const composerCommand = parseChatComposerCommand(content);
     if (composerCommand?.kind === "direct") {
       void controller.openDirectChannel({ username: composerCommand.username }).then((channel) => {
@@ -172,7 +285,9 @@ export function useChatComposerRuntime({
     controller,
     inputValueRef,
     onChannelChange,
+    persistDraft,
     setDirectExpanded,
+    setEditingMessage,
     setFollowMessages,
     setSelectedIdx,
     useDefaultControllerChannel,
@@ -182,16 +297,13 @@ export function useChatComposerRuntime({
     if (applyingExternalDraftRef.current) return;
     inputValueRef.current = draft;
     updateComposerRows(draft);
-    if (useDefaultControllerChannel) {
-      controller.setDraft(draft);
-    } else {
-      controller.setChannelDraft(channelId, draft);
-    }
+    persistDraft(draft);
   }, [
     applyingExternalDraftRef,
     channelId,
     controller,
     inputValueRef,
+    persistDraft,
     updateComposerRows,
     useDefaultControllerChannel,
   ]);
@@ -234,18 +346,33 @@ export function useChatComposerRuntime({
     clearReplyTarget();
   }, [canSend, clearReplyTarget, replyTo]);
 
+  useEffect(() => {
+    if (canSend || !editingMessage) return;
+    cancelEditMessage();
+  }, [canSend, cancelEditMessage, editingMessage]);
+
   const replyPreview = replyTo
     ? formatInlinePreview(
       replyTo.content,
       Math.max(contentWidth - ` replying to @${replyTo.user.username}: `.length - COMPOSER_ACTION_WIDTH - 1, 0),
     )
     : "";
-  const inputPlaceholder = replyTo ? `Reply to @${replyTo.user.username}...` : "Type a message...";
+  const editingPreview = editingMessage
+    ? formatInlinePreview(
+      editingMessage.content,
+      Math.max(contentWidth - " editing: ".length - COMPOSER_ACTION_WIDTH - 1, 0),
+    )
+    : "";
+  const inputPlaceholder = editingMessage ? "Edit message..." : replyTo ? `Reply to @${replyTo.user.username}...` : "Type a message...";
 
   return {
+    beginEditLatestMessage,
+    beginEditMessage,
     beginReplyTo,
+    cancelEditMessage,
     clearReplyTarget,
     commitLocalDraft,
+    editingPreview,
     focusComposer,
     inputPlaceholder,
     replyPreview,

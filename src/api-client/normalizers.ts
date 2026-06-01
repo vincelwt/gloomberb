@@ -12,6 +12,7 @@ export function normalizeChatMessage(message: ChatMessage): ChatMessage {
   return {
     ...message,
     createdAt: normalizeTimestamp(message.createdAt),
+    ...(message.editedAt ? { editedAt: normalizeTimestamp(message.editedAt) } : {}),
   };
 }
 

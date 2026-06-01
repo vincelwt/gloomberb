@@ -93,6 +93,14 @@ export class CloudChatApi {
     return normalizeChatMessage(message);
   }
 
+  async editMessage(channelId: string, messageId: string, content: string): Promise<ChatMessage> {
+    const message = await this.options.request<ChatMessage>(`/chat/channels/${channelId}/messages/${messageId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ content }),
+    });
+    return normalizeChatMessage(message);
+  }
+
   connectChannel(
     channelId: string,
     onMessage: (msg: ChatMessage) => void,

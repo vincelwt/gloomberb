@@ -122,6 +122,7 @@ export interface ScrollBoxRenderable {
 export interface InputRenderable {
   editBuffer: TextEditBuffer;
   cursorOffset?: number;
+  setCursorOffset?(offset: number): void;
   focus?(): void;
 }
 

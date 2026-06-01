@@ -14,5 +14,7 @@ export interface ChatMessageBaseProps {
   onUserHover: (user: ChatUserSummary) => void;
   onUserHoverEnd: () => void;
   beginReplyTo: (index: number, options?: { deferFocus?: boolean }) => void;
+  beginEditMessage: (index: number, options?: { deferFocus?: boolean }) => boolean;
   jumpToMessage: (messageId: string) => void;
+  latestEditableMessageId: string | null;
 }

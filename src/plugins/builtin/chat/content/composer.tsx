@@ -14,6 +14,7 @@ interface MutableRef<T> {
 
 interface ChatComposerAreaProps {
   canSend: boolean;
+  cancelEditMessage: () => void;
   clearReplyTarget: () => void;
   commitLocalDraft: (draft: string) => void;
   composerHeight: number;
@@ -27,6 +28,8 @@ interface ChatComposerAreaProps {
   inputRef: MutableRef<TextareaRenderable | null>;
   inputValueRef: MutableRef<string>;
   nativePaneChrome: boolean | undefined;
+  editingMessage: ChatMessage | null;
+  editingPreview: string;
   replyPreview: string;
   replyTo: ChatMessage | null;
   sendMessage: () => void;
@@ -35,6 +38,7 @@ interface ChatComposerAreaProps {
 
 export function ChatComposerArea({
   canSend,
+  cancelEditMessage,
   clearReplyTarget,
   commitLocalDraft,
   composerHeight,
@@ -48,6 +52,8 @@ export function ChatComposerArea({
   inputRef,
   inputValueRef,
   nativePaneChrome,
+  editingMessage,
+  editingPreview,
   replyPreview,
   replyTo,
   sendMessage,
@@ -89,7 +95,20 @@ export function ChatComposerArea({
         />
       )}
 
-      {replyTo && (
+      {editingMessage && (
+        <Box height={1} width={contentWidth} flexDirection="row">
+          <Text fg={colors.textMuted}> editing </Text>
+          <Text fg={colors.textDim}>{editingPreview ? `: ${editingPreview}` : ""}</Text>
+          <Box flexGrow={1} />
+          <ChatActionChip
+            label="Cancel"
+            width={COMPOSER_ACTION_WIDTH}
+            onPress={cancelEditMessage}
+          />
+        </Box>
+      )}
+
+      {!editingMessage && replyTo && (
         <Box height={1} width={contentWidth} flexDirection="row">
           <Text fg={colors.textMuted}> replying to </Text>
           <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{`@${replyTo.user.username}`}</Text>
@@ -135,14 +154,16 @@ export function ChatComposerArea({
 export function getChatComposerAreaHeight({
   canSend,
   composerHeight,
+  editingMessage,
   nativePaneChrome,
   replyTo,
 }: {
   canSend: boolean;
   composerHeight: number;
+  editingMessage: ChatMessage | null;
   nativePaneChrome: boolean | undefined;
   replyTo: ChatMessage | null;
 }) {
   if (!canSend) return 2;
-  return getMessageComposerBlockHeight({ height: composerHeight, nativePaneChrome }) + (replyTo ? 1 : 0);
+  return getMessageComposerBlockHeight({ height: composerHeight, nativePaneChrome }) + (editingMessage || replyTo ? 1 : 0);
 }
