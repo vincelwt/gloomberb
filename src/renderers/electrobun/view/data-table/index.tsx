@@ -145,15 +145,16 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     const nextValue = element ? toCellX(element.clientWidth) : 0;
     setViewportWidth((current) => current === nextValue ? current : nextValue);
   }, []);
+  const scheduleViewportWidthMeasure = useRafCallback(measureViewportWidth);
 
   useEffect(() => {
     measureViewportWidth();
     const element = bodyElementRef.current;
     if (!element || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measureViewportWidth);
+    const observer = new ResizeObserver(scheduleViewportWidthMeasure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [measureViewportWidth]);
+  }, [measureViewportWidth, scheduleViewportWidthMeasure]);
 
   useEffect(() => {
     if (scrollToIndex == null || items.length === 0) return;

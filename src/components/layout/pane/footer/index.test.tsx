@@ -123,6 +123,12 @@ describe("PaneFooterBar", () => {
     expect(col).toBeGreaterThanOrEqual(0);
 
     await act(async () => {
+      await testSetup!.mockMouse.release(col + 1, 0);
+      await testSetup!.renderOnce();
+    });
+    expect(refreshCount).toBe(0);
+
+    await act(async () => {
       await testSetup!.mockMouse.click(col + 1, 0);
       await testSetup!.renderOnce();
     });

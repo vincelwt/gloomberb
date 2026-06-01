@@ -1,5 +1,5 @@
 import { Box, Text } from "../../../../ui";
-import { MESSAGE_ACTION_WIDTH, formatInlinePreview, getMessageBodyLines } from "../layout";
+import { MESSAGE_ACTION_WIDTH, formatInlinePreview, getMessageBodyTokenLines } from "../layout";
 import { ChatActionChip } from "./action-chip";
 import { ResponsiveTickerBadgeText } from "./inline-tokens";
 import { getChatMessageRenderState } from "./render-state";
@@ -32,7 +32,7 @@ export function TerminalChatMessage({
   setHoveredIdx,
 }: TerminalChatMessageProps) {
   const state = getChatMessageRenderState({ msg, index, messages, selectedIdx, hoveredIdx, canSend });
-  const bodyLines = getMessageBodyLines(msg, contentWidth, catalog);
+  const bodyLines = getMessageBodyTokenLines(msg.content, messageBodyWidth, catalog);
   const canEditMessage = msg.id === latestEditableMessageId;
   const showInlineReplyAction = !state.grouped && state.showReplyAction;
   const showInlineEditAction = !state.grouped && state.showReplyAction && canEditMessage;
@@ -124,7 +124,8 @@ export function TerminalChatMessage({
         >
           <Box width={messageBodyWidth} height={1}>
             <ResponsiveTickerBadgeText
-              text={line}
+              tokens={line}
+              prewrapped
               catalog={catalog}
               textColor={state.bodyColor}
               openTicker={openTicker}

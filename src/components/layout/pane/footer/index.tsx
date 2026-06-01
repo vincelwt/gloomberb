@@ -1,4 +1,5 @@
 import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../../../ui";
+import { useRef } from "react";
 import { colors, blendHex } from "../../../../theme/colors";
 import { getShortcutHintWidth, ShortcutHint } from "../../../ui/shortcut-hint";
 import {
@@ -50,13 +51,24 @@ function stopMouseEvent(event?: { stopPropagation?: () => void; preventDefault?:
 function SegmentView({ segment }: { segment: PaneFooterSegment }) {
   const interactive = !!segment.onPress && !segment.disabled;
   const attributes = segment.parts.some((part) => part.bold) || interactive ? TextAttributes.BOLD : 0;
+  const triggerMouseDownRef = useRef(false);
+  const startSegmentPress = (event?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
+    triggerMouseDownRef.current = true;
+    stopMouseEvent(event);
+  };
+  const finishSegmentPress = (event?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
+    const startedOnTrigger = triggerMouseDownRef.current;
+    triggerMouseDownRef.current = false;
+    if (startedOnTrigger) segment.onPress?.();
+    else stopMouseEvent(event);
+  };
 
   return (
     <Text
       fg={segment.disabled ? colors.textMuted : colors.textDim}
       attributes={attributes}
-      onMouseDown={interactive ? stopMouseEvent : undefined}
-      onMouseUp={interactive ? segment.onPress : undefined}
+      onMouseDown={interactive ? startSegmentPress : undefined}
+      onMouseUp={interactive ? finishSegmentPress : undefined}
       {...(interactive ? { "data-gloom-interactive": "true" } : {})}
     >
       {segment.parts.map((part, index) => (

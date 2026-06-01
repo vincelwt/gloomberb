@@ -985,6 +985,36 @@ describe("ChatContent", () => {
     expect(frame).toContain("https://example.com/story.");
   });
 
+  test("keeps long link query strings from spilling into following terminal rows", async () => {
+    const controller = createController({
+      messages: [{
+        id: "m1",
+        channelId: "everyone",
+        content: "again:\nhttps://github.com/houmain/keymapper/issues?weird_one=the_rest_of the query parameters got lost entirely :)",
+        replyToId: null,
+        createdAt: "2026-03-28T00:00:00.000Z",
+        user: { id: "u1", username: "vince", displayName: "Vince" },
+      }],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 60,
+        height: 12,
+      }), {
+        width: 60,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const frame = setup().captureCharFrame();
+    expect(frame).toContain("https://github.com/houmain/keymapper/issues?weird_one=");
+    expect(frame).toContain("the_rest_of the query parameters got lost entirely :)");
+    expect(frame).not.toContain("therquery=parametersfgot");
+  });
+
   test("shows a saved-login read-only footer when a session token is cached", async () => {
     const controller = createController({
       sessionToken: "token-123",

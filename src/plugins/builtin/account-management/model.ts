@@ -1,6 +1,6 @@
 import type { ChoiceDialogChoice } from "../../../components";
 import type { AccountProfile } from "../../../api-client";
-import type { Portfolio } from "../../../types/ticker";
+import type { Portfolio, TickerRecord } from "../../../types/ticker";
 
 export type AccountFieldKey =
   | "username"
@@ -75,14 +75,24 @@ export function formatPlan(plan: AccountProfile["plan"] | null | undefined): str
   return plan === "pro" ? "Pro" : "Free";
 }
 
+export function countPortfolioHoldings(tickers: ReadonlyMap<string, TickerRecord>): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const record of tickers.values()) {
+    for (const portfolioId of record.metadata.portfolios) {
+      counts[portfolioId] = (counts[portfolioId] ?? 0) + 1;
+    }
+  }
+  return counts;
+}
+
 export function buildPortfolioChoices(portfolios: Portfolio[], holdingCounts: Record<string, number>): ChoiceDialogChoice[] {
   return [
-    { id: NO_PORTFOLIO_VALUE, label: "None", detail: "Off", description: "No public analytics portfolio." },
+    { id: NO_PORTFOLIO_VALUE, label: "None", detail: "Off", description: "Do not show portfolio analytics on your public profile." },
     ...portfolios.map((portfolio) => ({
       id: portfolio.id,
       label: portfolio.name,
       detail: `${holdingCounts[portfolio.id] ?? 0} tickers`,
-      description: portfolio.description || `${portfolio.currency} portfolio`,
+      description: "Shares this portfolio's YTD % and SPY Beta on your public profile.",
     })),
   ];
 }

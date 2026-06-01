@@ -17,6 +17,7 @@ export interface ChoiceDialogChoice {
 export interface ChoiceDialogProps extends PromptContext<string> {
   title: string;
   choices: ChoiceDialogChoice[];
+  selectedChoiceId?: string;
   footer?: string;
   bgColor?: string;
 }
@@ -30,14 +31,23 @@ function getChoiceDescription(choice: ChoiceDialogChoice | undefined): string {
   return choice?.description ?? "";
 }
 
+function getInitialChoiceIndex(choices: ChoiceDialogChoice[], selectedChoiceId: string | undefined): number {
+  if (!selectedChoiceId) return 0;
+  const selectedIndex = choices.findIndex((choice) => choice.id === selectedChoiceId);
+  return selectedIndex >= 0 ? selectedIndex : 0;
+}
+
 export function ChoiceDialog({
   resolve,
   title,
   choices,
-  footer = "↑↓ choose · Enter/click select · Esc cancel",
+  selectedChoiceId,
+  footer,
   bgColor = colors.bg,
 }: ChoiceDialogProps) {
-  const [index, setIndex] = useState(() => clampChoiceIndex(0, choices.length));
+  const [index, setIndex] = useState(() =>
+    clampChoiceIndex(getInitialChoiceIndex(choices, selectedChoiceId), choices.length)
+  );
   const selectedIndex = clampChoiceIndex(index, choices.length);
   const selectedChoice = selectedIndex >= 0 ? choices[selectedIndex] : undefined;
   const items = useMemo<ListViewItem[]>(() => choices.map((choice) => ({

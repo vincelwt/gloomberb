@@ -29,7 +29,7 @@ export function TuiPaneSettingsDialogBody({
   onActivate: (field: PaneSettingField | undefined) => void;
 }) {
   return (
-    <DialogFrame title={title} footer="Use ↑↓ to choose · enter to edit · esc cancel">
+    <DialogFrame title={title}>
       <ListView
         items={fields.map((field) => ({
           id: field.key,

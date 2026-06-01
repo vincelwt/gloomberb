@@ -13,6 +13,7 @@ import {
   BASE_FIELD_ORDER,
   NO_PORTFOLIO_VALUE,
   buildPortfolioChoices,
+  countPortfolioHoldings,
   emptyToNull,
   portfolioOptionIds,
   profileToDraft,
@@ -49,15 +50,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const bodyHeight = Math.max(5, height);
   const fieldOrder = BASE_FIELD_ORDER;
 
-  const portfolioHoldingCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const record of Object.values(tickers)) {
-      for (const portfolioId of record.metadata.portfolios) {
-        counts[portfolioId] = (counts[portfolioId] ?? 0) + 1;
-      }
-    }
-    return counts;
-  }, [tickers]);
+  const portfolioHoldingCounts = useMemo(() => countPortfolioHoldings(tickers), [tickers]);
   const portfolioChoices = useMemo(
     () => buildPortfolioChoices(portfolios, portfolioHoldingCounts),
     [portfolioHoldingCounts, portfolios],
@@ -138,6 +131,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
 
   const openPortfolioDialog = useCallback(async () => {
     setActiveField("sharedPortfolioId");
+    const currentPortfolioChoiceId = draftRef.current.sharedPortfolioId || NO_PORTFOLIO_VALUE;
     const selected = await dialog.prompt<string>({
       closeOnClickOutside: false,
       content: (context: PromptContext<string>) => (
@@ -145,7 +139,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
           {...context}
           title="Shared Portfolio"
           choices={portfolioChoices}
-          footer="↑↓ choose · Enter/click select · Esc cancel"
+          selectedChoiceId={currentPortfolioChoiceId}
         />
       ),
     }).catch(() => "");
@@ -365,7 +359,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
           <PickerRow
             label="Profile Analytics"
             value={selectedPortfolioLabel(portfolios, draft.sharedPortfolioId)}
-            detail={draft.sharedPortfolioId ? "YTD% + beta source" : "No shared portfolio"}
+            detail={draft.sharedPortfolioId ? "Shares portfolio YTD % + SPY Beta" : "No public portfolio analytics"}
             active={activeField === "sharedPortfolioId"}
             width={formWidth}
             onFocus={() => setActiveField("sharedPortfolioId")}

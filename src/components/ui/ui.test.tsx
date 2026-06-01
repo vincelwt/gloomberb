@@ -227,7 +227,7 @@ function MultiSelectDialogButtonHarness() {
   );
 }
 
-function ChoiceDialogHarness() {
+function ChoiceDialogHarness({ selectedChoiceId }: { selectedChoiceId?: string } = {}) {
   return (
     <ChoiceDialog
       title="Choose Account"
@@ -240,6 +240,7 @@ function ChoiceDialogHarness() {
         { id: "beta", label: "Beta", description: "Beta account" },
         { id: "gamma", label: "Gamma", description: "Gamma account" },
       ]}
+      selectedChoiceId={selectedChoiceId}
     />
   );
 }
@@ -411,6 +412,15 @@ describe("shared UI kit", () => {
     expect(button!.width).toBe(" IND: SMA ".length);
 
     await act(async () => {
+      await testSetup!.mockMouse.release(button!.x + 1, button!.y);
+      await Promise.resolve();
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).not.toContain("Chart Indicators");
+
+    await act(async () => {
       await testSetup!.mockMouse.click(button!.x + 1, button!.y);
       await Promise.resolve();
       await testSetup!.renderOnce();
@@ -471,6 +481,18 @@ describe("shared UI kit", () => {
       await testSetup!.renderOnce();
     });
     expect(resolvedChoice).toBe("gamma");
+  });
+
+  test("preselects the current choice in choice dialogs", async () => {
+    testSetup = await testRender(<ChoiceDialogHarness selectedChoiceId="beta" />, { width: 44, height: 10 });
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Beta account");
+    expect(frame).not.toContain("Alpha account");
   });
 
   test("cancels choice dialogs with escape", async () => {
