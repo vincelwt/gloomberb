@@ -24,6 +24,12 @@ export interface ProjectChartDataOptions {
   sourceIndexOffset?: number;
 }
 
+export interface IndexProjectionBucket {
+  index: number;
+  start: number;
+  end: number;
+}
+
 interface StableOhlcProjectionOptionsInput {
   pointCount: number;
   sourceIndexOffset: number;
@@ -131,6 +137,44 @@ function aggregateOhlcBucket(bucket: readonly ProjectedChartPoint[]): ProjectedC
   };
 }
 
+export function buildIndexProjectionBuckets(
+  itemCount: number,
+  targetWidth: number,
+): IndexProjectionBucket[] {
+  const normalizedItemCount = Math.max(Math.floor(itemCount), 0);
+  if (normalizedItemCount === 0) return [];
+
+  const bucketCount = Math.min(normalizedItemCount, Math.max(Math.floor(targetWidth), 1));
+  const bucketSize = normalizedItemCount / bucketCount;
+
+  return Array.from({ length: bucketCount }, (_, index) => {
+    const start = Math.floor(index * bucketSize);
+    const end = Math.min(
+      normalizedItemCount,
+      Math.max(Math.floor((index + 1) * bucketSize), start + 1),
+    );
+    return { index, start, end };
+  });
+}
+
+export function selectRepresentativeCloseValue<T>(
+  bucket: readonly T[],
+  index: number,
+  getClose: (item: T) => number,
+): T {
+  let best = bucket[0] as T;
+  if (index % 2 === 0) {
+    for (const item of bucket) {
+      if (getClose(item) > getClose(best)) best = item;
+    }
+  } else {
+    for (const item of bucket) {
+      if (getClose(item) < getClose(best)) best = item;
+    }
+  }
+  return best;
+}
+
 function bucketOhlcBySourceIndex(
   normalizedPoints: readonly ProjectedChartPoint[],
   bucketSize: number,
@@ -202,33 +246,13 @@ function projectCloseSeries(
   targetWidth: number,
 ): ProjectedChartPoint[] {
   if (points.length === 0) return [];
-  if (points.length <= targetWidth) return points.map(normalizePoint);
-
-  const result: ProjectedChartPoint[] = [];
-  const bucketSize = points.length / targetWidth;
-
-  for (let i = 0; i < targetWidth; i++) {
-    const start = Math.floor(i * bucketSize);
-    const end = Math.min(points.length, Math.max(Math.floor((i + 1) * bucketSize), start + 1));
-    const bucket = points.slice(start, end);
-
-    if (bucket.length === 0) continue;
-
-    // Alternate bucket extremes to preserve line/area shape after downsampling.
-    let best = bucket[0]!;
-    if (i % 2 === 0) {
-      for (const point of bucket) {
-        if (point.close > best.close) best = point;
-      }
-    } else {
-      for (const point of bucket) {
-        if (point.close < best.close) best = point;
-      }
-    }
-    result.push(normalizePoint(best));
-  }
-
-  return result;
+  return buildIndexProjectionBuckets(points.length, targetWidth).map((bucket) => (
+    normalizePoint(selectRepresentativeCloseValue(
+      points.slice(bucket.start, bucket.end),
+      bucket.index,
+      (point) => point.close,
+    ))
+  ));
 }
 
 /**
