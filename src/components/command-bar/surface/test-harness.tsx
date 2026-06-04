@@ -174,6 +174,7 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
         paneId: TICKER_RESEARCH_PANE_ID,
         label: "Ticker Research",
         description: "Open another research pane",
+        shortcut: { prefix: "T", argPlaceholder: "ticker", argKind: "ticker" },
       }],
       ["new-chat-pane", {
         id: "new-chat-pane",

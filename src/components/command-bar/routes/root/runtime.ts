@@ -8,10 +8,6 @@ import type { TickerSearchCandidate } from "../../../../tickers/search";
 import { matchPrefix, type Command } from "../../commands/registry";
 import type { ResultItem } from "../../list/model";
 import type { CommandBarRoute } from "../../workflow/types";
-import {
-  isLikelyPlainTickerSearch,
-  normalizeCommandTickerSearchText,
-} from "../ticker-search/results";
 import { useTickerSearchRouteResults } from "../ticker-search/route";
 import { buildRootResultModel, type RootResultModel } from "./results";
 import { useRootProviderSearch } from "./provider-search";
@@ -47,7 +43,6 @@ interface UseCommandBarRootRuntimeOptions {
   getTickers(): AppState["tickers"];
   hasPaneSettings(paneId: string): boolean;
   localTickerSearchResultItems(query?: string, options?: { category?: string; limit?: number }): ResultItem[];
-  mapTickerSearchCandidateToResultItem(candidate: TickerSearchCandidate): ResultItem;
   nativeListScrollRef: RefObject<ScrollBoxRenderable | null>;
   nonShortcutPaneTemplateItems(filterQuery?: string): ResultItem[];
   openModeRoute(screen: "ticker-search" | "plugins" | "layout", initialQuery?: string): void;
@@ -101,7 +96,6 @@ export function useCommandBarRootRuntime({
   getTickers,
   hasPaneSettings,
   localTickerSearchResultItems,
-  mapTickerSearchCandidateToResultItem,
   nativeListScrollRef,
   nonShortcutPaneTemplateItems,
   openModeRoute,
@@ -178,7 +172,6 @@ export function useCommandBarRootRuntime({
     getAvailablePaneShortcutTemplates,
     hasPaneSettings,
     localTickerSearchResultItems,
-    mapTickerSearchCandidateToResultItem,
     nonShortcutPaneTemplateItems,
     openModeRoute,
     paneShortcutItems,
@@ -206,7 +199,6 @@ export function useCommandBarRootRuntime({
     getAvailablePaneShortcutTemplates,
     hasPaneSettings,
     localTickerSearchResultItems,
-    mapTickerSearchCandidateToResultItem,
     nonShortcutPaneTemplateItems,
     openModeRoute,
     paneShortcutItems,
@@ -220,20 +212,10 @@ export function useCommandBarRootRuntime({
     tickerActionItems,
   ]);
 
-  const rootPlainTickerSearchArg = useMemo(() => {
-    if (activeMatch || rootShortcutIntent.kind !== "none" || !isLikelyPlainTickerSearch(rootQuery)) return null;
-    const normalizedQuery = normalizeCommandTickerSearchText(rootQuery);
-    const hasExactNonTickerResult = rootResultModel.items.some((item) => (
-      item.kind !== "ticker"
-      && item.kind !== "search"
-      && normalizeCommandTickerSearchText(item.label) === normalizedQuery
-    ));
-    return hasExactNonTickerResult ? null : rootQuery.trim();
-  }, [activeMatch, rootQuery, rootResultModel.items, rootShortcutIntent.kind]);
   const rootSecurityDescriptionArg = activeMatch?.command.id === "security-description" && activeMatch.arg.length >= 1
     ? activeMatch.arg
     : null;
-  const rootTickerSearchArg = rootSecurityDescriptionArg ?? rootPlainTickerSearchArg;
+  const rootTickerSearchArg = rootSecurityDescriptionArg;
 
   useEffect(() => {
     if (currentRoute) return;
@@ -272,7 +254,7 @@ export function useCommandBarRootRuntime({
     localTickerSearchResultItems,
     portfolios: state.config.portfolios,
     readTickerSearchCache,
-    rootPlainTickerSearchArg,
+    rootPlainTickerSearchArg: null,
     rootResultItems: rootResultModel.items,
     rootTickerSearchArg,
     tickers: state.tickers,

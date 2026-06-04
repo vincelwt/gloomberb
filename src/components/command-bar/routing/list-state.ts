@@ -125,9 +125,7 @@ function buildRouteListState(options: BuildRouteListStateOptions): ListScreenSta
         };
       }
       case "ticker-search": {
-        const results = currentRoute.query.trim()
-          ? tickerSearchResults.map((item) => adaptTickerSearchRouteResult(item, currentRoute.payload))
-          : [];
+        const results = tickerSearchResults.map((item) => adaptTickerSearchRouteResult(item, currentRoute.payload));
         const emptyState = getEmptyState("search", currentRoute.query, currentRoute.query);
         return {
           kind: "mode",

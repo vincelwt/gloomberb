@@ -141,7 +141,10 @@ export function buildPaneTemplateItem(options: {
   const arg = options.createOptions?.arg;
 
   const action = () => {
-    if (options.shortcutExecution && options.template.shortcut) {
+    if (
+      options.template.shortcut
+      && (options.shortcutExecution || getPaneTemplateArgKind(options.template) === "ticker")
+    ) {
       options.runPaneTemplateShortcut(options.template, arg);
       return;
     }

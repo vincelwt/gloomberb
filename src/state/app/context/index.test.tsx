@@ -46,6 +46,22 @@ describe("appReducer command bar state", () => {
     expect(closed.commandBarLaunchRequest).toBeNull();
   });
 
+  test("stores ticker search command bar launch requests", () => {
+    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    const opened = appReducer(initial, {
+      type: "SET_COMMAND_BAR",
+      open: true,
+      launch: { kind: "ticker-search", query: "" },
+    });
+
+    expect(opened.commandBarOpen).toBe(true);
+    expect(opened.commandBarLaunchRequest).toEqual({
+      kind: "ticker-search",
+      query: "",
+      sequence: 1,
+    });
+  });
+
   test("toggle opens blank and clears on close", () => {
     const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
     const opened = appReducer(initial, { type: "TOGGLE_COMMAND_BAR" });

@@ -1,17 +1,17 @@
 import { useEffect, useRef } from "react";
 import type { PluginRegistry } from "../../../plugins/registry";
+import type { AppState } from "../../../state/app/context";
 import type { CommandDef } from "../../../types/plugin";
-
-interface CommandBarPluginLaunchRequest {
-  kind: "plugin-command";
-  commandId: string;
-  sequence: number;
-}
 
 interface UseCommandBarLaunchRequestOptions {
   activeTickerSymbol: string | null;
-  commandBarLaunchRequest: CommandBarPluginLaunchRequest | null;
+  commandBarLaunchRequest: AppState["commandBarLaunchRequest"];
   commandBarOpen: boolean;
+  openModeRoute: (
+    screen: "ticker-search" | "plugins" | "layout",
+    initialQuery?: string,
+    payload?: Record<string, unknown>,
+  ) => void;
   openPluginCommandWorkflow: (
     command: CommandDef,
     options?: { values?: Record<string, string> },
@@ -23,6 +23,7 @@ export function useCommandBarLaunchRequest({
   activeTickerSymbol,
   commandBarLaunchRequest,
   commandBarOpen,
+  openModeRoute,
   openPluginCommandWorkflow,
   pluginRegistry,
 }: UseCommandBarLaunchRequestOptions) {
@@ -37,6 +38,11 @@ export function useCommandBarLaunchRequest({
     if (!commandBarOpen) return;
     if (processedLaunchSequenceRef.current === launch.sequence) return;
     processedLaunchSequenceRef.current = launch.sequence;
+
+    if (launch.kind === "ticker-search") {
+      openModeRoute("ticker-search", launch.query ?? "");
+      return;
+    }
 
     const command = pluginRegistry.commands.get(launch.commandId);
     if (!command?.wizard || command.wizard.length === 0) return;
@@ -53,6 +59,7 @@ export function useCommandBarLaunchRequest({
     activeTickerSymbol,
     commandBarLaunchRequest,
     commandBarOpen,
+    openModeRoute,
     openPluginCommandWorkflow,
     pluginRegistry,
   ]);

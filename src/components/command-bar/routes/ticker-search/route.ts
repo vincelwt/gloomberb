@@ -65,7 +65,10 @@ export function useTickerSearchRouteResults(options: {
 
     const searchQuery = routeQuery.trim();
     if (!searchQuery) {
-      resetTickerSearchRoute();
+      searchRequestIdRef.current += 1;
+      setTickerSearchPending(false);
+      setTickerSearchResults(localTickerSearchResultItems(undefined, { limit: 8 }));
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
       return;
     }
 

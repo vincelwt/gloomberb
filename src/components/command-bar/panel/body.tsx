@@ -130,6 +130,7 @@ export function CommandBarPanelBody({
         {(visibleListState || currentRoute?.kind === "picker") && visibleListState && (
           <CommandBarListHeader
             kind={visibleListState.kind}
+            title={visibleListState.title}
             query={visibleListState.query}
             queryDisplayWidth={queryDisplayWidth}
             nativePaneChrome={nativePaneChrome}

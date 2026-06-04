@@ -62,7 +62,12 @@ export function useAppGlobalShortcuts({
     if (!isDetachedWindow && event.name === "`" && !state.commandBarOpen) {
       event.preventDefault();
       event.stopPropagation();
-      dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
+      dispatch({
+        type: "SET_COMMAND_BAR",
+        open: true,
+        query: "",
+        launch: { kind: "ticker-search", query: "" },
+      });
       return;
     }
     if (!isDetachedWindow && /^[1-9]$/.test(event.name ?? "") && event.ctrl && (state.config.layouts ?? []).length > 1) {

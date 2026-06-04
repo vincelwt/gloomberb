@@ -81,11 +81,33 @@ describe("CommandBar", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Commands");
-    expect(frame).toContain("Tickers");
-    expect(frame).toContain("AAPL");
+    expect(frame).not.toContain("Tickers");
     expect(frame).toContain("Panes");
     expect(frame).toContain("Portfolio");
     expect(frame).toContain("Help");
+  });
+
+  test("keeps generic command filtering separate from ticker search", async () => {
+    const searchQueries: string[] = [];
+    testSetup = await testRender(<CommandBarHarness
+      query="MSFT"
+      dataProvider={makeDataProvider(async (query) => {
+        searchQueries.push(query);
+        return [];
+      })}
+    />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    await Bun.sleep(260);
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).not.toContain("Tickers");
+    expect(frame).not.toContain("Microsoft Corp.");
+    expect(searchQueries).toEqual([]);
   });
 
   test("runs check for updates from the command bar", async () => {
@@ -414,6 +436,56 @@ describe("CommandBar", () => {
     expect(frame).toContain("Symbol");
     expect(frame).toContain("Condition");
     expect(frame).toContain("AMD");
+  });
+
+  test("opens ticker search from a launch request with saved ticker metadata", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query=""
+      extraTickers={[makeTicker("BRK.B", "Berkshire Hathaway Inc.", {
+        exchange: "NYSE",
+        assetCategory: "STK",
+      })]}
+      configureState={(state) => ({
+        ...state,
+        commandBarLaunchRequest: {
+          kind: "ticker-search",
+          query: "",
+          sequence: 1,
+        },
+      })}
+    />, {
+      width: 100,
+      height: 24,
+    });
+
+    const frame = await waitForFrameToContain("Security Description");
+    expectSingleBackControl(frame);
+    expect(frame).toContain("BRK.B");
+    expect(frame).toContain("Equity NYSE");
+  });
+
+  test("opens ticker search when activating the Ticker Research pane item without a ticker", async () => {
+    testSetup = await testRender(<CommandBarHarness query="ticker research" />, {
+      width: 100,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    const rootFrame = testSetup.captureCharFrame();
+    const tickerResearchRow = rootFrame
+      .split("\n")
+      .find((line) => line.includes("Ticker Research"));
+    expect(tickerResearchRow).toMatch(/\bT\s*$/);
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expectSingleBackControl(frame);
+    expect(frame).toContain("Security Description");
+    expect(frame).toContain("Search tickers");
   });
 
   test("keeps typed prefixes in the root query until a result is activated", async () => {
@@ -763,8 +835,8 @@ describe("CommandBar", () => {
     const rows = frame.split("\n");
     const savedHeadings = frame.split("\n").filter((line) => line.trim() === "Saved");
     const otherListingsHeadings = frame.split("\n").filter((line) => line.trim() === "Other Listings");
-    const aaplRow = rows.findIndex((line) => line.trimStart().startsWith("AAPL") && line.includes("NASDAQ"));
-    const appRow = rows.findIndex((line) => line.trimStart().startsWith("APP") && line.includes("NASDAQ"));
+    const aaplRow = rows.findIndex((line) => line.trimStart().startsWith("AAPL"));
+    const appRow = rows.findIndex((line) => line.trimStart().startsWith("APP"));
     expect(savedHeadings).toHaveLength(1);
     expect(otherListingsHeadings).toHaveLength(1);
     expect(aaplRow).toBeGreaterThanOrEqual(0);

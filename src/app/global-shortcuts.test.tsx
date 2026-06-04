@@ -78,7 +78,7 @@ async function renderHarness(state: AppState, registry: PluginRegistry, dispatch
     );
   });
   await act(async () => {
-    await testSetup.renderOnce();
+    await testSetup!.renderOnce();
   });
 }
 
@@ -117,6 +117,23 @@ describe("useAppGlobalShortcuts", () => {
     const event = await emitKeypress({ name: "p", ctrl: true });
 
     expect(actions).toEqual([{ type: "TOGGLE_COMMAND_BAR" }]);
+    expect(event.defaultPrevented).toBe(true);
+    expect(event.propagationStopped).toBe(true);
+  });
+
+  test("opens ticker search with backtick", async () => {
+    const actions: AppAction[] = [];
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-global-shortcuts"));
+    await renderHarness(state, createRegistry(), (action) => actions.push(action));
+
+    const event = await emitKeypress({ name: "`" });
+
+    expect(actions).toEqual([{
+      type: "SET_COMMAND_BAR",
+      open: true,
+      query: "",
+      launch: { kind: "ticker-search", query: "" },
+    }]);
     expect(event.defaultPrevented).toBe(true);
     expect(event.propagationStopped).toBe(true);
   });

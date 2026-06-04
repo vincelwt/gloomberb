@@ -6,12 +6,10 @@ import type {
 } from "../../../../types/plugin";
 import type { TickerRecord } from "../../../../types/ticker";
 import { fuzzyFilter } from "../../../../utils/fuzzy-search";
-import type { TickerSearchCandidate } from "../../../../tickers/search";
 import { matchPrefix, type Command } from "../../commands/registry";
 import { isCollectionCommand } from "../../helpers";
 import type { ResultItem } from "../../list/model";
 import type { parseRootShortcutIntent } from "./shortcuts";
-import { createQuickLookTickerCandidates } from "../ticker-search/results";
 import type { CommandBarRoute } from "../../workflow/types";
 import { createRootCommandItemBuilder } from "./command-items";
 import { buildRootShortcutItem } from "./shortcut-items";
@@ -55,7 +53,6 @@ export interface RootResultModelOptions {
   getAvailablePaneShortcutTemplates: (query: string) => PaneTemplateDef[];
   hasPaneSettings: (paneId: string) => boolean;
   localTickerSearchResultItems: (query?: string, options?: { category?: string; limit?: number }) => ResultItem[];
-  mapTickerSearchCandidateToResultItem: (candidate: TickerSearchCandidate) => ResultItem;
   nonShortcutPaneTemplateItems: (filterQuery?: string) => ResultItem[];
   openModeRoute: (screen: "ticker-search" | "plugins" | "layout", initialQuery?: string) => void;
   paneShortcutItems: (options?: PaneShortcutItemsOptions) => ResultItem[];
@@ -86,7 +83,6 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     getAvailablePaneShortcutTemplates,
     hasPaneSettings,
     localTickerSearchResultItems,
-    mapTickerSearchCandidateToResultItem,
     nonShortcutPaneTemplateItems,
     openModeRoute,
     paneShortcutItems,
@@ -180,30 +176,6 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     const item = commandToItem(match.command);
     if (item) items.push(item);
   } else if (!rootQuery) {
-    const maxDefaultTickers = 5;
-    const recentSymbols = state.recentTickers.slice(0, maxDefaultTickers);
-    const recentTickers = recentSymbols
-      .map((symbol) => state.tickers.get(symbol))
-      .filter((ticker): ticker is NonNullable<typeof ticker> => (
-        ticker != null && createQuickLookTickerCandidates([ticker]).length > 0
-      ));
-    if (recentTickers.length < maxDefaultTickers) {
-      const seen = new Set(recentSymbols);
-      for (const ticker of state.tickers.values()) {
-        if (recentTickers.length >= maxDefaultTickers) break;
-        if (createQuickLookTickerCandidates([ticker]).length === 0) continue;
-        if (!seen.has(ticker.metadata.ticker)) recentTickers.push(ticker);
-      }
-    }
-    items.push(...recentTickers.flatMap((ticker) => {
-      const candidate = createQuickLookTickerCandidates([ticker])[0];
-      return candidate
-        ? [{
-          ...mapTickerSearchCandidateToResultItem(candidate),
-          category: "Tickers",
-        }]
-        : [];
-    }));
     items.push(...paneShortcutItems());
     for (const command of availableCommands) {
       const item = commandToItem(command);
@@ -212,12 +184,10 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     items.push(...tickerActionItems());
     items.push(...pluginCommandItems());
   } else {
-    const tickerItems = localTickerSearchResultItems(undefined, { category: "Tickers" });
     const commandItems = availableCommands
       .map((command) => commandToItem(command))
       .filter((item): item is ResultItem => item !== null);
     const allItems = [
-      ...tickerItems,
       ...commandItems,
       ...buildLayoutItems("", { confirmDangerousActions: true }),
       ...buildPaneSettingItems(state.focusedPaneId, rootQuery),

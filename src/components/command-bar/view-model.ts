@@ -40,7 +40,7 @@ export function resolveCommandBarMode(query: string, commandList?: Command[]): C
   const match = matchPrefix(query, commandList);
 
   if (!query.trim()) {
-    return { kind: "default", badge: "BROWSE", hint: "Type a command, ticker, or prefix" };
+    return { kind: "default", badge: "BROWSE", hint: "Type a command or prefix" };
   }
 
   if (!match) {
@@ -100,9 +100,9 @@ export function getEmptyState(mode: CommandBarMode, query: string, searchQuery?:
       return { label: "No layout actions match", detail: query.trim() || "Focused-pane and layout actions will appear here" };
     default:
       if (query.trim()) {
-        return { label: `No matches for "${query.trim()}"`, detail: "Try a ticker, command name, or prefix" };
+        return { label: `No matches for "${query.trim()}"`, detail: "Try a command name or prefix. Use T for ticker search" };
       }
-      return { label: "No results yet", detail: "Recent tickers and suggested commands will appear here" };
+      return { label: "No results yet", detail: "Suggested commands will appear here" };
   }
 }
 

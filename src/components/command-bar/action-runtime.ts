@@ -229,6 +229,7 @@ export function useCommandBarActionRuntime({
     activeTickerSymbol,
     commandBarLaunchRequest: state.commandBarLaunchRequest,
     commandBarOpen: state.commandBarOpen,
+    openModeRoute,
     openPluginCommandWorkflow,
     pluginRegistry,
   });

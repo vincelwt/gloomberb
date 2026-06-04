@@ -19,6 +19,7 @@ export type CommandBarListScrollEvent = {
 
 interface CommandBarListHeaderProps {
   kind: ListScreenState["kind"];
+  title: string;
   query: string;
   queryDisplayWidth: number;
   nativePaneChrome: boolean;
@@ -36,6 +37,7 @@ interface CommandBarListHeaderProps {
 
 export const CommandBarListHeader = memo(function CommandBarListHeader({
   kind,
+  title,
   query,
   queryDisplayWidth,
   nativePaneChrome,
@@ -66,7 +68,7 @@ export const CommandBarListHeader = memo(function CommandBarListHeader({
             value={query}
             onInput={onQueryChange}
             onChange={onQueryChange}
-            placeholder={kind === "root" ? "Search" : "Filter"}
+            placeholder={kind === "root" ? "Search commands" : title === "Security Description" ? "Search tickers" : "Filter"}
             focused
             width={nativePaneChrome ? "100%" : queryDisplayWidth}
             backgroundColor={nativePaneChrome ? "transparent" : paletteBg}

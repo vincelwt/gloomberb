@@ -6,6 +6,7 @@ import {
   rankTickerSearchItems,
   upsertTickerFromSearchResult,
   type TickerSearchCandidate,
+  type TickerSearchInstrumentClass,
 } from "../../../../tickers/search";
 import type { ResultItem } from "../../list/model";
 import {
@@ -45,12 +46,15 @@ export function useCommandBarTickerSearchActions({
   }, [tickerRepository, dispatch, pluginRegistry.events, focusTicker, closeAll]);
 
   const mapTickerSearchCandidateToResultItem = useCallback((candidate: TickerSearchCandidate): ResultItem => {
+    const detail = formatTickerSearchDetail(candidate);
+    const right = formatTickerSearchRight(candidate);
+
     if (candidate.kind === "ticker" && candidate.ticker) {
       return {
         id: candidate.id,
         label: candidate.label,
-        detail: candidate.detail,
-        right: candidate.right,
+        detail,
+        right,
         category: candidate.category,
         kind: "ticker",
         secondaryAction: () => {
@@ -67,8 +71,8 @@ export function useCommandBarTickerSearchActions({
     return {
       id: candidate.id,
       label: candidate.label,
-      detail: candidate.detail,
-      right: candidate.right,
+      detail,
+      right,
       category: candidate.category,
       kind: "search",
       secondaryAction: () => openTickerResearch(candidate.result!, { forceNewPane: true }),
@@ -139,4 +143,38 @@ export function useCommandBarTickerSearchActions({
     readTickerSearchCache,
     writeTickerSearchCache,
   };
+}
+
+function formatTickerSearchRight(candidate: TickerSearchCandidate): string | undefined {
+  const assetClass = formatInstrumentClass(candidate.instrumentClass);
+  const exchange = candidate.exchangeLabel || candidate.primaryExchangeLabel || candidate.right || "";
+  if (!exchange) return assetClass;
+  if (assetClass === "Other") return exchange;
+  return `${assetClass} ${exchange}`;
+}
+
+function formatTickerSearchDetail(candidate: TickerSearchCandidate): string {
+  const metadata = [
+    formatInstrumentClass(candidate.instrumentClass),
+    candidate.exchangeLabel,
+    candidate.primaryExchangeLabel && candidate.primaryExchangeLabel !== candidate.exchangeLabel
+      ? candidate.primaryExchangeLabel
+      : null,
+  ].filter((value): value is string => !!value);
+  return metadata.length > 0
+    ? `${candidate.detail} | ${metadata.join(" | ")}`
+    : candidate.detail;
+}
+
+function formatInstrumentClass(instrumentClass: TickerSearchInstrumentClass): string {
+  switch (instrumentClass) {
+    case "equity":
+      return "Equity";
+    case "fund":
+      return "Fund";
+    case "derivative":
+      return "Derivative";
+    case "other":
+      return "Other";
+  }
 }

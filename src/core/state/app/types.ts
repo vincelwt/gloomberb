@@ -26,10 +26,18 @@ export interface CollectionSortPreference {
   direction: SortDirection;
 }
 
-interface CommandBarLaunchRequest {
+interface CommandBarLaunchRequestBase {
+  sequence: number;
+}
+
+interface CommandBarPluginLaunchRequest extends CommandBarLaunchRequestBase {
   kind: "plugin-command";
   commandId: string;
-  sequence: number;
+}
+
+interface CommandBarTickerSearchLaunchRequest extends CommandBarLaunchRequestBase {
+  kind: "ticker-search";
+  query?: string;
 }
 
 export interface AppState {
@@ -44,7 +52,7 @@ export interface AppState {
   recentTickers: string[];
   commandBarOpen: boolean;
   commandBarQuery: string;
-  commandBarLaunchRequest: CommandBarLaunchRequest | null;
+  commandBarLaunchRequest: CommandBarPluginLaunchRequest | CommandBarTickerSearchLaunchRequest | null;
   themePreview: string | null;
   refreshing: Set<string>;
   initialized: boolean;
@@ -74,7 +82,7 @@ export type AppAction =
       type: "SET_COMMAND_BAR";
       open: boolean;
       query?: string;
-      launch?: { kind: "plugin-command"; commandId: string } | null;
+      launch?: { kind: "plugin-command"; commandId: string } | { kind: "ticker-search"; query?: string } | null;
     }
   | { type: "SET_COMMAND_BAR_QUERY"; query: string }
   | { type: "SET_REFRESHING"; symbol: string; refreshing: boolean }

@@ -146,6 +146,7 @@ export const tickerDetailPlugin: GloomPlugin = {
       label: "Ticker Research",
       description: "Open another research pane for the selected ticker or current collection",
       keywords: ["new", "ticker", "research", "detail", "pane", "inspector"],
+      shortcut: { prefix: "T", argPlaceholder: "ticker", argKind: "ticker" },
       canCreate: (context) => context.activeTicker !== null || context.activeCollectionId !== null,
       createInstance: (context) => (
         context.activeTicker

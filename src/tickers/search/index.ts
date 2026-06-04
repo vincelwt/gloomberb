@@ -22,6 +22,7 @@ import {
 export type {
   ResolvedTickerSearch,
   TickerSearchCandidate,
+  TickerSearchInstrumentClass,
 } from "./types";
 export {
   findExactTickerSearchMatch,
