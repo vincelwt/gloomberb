@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { ChatChannel, ChatUserSummary } from "../../../../api-client";
+import { useThrottledCommitValue } from "../../../../react/use-throttled-commit-value";
 import {
   DEFAULT_CHAT_CHANNEL_ID,
   normalizeChannelId,
 } from "../channels";
 import type { ChatContentController } from "./types";
+
+const CHANNEL_NAVIGATION_COMMIT_DELAY_MS = 150;
 
 function isConversationChannelId(channelId: string): boolean {
   return channelId.startsWith("dm:") || channelId.startsWith("grp:") || channelId.startsWith("group:");
@@ -38,15 +41,16 @@ export function useChatChannelNavigation({
   resetTranscriptSelection: () => void;
   showChannelSidebar: boolean;
 }): {
-  changeChannel: (nextChannelId: string) => void;
   cycleChannel: (direction: 1 | -1) => boolean;
   directExpanded: boolean;
   focusChannelSidebar: () => boolean;
   focusChatContent: () => boolean;
   moveSidebarChannelSelection: (direction: "up" | "down") => boolean;
   openDirectMessage: (target: ChatUserSummary) => Promise<void>;
+  selectSidebarChannel: (channelId: string) => void;
   setDirectExpanded: Dispatch<SetStateAction<boolean>>;
   setSidebarFocused: (nextFocused: boolean) => void;
+  sidebarCursorChannelId: string;
   sidebarFocused: boolean;
   sidebarFocusedRef: MutableRefObject<boolean>;
 } {
@@ -70,6 +74,13 @@ export function useChatChannelNavigation({
     resetTranscriptSelection();
     onChannelChange?.(normalized);
   }, [channelIdRef, onChannelChange, resetTranscriptSelection]);
+  const {
+    value: sidebarCursorChannelId,
+    valueRef: sidebarCursorChannelIdRef,
+    setValue: setSidebarCursorChannelId,
+    flushValue: flushSidebarCursorChannelId,
+    replaceValue: replaceSidebarCursorChannelId,
+  } = useThrottledCommitValue(channelId, changeChannel, CHANNEL_NAVIGATION_COMMIT_DELAY_MS);
 
   const openDirectMessage = useCallback(async (target: ChatUserSummary) => {
     if (!target.id && !target.username) return;
@@ -79,10 +90,10 @@ export function useChatChannelNavigation({
         username: target.username ?? undefined,
       });
       setDirectExpanded(true);
-      changeChannel(channel.id);
+      setSidebarCursorChannelId(channel.id, { immediate: true });
       closeProfilePopover();
     } catch {}
-  }, [changeChannel, closeProfilePopover, controller]);
+  }, [closeProfilePopover, controller, setSidebarCursorChannelId]);
 
   useEffect(() => {
     if (!onChannelChange || channelsLoading || channels.length === 0) return;
@@ -109,9 +120,9 @@ export function useChatChannelNavigation({
     const nextIndex = (currentIndex + direction + channels.length) % channels.length;
     const nextChannel = channels[nextIndex];
     if (!nextChannel) return false;
-    changeChannel(nextChannel.id);
+    setSidebarCursorChannelId(nextChannel.id, { immediate: true });
     return true;
-  }, [changeChannel, channelIdRef, channels, onChannelChange]);
+  }, [channelIdRef, channels, onChannelChange, setSidebarCursorChannelId]);
 
   const focusChannelSidebar = useCallback(() => {
     if (!showChannelSidebar || !onChannelChange) return false;
@@ -119,28 +130,49 @@ export function useChatChannelNavigation({
       blurInput();
     }
     resetTranscriptSelection();
+    replaceSidebarCursorChannelId(channelId);
     setSidebarFocused(true);
     return true;
-  }, [blurInput, inputFocused, onChannelChange, resetTranscriptSelection, setSidebarFocused, showChannelSidebar]);
+  }, [
+    blurInput,
+    channelId,
+    inputFocused,
+    onChannelChange,
+    replaceSidebarCursorChannelId,
+    resetTranscriptSelection,
+    setSidebarFocused,
+    showChannelSidebar,
+  ]);
 
   const focusChatContent = useCallback(() => {
     if (!showChannelSidebar) return false;
+    flushSidebarCursorChannelId(sidebarCursorChannelIdRef.current);
     setSidebarFocused(false);
     return true;
-  }, [setSidebarFocused, showChannelSidebar]);
+  }, [flushSidebarCursorChannelId, setSidebarFocused, showChannelSidebar, sidebarCursorChannelIdRef]);
 
   const moveSidebarChannelSelection = useCallback((direction: "up" | "down") => {
     if (!showChannelSidebar || sidebarNavigationChannels.length <= 1 || !onChannelChange) return false;
-    const currentIndex = sidebarNavigationChannels.findIndex((channel) => channel.id === channelIdRef.current);
+    const currentIndex = sidebarNavigationChannels.findIndex((channel) => channel.id === sidebarCursorChannelIdRef.current);
     const baseIndex = currentIndex >= 0 ? currentIndex : 0;
     const nextIndex = direction === "down"
       ? Math.min(baseIndex + 1, sidebarNavigationChannels.length - 1)
       : Math.max(baseIndex - 1, 0);
     const nextChannel = sidebarNavigationChannels[nextIndex];
     if (!nextChannel || nextIndex === baseIndex) return true;
-    changeChannel(nextChannel.id);
+    setSidebarCursorChannelId(nextChannel.id);
     return true;
-  }, [changeChannel, channelIdRef, onChannelChange, showChannelSidebar, sidebarNavigationChannels]);
+  }, [
+    onChannelChange,
+    setSidebarCursorChannelId,
+    showChannelSidebar,
+    sidebarCursorChannelIdRef,
+    sidebarNavigationChannels,
+  ]);
+
+  const selectSidebarChannel = useCallback((nextChannelId: string) => {
+    setSidebarCursorChannelId(nextChannelId, { immediate: true });
+  }, [setSidebarCursorChannelId]);
 
   useEffect(() => {
     if (focused && showChannelSidebar) return;
@@ -148,15 +180,16 @@ export function useChatChannelNavigation({
   }, [focused, setSidebarFocused, showChannelSidebar]);
 
   return {
-    changeChannel,
     cycleChannel,
     directExpanded,
     focusChannelSidebar,
     focusChatContent,
     moveSidebarChannelSelection,
     openDirectMessage,
+    selectSidebarChannel,
     setDirectExpanded,
     setSidebarFocused,
+    sidebarCursorChannelId,
     sidebarFocused,
     sidebarFocusedRef,
   };

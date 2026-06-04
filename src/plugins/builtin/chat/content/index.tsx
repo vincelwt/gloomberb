@@ -212,15 +212,16 @@ export function ChatContent({
   });
 
   const {
-    changeChannel,
     cycleChannel,
     directExpanded,
     focusChannelSidebar,
     focusChatContent,
     moveSidebarChannelSelection,
     openDirectMessage,
+    selectSidebarChannel,
     setDirectExpanded,
     setSidebarFocused,
+    sidebarCursorChannelId,
     sidebarFocused,
     sidebarFocusedRef,
   } = useChatChannelNavigation({
@@ -367,7 +368,7 @@ export function ChatContent({
         <ChannelSidebar
           channels={channels}
           channelStates={channelStates}
-          activeChannelId={channelId}
+          activeChannelId={sidebarFocused ? sidebarCursorChannelId : channelId}
           onlineCount={onlineCount}
           width={channelSidebarWidth}
           height={height}
@@ -376,7 +377,7 @@ export function ChatContent({
           loading={channelsLoading}
           canManageNotifications={!!user?.emailVerified}
           directExpanded={directExpanded}
-          onSelect={changeChannel}
+          onSelect={selectSidebarChannel}
           onFocusRequest={() => setSidebarFocused(true)}
           onToggleNotifications={(nextChannelId, enabled) => {
             controller.setChannelNotificationsEnabled(nextChannelId, enabled);
@@ -392,7 +393,7 @@ export function ChatContent({
         flexGrow={nativePaneChrome ? 1 : undefined}
         backgroundColor={chatContentBg}
         position="relative"
-        onMouseDown={() => setSidebarFocused(false)}
+        onMouseDown={() => focusChatContent()}
         style={nativeFillStyle}
       >
       {!nativePaneChrome && (

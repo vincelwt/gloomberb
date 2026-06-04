@@ -75,6 +75,13 @@ export function useChatContentShortcuts({
     const isEnterKey = event.name === "return" || event.name === "enter";
 
     if (sidebarFocusedRef.current && showChannelSidebar) {
+      if (isEnterKey) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        focusChatContent();
+        return;
+      }
+
       if (isPlainKey(event, "left")) {
         event.preventDefault?.();
         event.stopPropagation?.();

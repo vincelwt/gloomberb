@@ -9,6 +9,7 @@ import { PluginRenderProvider } from "../../runtime";
 import { gloomberbCloudPlugin } from "../cloud";
 import { ChatContent } from "../chat";
 import { chatController } from "./controller";
+import { useChatChannelNavigation } from "./content/channel-navigation";
 import {
   cleanupChatTest,
   createChatTestControls,
@@ -283,6 +284,76 @@ describe("ChatContent channel sidebar", () => {
     await emitKeypress({ name: "down", sequence: "\u001b[B" });
     await flushFrame();
     expect(setup().captureCharFrame()).toContain("#equities");
+  });
+
+  test("coalesces rapid sidebar navigation to the final channel", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    const channels = [
+      { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
+      { id: "equities", name: "equities", created_at: "2026-05-09T00:00:00.000Z" },
+      { id: "options", name: "options", created_at: "2026-05-09T00:00:00.000Z" },
+      { id: "macro", name: "macro", created_at: "2026-05-09T00:00:00.000Z" },
+      { id: "crypto", name: "crypto", created_at: "2026-05-09T00:00:00.000Z" },
+    ];
+    const channelChanges: string[] = [];
+    let navigation: ReturnType<typeof useChatChannelNavigation> | null = null;
+    let latestCursorChannelId = "";
+    let latestCommittedChannelId = "";
+
+    function NavigationHarness() {
+      const [channelId, setChannelId] = useState("equities");
+      const channelIdRef = useRef(channelId);
+      channelIdRef.current = channelId;
+      const handleChannelChange = useCallback((nextChannelId: string) => {
+        channelChanges.push(nextChannelId);
+        setChannelId(nextChannelId);
+      }, []);
+      navigation = useChatChannelNavigation({
+        blurInput: () => {},
+        channelId,
+        channelIdRef,
+        channels,
+        channelsLoading: false,
+        closeProfilePopover: () => {},
+        controller,
+        focused: true,
+        inputFocused: false,
+        onChannelChange: handleChannelChange,
+        resetTranscriptSelection: () => {},
+        showChannelSidebar: true,
+      });
+      latestCursorChannelId = navigation.sidebarCursorChannelId;
+      latestCommittedChannelId = channelId;
+
+      return null;
+    }
+
+    await act(async () => {
+      testSetup = await testRender(<NavigationHarness />, {
+        width: 90,
+        height: 12,
+      });
+    });
+
+    await act(async () => {
+      navigation?.focusChannelSidebar();
+      navigation?.moveSidebarChannelSelection("down");
+      navigation?.moveSidebarChannelSelection("down");
+      navigation?.moveSidebarChannelSelection("down");
+      await setup().renderOnce();
+    });
+
+    expect(latestCursorChannelId).toBe("crypto");
+    expect(latestCommittedChannelId).toBe("equities");
+    expect(channelChanges).toEqual([]);
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 180));
+      await setup().renderOnce();
+    });
+
+    expect(channelChanges).toEqual(["crypto"]);
+    expect(latestCommittedChannelId).toBe("crypto");
   });
 
   test("keeps the channel sidebar visible while a channel loads", async () => {
