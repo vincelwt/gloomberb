@@ -2,6 +2,7 @@ import type { GloomPlugin } from "../types/plugin";
 import { portfolioListPlugin } from "./builtin/portfolio-list";
 import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
+import { substackPlugin } from "./builtin/substack";
 import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/cloud";
 import { changelogPlugin } from "./builtin/changelog";
@@ -26,6 +27,7 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   ibkrPlugin,
   layoutManagerPlugin,
   newsPlugin,
+  substackPlugin,
   notesPlugin,
   aiPlugin,
   changelogPlugin,

@@ -65,7 +65,7 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a command.
 ## What It Does
 
 - Research companies with quotes, charts, financials, filings, holders, insiders, options, analyst ratings, events, and relative valuation.
-- Follow markets with top stories, breaking news, sector feeds, global indices, FX, macro events, yield curves, market movers, and fear/greed.
+- Follow markets with top stories, breaking news, sector feeds, Substack subscriptions, global indices, FX, macro events, yield curves, market movers, and fear/greed.
 - Track portfolios and watchlists, connect brokers, set alerts, keep notes, run AI screens, browse prediction markets, and use Gloom Cloud chat.
 
 ## CLI
@@ -94,7 +94,7 @@ Core plugin areas include:
 
 - Portfolios, watchlists, manual entry, and broker connections
 - Ticker details, quotes, charts, options, filings, holders, insiders, and research
-- News, market movers, global indices, sectors, FX, earnings, macro data, and yield curves
+- News, Substack reader feeds, market movers, global indices, sectors, FX, earnings, macro data, and yield curves
 - Prediction markets, alerts, notes, chat, AI screeners, and external plugins
 
 See [PLUGINS.md](PLUGINS.md) for the plugin API and the shared UI surface available through `gloomberb/components`.
@@ -155,11 +155,15 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 |----------|----------|
 | `TOP` | Ranked market stories |
 | `MOST` | Top gainers, losers, most active, and trending tickers |
+| `PM <query>` | Polymarket and Kalshi prediction data |
 | `N` | News feed |
 | `CN <ticker>` | Ticker news |
 | `NI` | Sector news |
+| `SUB` | Authenticated Substack reader feed |
 | `FIRST` | Breaking news |
 | `TWIT <query>` | Ticker-related market posts |
+| `TBO` | TheBuildout infrastructure intelligence |
+| `CG` | Congress trading disclosures |
 | `WEI` | Global equity indices |
 | `ECON` | Economic events and releases |
 | `GC` | Yield curve |
@@ -176,13 +180,10 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `PORT` | Portfolio risk and sector exposure |
 | `ALRT` | Price alerts |
 | `SA <symbol condition price>` | Create a price alert |
-| `PM <query>` | Polymarket and Kalshi prediction data |
 | `AI <prompt>` | AI screener |
 | `CHAT [channel]` | Gloom Cloud chat |
 | `DM @user [@user...]` | Open or start a direct or group chat |
 | `ACM` | Gloom Cloud account settings |
-| `TBO` | TheBuildout infrastructure intelligence |
-| `CG` | Congress trading disclosures |
 | `NOTE` | Notes |
 | `IBKR` | IBKR trading pane |
 | `BR` | Broker connections |

@@ -26,6 +26,10 @@ export async function handleHttpFetch(payload: Record<string, unknown>) {
     typeof init.method === "string" && init.method.trim().length > 0
       ? init.method.trim().toUpperCase()
       : "GET";
+  const redirect =
+    init.redirect === "manual" || init.redirect === "error" || init.redirect === "follow"
+      ? init.redirect
+      : undefined;
   const body =
     typeof init.body === "string" && method !== "GET" && method !== "HEAD"
       ? init.body
@@ -35,6 +39,7 @@ export async function handleHttpFetch(payload: Record<string, unknown>) {
     method,
     headers: normalizeHttpFetchHeaders(init.headers),
     body,
+    redirect,
   });
   const responseHeaders: Record<string, string> = {};
   response.headers.forEach((value, key) => {

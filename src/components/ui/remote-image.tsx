@@ -1,6 +1,5 @@
 import { Box, ImageSurface, Text } from "../../ui";
 import { colors } from "../../theme/colors";
-import { ExternalLinkText } from "./external-link";
 import { normalizedHttpUrl } from "../../utils/url";
 
 export interface RemoteImageProps {
@@ -9,13 +8,6 @@ export interface RemoteImageProps {
   width: number;
   height?: number;
   label?: string;
-}
-
-function truncate(value: string, width: number): string {
-  if (width <= 0) return "";
-  if (value.length <= width) return value;
-  if (width <= 3) return value.slice(0, width);
-  return `${value.slice(0, width - 3)}...`;
 }
 
 export function RemoteImage({
@@ -37,13 +29,8 @@ export function RemoteImage({
       height={Math.max(4, height)}
       objectFit="contain"
     >
-      <Box flexDirection="column" gap={1}>
+      <Box flexDirection="column">
         <Text fg={colors.textDim}>{label}</Text>
-        <ExternalLinkText
-          url={imageUrl}
-          label={truncate(imageUrl, resolvedWidth)}
-          color={colors.textBright}
-        />
       </Box>
     </ImageSurface>
   );

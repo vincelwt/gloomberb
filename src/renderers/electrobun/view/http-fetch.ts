@@ -61,12 +61,18 @@ async function electrobunHttpFetch(url: string, init?: RequestInit): Promise<Res
   const requestPromise = requestBackendHttpFetch(url, init);
 
   const response = await withAbort(requestPromise, init?.signal);
-
-  return new Response(response.body, {
+  const headers = createResponseHeaders(response.headers, response.setCookie);
+  const fetchResponse = new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
-    headers: response.headers,
+    headers,
   });
+
+  Object.defineProperty(fetchResponse, "headers", {
+    value: headers,
+    configurable: true,
+  });
+  return fetchResponse;
 }
 
 async function requestBackendHttpFetch(url: string, init?: RequestInit): Promise<ElectrobunHttpFetchResponse> {
@@ -76,6 +82,7 @@ async function requestBackendHttpFetch(url: string, init?: RequestInit): Promise
       method: init?.method,
       headers: normalizeHeaders(init?.headers),
       body: await serializeBody(init?.body),
+      redirect: init?.redirect,
     },
   });
 }
