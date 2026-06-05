@@ -14,12 +14,15 @@ import { useQuoteStreaming } from "../../../state/hooks/quote-streaming";
 import { getCollectionName, getCollectionTickerCount } from "../../../state/selectors";
 import { getSharedRegistry } from "../../registry";
 import { EmptyState, PaneFooterScope, Tabs } from "../../../components";
+import { useThrottledCommitValue } from "../../../react/use-throttled-commit-value";
 import { resolveOptionsTarget } from "../../../utils/options";
 import {
   buildVisibleTickerResearchTabs,
   getTickerResearchPaneSettings,
   resolveLockedTabId,
 } from "./settings";
+
+const TICKER_RESEARCH_TAB_COMMIT_DELAY_MS = 120;
 
 function sameStringSet(left: Set<string>, right: Set<string>): boolean {
   if (left.size !== right.size) return false;
@@ -79,7 +82,16 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
   useQuoteStreaming(streamingTargets);
 
   const { collectionId } = usePaneCollection();
-  const [activeTabId, setActiveTabId] = usePaneStateValue<string>("activeTabId", "overview");
+  const [committedActiveTabId, setCommittedActiveTabId] = usePaneStateValue<string>("activeTabId", "overview");
+  const {
+    value: activeTabId,
+    setValue: setActiveTabId,
+  } = useThrottledCommitValue(
+    committedActiveTabId,
+    setCommittedActiveTabId,
+    TICKER_RESEARCH_TAB_COMMIT_DELAY_MS,
+    { commitPendingOnUnmount: true },
+  );
   const [pluginCaptured, setPluginCaptured] = useState(false);
   const [mountedTabIds, setMountedTabIds] = useState<Set<string>>(() => new Set());
   const paneSettings = getTickerResearchPaneSettings(paneInstance?.settings);

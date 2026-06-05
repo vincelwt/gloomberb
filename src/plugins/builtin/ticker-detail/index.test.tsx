@@ -41,6 +41,7 @@ let detailHarnessState: ReturnType<typeof createInitialState> | null = null;
 let sharedCoordinator: MarketDataCoordinator | null = null;
 
 const runtime = createTestPluginRuntime();
+const TICKER_TAB_SETTLE_MS = 160;
 
 const DetailPane = tickerDetailPlugin.panes![0]!.component as (props: {
   paneId: string;
@@ -280,6 +281,13 @@ async function flushFrame() {
   });
 }
 
+async function settleTickerTabCommit() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, TICKER_TAB_SETTLE_MS));
+    await testSetup!.renderOnce();
+  });
+}
+
 async function clickFrameText(text: string) {
   const lines = testSetup!.captureCharFrame().split("\n");
   const row = lines.findIndex((line) => line.includes(text));
@@ -506,6 +514,7 @@ describe("TickerResearchPane", () => {
     });
     await flushFrame();
 
+    await settleTickerTabCommit();
     expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("fundamental-graphs");
 
     await act(async () => {
@@ -514,6 +523,7 @@ describe("TickerResearchPane", () => {
     });
     await flushFrame();
 
+    await settleTickerTabCommit();
     expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("financials");
   });
 

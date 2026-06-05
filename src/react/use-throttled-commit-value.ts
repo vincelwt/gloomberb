@@ -4,6 +4,7 @@ export function useThrottledCommitValue<T>(
   committedValue: T,
   commitValue: (value: T) => void,
   delayMs: number,
+  options?: { commitPendingOnUnmount?: boolean },
 ) {
   const [value, setValueState] = useState<T>(committedValue);
   const valueRef = useRef<T>(committedValue);
@@ -12,10 +13,15 @@ export function useThrottledCommitValue<T>(
   const pendingValueRef = useRef<T>(committedValue);
   const appliedValueRef = useRef<T>(committedValue);
   const commitValueRef = useRef(commitValue);
+  const optionsRef = useRef(options);
 
   useEffect(() => {
     commitValueRef.current = commitValue;
   }, [commitValue]);
+
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
 
   const clearPendingCommit = useCallback(() => {
     if (commitTimerRef.current) {
@@ -84,8 +90,18 @@ export function useThrottledCommitValue<T>(
   }, [clearPendingCommit, committedValue]);
 
   useEffect(() => () => {
+    const pending = hasPendingCommitRef.current;
+    const pendingValue = pendingValueRef.current;
     if (commitTimerRef.current) {
       clearTimeout(commitTimerRef.current);
+    }
+    if (
+      optionsRef.current?.commitPendingOnUnmount
+      && pending
+      && !Object.is(appliedValueRef.current, pendingValue)
+    ) {
+      appliedValueRef.current = pendingValue;
+      commitValueRef.current(pendingValue);
     }
   }, []);
 
