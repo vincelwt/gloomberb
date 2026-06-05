@@ -239,4 +239,97 @@ describe("portfolio-metrics", () => {
       text: "10s",
     });
   });
+
+  test("formats derived quote and position columns", () => {
+    const ticker = createTicker({
+      sector: "Technology",
+      industry: "Consumer Electronics",
+      assetCategory: "STK",
+      tags: ["core", "mega"],
+      positions: [{
+        portfolio: "main",
+        shares: 10,
+        avgCost: 100,
+        broker: "manual",
+        currency: "USD",
+        dateAcquired: "2024-01-01",
+        markPrice: 121.2,
+      }],
+    });
+    const financials = createFinancials({
+      quote: {
+        symbol: "AAPL",
+        price: 120,
+        currency: "USD",
+        change: 5,
+        changePercent: 4.35,
+        previousClose: 115,
+        bid: 119.5,
+        ask: 120.5,
+        bidSize: 100,
+        askSize: 150,
+        high52w: 160,
+        low52w: 80,
+        volume: 12_500_000,
+      },
+    });
+    const context: ColumnContext = {
+      ...defaultColumnContext,
+      portfolioTotalMarketValue: 2_400,
+      now: Date.UTC(2026, 0, 1),
+    };
+
+    expect(getColumnValue({ id: "weight", label: "WEIGHT", width: 8, align: "right" }, ticker, financials, context).text).toBe("+50.00%");
+    expect(getSortValue({ id: "weight", label: "WEIGHT", width: 8, align: "right" }, ticker, financials, context)).toBe(50);
+    expect(getColumnValue({ id: "range_52w", label: "52W%", width: 7, align: "right" }, ticker, financials, context).text).toBe("+50.00%");
+    expect(getColumnValue({ id: "dollar_volume", label: "$VOL", width: 9, align: "right" }, ticker, financials, context).text).toBe("1.5B");
+    expect(getColumnValue({ id: "spread_pct", label: "SPR%", width: 7, align: "right" }, ticker, financials, context).text).toBe("+0.83%");
+    expect(getColumnValue({ id: "bid_ask_size", label: "B/A SZ", width: 9, align: "right" }, ticker, financials, context).text).toBe("100/150");
+    expect(getColumnValue({ id: "mark_delta", label: "MARK%", width: 8, align: "right" }, ticker, financials, context).text).toBe("+1.00%");
+    expect(getColumnValue({ id: "held", label: "HELD", width: 6, align: "right" }, ticker, financials, context).text).toBe("2.0y");
+    expect(getColumnValue({ id: "tags", label: "TAGS", width: 14, align: "left" }, ticker, financials, context).text).toBe("core,mega");
+  });
+
+  test("formats supplemental analyst and corporate action columns", () => {
+    const ticker = createTicker();
+    const financials = createFinancials();
+    const context: ColumnContext = {
+      ...defaultColumnContext,
+      analystResearch: new Map([["AAPL", {
+        symbol: "AAPL",
+        currency: "USD",
+        priceTarget: { average: 150, current: 120, currency: "USD" },
+        recommendationRating: 8.4,
+        recommendations: [],
+        ratings: [],
+        earningsEstimates: [],
+        revenueEstimates: [],
+      }]]),
+      corporateActions: new Map([["AAPL", {
+        symbol: "AAPL",
+        dividends: [{ exDate: "2026-02-15", amount: 0.25 }],
+        splits: [],
+        earnings: [{ date: "2026-01-30", epsEstimate: 1.2 }],
+      }]]),
+      earningsEvents: new Map([["AAPL", {
+        symbol: "AAPL",
+        name: "Apple Inc.",
+        earningsDate: new Date(Date.UTC(2026, 0, 29)),
+        earningsCallDate: null,
+        epsEstimate: 1.2,
+        epsActual: null,
+        revenueEstimate: null,
+        revenueActual: null,
+        surprise: null,
+        timing: "AMC",
+      }]]),
+    };
+
+    expect(getColumnValue({ id: "target", label: "TARGET", width: 10, align: "right" }, ticker, financials, context).text).toBe("$150");
+    expect(getColumnValue({ id: "target_pct", label: "TARGET%", width: 8, align: "right" }, ticker, financials, context).text).toBe("+25.00%");
+    expect(getColumnValue({ id: "rating", label: "RATING", width: 7, align: "right" }, ticker, financials, context).text).toBe("8.4");
+    expect(getColumnValue({ id: "ex_div", label: "EX-DIV", width: 7, align: "right" }, ticker, financials, context).text).toBe("Feb 15");
+    expect(getColumnValue({ id: "next_earn", label: "ERN", width: 7, align: "right" }, ticker, financials, context).text).toBe("Jan 29");
+    expect(getSortValue({ id: "target_pct", label: "TARGET%", width: 8, align: "right" }, ticker, financials, context)).toBe(25);
+  });
 });

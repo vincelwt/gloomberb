@@ -81,12 +81,18 @@ const FLASHABLE_QUOTE_COLUMN_IDS = new Set([
   "bid",
   "ask",
   "spread",
+  "spread_pct",
   "ext_hours",
   "market_cap",
+  "volume",
+  "dollar_volume",
+  "range_52w",
   "mkt_value",
+  "weight",
   "day_pnl",
   "pnl",
   "pnl_pct",
+  "mark_delta",
 ]);
 
 const EMPTY_FLASH_SYMBOLS = new Map<string, QuoteFlashDirection>();

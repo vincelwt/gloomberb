@@ -15,16 +15,19 @@ export const VISIBLE_SNAPSHOT_WARMUP_BATCH_LIMIT = 3;
 
 const STREAM_OVERSCAN_ROWS = 6;
 const FUNDAMENTAL_COLUMN_IDS = new Set(["pe", "forward_pe", "dividend_yield"]);
+const PROFILE_COLUMN_IDS = new Set(["sector", "industry"]);
 const sortValueCache = createRowValueCache<string, ReturnType<typeof getSortValue>>(5000);
 
 export interface VisibleWarmupRequirements {
   fundamentals: boolean;
+  profile: boolean;
   priceHistory: boolean;
 }
 
 export function resolveVisibleWarmupRequirements(columns: ColumnConfig[]): VisibleWarmupRequirements {
   return {
     fundamentals: columns.some((column) => FUNDAMENTAL_COLUMN_IDS.has(column.id)),
+    profile: columns.some((column) => PROFILE_COLUMN_IDS.has(column.id)),
     priceHistory: columns.some((column) => column.id === PRICE_SPARKLINE_COLUMN_ID),
   };
 }
@@ -45,6 +48,7 @@ export function needsVisibleSnapshotWarmup(
   if (ticker.metadata.assetCategory === "OPT") return false;
   if (!financials?.quote) return false;
   if (requirements.fundamentals && Object.keys(financials.fundamentals ?? {}).length === 0) return true;
+  if (requirements.profile && !financials.profile) return true;
   return requirements.priceHistory && financials.priceHistory.length === 0;
 }
 
@@ -142,8 +146,11 @@ export function sortTickers(
     sortColumn.id,
     columnContext.activeTab ?? "",
     columnContext.baseCurrency,
+    columnContext.portfolioTotalMarketValue ?? 0,
+    columnContext.supplementalVersion ?? 0,
     exchangeRatesVersion,
     sortColumn.id === "latency" ? columnContext.now : 0,
+    sortColumn.id === "held" ? columnContext.now : 0,
   ].join("|");
   const sortValues = new Map<string, ReturnType<typeof getSortValue>>();
   for (const ticker of tickers) {

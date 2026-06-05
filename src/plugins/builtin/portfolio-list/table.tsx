@@ -32,7 +32,7 @@ function buildCellVersion(
   financials: TickerFinancials | undefined,
   context: ColumnContext,
 ): string {
-  const latencyNow = column.id === "latency" ? context.now : 0;
+  const timeSensitiveNow = column.id === "latency" || column.id === "held" ? context.now : 0;
   return [
     column.id,
     objectVersion(ticker),
@@ -40,7 +40,9 @@ function buildCellVersion(
     objectVersion(context.exchangeRates),
     context.activeTab ?? "",
     context.baseCurrency,
-    latencyNow,
+    context.portfolioTotalMarketValue ?? 0,
+    context.supplementalVersion ?? 0,
+    timeSensitiveNow,
   ].join("|");
 }
 

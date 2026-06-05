@@ -20,7 +20,7 @@ import { selectEffectiveExchangeRates } from "../../../../utils/exchange-rate-ma
 import type { TickerRecord } from "../../../../types/ticker";
 import type { PaneProps } from "../../../../types/plugin";
 import { TICKER_RESEARCH_PANE_ID } from "../../../../types/config";
-import { resolveCollectionSortPreference, type ColumnContext } from "../metrics";
+import { calculatePortfolioSummaryTotals, resolveCollectionSortPreference, type ColumnContext } from "../metrics";
 import {
   PortfolioCashMarginDrawer,
   shouldToggleCashMarginDrawer,
@@ -47,6 +47,7 @@ import {
   sortTickers,
 } from "./data";
 import { usePortfolioPaneStreaming } from "./streaming";
+import { usePortfolioSupplementalData } from "./supplemental";
 
 export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
@@ -118,6 +119,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     () => resolveVisibleColumns(paneSettings.columnIds, isPortfolioTab),
     [isPortfolioTab, paneSettings.columnIds],
   );
+  const supplementalData = usePortfolioSupplementalData(tickers, columns, appActive);
   const visibleWarmupRequirements = useMemo(
     () => resolveVisibleWarmupRequirements(columns),
     [columns],
@@ -129,13 +131,34 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   );
   const fetchedExchangeRates = useFxRatesMap(trackedCurrencies);
   const effectiveExchangeRates = selectEffectiveExchangeRates(fetchedExchangeRates, cachedExchangeRates);
+  const portfolioSummaryTotals = useMemo(() => calculatePortfolioSummaryTotals(
+    tickers,
+    financialsMap,
+    config.baseCurrency,
+    effectiveExchangeRates,
+    isPortfolioTab,
+    activeCollectionId,
+  ), [activeCollectionId, config.baseCurrency, effectiveExchangeRates, financialsMap, isPortfolioTab, tickers]);
 
   const columnContext: ColumnContext = useMemo(() => ({
     activeTab: isPortfolioTab ? activeCollectionId : undefined,
     baseCurrency: config.baseCurrency,
     exchangeRates: effectiveExchangeRates,
     now,
-  }), [activeCollectionId, config.baseCurrency, effectiveExchangeRates, isPortfolioTab, now]);
+    portfolioTotalMarketValue: portfolioSummaryTotals.totalMktValue,
+    supplementalVersion: supplementalData.version,
+    analystResearch: supplementalData.analystResearch,
+    corporateActions: supplementalData.corporateActions,
+    earningsEvents: supplementalData.earningsEvents,
+  }), [
+    activeCollectionId,
+    config.baseCurrency,
+    effectiveExchangeRates,
+    isPortfolioTab,
+    now,
+    portfolioSummaryTotals.totalMktValue,
+    supplementalData,
+  ]);
 
   const activeSort = resolveCollectionSortPreference(activeCollectionId, isPortfolioTab, collectionSorts);
   const sortedTickers = useMemo(
