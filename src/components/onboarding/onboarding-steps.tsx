@@ -101,7 +101,8 @@ export function ShortcutsStep({ pluginRegistry }: { pluginRegistry: PluginRegist
   const shortcutDisplayMode = getShortcutDisplayMode(uiHost.kind);
   const platformShortcut = (keys: string | readonly string[]) => formatPrimaryShortcut(keys, shortcutPlatform, shortcutDisplayMode);
   const keyboardShortcuts = [
-    { key: "Ctrl+P / `", desc: "Open the command bar" },
+    { key: "Ctrl+P", desc: "Open command mode" },
+    { key: "`", desc: "Open ticker search" },
     { key: "Tab", desc: "Switch between panels" },
     { key: platformShortcut("W"), desc: "Close the focused pane" },
     { key: platformShortcut(["Shift", "D"]), desc: "Dock or float the focused pane" },
@@ -155,7 +156,7 @@ export function ShortcutsStep({ pluginRegistry }: { pluginRegistry: PluginRegist
       </Box>
       <Box height={1} />
       <Box height={1}>
-        <Text fg={colors.textDim}>{"Type these in the command bar ("}<Span fg={colors.text}><Strong>{"Ctrl+P"}</Strong></Span>{" or "}<Span fg={colors.text}><Strong>{"`"}</Strong></Span>{"):"}</Text>
+        <Text fg={colors.textDim}>{"Type these in the command bar ("}<Span fg={colors.text}><Strong>{"Ctrl+P"}</Strong></Span>{"):"}</Text>
       </Box>
       <Box height={1} />
 

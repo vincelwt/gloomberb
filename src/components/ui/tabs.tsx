@@ -30,6 +30,7 @@ export interface TabsProps {
   onAdd?: () => void;
   focused?: boolean;
   keyboardNavigation?: boolean;
+  scrollable?: boolean;
 }
 
 const WHEEL_DELTA_PER_CELL = 8;
@@ -45,6 +46,7 @@ export function Tabs({
   onAdd,
   focused = false,
   keyboardNavigation = true,
+  scrollable = true,
 }: TabsProps) {
   const ui = useUiHost();
   const NativeTabs = ui.Tabs;
@@ -131,6 +133,7 @@ export function Tabs({
       closeMode={closeMode}
       addLabel={addLabel}
       onAdd={onAdd}
+      scrollable={scrollable}
       palette={palette}
     />
   );
@@ -154,6 +157,7 @@ function OpenTuiTabs({
   closeMode = "always",
   addLabel = "+",
   onAdd,
+  scrollable = true,
   palette,
 }: TabsProps & {
   palette: {
@@ -227,6 +231,96 @@ function OpenTuiTabs({
     scrollBox.scrollTo({ x: nextLeft, y: scrollBox.scrollTop });
   };
 
+  const tabRow = (
+    <Box flexDirection="row" width={totalWidth} height={1}>
+      {tabs.map((tab, index) => {
+        const active = tab.value === activeValue;
+        const hovered = hoveredValue === tab.value && !tab.disabled;
+        const tabWidth = tabWidths[index] ?? tab.label.length + 2;
+        const showClose = !!tab.onClose && (closeMode === "always" || active);
+        const attributes = (active ? TextAttributes.BOLD : 0)
+          | (variant === "underline" && !compact && (active || hovered) ? TextAttributes.UNDERLINE : 0);
+        const startHover = tab.disabled
+          ? undefined
+          : () => {
+              setHoveredValue((current) => (current === tab.value ? current : tab.value));
+            };
+        const endHover = tab.disabled
+          ? undefined
+          : () => {
+              setHoveredValue((current) => (current === tab.value ? null : current));
+            };
+        const selectTab = tab.disabled
+          ? undefined
+          : (event: TabPointerEvent) => {
+              if (event.button === 2 && tab.onContextMenu) {
+                event.preventDefault?.();
+                event.stopPropagation?.();
+                tab.onContextMenu(tab.value, event);
+                return;
+              }
+              event.preventDefault();
+              event.stopPropagation?.();
+              onSelect(tab.value);
+            };
+
+        return (
+          <Box
+            key={tab.value}
+            width={tabWidth}
+            height={1}
+            flexDirection="row"
+            backgroundColor={active && variant === "pill" ? palette.activeBg : hovered ? palette.hoverBg : undefined}
+            onMouseOver={startHover}
+            onMouseMove={startHover}
+            onMouseOut={endHover}
+            onMouseDown={selectTab}
+            onDoubleClick={tab.disabled || !tab.onDoubleClick ? undefined : () => tab.onDoubleClick?.(tab.value)}
+          >
+            <Text
+              fg={tab.disabled ? palette.disabledFg : active && variant === "pill" ? palette.activePillFg : active ? palette.activeFg : hovered ? palette.hoverFg : palette.inactiveFg}
+              attributes={attributes}
+              onMouseDown={selectTab}
+            >
+              {` ${tab.label} `}
+            </Text>
+            {showClose && (
+              <Text
+                fg={active && variant === "pill" ? palette.activePillFg : palette.closeFg}
+                onMouseDown={(event: any) => {
+                  event.preventDefault?.();
+                  event.stopPropagation?.();
+                  tab.onClose?.(tab.value);
+                }}
+              >
+                {"x "}
+              </Text>
+            )}
+          </Box>
+        );
+      })}
+      {onAdd && (
+        <Box
+          width={addWidth}
+          height={1}
+          backgroundColor={hoveredValue === "__add__" ? palette.hoverBg : undefined}
+          onMouseMove={() => setHoveredValue((current) => (current === "__add__" ? current : "__add__"))}
+          onMouseOut={() => setHoveredValue((current) => (current === "__add__" ? null : current))}
+          onMouseDown={(event: TabPointerEvent) => {
+            event.preventDefault();
+            onAdd();
+          }}
+        >
+          <Text fg={hoveredValue === "__add__" ? palette.hoverFg : palette.addFg}>
+            {` ${addLabel} `}
+          </Text>
+        </Box>
+      )}
+    </Box>
+  );
+
+  if (!scrollable) return tabRow;
+
   return (
     <ScrollBox
       ref={scrollRef}
@@ -237,86 +331,7 @@ function OpenTuiTabs({
       horizontalScrollbarOptions={{ visible: false }}
       onMouseScroll={handleMouseScroll}
     >
-      <Box flexDirection="row" width={totalWidth} height={1}>
-        {tabs.map((tab, index) => {
-          const active = tab.value === activeValue;
-          const hovered = hoveredValue === tab.value && !tab.disabled;
-          const tabWidth = tabWidths[index] ?? tab.label.length + 2;
-          const showClose = !!tab.onClose && (closeMode === "always" || active);
-          const attributes = (active ? TextAttributes.BOLD : 0)
-            | (variant === "underline" && !compact && (active || hovered) ? TextAttributes.UNDERLINE : 0);
-          const startHover = tab.disabled
-            ? undefined
-            : () => {
-                setHoveredValue((current) => (current === tab.value ? current : tab.value));
-              };
-          const endHover = tab.disabled
-            ? undefined
-            : () => {
-                setHoveredValue((current) => (current === tab.value ? null : current));
-              };
-
-          return (
-            <Box
-              key={tab.value}
-              width={tabWidth}
-              height={1}
-              flexDirection="row"
-              backgroundColor={active && variant === "pill" ? palette.activeBg : hovered ? palette.hoverBg : undefined}
-              onMouseOver={startHover}
-              onMouseMove={startHover}
-              onMouseOut={endHover}
-              onMouseDown={tab.disabled ? undefined : (event: TabPointerEvent) => {
-                if (event.button === 2 && tab.onContextMenu) {
-                  event.preventDefault?.();
-                  event.stopPropagation?.();
-                  tab.onContextMenu(tab.value, event);
-                  return;
-                }
-                event.preventDefault();
-                onSelect(tab.value);
-              }}
-              onDoubleClick={tab.disabled || !tab.onDoubleClick ? undefined : () => tab.onDoubleClick?.(tab.value)}
-            >
-              <Text
-                fg={tab.disabled ? palette.disabledFg : active && variant === "pill" ? palette.activePillFg : active ? palette.activeFg : hovered ? palette.hoverFg : palette.inactiveFg}
-                attributes={attributes}
-              >
-                {` ${tab.label} `}
-              </Text>
-              {showClose && (
-                <Text
-                  fg={active && variant === "pill" ? palette.activePillFg : palette.closeFg}
-                  onMouseDown={(event: any) => {
-                    event.preventDefault?.();
-                    event.stopPropagation?.();
-                    tab.onClose?.(tab.value);
-                  }}
-                >
-                  {"x "}
-                </Text>
-              )}
-            </Box>
-          );
-        })}
-        {onAdd && (
-          <Box
-            width={addWidth}
-            height={1}
-            backgroundColor={hoveredValue === "__add__" ? palette.hoverBg : undefined}
-            onMouseMove={() => setHoveredValue((current) => (current === "__add__" ? current : "__add__"))}
-            onMouseOut={() => setHoveredValue((current) => (current === "__add__" ? null : current))}
-            onMouseDown={(event: TabPointerEvent) => {
-              event.preventDefault();
-              onAdd();
-            }}
-          >
-            <Text fg={hoveredValue === "__add__" ? palette.hoverFg : palette.addFg}>
-              {` ${addLabel} `}
-            </Text>
-          </Box>
-        )}
-      </Box>
+      {tabRow}
     </ScrollBox>
   );
 }

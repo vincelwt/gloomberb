@@ -44,26 +44,38 @@ function createRegistry(shortcutExecute?: () => void): PluginRegistry {
 
 function ShortcutHarness({
   dispatch,
+  focusedTickerSymbol = null,
   pluginRegistry,
+  refreshTicker = () => {},
   state,
 }: {
   dispatch: (action: AppAction) => void;
+  focusedTickerSymbol?: string | null;
   pluginRegistry: PluginRegistry;
+  refreshTicker?: (symbol: string, exchange?: string, tickerOverride?: any, priority?: number) => void;
   state: AppState;
 }) {
   useAppGlobalShortcuts({
     dispatch,
-    focusedTickerSymbol: null,
+    focusedTickerSymbol,
     isDetachedWindow: false,
     pluginRegistry,
-    refreshTicker: () => {},
+    refreshTicker,
     startUpdate: () => {},
     state,
   });
   return <text>ready</text>;
 }
 
-async function renderHarness(state: AppState, registry: PluginRegistry, dispatch: (action: AppAction) => void) {
+async function renderHarness(
+  state: AppState,
+  registry: PluginRegistry,
+  dispatch: (action: AppAction) => void,
+  options: {
+    focusedTickerSymbol?: string | null;
+    refreshTicker?: (symbol: string, exchange?: string, tickerOverride?: any, priority?: number) => void;
+  } = {},
+) {
   testSetup = await createTestRenderer({ width: 40, height: 8 });
   root = createRoot(testSetup.renderer);
   act(() => {
@@ -71,7 +83,9 @@ async function renderHarness(state: AppState, registry: PluginRegistry, dispatch
       <TestDialogProvider>
         <ShortcutHarness
           dispatch={dispatch}
+          focusedTickerSymbol={options.focusedTickerSymbol}
           pluginRegistry={registry}
+          refreshTicker={options.refreshTicker}
           state={state}
         />
       </TestDialogProvider>,
@@ -179,5 +193,24 @@ describe("useAppGlobalShortcuts", () => {
     }]);
     expect(event.defaultPrevented).toBe(true);
     expect(event.propagationStopped).toBe(true);
+  });
+
+  test("does not treat modified Shift-R as force refresh", async () => {
+    const refreshes: Array<{ symbol: string; priority?: number }> = [];
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-global-shortcuts-resize"));
+    state.tickers.set("AAPL", {
+      metadata: { ticker: "AAPL", exchange: "NASDAQ" },
+    } as any);
+    await renderHarness(state, createRegistry(), () => {}, {
+      refreshTicker: (symbol, _exchange, _ticker, priority) => {
+        refreshes.push({ symbol, priority });
+      },
+    });
+
+    const event = await emitKeypress({ name: "r", ctrl: true, shift: true });
+
+    expect(refreshes).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+    expect(event.propagationStopped).toBe(false);
   });
 });

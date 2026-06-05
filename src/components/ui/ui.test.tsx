@@ -360,6 +360,60 @@ describe("shared UI kit", () => {
     expect(lastSelected).toBe("chart");
   });
 
+  test("selects tabs by clicking their text labels", async () => {
+    let lastSelected = "overview";
+    const selectedValues: string[] = [];
+
+    function PointerTabsHarness() {
+      const [activeValue, setActiveValue] = useState("overview");
+      return (
+        <Tabs
+          tabs={[
+            { label: "Overview", value: "overview" },
+            { label: "News", value: "news" },
+            { label: "Chart", value: "chart" },
+          ]}
+          activeValue={activeValue}
+          onSelect={(value) => {
+            lastSelected = value;
+            selectedValues.push(value);
+            setActiveValue(value);
+          }}
+          scrollable={false}
+        />
+      );
+    }
+
+    testSetup = await testRender(<PointerTabsHarness />, { width: 40, height: 4 });
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    let frame = testSetup.captureCharFrame();
+    const newsCol = frame.split("\n")[0]!.indexOf("News");
+    expect(newsCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(newsCol + 1, 0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(lastSelected).toBe("news");
+
+    frame = testSetup.captureCharFrame();
+    const chartCol = frame.split("\n")[0]!.indexOf("Chart");
+    expect(chartCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(chartCol + 1, 0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(selectedValues).toEqual(["news", "chart"]);
+    expect(lastSelected).toBe("chart");
+  });
+
   test("renders tab actions for editable tab sets", async () => {
     testSetup = await testRender(
       <Tabs

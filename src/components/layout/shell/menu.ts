@@ -101,14 +101,8 @@ export function menuForPane(
     {
       id: "window-resize-mode",
       label: "Resize Window...",
-      accelerator: "WIN resize",
+      accelerator: PANE_MANAGEMENT_ACCELERATORS.windowResizeMode,
       onSelect: () => pluginRegistry.openWindowMode(pane.instance.instanceId, "resize"),
-    },
-    {
-      id: "layout-actions",
-      label: "Layout Actions...",
-      accelerator: PANE_MANAGEMENT_ACCELERATORS.layoutActions,
-      onSelect: () => pluginRegistry.openCommandBar("LAY "),
     },
   );
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useShortcut } from "../../../../react/input";
+import type { WindowEditMode } from "../../../../plugins/registry";
 import {
   createDoubleEscapeCloseState,
   recordDoubleEscapeClose,
@@ -12,6 +13,7 @@ import {
 
 interface ShellPaneManagementShortcutOptions {
   cancelActiveDrag(): void;
+  closeAllFloatingPanes(): boolean;
   closeFocusedPane(): boolean;
   copyFocusedPaneScreenshot(): boolean;
   focusedPaneId: string | null;
@@ -22,12 +24,13 @@ interface ShellPaneManagementShortcutOptions {
   openLayoutMenu(): void;
   overlayOpen: boolean;
   popOutFocusedPane(): boolean;
-  startWindowMode(): void;
+  startWindowMode(paneId?: string, mode?: WindowEditMode): void;
   toggleFocusedPaneFloating(): boolean;
 }
 
 export function useShellPaneManagementShortcuts({
   cancelActiveDrag,
+  closeAllFloatingPanes,
   closeFocusedPane,
   copyFocusedPaneScreenshot,
   focusedPaneId,
@@ -82,6 +85,9 @@ export function useShellPaneManagementShortcuts({
       case "close":
         handled = closeFocusedPane();
         break;
+      case "close-all-floating":
+        handled = closeAllFloatingPanes();
+        break;
       case "settings":
         handled = openFocusedPaneSettings();
         break;
@@ -102,7 +108,11 @@ export function useShellPaneManagementShortcuts({
         handled = gridlockVisiblePanes();
         break;
       case "window-mode":
-        startWindowMode();
+        startWindowMode(undefined, "move");
+        handled = true;
+        break;
+      case "window-resize-mode":
+        startWindowMode(undefined, "resize");
         handled = true;
         break;
     }

@@ -158,3 +158,14 @@ export function removePane(layout: LayoutConfig, instanceId: string): LayoutConf
     [instanceId],
   ));
 }
+
+export function removeFloatingPanes(layout: LayoutConfig): LayoutConfig {
+  if (layout.floating.length === 0) return layout;
+  return finalizeLayout(removePaneInstances(
+    {
+      ...layout,
+      floating: [],
+    },
+    layout.floating.map((entry) => entry.instanceId),
+  ));
+}

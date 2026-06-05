@@ -35,7 +35,31 @@ async function renderHelpPane(
   );
 
   await testSetup.renderOnce();
+  await testSetup.renderOnce();
   return testSetup;
+}
+
+async function moveHelpTabRight(count = 1) {
+  await act(async () => {
+    for (let index = 0; index < count; index += 1) {
+      testSetup!.mockInput.pressArrow("right");
+    }
+    await testSetup!.renderOnce();
+    await testSetup!.renderOnce();
+  });
+}
+
+async function resetRenderedHelpPane(
+  runtime = createTestPluginRuntime(),
+  size = { width: 88, height: 36 },
+) {
+  if (testSetup) {
+    act(() => {
+      testSetup!.renderer.destroy();
+    });
+    testSetup = undefined;
+  }
+  return renderHelpPane(runtime, size);
 }
 
 function withoutScrollbar(line: string) {
@@ -44,22 +68,35 @@ function withoutScrollbar(line: string) {
 }
 
 describe("HelpPane", () => {
-  test("puts section spacing before headings instead of after them", async () => {
+  test("starts on basics and puts section spacing before headings instead of after them", async () => {
     await renderHelpPane(createTestPluginRuntime(), { width: 88, height: 80 });
 
     const lines = testSetup!.captureCharFrame().split("\n").map(withoutScrollbar);
     const commandBarRow = lines.findIndex((line) => line.includes("Command Bar"));
-    const templatesRow = lines.findIndex((line) => line.includes("Window Templates"));
+    const layoutRow = lines.findIndex((line) => line.includes("Layout Basics"));
 
+    expect(lines[0]).toContain("Basics");
+    expect(testSetup!.captureCharFrame()).toContain("Basics");
+    expect(testSetup!.captureCharFrame()).toContain("Functions");
+    expect(testSetup!.captureCharFrame()).toContain("Issues");
+    expect(testSetup!.captureCharFrame()).not.toContain("Issues/Debug");
+    expect(testSetup!.captureCharFrame()).not.toContain("Window Templates");
+    expect(testSetup!.captureCharFrame()).not.toContain("Search for a ticker or open the best matching security.");
     expect(commandBarRow).toBeGreaterThan(0);
-    expect(templatesRow).toBeGreaterThan(commandBarRow);
+    expect(layoutRow).toBeGreaterThan(commandBarRow);
     expect(lines[commandBarRow - 1]?.trim()).toBe("");
-    expect(lines[commandBarRow + 1]).toContain("Open or toggle the command bar");
-    expect(lines[templatesRow - 1]?.trim()).toBe("");
-    expect(lines[templatesRow + 1]?.trim()).not.toBe("");
+    expect(lines[commandBarRow + 1]).toContain("Open command mode");
+    expect(testSetup!.captureCharFrame()).toContain("Open ticker search directly.");
+    expect(testSetup!.captureCharFrame()).toContain("DES");
+    expect(testSetup!.captureCharFrame()).toContain("Clear command text.");
+    expect(testSetup!.captureCharFrame()).toContain("Delete the previous word");
+    expect(testSetup!.captureCharFrame()).toContain("Submit multiline command forms.");
+    expect(testSetup!.captureCharFrame()).toContain("close all floating panes");
+    expect(lines[layoutRow - 1]?.trim()).toBe("");
+    expect(lines[layoutRow + 1]?.trim()).not.toBe("");
   });
 
-  test("lists core, plugin command, template, and keyboard shortcuts", async () => {
+  test("separates functions from keyboard shortcuts", async () => {
     setSharedRegistryForTests({
       commands: new Map([[
         "set-alert",
@@ -106,24 +143,52 @@ describe("HelpPane", () => {
     } as any);
 
     await renderHelpPane(createTestPluginRuntime(), { width: 88, height: 80 });
+    await moveHelpTabRight();
 
-    const frame = testSetup!.captureCharFrame();
-    expect(frame).toMatch(/AW\s+<ticker>/);
-    expect(frame).toMatch(/SA\s+<symbol condition price>/);
-    expect(frame).toMatch(/QQ\s+<tickers>/);
-    expect(frame).toContain("Add Alert (Alerts)");
-    expect(frame).toContain("Shift+X");
-    expect(frame).toContain("Sync data (Gloom Cloud)");
-    expect(frame).toContain("Ctrl+W");
-    expect(frame).toContain("Ctrl+,");
-    expect(frame).not.toContain("Ctrl+Shift+O");
-    expect(frame).not.toContain("Pop the focused pane");
-    expect(frame).not.toContain("Cmd+W");
-    expect(frame).not.toContain("Cmd+,");
-    expect(frame).not.toContain("Cmd+K");
-    expect(frame).not.toContain("Cmd/Ctrl");
-    expect(frame).not.toContain("CmdOrCtrl");
-    expect(frame).not.toContain("Open ticker actions for the focused ticker.");
+    const functionsFrame = testSetup!.captureCharFrame();
+    expect(functionsFrame).toContain("Manage Plugins");
+    expect(functionsFrame).toMatch(/AW\s+<ticker>/);
+    expect(functionsFrame).toMatch(/SA\s+<symbol condition price>/);
+    expect(functionsFrame).toMatch(/QQ\s+<tickers>/);
+    expect(functionsFrame).toContain("Alerts");
+    expect(functionsFrame).toContain("Add Alert");
+    expect(functionsFrame).toContain("Shift+X");
+    expect(functionsFrame).toContain("Gloom Cloud");
+    expect(functionsFrame).toContain("Sync data");
+    expect(functionsFrame).toContain("Ticker Research");
+    expect(functionsFrame).toContain("Quote Monitor");
+    expect(functionsFrame).not.toContain("Add Alert (Alerts)");
+    expect(functionsFrame).not.toContain("Sync data (Gloom Cloud)");
+    expect(functionsFrame).not.toContain("Quote Monitor (Ticker Research)");
+    expect(functionsFrame).not.toContain("Ctrl+W");
+
+    await resetRenderedHelpPane(createTestPluginRuntime(), { width: 88, height: 80 });
+    await moveHelpTabRight(2);
+
+    const shortcutsFrame = testSetup!.captureCharFrame();
+    expect(shortcutsFrame).toContain("Ctrl+W");
+    expect(shortcutsFrame).toContain("Ctrl+Alt+W");
+    expect(shortcutsFrame).toContain("Ctrl+Shift+M");
+    expect(shortcutsFrame).toContain("Ctrl+Shift+R");
+    expect(shortcutsFrame).toContain("Ctrl+,");
+    expect(shortcutsFrame).toContain("Navigation");
+    expect(shortcutsFrame).toContain("Up/Down");
+    expect(shortcutsFrame).toContain("j/k");
+    expect(shortcutsFrame).toContain("Left/Right");
+    expect(shortcutsFrame).toContain("h/l");
+    expect(shortcutsFrame).toContain("PageUp/PageDown");
+    expect(shortcutsFrame).toContain("Window Mode");
+    expect(shortcutsFrame).toContain("h/j/k/l");
+    expect(shortcutsFrame).toContain("Close all floating panes.");
+    expect(shortcutsFrame).not.toContain("AW");
+    expect(shortcutsFrame).not.toContain("Ctrl+Shift+O");
+    expect(shortcutsFrame).not.toContain("Pop the focused pane");
+    expect(shortcutsFrame).not.toContain("Cmd+W");
+    expect(shortcutsFrame).not.toContain("Cmd+,");
+    expect(shortcutsFrame).not.toContain("Cmd+K");
+    expect(shortcutsFrame).not.toContain("Cmd/Ctrl");
+    expect(shortcutsFrame).not.toContain("CmdOrCtrl");
+    expect(shortcutsFrame).not.toContain("Open ticker actions for the focused ticker.");
   });
 
   test("keeps shortcuts and descriptions on the same row when narrow", async () => {
@@ -131,14 +196,18 @@ describe("HelpPane", () => {
 
     const lines = testSetup!.captureCharFrame().split("\n").map(withoutScrollbar);
     const closeCommandRow = lines.findIndex((line) => line.includes("Close the command bar."));
-    const securityDetailsRow = lines.findIndex((line) => line.includes("Open security details"));
 
     expect(closeCommandRow).toBeGreaterThanOrEqual(0);
     expect(lines[closeCommandRow]).toContain("Esc");
     expect(lines[closeCommandRow]).toContain("`");
+
+    await moveHelpTabRight();
+
+    const functionLines = testSetup!.captureCharFrame().split("\n").map(withoutScrollbar);
+    const securityDetailsRow = functionLines.findIndex((line) => line.includes("Open security details"));
     expect(securityDetailsRow).toBeGreaterThanOrEqual(0);
-    expect(lines[securityDetailsRow]).toContain("DES");
-    expect(lines[securityDetailsRow]).toContain("<ticker>");
+    expect(functionLines[securityDetailsRow]).toContain("DES");
+    expect(functionLines[securityDetailsRow]).toContain("<ticker>");
   });
 
   test("opens the debug log from the mouse action", async () => {
@@ -149,8 +218,14 @@ describe("HelpPane", () => {
     });
 
     await renderHelpPane(runtime);
+    await moveHelpTabRight(3);
 
-    const lines = testSetup!.captureCharFrame().split("\n");
+    const frame = testSetup!.captureCharFrame();
+    expect(frame).toContain("GitHub Issues");
+    expect(frame).not.toContain("Issues/Debug");
+    expect(frame).not.toContain("plugin,\n");
+
+    const lines = frame.split("\n");
     const row = lines.findIndex((line) => line.includes("Open Debug Log"));
     const col = lines[row]?.indexOf("Open Debug Log") ?? -1;
 

@@ -51,7 +51,7 @@ For the best terminal experience, use a [Kitty](https://sw.kovidgoyal.net/kitty/
 
 ## Start
 
-Open the command bar with `Ctrl+P` or `` ` ``, then type a command.
+Open command mode with `Ctrl+P`, then type a command. Press `` ` `` to open ticker search directly.
 
 | Try | Opens |
 |-----|-------|
@@ -103,7 +103,8 @@ See [PLUGINS.md](PLUGINS.md) for the plugin API and the shared UI surface availa
 
 | Key | Action |
 |-----|--------|
-| `Ctrl+P` or `` ` `` | Open command bar |
+| `Ctrl+P` | Open command mode |
+| `` ` `` | Open ticker search |
 | `Ctrl+,` | Open focused pane settings |
 | `Ctrl+W` | Close focused pane |
 | `Ctrl+Shift+M` | Move focused window (`WIN resize` starts resize mode) |
