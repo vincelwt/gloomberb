@@ -112,7 +112,8 @@ jobs:
           tar -xf "$tmp_dir/Gloomberb.app.tar" -C "$tmp_dir"
           test -x "$tmp_dir/Gloomberb.app/Contents/Resources/gloomberb"
           test -f "$tmp_dir/Gloomberb.app/Contents/Resources/gloomberb-tui/tui-entry.js"
-          test -f "$tmp_dir/Gloomberb.app/Contents/Resources/gloomberb-tui/node_modules/@opentui/core-darwin-arm64/index.ts"
+          test -f "$tmp_dir/Gloomberb.app/Contents/Resources/gloomberb-tui/node_modules/@opentui/core-darwin-arm64/index.js"
+          test -f "$tmp_dir/Gloomberb.app/Contents/Resources/gloomberb-tui/node_modules/@opentui/core-darwin-arm64/libopentui.dylib"
           "$tmp_dir/Gloomberb.app/Contents/Resources/gloomberb" help
           ditto -c -k --keepParent "$tmp_dir/Gloomberb.app" artifacts/stable-macos-arm64-Gloomberb.app.zip
 

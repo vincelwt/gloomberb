@@ -80,7 +80,8 @@ jobs:
 
           test -x "$tmp_dir/Gloomberb.app/Contents/Resources/gloomberb"
           test -f "$tmp_dir/Gloomberb.app/Contents/Resources/gloomberb-tui/tui-entry.js"
-          test -f "$tmp_dir/Gloomberb.app/Contents/Resources/gloomberb-tui/node_modules/@opentui/core-darwin-arm64/index.ts"
+          test -f "$tmp_dir/Gloomberb.app/Contents/Resources/gloomberb-tui/node_modules/@opentui/core-darwin-arm64/index.js"
+          test -f "$tmp_dir/Gloomberb.app/Contents/Resources/gloomberb-tui/node_modules/@opentui/core-darwin-arm64/libopentui.dylib"
           "$tmp_dir/Gloomberb.app/Contents/Resources/gloomberb" help
 
           codesign --verify --verbose=4 "$tmp_dir/Gloomberb.app"
