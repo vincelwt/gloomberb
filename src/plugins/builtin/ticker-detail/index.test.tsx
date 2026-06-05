@@ -160,7 +160,7 @@ function setOptionsProvider(provider: DataProvider | undefined): void {
   setSharedMarketDataCoordinator(sharedCoordinator);
 }
 
-function makeRegistry(): PluginRegistry {
+function makeRegistry(options: { stubFundamentalGraphs?: boolean } = {}): PluginRegistry {
   const stubTab = (_props: { width: number; height: number; focused: boolean; onCapture: (capturing: boolean) => void }) => (
     <text>stub</text>
   );
@@ -168,6 +168,10 @@ function makeRegistry(): PluginRegistry {
   tickerDetailPlugin.setup?.({
     registerTickerResearchTab: (tab: TickerResearchTabDef) => tickerResearchTabs.set(tab.id, tab),
   } as any);
+  if (options.stubFundamentalGraphs) {
+    const tab = tickerResearchTabs.get("fundamental-graphs");
+    if (tab) tickerResearchTabs.set(tab.id, { ...tab, component: stubTab });
+  }
   for (const tab of [
     ["ibkr-trade", {
       id: "ibkr-trade",
@@ -482,7 +486,7 @@ describe("TickerResearchPane", () => {
   });
 
   test("lets ticker detail tab arrows leave the embedded financials tab", async () => {
-    setSharedRegistryForTests(makeRegistry());
+    setSharedRegistryForTests(makeRegistry({ stubFundamentalGraphs: true }));
     setOptionsProvider(createProvider(false));
 
     testSetup = await testRender(
