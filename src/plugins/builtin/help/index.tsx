@@ -1,6 +1,8 @@
 import { Box, ScrollBox, Text, useUiHost } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { useState } from "react";
+import { Tabs } from "../../../components";
+import { ExternalLinkText } from "../../../components/ui";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { getSharedRegistry } from "../../registry";
@@ -19,9 +21,20 @@ import {
   resolveWindowTemplates,
 } from "./shortcut-model";
 
-export function HelpPane({ width, height }: PaneProps) {
+const HELP_TABS = [
+  { label: "Basics", value: "basics" },
+  { label: "Functions", value: "functions" },
+  { label: "Shortcuts", value: "shortcuts" },
+  { label: "Issues", value: "issues" },
+] as const;
+
+type HelpTabId = typeof HELP_TABS[number]["value"];
+const GLOOMBERB_ISSUES_URL = "https://github.com/vincelwt/gloomberb/issues";
+
+export function HelpPane({ focused, width, height }: PaneProps) {
   const registry = getSharedRegistry();
   const { openCommandBar, showPane } = usePluginAppActions();
+  const [activeTabId, setActiveTabId] = useState<HelpTabId>("basics");
   const [hoveredAction, setHoveredAction] = useState<string | null>(null);
   const commandShortcuts = resolveCommandShortcuts(registry);
   const pluginShortcuts = resolvePluginShortcuts(registry);
@@ -32,14 +45,15 @@ export function HelpPane({ width, height }: PaneProps) {
   const shortcutDisplayMode = getShortcutDisplayMode(uiHost.kind);
   const platformShortcut = (keys: string | readonly string[]) => formatPrimaryShortcut(keys, shortcutPlatform, shortcutDisplayMode);
   const commandBarBadges = shortcutDisplayMode === "terminal"
-    ? ["Ctrl+P", "`"]
-    : ["Ctrl+P", platformShortcut("K"), "`"];
+    ? ["Ctrl+P"]
+    : ["Ctrl+P", platformShortcut("K")];
   const copyBadges = shortcutDisplayMode === "terminal"
     ? ["Ctrl+Shift+C"]
     : [platformShortcut("C")];
   const pasteBadges = shortcutDisplayMode === "terminal"
     ? ["Ctrl+Shift+V"]
     : [platformShortcut("V")];
+  const contentHeight = Math.max(0, height - 1);
 
   const openDebugLog = () => {
     showPane("debug");
@@ -53,94 +67,23 @@ export function HelpPane({ width, height }: PaneProps) {
     openCommandBar("PL ");
   };
 
-  return (
-    <Box flexDirection="column" width={width} height={height}>
-      <ScrollBox flexGrow={1} scrollY>
-        <Box flexDirection="column" padding={1}>
-          <Box flexDirection="column" gap={1}>
-            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>How To Use Gloomberb</Text>
-            <Box flexDirection="column">
-              <Text fg={colors.textDim}>Gloomberb is command-bar first.</Text>
-              <Text fg={colors.textDim}>Use the keyboard for speed, and the mouse for windows.</Text>
+  const renderContent = () => {
+    switch (activeTabId) {
+      case "functions":
+        return (
+          <>
+            <Box flexDirection="row" gap={1}>
+              <ActionButton
+                id="plugins"
+                label="Manage Plugins"
+                hovered={hoveredAction === "plugins"}
+                onHover={setHoveredAction}
+                onPress={openPluginManager}
+              />
             </Box>
-          </Box>
 
-          <Box flexDirection="row" gap={1}>
-            <ActionButton
-              id="debug"
-              label="Open Debug Log"
-              hovered={hoveredAction === "debug"}
-              onHover={setHoveredAction}
-              onPress={openDebugLog}
-            />
-            <ActionButton
-              id="layout"
-              label="Layout Actions"
-              hovered={hoveredAction === "layout"}
-              onHover={setHoveredAction}
-              onPress={openLayoutActions}
-            />
-            <ActionButton
-              id="plugins"
-              label="Manage Plugins"
-              hovered={hoveredAction === "plugins"}
-              onHover={setHoveredAction}
-              onPress={openPluginManager}
-            />
-          </Box>
-
-          <HelpSection title="Command Bar">
-            <ShortcutRow
-              badges={commandBarBadges}
-              description="Open or toggle the command bar from anywhere."
-            />
-            <ShortcutRow
-              badges={["<ticker>"]}
-              description="Search for a ticker or open the best matching security."
-            />
-            <ShortcutRow
-              badges={["Up/Down", "Ctrl+P/N"]}
-              description="Move through command bar results."
-            />
-            <ShortcutRow
-              badges={["Enter", "Shift+Enter"]}
-              description="Run the selected result or its secondary action."
-            />
-            <ShortcutRow
-              badges={["Tab"]}
-              description="Accept an inferred shortcut argument from the focused ticker."
-            />
-            <ShortcutRow
-              badges={["Esc", "`"]}
-              description="Close the command bar."
-            />
-          </HelpSection>
-
-          <HelpSection title="Command Prefixes">
-            {groupShortcutEntries(commandShortcuts).map((group) => (
-              <ShortcutGroup
-                key={group.title}
-                title={group.title}
-                entries={group.entries}
-              />
-            ))}
-          </HelpSection>
-
-          <HelpSection title="Window Templates">
-            {windowTemplates.length > 0 ? groupShortcutEntries(windowTemplates).map((group) => (
-              <ShortcutGroup
-                key={group.title}
-                title={group.title}
-                entries={group.entries}
-              />
-            )) : (
-              <Text fg={colors.textDim}>No shortcut window templates are currently registered.</Text>
-            )}
-          </HelpSection>
-
-          {pluginShortcuts.length > 0 && (
-            <HelpSection title="Plugin Shortcuts">
-              {groupShortcutEntries(pluginShortcuts).map((group) => (
+            <HelpSection title="Command Prefixes">
+              {groupShortcutEntries(commandShortcuts).map((group) => (
                 <ShortcutGroup
                   key={group.title}
                   title={group.title}
@@ -148,94 +91,307 @@ export function HelpPane({ width, height }: PaneProps) {
                 />
               ))}
             </HelpSection>
-          )}
 
-          <HelpSection title="Global Keys">
-            <ShortcutRow
-              badges={["Tab", "Shift+Tab"]}
-              description="Move focus between panes and floating windows."
-            />
-            <ShortcutRow
-              badges={["Ctrl+1-9"]}
-              description="Switch saved layouts by number."
-            />
-            <ShortcutRow
-              badges={["r", "Shift+R"]}
-              description="Refresh the focused ticker or refresh everything."
-            />
-            <ShortcutRow
-              badges={["q"]}
-              description="Quit the terminal app."
-            />
-            <ShortcutRow
-              badges={copyBadges}
-              description="Copy the active terminal selection."
-            />
-            <ShortcutRow
-              badges={pasteBadges}
-              description="Paste clipboard text into the active input."
-            />
-            <ShortcutRow
-              badges={["u"]}
-              description="Install an available app update when one is shown."
-            />
-          </HelpSection>
+            <HelpSection title="Window Templates">
+              {windowTemplates.length > 0 ? groupShortcutEntries(windowTemplates).map((group) => (
+                <ShortcutGroup
+                  key={group.title}
+                  title={group.title}
+                  entries={group.entries}
+                />
+              )) : (
+                <Text fg={colors.textDim}>No shortcut window templates are currently registered.</Text>
+              )}
+            </HelpSection>
 
-          <HelpSection title="Pane Management">
-            <ShortcutRow
-              badges={[platformShortcut("W")]}
-              description="Close the focused pane, docked or floating."
-            />
-            <ShortcutRow
-              badges={[platformShortcut(",")]}
-              description="Edit settings for the focused pane."
-            />
-            <ShortcutRow
-              badges={[platformShortcut(["Shift", "D"])]}
-              description="Dock or float the focused pane."
-            />
-            {isDesktopWeb && (
-              <ShortcutRow
-                badges={[platformShortcut(["Shift", "O"])]}
-                description="Pop the focused pane out to a desktop window."
-              />
+            {pluginShortcuts.length > 0 && (
+              <HelpSection title="Plugin Shortcuts">
+                {groupShortcutEntries(pluginShortcuts).map((group) => (
+                  <ShortcutGroup
+                    key={group.title}
+                    title={group.title}
+                    entries={group.entries}
+                  />
+                ))}
+              </HelpSection>
             )}
-            {isDesktopWeb && (
+          </>
+        );
+
+      case "shortcuts":
+        return (
+          <>
+            <HelpSection title="Navigation">
               <ShortcutRow
-                badges={[platformShortcut(["Shift", "C"])]}
-                description="Copy a screenshot of the focused pane."
+                badges={["Up/Down", "j/k"]}
+                description="Move through focused table and list rows."
               />
-            )}
-            <ShortcutRow
-              badges={[platformShortcut(["Shift", "L"])]}
-              description="Open layout actions."
-            />
-            <ShortcutRow
-              badges={[platformShortcut(["Shift", "G"])]}
-              description="Gridlock all windows."
-            />
-            <ShortcutRow
-              badges={["Esc"]}
-              description="Cancel an active pane drag."
-            />
-          </HelpSection>
+              <ShortcutRow
+                badges={["Enter"]}
+                description="Open or activate the selected row."
+              />
+              <ShortcutRow
+                badges={["Left/Right", "h/l"]}
+                description="Switch tabs when a tab bar is focused."
+              />
+              <ShortcutRow
+                badges={["Esc", "Backspace"]}
+                description="Go back from detail views that support back navigation."
+              />
+            </HelpSection>
 
-          <HelpSection title="Layout System">
-            <Text fg={colors.text}>Docked panes stay in the saved layout.</Text>
-            <Box flexDirection="column">
-              <Text fg={colors.text}>Floating panes can be dragged by the title bar</Text>
-              <Text fg={colors.text}>and resized from the lower-right corner.</Text>
-            </Box>
-            <Text fg={colors.text}>Use Layout Actions for split, move, duplicate, undo, redo, and layout presets.</Text>
-          </HelpSection>
+            <HelpSection title="Scrolling">
+              <ShortcutRow
+                badges={["PageUp/PageDown"]}
+                description="Scroll focused pane content by page."
+              />
+              <ShortcutRow
+                badges={["Home/End"]}
+                description="Scroll focused pane content to the start or end."
+              />
+            </HelpSection>
 
-          <HelpSection title="If There Is A Bug">
-            <Text fg={colors.text}>Open Debug Log, then run Export Debug Log from the command bar.</Text>
-            <Box flexDirection="column">
-              <Text fg={colors.text}>The file lands in ~/Downloads. Include steps, ticker or layout, plugin,</Text>
-              <Text fg={colors.text}>and a screenshot if it is visual.</Text>
+            <HelpSection title="Global Keys">
+              <ShortcutRow
+                badges={["Tab", "Shift+Tab"]}
+                description="Move focus between panes and floating windows."
+              />
+              <ShortcutRow
+                badges={["Ctrl+1-9"]}
+                description="Switch saved layouts by number."
+              />
+              <ShortcutRow
+                badges={["r", "Shift+R"]}
+                description="Refresh the focused ticker or refresh everything."
+              />
+              <ShortcutRow
+                badges={["q"]}
+                description="Quit the terminal app."
+              />
+              <ShortcutRow
+                badges={copyBadges}
+                description="Copy the active terminal selection."
+              />
+              <ShortcutRow
+                badges={pasteBadges}
+                description="Paste clipboard text into the active input."
+              />
+              <ShortcutRow
+                badges={["u"]}
+                description="Install an available app update when one is shown."
+              />
+            </HelpSection>
+
+            <HelpSection title="Pane Management">
+              <ShortcutRow
+                badges={[platformShortcut("W")]}
+                description="Close the focused pane, docked or floating."
+              />
+              <ShortcutRow
+                badges={[platformShortcut(["Alt", "W"])]}
+                description="Close all floating panes."
+              />
+              <ShortcutRow
+                badges={[platformShortcut(",")]}
+                description="Edit settings for the focused pane."
+              />
+              <ShortcutRow
+                badges={[platformShortcut(["Shift", "D"])]}
+                description="Dock or float the focused pane."
+              />
+              {isDesktopWeb && (
+                <ShortcutRow
+                  badges={[platformShortcut(["Shift", "O"])]}
+                  description="Pop the focused pane out to a desktop window."
+                />
+              )}
+              {isDesktopWeb && (
+                <ShortcutRow
+                  badges={[platformShortcut(["Shift", "C"])]}
+                  description="Copy a screenshot of the focused pane."
+                />
+              )}
+              <ShortcutRow
+                badges={[platformShortcut(["Shift", "L"])]}
+                description="Open layout actions."
+              />
+              <ShortcutRow
+                badges={[platformShortcut(["Shift", "G"])]}
+                description="Gridlock all windows."
+              />
+              <ShortcutRow
+                badges={[platformShortcut(["Shift", "M"])]}
+                description="Enter window move mode."
+              />
+              <ShortcutRow
+                badges={[platformShortcut(["Shift", "R"])]}
+                description="Enter window resize mode."
+              />
+              <ShortcutRow
+                badges={["Esc"]}
+                description="Cancel an active pane drag."
+              />
+              <ShortcutRow
+                badges={["Esc", "Esc"]}
+                description="Close the focused pane when nothing is being dragged."
+              />
+            </HelpSection>
+
+            <HelpSection title="Window Mode">
+              <ShortcutRow
+                badges={["m", "r"]}
+                description="Switch between move and resize."
+              />
+              <ShortcutRow
+                badges={["d"]}
+                description="Dock or float the selected window."
+              />
+              <ShortcutRow
+                badges={["Arrows", "h/j/k/l"]}
+                description="Move, resize, or choose a dock target."
+              />
+              <ShortcutRow
+                badges={["Shift"]}
+                description="Use larger move and resize steps with direction keys."
+              />
+              <ShortcutRow
+                badges={["Tab", "w"]}
+                description="Cycle windows or resize handles."
+              />
+              <ShortcutRow
+                badges={["Enter", "Esc"]}
+                description="Commit pending changes or exit window mode."
+              />
+            </HelpSection>
+          </>
+        );
+
+      case "issues":
+        return (
+          <>
+            <Box flexDirection="row" gap={1}>
+              <ActionButton
+                id="debug"
+                label="Open Debug Log"
+                hovered={hoveredAction === "debug"}
+                onHover={setHoveredAction}
+                onPress={openDebugLog}
+              />
+              <ExternalLinkText
+                url={GLOOMBERB_ISSUES_URL}
+                label="GitHub Issues"
+              />
             </Box>
-          </HelpSection>
+
+            <HelpSection title="If There Is A Bug">
+              <Text fg={colors.text} wrapText>Open Debug Log, then run Export Debug Log from the command bar.</Text>
+              <Text fg={colors.text} wrapText>The file lands in ~/Downloads. Include steps, ticker or layout, plugin, and a screenshot if it is visual.</Text>
+            </HelpSection>
+          </>
+        );
+
+      case "basics":
+      default:
+        return (
+          <>
+            <Box flexDirection="column" gap={1}>
+              <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>How To Use Gloomberb</Text>
+              <Box flexDirection="column">
+                <Text fg={colors.textDim}>Gloomberb is command-bar first.</Text>
+                <Text fg={colors.textDim}>Use the keyboard for speed, and the mouse for windows.</Text>
+              </Box>
+            </Box>
+
+            <Box flexDirection="row" gap={1}>
+              <ActionButton
+                id="layout"
+                label="Layout Actions"
+                hovered={hoveredAction === "layout"}
+                onHover={setHoveredAction}
+                onPress={openLayoutActions}
+              />
+            </Box>
+
+            <HelpSection title="Command Bar">
+              <ShortcutRow
+                badges={commandBarBadges}
+                description="Open command mode for actions, pane commands, and typed prefixes."
+              />
+              <ShortcutRow
+                badges={["`"]}
+                description="Open ticker search directly."
+              />
+              <ShortcutRow
+                badges={["DES", "<ticker>"]}
+                description="Open security details for a specific ticker."
+              />
+              <ShortcutRow
+                badges={["Up/Down", "Ctrl+P/N"]}
+                description="Move through command bar results."
+              />
+              <ShortcutRow
+                badges={["Enter", "Shift+Enter"]}
+                description="Run the selected result or its secondary action."
+              />
+              <ShortcutRow
+                badges={["Tab"]}
+                description="Accept a suggested command argument when one is available."
+              />
+              <ShortcutRow
+                badges={["Esc", "`"]}
+                description="Close the command bar."
+              />
+              <ShortcutRow
+                badges={["Ctrl+U"]}
+                description="Clear command text."
+              />
+              <ShortcutRow
+                badges={["Ctrl+W"]}
+                description="Delete the previous word in command text."
+              />
+              <ShortcutRow
+                badges={["Backspace"]}
+                description="Go back from a nested command screen when the query is empty."
+              />
+              <ShortcutRow
+                badges={["Space"]}
+                description="Toggle command-bar plugin rows, toggles, and multi-select choices."
+              />
+              <ShortcutRow
+                badges={["[", "]"]}
+                description="Reorder ordered multi-select choices."
+              />
+              <ShortcutRow
+                badges={["Ctrl+S"]}
+                description="Submit multiline command forms."
+              />
+            </HelpSection>
+
+            <HelpSection title="Layout Basics">
+              <Text fg={colors.text}>Docked panes stay in the saved layout.</Text>
+              <Text fg={colors.text} wrapText>Floating panes can be dragged by the title bar and resized from the lower-right corner.</Text>
+              <Text fg={colors.text} wrapText>Use Layout Actions for split, move, duplicate, close all floating panes, undo, redo, and layout presets.</Text>
+            </HelpSection>
+          </>
+        );
+    }
+  };
+
+  return (
+    <Box flexDirection="column" width={width} height={height}>
+      <Box width={width} height={1} flexShrink={0}>
+        <Tabs
+          tabs={HELP_TABS}
+          activeValue={activeTabId}
+          onSelect={(value) => setActiveTabId(value as HelpTabId)}
+          focused={focused}
+          compact
+          scrollable={false}
+        />
+      </Box>
+      <ScrollBox key={activeTabId} width={width} height={contentHeight} scrollY>
+        <Box flexDirection="column" padding={1}>
+          {renderContent()}
         </Box>
       </ScrollBox>
     </Box>

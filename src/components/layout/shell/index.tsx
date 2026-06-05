@@ -186,6 +186,7 @@ export function Shell({
   });
 
   const {
+    closeAllFloatingPanes,
     closeFocusedPane,
     copyFocusedPaneScreenshot,
     copyPaneScreenshot,
@@ -213,6 +214,7 @@ export function Shell({
 
   useShellPaneManagementShortcuts({
     cancelActiveDrag,
+    closeAllFloatingPanes,
     closeFocusedPane,
     copyFocusedPaneScreenshot,
     focusedPaneId,

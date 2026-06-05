@@ -158,6 +158,7 @@ describe("CommandBar pane and layout routes", () => {
     expect(frame).toContain("Float Pane");
     expect(frame).toContain("Undo Layout Change");
     expect(frame).toContain("Current Layout");
+    expect(frame).toContain("Close All Floating Panes");
   });
 
   test("runs layout actions directly from root search", async () => {

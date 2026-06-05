@@ -29,7 +29,7 @@ export function ShortcutRow({
   return (
     <Box flexDirection="row" gap={1}>
       <Box flexDirection="row" gap={1} flexShrink={0}>
-        {badges.map((badge) => <ShortcutBadge key={badge} label={badge} />)}
+        {badges.map((badge, index) => <ShortcutBadge key={`${badge}:${index}`} label={badge} />)}
       </Box>
       <Box flexGrow={1}>
         <Text fg={colors.text} wrapText>{description}</Text>

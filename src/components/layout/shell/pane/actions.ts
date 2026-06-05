@@ -5,6 +5,7 @@ import {
   floatPane,
   gridlockAllPanes,
   isPaneInLayout,
+  removeFloatingPanes,
   removePane,
   type ResolvedPane,
 } from "../../../../plugins/pane-manager";
@@ -73,6 +74,12 @@ export function useShellPaneActions({
     return true;
   }, [focusedPaneId, persistLayout, visibleLayout]);
 
+  const closeAllFloatingPanes = useCallback(() => {
+    if (visibleLayout.floating.length === 0) return false;
+    persistLayout(removeFloatingPanes(visibleLayout));
+    return true;
+  }, [persistLayout, visibleLayout]);
+
   const copyFocusedPaneScreenshot = useCallback(() => {
     if (!focusedPaneId || !nativePaneChrome || !rendererHost.copyPngImage) return false;
     if (!paneMap.has(focusedPaneId)) return false;
@@ -115,6 +122,7 @@ export function useShellPaneActions({
   }, [persistLayout, visibleLayout]);
 
   return {
+    closeAllFloatingPanes,
     closeFocusedPane,
     copyFocusedPaneScreenshot,
     copyPaneScreenshot,

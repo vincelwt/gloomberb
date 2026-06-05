@@ -1,5 +1,6 @@
 import {
   gridlockAllPanes,
+  removeFloatingPanes,
 } from "../../../plugins/pane-manager";
 import {
   DEFAULT_LAYOUT,
@@ -21,6 +22,8 @@ export function buildCurrentLayoutItems({
   state,
 }: LayoutItemsContext): ResultItem[] {
   const layoutHistory = state.layoutHistory[state.config.activeLayoutIndex];
+  const floatingPaneCount = currentLayout.floating.length;
+  const floatingPaneLabel = floatingPaneCount === 1 ? "floating pane" : "floating panes";
 
   return [
     {
@@ -88,6 +91,36 @@ export function buildCurrentLayoutItems({
         notifyGridlockRevert();
         closeAll({ revertThemePreview: false });
       },
+    },
+    {
+      id: "layout-close-all-floating",
+      label: "Close All Floating Panes",
+      detail: floatingPaneCount > 0
+        ? `Remove ${floatingPaneCount} ${floatingPaneLabel} from the current layout`
+        : "No floating panes in the current layout",
+      category: "Current Layout",
+      kind: "action",
+      disabled: floatingPaneCount === 0,
+      action: confirmDangerousActions
+        ? () => {
+          if (floatingPaneCount === 0) return;
+          openInlineConfirm({
+            confirmId: "layout-close-all-floating",
+            title: "Close All Floating Panes",
+            body: [`Close ${floatingPaneCount} ${floatingPaneLabel}?`],
+            confirmLabel: "Close Floating Panes",
+            cancelLabel: "Back",
+            tone: "danger",
+            onConfirm: () => {
+              persistLayoutChange(removeFloatingPanes(currentLayout));
+            },
+          });
+        }
+        : () => {
+          if (floatingPaneCount === 0) return;
+          persistLayoutChange(removeFloatingPanes(currentLayout));
+          closeAll({ revertThemePreview: false });
+        },
     },
     {
       id: "layout-rename",

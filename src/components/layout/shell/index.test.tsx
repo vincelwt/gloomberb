@@ -61,10 +61,11 @@ function createShellPluginRegistry(options?: {
   } as unknown as PluginRegistry;
 }
 
-async function emitKeypress(event: { name?: string; sequence?: string; ctrl?: boolean; meta?: boolean; shift?: boolean }) {
+async function emitKeypress(event: { name?: string; sequence?: string; ctrl?: boolean; meta?: boolean; shift?: boolean; alt?: boolean }) {
   await act(async () => {
     const keyEvent = {
       ctrl: false,
+      alt: false,
       meta: false,
       option: false,
       shift: false,
@@ -312,6 +313,7 @@ describe("Shell", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Settings");
     expect(frame).toContain("Ctrl+,");
+    expect(frame).not.toContain("Layout Actions");
     expect(frame).not.toContain("CmdOrCtrl");
   });
 
@@ -400,22 +402,90 @@ describe("Shell", () => {
     });
     await testSetup.renderOnce();
 
-    expect(testSetup.captureCharFrame()).toContain("Dock Pane");
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Dock Pane");
+    expect(frame).not.toContain("Layout Actions");
   });
 
   test("resolves pane management shortcuts", () => {
     const base = { ctrl: false, meta: true, super: true, shift: true, alt: false };
     expect(resolvePaneManagementShortcut({ ...base, name: ",", key: ",", shift: false })).toBe("settings");
     expect(resolvePaneManagementShortcut({ ...base, name: "w", key: "w", ctrl: true, meta: false, super: false, shift: false })).toBe("close");
+    expect(resolvePaneManagementShortcut({ ...base, name: "w", key: "w", shift: false, alt: true })).toBe("close-all-floating");
+    expect(resolvePaneManagementShortcut({ ...base, name: "W", key: "W", shift: false })).toBeNull();
     expect(resolvePaneManagementShortcut({ ...base, name: "D", key: "D" })).toBe("toggle-floating");
     expect(resolvePaneManagementShortcut({ ...base, name: "o", key: "o" })).toBe("pop-out");
     expect(resolvePaneManagementShortcut({ ...base, name: "c", key: "c" })).toBe("copy-screenshot");
     expect(resolvePaneManagementShortcut({ ...base, name: "l", key: "l" })).toBe("layout-actions");
     expect(resolvePaneManagementShortcut({ ...base, name: "g", key: "g" })).toBe("gridlock-all");
     expect(resolvePaneManagementShortcut({ ...base, name: "m", key: "m" })).toBe("window-mode");
+    expect(resolvePaneManagementShortcut({ ...base, name: "r", key: "r" })).toBe("window-resize-mode");
     expect(resolvePaneManagementShortcut({ ...base, name: "n", key: "n" })).toBeNull();
     expect(resolvePaneManagementShortcut({ ...base, name: "d", key: "d", alt: true })).toBeNull();
     expect(resolvePaneManagementShortcut({ ...base, name: "d", key: "d", meta: false, super: false })).toBeNull();
+  });
+
+  test("exits window mode on Enter without changes", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-window-mode-resize-shortcut-test");
+    const mainPane = requireLayoutInstance(config, "portfolio-list:main");
+    const detailPane = requireLayoutInstance(config, "ticker-detail:main");
+    const dockedLayout = {
+      dockRoot: {
+        kind: "split" as const,
+        axis: "horizontal" as const,
+        ratio: 0.5,
+        first: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+        second: { kind: "pane" as const, instanceId: "ticker-detail:main" },
+      },
+      instances: [{ ...mainPane }, { ...detailPane }],
+      floating: [],
+      detached: [],
+    };
+    const { actions } = await renderShellForWindowModeTest(
+      createShellStateWithLayout(config, dockedLayout, "portfolio-list:main"),
+    );
+
+    await emitKeypress({ name: "m", ctrl: true, shift: true });
+    expect(testSetup.captureCharFrame()).toContain("WINDOW MOVE");
+
+    await emitKeypress({ name: "enter" });
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+    expect(testSetup.captureCharFrame()).not.toContain("WINDOW MOVE");
+    expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+  });
+
+  test("starts resize mode directly from the resize shortcut", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-window-mode-resize-shortcut-test");
+    const mainPane = requireLayoutInstance(config, "portfolio-list:main");
+    const detailPane = requireLayoutInstance(config, "ticker-detail:main");
+    const dockedLayout = {
+      dockRoot: {
+        kind: "split" as const,
+        axis: "horizontal" as const,
+        ratio: 0.5,
+        first: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+        second: { kind: "pane" as const, instanceId: "ticker-detail:main" },
+      },
+      instances: [{ ...mainPane }, { ...detailPane }],
+      floating: [],
+      detached: [],
+    };
+    const { actions } = await renderShellForWindowModeTest(
+      createShellStateWithLayout(config, dockedLayout, "portfolio-list:main"),
+    );
+
+    await emitKeypress({ name: "r", ctrl: true, shift: true });
+    expect(testSetup.captureCharFrame()).toContain("WINDOW RESIZE");
+
+    await emitKeypress({ name: "enter" });
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+    const frame = testSetup.captureCharFrame();
+    expect(frame).not.toContain("WINDOW RESIZE");
+    expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
   });
 
   test("moves a floating pane in window mode and commits once", async () => {
@@ -783,6 +853,54 @@ describe("Shell", () => {
     const updateLayout = actions.find((action) => action.type === "UPDATE_LAYOUT");
     expect(updateLayout?.layout.instances.map((instance: { instanceId: string }) => instance.instanceId)).toEqual(["portfolio-list:main"]);
     expect(updateLayout?.layout.floating).toEqual([]);
+  });
+
+  test("closes all floating panes with Ctrl+Alt+W", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-test");
+    const mainPane = config.layout.instances.find((instance) => instance.instanceId === "portfolio-list:main");
+    const firstDetailPane = config.layout.instances.find((instance) => instance.instanceId === "ticker-detail:main");
+    if (!mainPane || !firstDetailPane) throw new Error("missing default panes");
+    const secondDetailPane = {
+      ...firstDetailPane,
+      instanceId: "ticker-detail:secondary",
+    };
+
+    const mixedLayout = {
+      dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+      instances: [{ ...mainPane }, { ...firstDetailPane }, secondDetailPane],
+      floating: [
+        { instanceId: "ticker-detail:main", x: 4, y: 2, width: 30, height: 8 },
+        { instanceId: "ticker-detail:secondary", x: 8, y: 3, width: 30, height: 8 },
+      ],
+      detached: [],
+    };
+    const state = {
+      ...createInitialState({
+        ...config,
+        layout: cloneLayout(mixedLayout),
+        layouts: [{ name: "Default", layout: cloneLayout(mixedLayout) }],
+      }),
+      focusedPaneId: "portfolio-list:main",
+    };
+    const actions: Array<any> = [];
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
+        <TestDialogProvider>
+          <Shell pluginRegistry={createShellPluginRegistry()} />
+        </TestDialogProvider>
+      </AppContext>,
+      { width: 40, height: 12 },
+    );
+
+    await testSetup.renderOnce();
+    await emitKeypress({ name: "w", ctrl: true, alt: true });
+
+    const updateLayout = actions.find((action) => action.type === "UPDATE_LAYOUT");
+    expect(actions).toContainEqual({ type: "PUSH_LAYOUT_HISTORY" });
+    expect(updateLayout?.layout.instances.map((instance: { instanceId: string }) => instance.instanceId)).toEqual(["portfolio-list:main"]);
+    expect(updateLayout?.layout.floating).toEqual([]);
+    expect(updateLayout?.layout.dockRoot).toEqual({ kind: "pane", instanceId: "portfolio-list:main" });
   });
 
 });

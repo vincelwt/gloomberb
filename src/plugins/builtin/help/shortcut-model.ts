@@ -27,7 +27,7 @@ export function resolveWindowTemplates(registry: SharedRegistry): HelpShortcutEn
           shortcut.prefix,
           shortcut.argPlaceholder ? `<${shortcut.argPlaceholder}>` : null,
         ].filter((value): value is string => !!value),
-        description: pluginName ? `${template.label} (${pluginName})` : template.label,
+        description: template.label,
         category: pluginName ?? "Core Panes",
       };
     })
@@ -46,9 +46,8 @@ function formatPlaceholder(value: string | undefined): string | null {
   return value ? `<${value}>` : null;
 }
 
-function withPluginName(description: string | undefined, pluginName: string | null | undefined): string {
-  const base = description?.trim() || "Run command";
-  return pluginName ? `${base} (${pluginName})` : base;
+function formatShortcutDescription(description: string | undefined): string {
+  return description?.trim() || "Run command";
 }
 
 function sortShortcutEntries(left: HelpShortcutEntry, right: HelpShortcutEntry): number {
@@ -90,7 +89,7 @@ export function resolveCommandShortcuts(registry: SharedRegistry): HelpShortcutE
           command.shortcut!.toUpperCase(),
           formatPlaceholder(command.shortcutArg?.placeholder),
         ].filter((value): value is string => !!value),
-        description: withPluginName(command.label, pluginName),
+        description: formatShortcutDescription(command.label),
         category: pluginName ?? command.category,
       };
     })
@@ -126,7 +125,7 @@ export function resolvePluginShortcuts(registry: SharedRegistry): HelpShortcutEn
       return {
         id: `plugin-shortcut:${shortcut.id}`,
         badges: [formatShortcutKey(shortcut)],
-        description: withPluginName(shortcut.description, pluginName),
+        description: formatShortcutDescription(shortcut.description),
         category: pluginName ?? "Plugin Shortcuts",
       };
     })

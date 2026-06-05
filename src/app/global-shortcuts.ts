@@ -101,18 +101,19 @@ export function useAppGlobalShortcuts({
 
     if (state.inputCaptured) return;
 
-    if (!isDetachedWindow && event.name === "q") {
+    const hasShortcutModifier = event.ctrl || event.meta || event.super || event.alt;
+    if (!hasShortcutModifier && !isDetachedWindow && event.name === "q") {
       rendererHost.requestExit();
-    } else if (event.name === "r") {
+    } else if (!hasShortcutModifier && event.name === "r") {
       if (focusedTickerSymbol) {
         const ticker = state.tickers.get(focusedTickerSymbol);
         if (ticker) refreshTicker(ticker.metadata.ticker, ticker.metadata.exchange, ticker, 0);
       }
-    } else if (event.name === "R" || (event.name === "r" && event.shift)) {
+    } else if (!hasShortcutModifier && (event.name === "R" || (event.name === "r" && event.shift))) {
       for (const ticker of state.tickers.values()) {
         refreshTicker(ticker.metadata.ticker, ticker.metadata.exchange, ticker, 1);
       }
-    } else if (event.name === "u" && state.updateAvailable && !state.updateProgress && !state.updateCheckInProgress && canSelfUpdate(state.updateAvailable)) {
+    } else if (!hasShortcutModifier && event.name === "u" && state.updateAvailable && !state.updateProgress && !state.updateCheckInProgress && canSelfUpdate(state.updateAvailable)) {
       startUpdate(state.updateAvailable);
     } else {
       const disabledPlugins = new Set(state.config.disabledPlugins || []);

@@ -128,9 +128,13 @@ export function useShellWindowMode({
     if (!windowMode) return;
     const committedLayout = resolveWindowEditCommitLayout(windowMode, bounds, dockGeometryOptions);
     const hasPendingCommit = windowEditHasPendingCommit(windowMode, bounds, dockGeometryOptions);
-    if (hasPendingCommit) {
-      persistLayout(committedLayout);
+    if (!hasPendingCommit) {
+      focusPane(windowMode.paneId);
+      setWindowMode(null);
+      return;
     }
+
+    persistLayout(committedLayout);
     focusPane(windowMode.paneId);
     setWindowMode({
       paneId: windowMode.paneId,
@@ -138,7 +142,7 @@ export function useShellWindowMode({
       mode: "move",
       focus: normalizeWindowEditFocus({ kind: "move" }, committedLayout, windowMode.paneId, "move", bounds, dockGeometryOptions),
       dirty: false,
-      notice: hasPendingCommit ? "Committed" : "No changes",
+      notice: "Committed",
     });
   }, [bounds, dockGeometryOptions, focusPane, persistLayout, windowMode]);
 
@@ -166,6 +170,7 @@ export function useShellWindowMode({
 
   useShortcut((event) => {
     if (!windowMode) return;
+    if (event.ctrl || event.meta || event.super || event.alt) return;
     const name = (event.name ?? event.key ?? "").toLowerCase();
     let handled = true;
 
