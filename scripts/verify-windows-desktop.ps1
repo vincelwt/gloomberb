@@ -145,9 +145,6 @@ function Focus-Window {
   $CenterX = [int]($Bounds.Left + ($Bounds.Width / 2))
   $CenterY = [int]($Bounds.Top + ($Bounds.Height / 2))
   [GloomberbWin32]::SetCursorPos($CenterX, $CenterY) | Out-Null
-  [GloomberbWin32]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
-  Start-Sleep -Milliseconds 80
-  [GloomberbWin32]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
   Start-Sleep -Milliseconds 750
 }
 
@@ -205,6 +202,50 @@ function Capture-WindowScreenshot {
     $Graphics.Dispose()
     $Bitmap.Dispose()
   }
+}
+
+function Get-VisibleWindowByTitle {
+  param([string]$Title)
+
+  Get-VisibleWindows |
+    Where-Object { $_.MainWindowTitle -eq $Title } |
+    Select-Object -First 1
+}
+
+function Capture-WindowScreenshotByTitle {
+  param(
+    [string]$Title,
+    [string]$Path,
+    [string]$Label,
+    [int]$TimeoutSeconds = 15,
+    [int]$InitialDelaySeconds = 0
+  )
+
+  if ($InitialDelaySeconds -gt 0) {
+    Start-Sleep -Seconds $InitialDelaySeconds
+  }
+
+  $Deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  $LastError = $null
+  do {
+    $Window = Get-VisibleWindowByTitle $Title
+    if ($Window) {
+      try {
+        Focus-Window $Window
+        Capture-WindowScreenshot $Window $Path
+        Assert-ScreenshotHasContent $Path $Label
+        return $Window
+      } catch {
+        $LastError = $_
+      }
+    }
+    Start-Sleep -Milliseconds 500
+  } while ((Get-Date) -lt $Deadline)
+
+  if ($LastError) {
+    throw "$Label screenshot could not be captured from '$Title': $($LastError.Exception.Message)"
+  }
+  throw "$Label window was not visible: $Title"
 }
 
 function Get-ScreenshotStats {
@@ -436,8 +477,8 @@ try {
   $LaunchedWindowProcessIds += @($LaunchedWindows | Select-Object -ExpandProperty Id)
 
   Save-WindowInventory (Join-Path $GuiArtifactDir "windows-after-launch.txt")
-  $MainWindow = $LaunchedWindows | Where-Object { $_.MainWindowTitle -eq "Gloomberb" } | Select-Object -First 1
-  $DetachedWindow = $LaunchedWindows | Where-Object { $_.MainWindowTitle -eq "Detached Watchlist" } | Select-Object -First 1
+  $MainWindow = Get-VisibleWindowByTitle "Gloomberb"
+  $DetachedWindow = Get-VisibleWindowByTitle "Detached Watchlist"
   if (-not $MainWindow) {
     throw "Could not find the Gloomberb main window in the Windows GUI smoke test."
   }
@@ -445,21 +486,25 @@ try {
     throw "Could not find the detached watchlist window in the Windows GUI smoke test."
   }
 
-  Focus-Window $MainWindow
-  Start-Sleep -Seconds 8
+  Capture-DesktopScreenshot (Join-Path $GuiArtifactDir "windows-gui-desktop.png")
+
+  $PopOutScreenshot = Join-Path $GuiArtifactDir "windows-gui-popout.png"
+  $DetachedWindow = Capture-WindowScreenshotByTitle `
+    -Title "Detached Watchlist" `
+    -Path $PopOutScreenshot `
+    -Label "Detached pop-out"
+
   $MainScreenshot = Join-Path $GuiArtifactDir "windows-gui-main.png"
-  Capture-WindowScreenshot $MainWindow $MainScreenshot
-  Assert-ScreenshotHasContent $MainScreenshot "Main window"
+  $MainWindow = Capture-WindowScreenshotByTitle `
+    -Title "Gloomberb" `
+    -Path $MainScreenshot `
+    -Label "Main window" `
+    -InitialDelaySeconds 8
 
   $GuiProcess.Refresh()
   if ($GuiProcess.HasExited) {
     throw "Windows GUI exited during smoke test with code $($GuiProcess.ExitCode)"
   }
-
-  Focus-Window $DetachedWindow
-  $PopOutScreenshot = Join-Path $GuiArtifactDir "windows-gui-popout.png"
-  Capture-WindowScreenshot $DetachedWindow $PopOutScreenshot
-  Assert-ScreenshotHasContent $PopOutScreenshot "Detached pop-out"
 } catch {
   try {
     Capture-DesktopScreenshot (Join-Path $GuiArtifactDir "windows-gui-failure.png")
