@@ -704,6 +704,78 @@ function Seed-DesktopConfig {
   }
 }
 
+function Restore-EnvironmentVariable {
+  param(
+    [string]$Name,
+    [AllowNull()]
+    [string]$Value
+  )
+
+  if ($null -eq $Value) {
+    Remove-Item -Path "Env:$Name" -ErrorAction SilentlyContinue
+  } else {
+    Set-Item -Path "Env:$Name" -Value $Value
+  }
+}
+
+function Capture-OnboardingScreenshot {
+  param(
+    [string]$InstallDir,
+    [string]$OutputPath
+  )
+
+  $OnboardingHome = Join-Path $env:TEMP "GloomberbOnboardingHome-$PID"
+  $OnboardingProcess = $null
+  $OnboardingWindowProcessIds = @()
+  $PreviousHome = $env:HOME
+  $PreviousUserProfile = $env:USERPROFILE
+  $PreviousElectrobunConsole = $env:ELECTROBUN_CONSOLE
+
+  if (Test-Path $OnboardingHome) {
+    Remove-Item -Path $OnboardingHome -Recurse -Force
+  }
+  New-Item -ItemType Directory -Force -Path $OnboardingHome | Out-Null
+
+  try {
+    $env:HOME = $OnboardingHome
+    $env:USERPROFILE = $OnboardingHome
+    $env:ELECTROBUN_CONSOLE = "1"
+
+    $InitialWindows = @(Get-VisibleWindows)
+    $InitialWindowHandles = New-WindowHandleSet $InitialWindows
+    Save-WindowInventory (Join-Path $GuiArtifactDir "windows-onboarding-before-launch.txt")
+
+    $OnboardingProcess = Start-Process `
+      -FilePath (Join-Path $InstallDir "bin\launcher.exe") `
+      -WorkingDirectory (Join-Path $InstallDir "bin") `
+      -PassThru
+    $OnboardingWindows = @(Wait-ForNewWindows `
+      -KnownHandles $InitialWindowHandles `
+      -MinimumCount 1 `
+      -Label "Gloomberb onboarding window")
+    $OnboardingWindowProcessIds += $OnboardingProcess.Id
+    $OnboardingWindowProcessIds += @($OnboardingWindows | Select-Object -ExpandProperty Id | Where-Object { $_ })
+
+    Save-WindowInventory (Join-Path $GuiArtifactDir "windows-onboarding-after-launch.txt")
+    $null = Capture-WindowScreenshotByTitle `
+      -Title "Gloomberb" `
+      -Path $OutputPath `
+      -Label "Onboarding window" `
+      -InitialDelaySeconds 8
+  } finally {
+    Stop-ProcessIds $OnboardingWindowProcessIds
+
+    if ($OnboardingProcess -and -not $OnboardingProcess.HasExited) {
+      Stop-Process -Id $OnboardingProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+
+    Restore-EnvironmentVariable "HOME" $PreviousHome
+    Restore-EnvironmentVariable "USERPROFILE" $PreviousUserProfile
+    Restore-EnvironmentVariable "ELECTROBUN_CONSOLE" $PreviousElectrobunConsole
+    Remove-Item -Path $OnboardingHome -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
 $RequiredPaths = @(
   (Join-Path $BundleDir "bin\launcher.exe"),
   (Join-Path $BundleDir "bin\bun.exe"),
@@ -790,6 +862,10 @@ try {
   if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
   }
+
+  Capture-OnboardingScreenshot `
+    -InstallDir $InstallDir `
+    -OutputPath (Join-Path $GuiArtifactDir "windows-gui-onboarding.png")
 
   $SeededDesktopConfig = Seed-DesktopConfig
 
