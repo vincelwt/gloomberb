@@ -1,7 +1,8 @@
 import { Box, Text, useRendererHost } from "../../ui";
 import { useCallback } from "react";
 
-const WINDOWS_CONTROL_WIDTH_PX = 46;
+const WINDOWS_CONTROL_WIDTH_PX = 32;
+const WINDOWS_CONTROL_TRAILING_PADDING_PX = 6;
 
 type WindowControlAction = "minimize" | "toggle-maximize" | "close";
 
@@ -36,6 +37,9 @@ export function WindowControls() {
       className="electrobun-webkit-app-region-no-drag"
       data-gloom-role="window-controls"
       aria-hidden={false}
+      style={{
+        paddingRight: WINDOWS_CONTROL_TRAILING_PADDING_PX,
+      }}
     >
       {WINDOWS_CONTROLS.map((control) => (
         <Box
