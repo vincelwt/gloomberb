@@ -12,7 +12,14 @@ import {
   type MemberColumn,
   type TradeColumn,
 } from "./model";
-import { sideColor } from "./detail";
+
+export function sideColor(side: CloudCongressTradePayload["side"], selected: boolean): string {
+  if (selected) return colors.selectedText;
+  if (side === "BUY") return colors.positive;
+  if (side === "SELL") return colors.negative;
+  if (side === "EXCHANGE") return colors.warning;
+  return colors.textDim;
+}
 
 export function renderCongressTradeCell(
   trade: CloudCongressTradePayload,
@@ -51,6 +58,8 @@ export function renderCongressTradeCell(
         text: formatAmountRange(trade.amountLow, trade.amountHigh, trade.amount),
         color: selectedColor ?? colors.textBright,
       };
+    case "asset":
+      return { text: trade.assetName, color: selectedColor ?? colors.text };
     case "owner":
       return { text: trade.owner, color: selectedColor ?? colors.textDim };
   }

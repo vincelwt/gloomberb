@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, useRendererHost, type ScrollBoxRenderable } from "../../../ui";
+import { Box, useRendererHost } from "../../../ui";
 import {
   DataTableStackView,
   EmptyState,
@@ -17,6 +17,7 @@ import {
 import type { PaneProps } from "../../../types/plugin";
 import {
   CONGRESS_FILING_LIMIT,
+  CONGRESS_MEMBER_FILING_LIMIT,
   CONGRESS_TRADE_LIMIT,
   CONGRESS_TRADES_PANE_ID,
   buildMemberColumns,
@@ -34,7 +35,7 @@ import {
   type TradeColumn,
   type TradeColumnId,
 } from "./model";
-import { MemberTradeList, TradeDetail } from "./detail";
+import { MemberTradesDetail, TradeDetail } from "./detail";
 import { useCongressTradesFooter } from "./footer";
 import { useCongressTradesKeyboard } from "./keyboard";
 import {
@@ -61,7 +62,6 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     columnId: "trades",
     direction: "desc",
   });
-  const detailScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const fetchGenRef = useRef(0);
 
   const load = useCallback((refresh = false) => {
@@ -142,12 +142,6 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     if (detailMode?.kind === "member" && !detailMember) setDetailMode(null);
   }, [detailMember, detailMode, detailTrade]);
 
-  useEffect(() => {
-    if (!detailMode) return;
-    const scrollBox = detailScrollRef.current;
-    if (scrollBox) scrollBox.scrollTop = 0;
-  }, [detailMode]);
-
   const selectTab = useCallback((tab: string) => {
     setActiveTab(tab === "members" ? "members" : "trades");
     setDetailMode(null);
@@ -176,7 +170,6 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
   const { handleDetailKeyDown, handleRootKeyDown } = useCongressTradesKeyboard({
     activeTab,
     detailMode,
-    detailScrollRef,
     focused,
     load,
     openSelectedTicker,
@@ -187,6 +180,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
 
   useCongressTradesFooter({
     activeTab,
+    detailMode,
     detailTrade,
     error,
     load,
@@ -201,11 +195,12 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
   const detailContent = detailTrade ? (
     <TradeDetail trade={detailTrade} width={width} />
   ) : detailMember ? (
-    <MemberTradeList
+    <MemberTradesDetail
+      focused={focused}
       member={detailMember}
-      trades={detailMemberTrades}
+      initialTrades={detailMemberTrades}
       width={width}
-      scrollRef={detailScrollRef}
+      filingLimit={payload?.filingCount ?? CONGRESS_MEMBER_FILING_LIMIT}
     />
   ) : null;
   const detailTitle = detailTrade

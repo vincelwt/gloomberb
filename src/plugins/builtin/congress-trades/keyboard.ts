@@ -1,14 +1,12 @@
-import { useCallback, type RefObject } from "react";
+import { useCallback } from "react";
 import { type DataTableKeyEvent } from "../../../components";
 import { useShortcut } from "../../../react/input";
-import { type ScrollBoxRenderable } from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
 import type { CongressTab, DetailMode } from "./model";
 
 export function useCongressTradesKeyboard({
   activeTab,
   detailMode,
-  detailScrollRef,
   focused,
   load,
   openSelectedTicker,
@@ -18,7 +16,6 @@ export function useCongressTradesKeyboard({
 }: {
   activeTab: CongressTab;
   detailMode: DetailMode;
-  detailScrollRef: RefObject<ScrollBoxRenderable | null>;
   focused: boolean;
   load: (refresh?: boolean) => void;
   openSelectedTicker: () => void;
@@ -26,25 +23,9 @@ export function useCongressTradesKeyboard({
   openSelectedTradeSource: () => void;
   selectTab: (tab: string) => void;
 }) {
-  const scrollDetailBy = useCallback((delta: number) => {
-    const scrollBox = detailScrollRef.current;
-    if (!scrollBox?.viewport) return;
-    const maxScrollTop = Math.max(0, scrollBox.scrollHeight - scrollBox.viewport.height);
-    scrollBox.scrollTop = Math.max(0, Math.min(maxScrollTop, scrollBox.scrollTop + delta));
-  }, [detailScrollRef]);
-
   const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (isPlainKey(event, "j", "down")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      scrollDetailBy(1);
-      return true;
-    }
-    if (isPlainKey(event, "k", "up")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      scrollDetailBy(-1);
-      return true;
+    if (detailMode?.kind === "member") {
+      return false;
     }
     if (isPlainKey(event, "o")) {
       event.preventDefault?.();
@@ -65,7 +46,7 @@ export function useCongressTradesKeyboard({
       return true;
     }
     return false;
-  }, [openSelectedTicker, openSelectedTradeMember, openSelectedTradeSource, scrollDetailBy]);
+  }, [detailMode?.kind, openSelectedTicker, openSelectedTradeMember, openSelectedTradeSource]);
 
   const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (isPlainKey(event, "r")) {

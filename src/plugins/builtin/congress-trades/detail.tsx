@@ -1,25 +1,35 @@
-import type { RefObject } from "react";
-import { Box, ScrollBox, Text, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box, ScrollBox, Text, TextAttributes, useRendererHost } from "../../../ui";
+import {
+  DataTableView,
+  usePaneFooter,
+  type DataTableKeyEvent,
+} from "../../../components";
+import { useInlineTickerOpener } from "../../../state/hooks/inline-tickers";
 import { colors } from "../../../theme/colors";
 import { padTo } from "../../../utils/format";
+import { isPlainKey } from "../../../utils/keyboard";
 import type {
+  CloudCongressHousePayload,
   CloudCongressMemberPayload,
   CloudCongressTradePayload,
 } from "../../../api-client";
+import { apiClient } from "../../../api-client";
 import {
+  CONGRESS_MEMBER_FILING_LIMIT,
+  CONGRESS_MEMBER_TRADE_LIMIT,
+  CONGRESS_TRADES_PANE_ID,
+  buildMemberTradeColumns,
   formatAmountRange,
   formatLag,
-  formatShortDate,
+  nextSort,
+  sortedTrades,
   truncate,
+  type LoadStatus,
+  type TradeColumn,
+  type TradeColumnId,
 } from "./model";
-
-export function sideColor(side: CloudCongressTradePayload["side"], selected: boolean): string {
-  if (selected) return colors.selectedText;
-  if (side === "BUY") return colors.positive;
-  if (side === "SELL") return colors.negative;
-  if (side === "EXCHANGE") return colors.warning;
-  return colors.textDim;
-}
+import { renderCongressTradeCell } from "./table";
 
 function DetailLine({
   label,
@@ -86,69 +96,195 @@ export function TradeDetail({
   );
 }
 
-export function MemberTradeList({
+export function MemberTradesDetail({
   member,
-  trades,
+  initialTrades,
   width,
-  scrollRef,
+  focused,
+  filingLimit,
 }: {
   member: CloudCongressMemberPayload;
-  trades: CloudCongressTradePayload[];
+  initialTrades: CloudCongressTradePayload[];
   width: number;
-  scrollRef: RefObject<ScrollBoxRenderable | null>;
+  focused: boolean;
+  filingLimit: number;
 }) {
-  const lineWidth = Math.max(1, width - 2);
-  const filedWidth = 7;
-  const txWidth = 7;
-  const sideWidth = 5;
-  const tickerWidth = 10;
-  const amountWidth = 14;
-  const assetWidth = Math.max(16, lineWidth - filedWidth - txWidth - sideWidth - tickerWidth - amountWidth - 6);
-  return (
-    <ScrollBox ref={scrollRef} scrollY focusable={false} flexGrow={1} paddingX={1}>
-      <Box flexDirection="column" width={lineWidth}>
-        <Box height={1} flexDirection="row">
-          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-            {truncate(`${member.memberName} ${member.stateDistrict}`, lineWidth)}
-          </Text>
-        </Box>
-        <Box height={1} flexDirection="row">
-          <Text fg={colors.textDim}>
-            {`${member.tradeCount} trades  ${member.buyCount} buys  ${member.sellCount} sells  ${formatAmountRange(member.estimatedLow, member.estimatedHigh)}`}
-          </Text>
-        </Box>
-        <Text>{" "}</Text>
-        <Box height={1} flexDirection="row">
-          <Text fg={colors.textDim}>{padTo("FILED", filedWidth)}</Text>
-          <Text fg={colors.textDim}> </Text>
-          <Text fg={colors.textDim}>{padTo("TX", txWidth)}</Text>
-          <Text fg={colors.textDim}> </Text>
-          <Text fg={colors.textDim}>{padTo("SIDE", sideWidth)}</Text>
-          <Text fg={colors.textDim}> </Text>
-          <Text fg={colors.textDim}>{padTo("TICKER", tickerWidth)}</Text>
-          <Text fg={colors.textDim}> </Text>
-          <Text fg={colors.textDim}>{padTo("AMOUNT", amountWidth, "right")}</Text>
-          <Text fg={colors.textDim}> </Text>
-          <Text fg={colors.textDim}>{padTo("ASSET", assetWidth)}</Text>
-        </Box>
-        {trades.map((trade) => (
-          <Box key={trade.id} height={1} flexDirection="row">
-            <Text fg={colors.textDim}>{padTo(formatShortDate(trade.filingDate), filedWidth)}</Text>
-            <Text fg={colors.textDim}> </Text>
-            <Text fg={colors.textDim}>{padTo(formatShortDate(trade.transactionDate), txWidth)}</Text>
-            <Text fg={colors.textDim}> </Text>
-            <Text fg={sideColor(trade.side, false)}>{padTo(trade.side, sideWidth)}</Text>
-            <Text fg={colors.textDim}> </Text>
-            <Text fg={trade.ticker ? colors.positive : colors.textDim} attributes={trade.ticker ? TextAttributes.BOLD : 0}>
-              {padTo(trade.ticker ?? "--", tickerWidth)}
-            </Text>
-            <Text fg={colors.textDim}> </Text>
-            <Text fg={colors.textBright}>{padTo(formatAmountRange(trade.amountLow, trade.amountHigh, trade.amount), amountWidth, "right")}</Text>
-            <Text fg={colors.textDim}> </Text>
-            <Text fg={colors.text}>{truncate(trade.assetName, assetWidth)}</Text>
-          </Box>
-        ))}
+  const rendererHost = useRendererHost();
+  const openTicker = useInlineTickerOpener();
+  const [trades, setTrades] = useState<CloudCongressTradePayload[]>(initialTrades);
+  const [detailPayload, setDetailPayload] = useState<CloudCongressHousePayload | null>(null);
+  const [status, setStatus] = useState<LoadStatus>("loading");
+  const [error, setError] = useState<string | null>(null);
+  const [selectedTradeId, setSelectedTradeId] = useState<string | null>(initialTrades[0]?.id ?? null);
+  const [sortPreference, setSortPreference] = useState<{ columnId: TradeColumnId; direction: "asc" | "desc" }>({
+    columnId: "filed",
+    direction: "desc",
+  });
+  const fetchGenRef = useRef(0);
+
+  const load = useCallback((refresh = false) => {
+    fetchGenRef.current += 1;
+    const gen = fetchGenRef.current;
+    setStatus("loading");
+    setError(null);
+    apiClient.getCloudCongressHouse({
+      member: member.memberName,
+      limit: CONGRESS_MEMBER_TRADE_LIMIT,
+      filingLimit: Math.max(CONGRESS_MEMBER_FILING_LIMIT, filingLimit),
+      refresh,
+    })
+      .then((payload) => {
+        if (fetchGenRef.current !== gen) return;
+        const exactMemberTrades = payload.trades.filter((trade) => (
+          trade.memberName === member.memberName
+          && trade.stateDistrict === member.stateDistrict
+        ));
+        setDetailPayload(payload);
+        setTrades(exactMemberTrades.length > 0 ? exactMemberTrades : payload.trades);
+        setStatus("loaded");
+      })
+      .catch((loadError) => {
+        if (fetchGenRef.current !== gen) return;
+        setError(loadError instanceof Error ? loadError.message : String(loadError));
+        setStatus("error");
+      });
+  }, [filingLimit, member.memberName, member.stateDistrict]);
+
+  useEffect(() => {
+    fetchGenRef.current += 1;
+    setTrades(initialTrades);
+    setDetailPayload(null);
+    setStatus("loading");
+    setError(null);
+    setSelectedTradeId(initialTrades[0]?.id ?? null);
+  }, [member.id]);
+
+  useEffect(() => {
+    load(false);
+  }, [load]);
+
+  const sortedRows = useMemo(() => sortedTrades(trades, sortPreference), [sortPreference, trades]);
+  const columns = useMemo(() => buildMemberTradeColumns(width), [width]);
+  const selectedTrade = useMemo(() => (
+    sortedRows.find((trade) => trade.id === selectedTradeId) ?? sortedRows[0] ?? null
+  ), [selectedTradeId, sortedRows]);
+  const summaryMember = useMemo(() => (
+    detailPayload?.members.find((entry) => entry.id === member.id)
+    ?? detailPayload?.members.find((entry) => (
+      entry.memberName === member.memberName
+      && entry.stateDistrict === member.stateDistrict
+    ))
+    ?? member
+  ), [detailPayload?.members, member]);
+  const maybeTruncated = status === "loaded" && trades.length >= CONGRESS_MEMBER_TRADE_LIMIT;
+
+  useEffect(() => {
+    if (selectedTradeId && sortedRows.some((trade) => trade.id === selectedTradeId)) return;
+    setSelectedTradeId(sortedRows[0]?.id ?? null);
+  }, [selectedTradeId, sortedRows]);
+
+  const refresh = useCallback(() => {
+    load(true);
+  }, [load]);
+
+  const openSelectedTicker = useCallback(() => {
+    if (selectedTrade?.ticker) openTicker(selectedTrade.ticker);
+  }, [openTicker, selectedTrade?.ticker]);
+
+  const openSelectedSource = useCallback(() => {
+    if (selectedTrade?.sourceUrl) void rendererHost.openExternal(selectedTrade.sourceUrl);
+  }, [rendererHost, selectedTrade?.sourceUrl]);
+
+  const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (isPlainKey(event, "r")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      refresh();
+      return true;
+    }
+    if (isPlainKey(event, "t") && selectedTrade?.ticker) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openSelectedTicker();
+      return true;
+    }
+    if (isPlainKey(event, "o") && selectedTrade?.sourceUrl) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openSelectedSource();
+      return true;
+    }
+    return false;
+  }, [openSelectedSource, openSelectedTicker, refresh, selectedTrade?.sourceUrl, selectedTrade?.ticker]);
+
+  usePaneFooter(`${CONGRESS_TRADES_PANE_ID}:member-detail`, () => ({
+    info: [
+      ...(status === "loading" ? [{ id: "member-loading", parts: [{ text: "loading member trades", tone: "muted" as const }] }] : []),
+      ...(error ? [{ id: "member-error", parts: [{ text: error, tone: "warning" as const }] }] : []),
+      ...(maybeTruncated ? [{ id: "member-truncated", parts: [{ text: `limited to ${CONGRESS_MEMBER_TRADE_LIMIT} trades`, tone: "warning" as const }] }] : []),
+    ],
+    hints: [
+      { id: "member-refresh", key: "r", label: "efresh", onPress: refresh },
+      { id: "member-ticker", key: "t", label: "icker", onPress: openSelectedTicker, disabled: !selectedTrade?.ticker },
+      { id: "member-open", key: "o", label: "pen", onPress: openSelectedSource, disabled: !selectedTrade?.sourceUrl },
+    ],
+  }), [
+    error,
+    maybeTruncated,
+    openSelectedSource,
+    openSelectedTicker,
+    refresh,
+    selectedTrade?.sourceUrl,
+    selectedTrade?.ticker,
+    status,
+  ]);
+
+  const summary = (
+    <Box flexDirection="column" paddingX={1} paddingTop={1} paddingBottom={1}>
+      <Box height={1} flexDirection="row">
+        <Text fg={colors.textDim}>
+          {`${summaryMember.stateDistrict || "--"}  ${summaryMember.tradeCount} trades  ${summaryMember.buyCount} buys  ${summaryMember.sellCount} sells  ${formatAmountRange(summaryMember.estimatedLow, summaryMember.estimatedHigh)}`}
+        </Text>
       </Box>
-    </ScrollBox>
+    </Box>
+  );
+  const emptyTitle = status === "loading"
+    ? "Loading member trades..."
+    : error ?? "No trades for this member.";
+
+  return (
+    <Box flexDirection="column" flexGrow={1} overflow="hidden">
+      <DataTableView<CloudCongressTradePayload, TradeColumn>
+        focused={focused}
+        selection={{
+          kind: "id",
+          selectedId: selectedTradeId,
+          getId: (trade) => trade.id,
+          onChange: (id) => setSelectedTradeId(id),
+        }}
+        onActivate={(trade) => {
+          if (trade.ticker) openTicker(trade.ticker);
+        }}
+        onRootKeyDown={handleKeyDown}
+        rootWidth={width}
+        rootBefore={summary}
+        resetScrollKey={member.id}
+        columns={columns}
+        items={sortedRows}
+        sortColumnId={sortPreference.columnId}
+        sortDirection={sortPreference.direction}
+        onHeaderClick={(columnId) => {
+          setSortPreference((current) => nextSort(
+            current,
+            columnId as TradeColumnId,
+            columnId === "ticker" || columnId === "asset" || columnId === "side" || columnId === "owner" ? "asc" : "desc",
+          ));
+        }}
+        getItemKey={(trade) => trade.id}
+        renderCell={renderCongressTradeCell}
+        emptyStateTitle={emptyTitle}
+        showHorizontalScrollbar={false}
+      />
+    </Box>
   );
 }
