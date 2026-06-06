@@ -46,7 +46,8 @@ jobs:
       - run: bun install
 
       - name: Build Windows desktop package
-        run: bun run desktop:release:windows
+        shell: pwsh
+        run: ./scripts/build-windows-desktop-package.ps1
 
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
