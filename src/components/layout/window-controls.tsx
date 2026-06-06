@@ -1,8 +1,11 @@
 import { Box, useRendererHost } from "../../ui";
 import { useCallback } from "react";
+import { TITLEBAR_OVERLAY_HEIGHT_PX } from "./titlebar-overlay";
 
-const WINDOWS_CONTROL_WIDTH_PX = 30;
-const WINDOWS_CONTROL_TRAILING_PADDING_PX = 10;
+const WINDOWS_CONTROL_SIZE_PX = TITLEBAR_OVERLAY_HEIGHT_PX;
+// Hidden Windows resize chrome still appears inside the captured window edge.
+const MAIN_WINDOW_EDGE_OVERHANG_PX = 11;
+const DETACHED_WINDOW_EDGE_OVERHANG_PX = 18;
 
 type WindowControlAction = "minimize" | "toggle-maximize" | "close";
 
@@ -44,8 +47,13 @@ function WindowControlIcon({ action }: { action: WindowControlAction }) {
   );
 }
 
-export function WindowControls() {
+interface WindowControlsProps {
+  windowKind?: "main" | "detached";
+}
+
+export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
   const rendererHost = useRendererHost();
+  const edgeOverhang = windowKind === "detached" ? DETACHED_WINDOW_EDGE_OVERHANG_PX : MAIN_WINDOW_EDGE_OVERHANG_PX;
 
   const controlWindow = useCallback((action: WindowControlAction, event: { stopPropagation?: () => void; preventDefault?: () => void }) => {
     stopMouse(event);
@@ -61,7 +69,7 @@ export function WindowControls() {
       data-gloom-role="window-controls"
       aria-hidden={false}
       style={{
-        paddingRight: WINDOWS_CONTROL_TRAILING_PADDING_PX,
+        transform: `translateX(${edgeOverhang}px)`,
       }}
     >
       {WINDOWS_CONTROLS.map((control) => (
@@ -78,7 +86,7 @@ export function WindowControls() {
           className="electrobun-webkit-app-region-no-drag"
           onMouseDown={(event: { stopPropagation?: () => void; preventDefault?: () => void }) => controlWindow(control.action, event)}
           style={{
-            width: WINDOWS_CONTROL_WIDTH_PX,
+            width: WINDOWS_CONTROL_SIZE_PX,
             height: "100%",
           }}
         >

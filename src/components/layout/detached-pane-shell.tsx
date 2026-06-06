@@ -192,7 +192,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
                     {" ... "}
                   </Text>
                 )}
-                {showWindowControls ? <WindowControls /> : null}
+                {showWindowControls ? <WindowControls windowKind="detached" /> : null}
               </Box>
             </Box>
             <PaneBodyFrame layoutProps={bodyFrame.layoutProps} backgroundColor={background}>

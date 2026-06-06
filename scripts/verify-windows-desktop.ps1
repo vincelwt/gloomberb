@@ -201,9 +201,9 @@ function Click-WindowControl {
 
   $Bounds = Get-WindowBounds $Window
   $OffsetFromRight = switch ($Action) {
-    "close" { 25 }
-    "maximize" { 55 }
-    "minimize" { 85 }
+    "close" { 14 }
+    "maximize" { 44 }
+    "minimize" { 74 }
   }
   $X = [int]($Bounds.Left + $Bounds.Width - $OffsetFromRight)
   $Y = [int]($Bounds.Top + 14)
@@ -951,8 +951,11 @@ try {
   Capture-DesktopScreenshot $DesktopScreenshot
   Assert-ScreenshotHasContent $DesktopScreenshot "Windows desktop"
 
+  Resolve-VisibleWindowByTitle -Title "Gloomberb" -Label "Main window liveness" | Out-Null
+  Resolve-VisibleWindowByTitle -Title "Detached Watchlist" -Label "Detached pop-out liveness" | Out-Null
+
   $GuiProcess.Refresh()
-  if ($GuiProcess.HasExited) {
+  if ($GuiProcess.HasExited -and $GuiProcess.ExitCode -ne 0) {
     throw "Windows GUI exited during smoke test with code $($GuiProcess.ExitCode)"
   }
 } catch {
