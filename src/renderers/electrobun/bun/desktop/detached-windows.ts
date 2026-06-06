@@ -22,6 +22,7 @@ import {
   type WindowResizeEvent,
 } from "./window-events";
 import type { DesktopStateBroadcaster, DesktopStateRpc } from "./state-broadcaster";
+import { applyWindowsWindowIcon } from "./windows-icons";
 
 interface DesktopDetachedWindowManagerOptions<Rpc extends DesktopStateRpc> {
   createRpc: (key: string) => Rpc;
@@ -160,8 +161,9 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
   ): BrowserWindow {
     const rpc = this.options.createRpc(detachedRpcKey(instanceId));
     const initialFrame = normalizeWindowFrameWithMinimum(frame, DEFAULT_WINDOW_FRAME, DETACHED_WINDOW_MIN_SIZE);
+    const title = this.resolveTitle(instanceId);
     const window = new BrowserWindow({
-      title: this.resolveTitle(instanceId),
+      title,
       frame: initialFrame,
       url: "views://mainview/index.html",
       renderer: "native",
@@ -170,6 +172,7 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
       navigationRules: JSON.stringify(["views://*"]),
       sandbox: false,
     });
+    applyWindowsWindowIcon(title);
     updateWindowFrameCache(window, initialFrame, DETACHED_WINDOW_MIN_SIZE);
     this.windows.set(instanceId, window);
 
