@@ -1,0 +1,85 @@
+diff --git a/dist/api/bun/core/BrowserWindow.ts b/dist/api/bun/core/BrowserWindow.ts
+index c26c2c977ee1fc25a8dc144b85bac8626a45f572..8920a2905380228c23cba66c20d9bfd19ee13e02 100644
+--- a/dist/api/bun/core/BrowserWindow.ts
++++ b/dist/api/bun/core/BrowserWindow.ts
+@@ -8,9 +8,18 @@ import { type RPCWithTransport } from "../../shared/rpc.js";
+ import { getNextWindowId } from "./windowIds";
+ import { GpuWindowMap } from "./GpuWindow";
+ import { WGPUView } from "./WGPUView";
++import { existsSync } from "fs";
++import { resolve } from "path";
+ 
+ const buildConfig = await BuildConfig.get();
+ 
++function defaultWindowIconPath(): string | null {
++	if (process.platform !== "win32") return null;
++
++	const iconPath = resolve("../Resources/app.ico");
++	return existsSync(iconPath) ? iconPath : null;
++}
++
+ export type WindowOptionsType<T = undefined> = {
+ 	trafficLightOffset?: {
+ 		x: number;
+@@ -28,6 +37,7 @@ export type WindowOptionsType<T = undefined> = {
+ 	html: string | null;
+ 	preload: string | null;
+ 	viewsRoot: string | null;
++	iconPath?: string | null;
+ 	renderer: "native" | "cef";
+ 	rpc?: T;
+ 	styleMask?: {};
+@@ -124,6 +134,7 @@ export class BrowserWindow<T extends RPCWithTransport = RPCWithTransport> {
+ 	html: string | null = null;
+ 	preload: string | null = null;
+ 	viewsRoot: string | null = null;
++	iconPath: string | null = null;
+ 	renderer: "native" | "cef" = "native";
+ 	transparent: boolean = false;
+ 	passthrough: boolean = false;
+@@ -155,6 +166,7 @@ export class BrowserWindow<T extends RPCWithTransport = RPCWithTransport> {
+ 		this.html = options.html || null;
+ 		this.preload = options.preload || null;
+ 		this.viewsRoot = options.viewsRoot || null;
++		this.iconPath = options.iconPath ?? defaultWindowIconPath();
+ 		this.renderer = options.renderer || defaultOptions.renderer;
+ 		this.transparent = options.transparent ?? false;
+ 		this.passthrough = options.passthrough ?? false;
+@@ -181,6 +193,7 @@ export class BrowserWindow<T extends RPCWithTransport = RPCWithTransport> {
+ 			id: this.id,
+ 			title: this.title,
+ 			url: this.url || "",
++			iconPath: this.iconPath,
+ 			frame: {
+ 				width: this.frame.width,
+ 				height: this.frame.height,
+diff --git a/dist/api/bun/proc/native.ts b/dist/api/bun/proc/native.ts
+index f0f6c2532ba2eb467ec1d452a25c835b6db72661..ae77cf58d32392ad4cc8e2103ac7ed27baae8bea 100644
+--- a/dist/api/bun/proc/native.ts
++++ b/dist/api/bun/proc/native.ts
+@@ -829,6 +829,7 @@ const _ffiImpl = {
+ 			id: number;
+ 			url: string | null;
+ 			title: string;
++			iconPath?: string | null;
+ 			frame: {
+ 				width: number;
+ 				height: number;
+@@ -862,6 +863,7 @@ const _ffiImpl = {
+ 				id,
+ 				url: _url,
+ 				title,
++				iconPath,
+ 				frame: { x, y, width, height },
+ 				styleMask: {
+ 					Borderless,
+@@ -926,6 +928,9 @@ const _ffiImpl = {
+ 			}
+ 
+ 			native_.symbols.setWindowTitle(windowPtr, toCString(title));
++			if (iconPath) {
++				native_.symbols.setWindowIcon(windowPtr, toCString(iconPath));
++			}
+ 			if (!hidden) {
+ 				native_.symbols.showWindow(windowPtr, activate);
+ 			}

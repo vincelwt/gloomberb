@@ -62,6 +62,7 @@
     "web-tree-sitter": "0.25.10"
   },
   "patchedDependencies": {
-    "@opentui/core@0.3.2": "patches/@opentui%2Fcore@0.3.2.patch"
+    "@opentui/core@0.3.2": "patches/@opentui%2Fcore@0.3.2.patch",
+    "electrobun@1.18.1": "patches/electrobun@1.18.1.patch"
   }
 }
