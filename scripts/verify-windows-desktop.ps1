@@ -39,6 +39,12 @@ public static class GloomberbWin32 {
   public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
   [DllImport("user32.dll")]
+  public static extern bool IsIconic(IntPtr hWnd);
+
+  [DllImport("user32.dll")]
+  public static extern bool IsZoomed(IntPtr hWnd);
+
+  [DllImport("user32.dll")]
   public static extern bool SetForegroundWindow(IntPtr hWnd);
 
   [DllImport("user32.dll")]
@@ -171,6 +177,75 @@ function Focus-Window {
   $CenterY = [int]($Bounds.Top + ($Bounds.Height / 2))
   [GloomberbWin32]::SetCursorPos($CenterX, $CenterY) | Out-Null
   Start-Sleep -Milliseconds 750
+}
+
+function Get-WindowHandle {
+  param([object]$Window)
+
+  [IntPtr]::new([long]$Window.Handle)
+}
+
+function Click-WindowControl {
+  param(
+    [object]$Window,
+    [ValidateSet("minimize", "maximize", "close")]
+    [string]$Action
+  )
+
+  $Handle = Get-WindowHandle $Window
+  [GloomberbWin32]::ShowWindow($Handle, 9) | Out-Null
+  [GloomberbWin32]::SetForegroundWindow($Handle) | Out-Null
+  Start-Sleep -Milliseconds 300
+
+  $Bounds = Get-WindowBounds $Window
+  $OffsetFromRight = switch ($Action) {
+    "close" { 23 }
+    "maximize" { 69 }
+    "minimize" { 115 }
+  }
+  $X = [int]($Bounds.Left + $Bounds.Width - $OffsetFromRight)
+  $Y = [int]($Bounds.Top + 14)
+  [GloomberbWin32]::SetCursorPos($X, $Y) | Out-Null
+  Start-Sleep -Milliseconds 80
+  [GloomberbWin32]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+  Start-Sleep -Milliseconds 80
+  [GloomberbWin32]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+  Start-Sleep -Milliseconds 700
+}
+
+function Assert-CustomWindowControls {
+  param(
+    [object]$Window,
+    [string]$Label
+  )
+
+  $Handle = Get-WindowHandle $Window
+  $OriginalBounds = Get-WindowBounds $Window
+
+  Click-WindowControl -Window $Window -Action "maximize"
+  if (-not [GloomberbWin32]::IsZoomed($Handle)) {
+    throw "$Label custom maximize control did not maximize the window."
+  }
+
+  Click-WindowControl -Window $Window -Action "maximize"
+  if ([GloomberbWin32]::IsZoomed($Handle)) {
+    throw "$Label custom maximize control did not restore the window."
+  }
+  $RestoredBounds = Get-WindowBounds $Window
+  if ($RestoredBounds.Width -lt [Math]::Max(320, [int]($OriginalBounds.Width * 0.6)) -or $RestoredBounds.Height -lt [Math]::Max(240, [int]($OriginalBounds.Height * 0.6))) {
+    throw "$Label custom maximize restore left unexpected bounds: $($RestoredBounds | ConvertTo-Json -Compress)"
+  }
+
+  Click-WindowControl -Window $Window -Action "minimize"
+  if (-not [GloomberbWin32]::IsIconic($Handle)) {
+    throw "$Label custom minimize control did not minimize the window."
+  }
+  [GloomberbWin32]::ShowWindow($Handle, 9) | Out-Null
+  [GloomberbWin32]::SetForegroundWindow($Handle) | Out-Null
+  Start-Sleep -Milliseconds 700
+  if ([GloomberbWin32]::IsIconic($Handle)) {
+    throw "$Label custom minimize control did not restore through ShowWindow."
+  }
 }
 
 function Capture-DesktopScreenshot {
@@ -705,6 +780,10 @@ try {
   Export-WindowIcon `
     -Window $DetachedWindow `
     -OutputPath (Join-Path $GuiArtifactDir "windows-window-icon-popout.png") `
+    -Label "Detached pop-out"
+
+  Assert-CustomWindowControls `
+    -Window $DetachedWindow `
     -Label "Detached pop-out"
 
   Save-WindowInventory (Join-Path $GuiArtifactDir "windows-after-launch.txt")
