@@ -1,15 +1,24 @@
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
+import { gzipSync } from "zlib";
 import { syncVersion } from "./sync-version";
 
 const rootDir = join(import.meta.dir, "..");
 
 syncVersion();
 
+interface BuildTarget {
+  os: "darwin" | "linux" | "windows";
+  arch: "arm64" | "x64";
+  bunOs: "darwin" | "linux" | "windows";
+  extension: "" | ".exe";
+}
 
-const targets = [
-  { os: "darwin", arch: "arm64" },
-  { os: "linux", arch: "x64" },
-  { os: "linux", arch: "arm64" },
+const targets: BuildTarget[] = [
+  { os: "darwin", arch: "arm64", bunOs: "darwin", extension: "" },
+  { os: "linux", arch: "x64", bunOs: "linux", extension: "" },
+  { os: "linux", arch: "arm64", bunOs: "linux", extension: "" },
+  { os: "windows", arch: "x64", bunOs: "windows", extension: ".exe" },
 ];
 
 const args = process.argv.slice(2);
@@ -59,7 +68,13 @@ async function signDarwinBinary(outfile: string) {
 }
 
 function canRunTarget(os: string, arch: string): boolean {
-  const hostOs = process.platform === "darwin" ? "darwin" : process.platform === "linux" ? "linux" : process.platform;
+  const hostOs = process.platform === "darwin"
+    ? "darwin"
+    : process.platform === "win32"
+      ? "windows"
+      : process.platform === "linux"
+        ? "linux"
+        : process.platform;
   const hostArch = process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : process.arch;
   return hostOs === os && hostArch === arch;
 }
@@ -78,9 +93,18 @@ async function smokeTestBinary(outfile: string, os: string, arch: string) {
   );
 }
 
-async function build(os: string, arch: string) {
-  const outfile = join(rootDir, `dist/gloomberb-${os}-${arch}`);
-  const target = `bun-${os}-${arch}`;
+function compressGzip(path: string): string {
+  const compressedPath = `${path}.gz`;
+  writeFileSync(compressedPath, gzipSync(readFileSync(path), { level: 9 }));
+  rmSync(path);
+  return compressedPath;
+}
+
+async function build(targetConfig: BuildTarget) {
+  const { os, arch, bunOs, extension } = targetConfig;
+  mkdirSync(join(rootDir, "dist"), { recursive: true });
+  const outfile = join(rootDir, `dist/gloomberb-${os}-${arch}${extension}`);
+  const target = `bun-${bunOs}-${arch}`;
   console.log(`Building ${target}...`);
   await runProcess(
     ["bun", "build", "--compile", `--target=${target}`, "src/index.tsx", `--outfile=${outfile}`],
@@ -94,17 +118,21 @@ async function build(os: string, arch: string) {
 
   await smokeTestBinary(outfile, os, arch);
 
-  // Compress with gzip
-  await runProcess(["gzip", "-f", "-9", outfile], `Failed to compress ${outfile}`);
-  console.log(`  -> ${outfile}.gz`);
+  const compressedPath = compressGzip(outfile);
+  console.log(`  -> ${compressedPath}`);
 }
 
 if (buildAll) {
   for (const t of targets) {
-    await build(t.os, t.arch);
+    await build(t);
   }
 } else {
-  const os = process.platform === "darwin" ? "darwin" : "linux";
+  const os = process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "windows" : "linux";
   const arch = process.arch === "arm64" ? "arm64" : "x64";
-  await build(os, arch);
+  const target = targets.find((candidate) => candidate.os === os && candidate.arch === arch);
+  if (!target) {
+    console.error(`Unsupported build target: ${os}-${arch}`);
+    process.exit(1);
+  }
+  await build(target);
 }

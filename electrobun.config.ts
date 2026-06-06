@@ -39,6 +39,10 @@ const config: ElectrobunConfig = {
       icons: "icon.iconset",
       defaultRenderer: "native",
     },
+    win: {
+      icon: "src/assets/gloomberb-logo.png",
+      defaultRenderer: "native",
+    },
   },
   scripts: {
     preBuild: "scripts/build-electrobun-view.ts",

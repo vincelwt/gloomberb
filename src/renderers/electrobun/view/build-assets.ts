@@ -108,10 +108,11 @@ ${bootstrapScript}
 }
 
 function resolveAlias(args: { path: string; importer?: string }, aliasRules: AliasRule[]) {
+  const importer = args.importer?.replaceAll("\\", "/");
   for (const rule of aliasRules) {
     const target = rule.length === 2
       ? args.path.endsWith(rule[0]) && rule[1]
-      : args.path === rule[0] && args.importer?.endsWith(rule[1]) && rule[2];
+      : args.path === rule[0] && importer?.endsWith(rule[1]) && rule[2];
     if (target) return { path: electrobunViewPath(target) };
   }
 }

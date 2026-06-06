@@ -8,6 +8,7 @@ import {
   checkForUpdate,
   checkForUpdateDetailed,
   detectUpdateAction,
+  getAssetBaseNameForRuntime,
   performUpdate,
   resolveSelfUpdateTargetPath,
   setUpdateHost,
@@ -23,10 +24,20 @@ afterEach(() => {
 });
 
 function expectedAssetName(compressed = false): string {
-  const os = process.platform === "darwin" ? "darwin" : "linux";
+  const os = process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "windows" : "linux";
   const arch = os === "darwin" || process.arch === "arm64" ? "arm64" : "x64";
-  return compressed ? `gloomberb-${os}-${arch}.gz` : `gloomberb-${os}-${arch}`;
+  const extension = os === "windows" ? ".exe" : "";
+  return compressed ? `gloomberb-${os}-${arch}${extension}.gz` : `gloomberb-${os}-${arch}${extension}`;
 }
+
+describe("getAssetBaseNameForRuntime", () => {
+  test("uses the Windows executable release asset name on win32", () => {
+    expect(getAssetBaseNameForRuntime({
+      platform: "win32",
+      arch: "x64",
+    })).toBe("gloomberb-windows-x64.exe");
+  });
+});
 
 describe("detectUpdateAction", () => {
   test("uses self-update for standalone binaries", () => {
@@ -46,6 +57,16 @@ describe("detectUpdateAction", () => {
     });
   });
 
+  test("uses manual bun updates for Windows bun-managed installs", () => {
+    expect(detectUpdateAction(
+      "C:\\Program Files\\Bun\\bun.exe",
+      ["C:\\Program Files\\Bun\\bun.exe", "C:\\Users\\vince\\.bun\\install\\global\\node_modules\\gloomberb\\bin\\gloomberb"],
+    )).toEqual({
+      kind: "manual",
+      command: "bun install -g gloomberb@latest",
+    });
+  });
+
   test("uses manual npm updates for node-managed installs", () => {
     expect(detectUpdateAction(
       "/opt/homebrew/bin/node",
@@ -54,6 +75,13 @@ describe("detectUpdateAction", () => {
       kind: "manual",
       command: "npm install -g gloomberb@latest",
     });
+  });
+
+  test("does not offer self-update for standalone Windows executables", () => {
+    expect(detectUpdateAction(
+      "C:\\Users\\vince\\Downloads\\gloomberb.exe",
+      ["C:\\Users\\vince\\Downloads\\gloomberb.exe"],
+    )).toBeNull();
   });
 
   test("skips updates when launched from source under bun", () => {
@@ -76,6 +104,16 @@ describe("detectUpdateAction", () => {
       ["/Applications/Gloomberb.app/Contents/MacOS/bun", "/Applications/Gloomberb.app/Contents/Resources/gloomberb-tui/tui-entry.js"],
     )).toBeNull();
   });
+
+  test("does not suggest Bun-managed updates for the bundled Windows app TUI runtime", () => {
+    expect(detectUpdateAction(
+      "C:\\Users\\vince\\AppData\\Local\\Programs\\Gloomberb\\bin\\bun.exe",
+      [
+        "C:\\Users\\vince\\AppData\\Local\\Programs\\Gloomberb\\bin\\bun.exe",
+        "C:\\Users\\vince\\AppData\\Local\\Programs\\Gloomberb\\Resources\\gloomberb-tui\\tui-entry.js",
+      ],
+    )).toBeNull();
+  });
 });
 
 describe("resolveSelfUpdateTargetPath", () => {
@@ -90,6 +128,13 @@ describe("resolveSelfUpdateTargetPath", () => {
     expect(resolveSelfUpdateTargetPath(
       "/usr/local/bin/node",
       ["/usr/local/bin/node", "dist/index.js"],
+    )).toBeNull();
+  });
+
+  it("rejects Windows Bun runtime paths", () => {
+    expect(resolveSelfUpdateTargetPath(
+      "C:\\Program Files\\Bun\\bun.exe",
+      ["C:\\Program Files\\Bun\\bun.exe", "dist\\index.js"],
     )).toBeNull();
   });
 

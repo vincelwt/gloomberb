@@ -52,7 +52,7 @@ export function useAppGlobalShortcuts({
 
     if (!isDetachedWindow && (
       (event.name === "p" && event.ctrl)
-      || (event.name === "k" && (event.meta || event.super))
+      || (event.name === "k" && (event.ctrl || event.meta || event.super))
     )) {
       event.preventDefault();
       event.stopPropagation();

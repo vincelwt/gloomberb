@@ -20,6 +20,8 @@ jobs:
             asset: gloomberb-linux-x64
           - os: ubuntu-24.04-arm
             asset: gloomberb-linux-arm64
+          - os: windows-latest
+            asset: gloomberb-windows-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -31,9 +33,7 @@ jobs:
       - run: bun install
 
       - name: Build
-        run: |
-          mkdir -p dist
-          bun run scripts/build.ts
+        run: bun run scripts/build.ts
 
       - uses: actions/upload-artifact@v4
         with:
@@ -132,10 +132,41 @@ jobs:
           name: gloomberb-desktop-macos-arm64
           path: artifacts/*
 
+  desktop-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install
+
+      - name: Build Windows desktop package
+        run: bunx electrobun build --env=stable --targets=win-x64
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: ./scripts/build-windows-installer.ps1
+
+      - name: Verify Windows desktop artifacts
+        shell: pwsh
+        run: ./scripts/verify-windows-desktop.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gloomberb-desktop-windows-x64
+          path: artifacts/*
+
   release:
     needs:
       - build
       - desktop-macos
+      - desktop-windows
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

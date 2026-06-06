@@ -1,0 +1,65 @@
+name: Verify Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "**"
+
+permissions:
+  contents: read
+
+jobs:
+  cli:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install
+
+      - name: Test
+        run: bun test src/updater.test.ts src/app/global-shortcuts.test.tsx
+
+      - name: Build standalone CLI
+        run: bun run scripts/build.ts
+
+      - name: Verify standalone CLI artifact
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist\gloomberb-windows-x64.exe.gz")) {
+            throw "Missing standalone Windows CLI archive"
+          }
+
+  desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install
+
+      - name: Build Windows desktop package
+        run: bunx electrobun build --env=stable --targets=win-x64
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: ./scripts/build-windows-installer.ps1
+
+      - name: Verify Windows desktop artifacts
+        shell: pwsh
+        run: ./scripts/verify-windows-desktop.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gloomberb-windows-verification-artifacts
+          path: artifacts/*

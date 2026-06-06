@@ -1,7 +1,9 @@
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 
-const SHIM = `#!/bin/sh
+type TargetOs = "darwin" | "linux" | "win";
+
+const MACOS_SHIM = `#!/bin/sh
 set -eu
 
 SOURCE="$0"
@@ -20,11 +22,48 @@ cd "$CONTENTS_DIR/MacOS"
 exec "./bun" "$CONTENTS_DIR/Resources/gloomberb-tui/tui-entry.js" "$@"
 `;
 
+const LINUX_SHIM = `#!/bin/sh
+set -eu
+
+SOURCE="$0"
+while [ -L "$SOURCE" ]; do
+  SOURCE_DIR="$(CDPATH= cd -- "$(dirname -- "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  case "$SOURCE" in
+    /*) ;;
+    *) SOURCE="$SOURCE_DIR/$SOURCE" ;;
+  esac
+done
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$SOURCE")" && pwd)"
+APP_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+cd "$APP_DIR/bin"
+exec "./bun" "$APP_DIR/Resources/gloomberb-tui/tui-entry.js" "$@"
+`;
+
+const WINDOWS_CMD_SHIM = `@echo off
+setlocal
+set "SCRIPT_DIR=%~dp0"
+set "APP_DIR=%SCRIPT_DIR%.."
+pushd "%APP_DIR%\\bin" >nul
+"%APP_DIR%\\bin\\bun.exe" "%APP_DIR%\\Resources\\gloomberb-tui\\tui-entry.js" %*
+set "GLOOMBERB_EXIT_CODE=%ERRORLEVEL%"
+popd >nul
+exit /b %GLOOMBERB_EXIT_CODE%
+`;
+
 function appBundlesIn(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
     .filter((entry) => entry.endsWith(".app"))
     .map((entry) => join(dir, entry));
+}
+
+function desktopBundlesIn(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && existsSync(join(dir, entry.name, "Resources")))
+    .map((entry) => join(dir, entry.name));
 }
 
 function nativeFilesIn(dir: string): string[] {
@@ -58,19 +97,90 @@ function signNativeFiles(dir: string): void {
   }
 }
 
-const bundlePaths = [
-  process.env.ELECTROBUN_WRAPPER_BUNDLE_PATH,
-  ...appBundlesIn(process.env.ELECTROBUN_BUILD_DIR ?? ""),
-].filter((value): value is string => Boolean(value));
+function targetOs(): TargetOs {
+  const electrobunOs = process.env.ELECTROBUN_OS;
+  if (electrobunOs === "win" || electrobunOs === "linux" || electrobunOs === "darwin") {
+    return electrobunOs;
+  }
+  if (process.platform === "win32") return "win";
+  if (process.platform === "darwin") return "darwin";
+  return "linux";
+}
 
-const uniqueBundlePaths = [...new Set(bundlePaths)];
-const nativeCorePackageName = `core-${process.platform}-${process.arch}`;
+function targetArch(): "arm64" | "x64" {
+  if (process.env.ELECTROBUN_ARCH === "x64") return "x64";
+  if (process.env.ELECTROBUN_ARCH === "arm64") return "arm64";
+  return process.arch === "arm64" ? "arm64" : "x64";
+}
+
+function nodePlatformForTarget(os: TargetOs): "darwin" | "linux" | "win32" {
+  return os === "win" ? "win32" : os;
+}
+
+function resourcesPathForBundle(bundlePath: string, os: TargetOs): string {
+  return os === "darwin"
+    ? join(bundlePath, "Contents", "Resources")
+    : join(bundlePath, "Resources");
+}
+
+function runtimePathForBundle(bundlePath: string, os: TargetOs): string {
+  return os === "darwin"
+    ? join(bundlePath, "Contents", "MacOS")
+    : join(bundlePath, "bin");
+}
+
+function bundleCandidates(os: TargetOs): string[] {
+  const buildDir = process.env.ELECTROBUN_BUILD_DIR ?? "";
+  const appName = process.env.ELECTROBUN_APP_NAME ?? "";
+  const candidates = [
+    process.env.ELECTROBUN_WRAPPER_BUNDLE_PATH,
+    os === "darwin" || !buildDir || !appName ? undefined : join(buildDir, appName),
+    ...(os === "darwin" ? appBundlesIn(buildDir) : desktopBundlesIn(buildDir)),
+  ].filter((value): value is string => Boolean(value));
+
+  return [...new Set(candidates)];
+}
+
+function installShim(runtimePath: string, resourcesPath: string, os: TargetOs): void {
+  if (os === "win") {
+    const shimPath = join(runtimePath, "gloomberb.cmd");
+    writeFileSync(shimPath, WINDOWS_CMD_SHIM);
+    console.log(`Installed TUI shim: ${shimPath}`);
+    return;
+  }
+
+  const shimPath = os === "darwin"
+    ? join(resourcesPath, "gloomberb")
+    : join(runtimePath, "gloomberb");
+  writeFileSync(shimPath, os === "darwin" ? MACOS_SHIM : LINUX_SHIM);
+  chmodSync(shimPath, 0o755);
+  console.log(`Installed TUI shim: ${shimPath}`);
+}
+
+function normalizeWindowsExecutableNames(runtimePath: string): void {
+  const launcherPath = join(runtimePath, "launcher");
+  const launcherExePath = join(runtimePath, "launcher.exe");
+  if (existsSync(launcherPath) && !existsSync(launcherExePath)) {
+    renameSync(launcherPath, launcherExePath);
+    console.log(`Renamed Windows launcher: ${launcherExePath}`);
+  }
+}
+
+const os = targetOs();
+const arch = targetArch();
+const nativeCorePackageName = `core-${nodePlatformForTarget(os)}-${arch}`;
 const nativeCorePackagePath = join(process.cwd(), "node_modules", "@opentui", nativeCorePackageName);
 
-for (const bundlePath of uniqueBundlePaths) {
-  const resourcesPath = join(bundlePath, "Contents", "Resources");
+if (!existsSync(nativeCorePackagePath)) {
+  console.error(`Missing OpenTUI native package: ${nativeCorePackagePath}`);
+  process.exit(1);
+}
+
+for (const bundlePath of bundleCandidates(os)) {
+  const resourcesPath = resourcesPathForBundle(bundlePath, os);
   if (!existsSync(resourcesPath)) continue;
 
+  const runtimePath = runtimePathForBundle(bundlePath, os);
   const tuiBundleDir = join(resourcesPath, "gloomberb-tui");
   rmSync(tuiBundleDir, { recursive: true, force: true });
   mkdirSync(tuiBundleDir, { recursive: true });
@@ -97,8 +207,9 @@ for (const bundlePath of uniqueBundlePaths) {
   cpSync(nativeCorePackagePath, nativeCoreDestPath, { recursive: true, dereference: true });
   signNativeFiles(nativeCoreDestPath);
 
-  const shimPath = join(resourcesPath, "gloomberb");
-  writeFileSync(shimPath, SHIM);
-  chmodSync(shimPath, 0o755);
-  console.log(`Installed TUI shim: ${shimPath}`);
+  if (os === "win") {
+    normalizeWindowsExecutableNames(runtimePath);
+  }
+
+  installShim(runtimePath, resourcesPath, os);
 }

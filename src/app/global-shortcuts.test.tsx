@@ -135,6 +135,18 @@ describe("useAppGlobalShortcuts", () => {
     expect(event.propagationStopped).toBe(true);
   });
 
+  test("toggles the command bar with Ctrl-K", async () => {
+    const actions: AppAction[] = [];
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-global-shortcuts"));
+    await renderHarness(state, createRegistry(), (action) => actions.push(action));
+
+    const event = await emitKeypress({ name: "k", ctrl: true });
+
+    expect(actions).toEqual([{ type: "TOGGLE_COMMAND_BAR" }]);
+    expect(event.defaultPrevented).toBe(true);
+    expect(event.propagationStopped).toBe(true);
+  });
+
   test("opens ticker search with backtick", async () => {
     const actions: AppAction[] = [];
     const state = createInitialState(createDefaultConfig("/tmp/gloomberb-global-shortcuts"));

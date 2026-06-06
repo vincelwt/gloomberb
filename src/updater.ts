@@ -52,12 +52,22 @@ function compareSemver(a: string, b: string): number {
   return 0;
 }
 
-function getAssetBaseName(): string {
-  const runtimeProcess = getRuntimeProcess();
-  const os = runtimeProcess?.platform === "darwin" ? "darwin" : "linux";
+export function getAssetBaseNameForRuntime(
+  runtimeProcess: Pick<NodeJS.Process, "platform" | "arch"> | null = getRuntimeProcess(),
+): string {
+  const os = runtimeProcess?.platform === "darwin"
+    ? "darwin"
+    : runtimeProcess?.platform === "win32"
+      ? "windows"
+      : "linux";
   // macOS x64 uses arm64 binary (runs via Rosetta 2)
   const arch = os === "darwin" || runtimeProcess?.arch === "arm64" ? "arm64" : "x64";
-  return `gloomberb-${os}-${arch}`;
+  const extension = os === "windows" ? ".exe" : "";
+  return `gloomberb-${os}-${arch}${extension}`;
+}
+
+function getAssetBaseName(): string {
+  return getAssetBaseNameForRuntime();
 }
 
 function resolveReleaseAsset(
@@ -90,6 +100,29 @@ function basename(value: string): string {
   return normalized.slice(normalized.lastIndexOf("/") + 1);
 }
 
+const runtimeExecutables = new Set([
+  "bun",
+  "bun.exe",
+  "bunx",
+  "bunx.exe",
+  "node",
+  "node.exe",
+  "nodejs",
+  "nodejs.exe",
+  "npm",
+  "npm.cmd",
+  "npm.exe",
+  "npx",
+  "npx.cmd",
+  "npx.exe",
+  "pnpm",
+  "pnpm.cmd",
+  "pnpm.exe",
+  "yarn",
+  "yarn.cmd",
+  "yarn.exe",
+]);
+
 function resolveEntrypointPath(argv = process.argv): string {
   return tryRealpath(argv[1] ?? "");
 }
@@ -104,6 +137,15 @@ function isMacAppBundleExecutable(execPath: string): boolean {
   return normalizePath(execPath).includes(".app/contents/macos/");
 }
 
+function isBundledDesktopTuiRuntime(execPath: string, argv: string[]): boolean {
+  const normalizedExecPath = normalizePath(tryRealpath(execPath));
+  const entrypoint = normalizePath(resolveEntrypointPath(argv));
+  if (!entrypoint.endsWith("/resources/gloomberb-tui/tui-entry.js")) return false;
+  return normalizedExecPath.endsWith("/contents/macos/bun")
+    || normalizedExecPath.endsWith("/bin/bun")
+    || normalizedExecPath.endsWith("/bin/bun.exe");
+}
+
 export function resolveSelfUpdateTargetPath(
   execPath = getRuntimeProcess()?.execPath ?? "",
   argv = getRuntimeProcess()?.argv ?? [],
@@ -113,7 +155,6 @@ export function resolveSelfUpdateTargetPath(
   if (isMacAppBundleExecutable(resolvedExecPath)) return null;
 
   const execBase = basename(normalizedExecPath);
-  const runtimeExecutables = new Set(["bun", "bunx", "node", "nodejs", "npm", "npx", "pnpm", "yarn"]);
   if (runtimeExecutables.has(execBase)) return null;
   if (normalizedExecPath.includes("/.bun/bin/")) return null;
 
@@ -128,20 +169,24 @@ export function detectUpdateAction(
   argv = getRuntimeProcess()?.argv ?? [],
 ): UpdateAction | null {
   if (isMacAppBundleExecutable(execPath)) return null;
+  if (isBundledDesktopTuiRuntime(execPath, argv)) return null;
+
+  const normalizedExecPath = normalizePath(tryRealpath(execPath));
+  const execBase = basename(normalizedExecPath);
+  const entrypoint = normalizePath(resolveEntrypointPath(argv));
+  if (execBase === "gloomberb.exe") return null;
 
   if (resolveSelfUpdateTargetPath(execPath, argv)) {
     return { kind: "self" };
   }
 
-  const normalizedExecPath = normalizePath(tryRealpath(execPath));
-  const execBase = basename(normalizedExecPath);
-  const entrypoint = normalizePath(resolveEntrypointPath(argv));
-
   if (!entrypoint || isSourceEntrypoint(entrypoint)) return null;
 
   if (
     execBase === "bun"
+    || execBase === "bun.exe"
     || execBase === "bunx"
+    || execBase === "bunx.exe"
     || normalizedExecPath.includes("/.bun/bin/")
     || entrypoint.includes("/.bun/install/")
     || entrypoint.includes("/install/global/")
@@ -151,11 +196,21 @@ export function detectUpdateAction(
 
   if (
     execBase === "node"
+    || execBase === "node.exe"
     || execBase === "nodejs"
+    || execBase === "nodejs.exe"
     || execBase === "npm"
+    || execBase === "npm.cmd"
+    || execBase === "npm.exe"
     || execBase === "npx"
+    || execBase === "npx.cmd"
+    || execBase === "npx.exe"
     || execBase === "pnpm"
+    || execBase === "pnpm.cmd"
+    || execBase === "pnpm.exe"
     || execBase === "yarn"
+    || execBase === "yarn.cmd"
+    || execBase === "yarn.exe"
     || entrypoint.includes("/lib/node_modules/")
     || entrypoint.includes("/node_modules/")
   ) {
@@ -283,6 +338,7 @@ export async function performUpdate(
 
   const updatePath = execPath + ".update";
   const oldPath = execPath + ".old";
+  let unlinkUpdatePath: ((path: string) => void) | null = null;
 
   try {
     const fsModulePath = "fs";
@@ -293,6 +349,7 @@ export async function performUpdate(
       unlinkSync,
       chmodSync,
     } = await import(fsModulePath) as typeof import("fs");
+    unlinkUpdatePath = unlinkSync;
     const { gunzipSync } = await import(zlibModulePath) as typeof import("zlib");
 
     onProgress({ phase: "downloading", percent: 0 });
@@ -343,7 +400,7 @@ export async function performUpdate(
   } catch (err: unknown) {
     // Clean up temp file on failure
     try {
-      unlinkSync(updatePath);
+      unlinkUpdatePath?.(updatePath);
     } catch {}
     onProgress({
       phase: "error",
