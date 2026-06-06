@@ -25,6 +25,8 @@ import type { DesktopStateBroadcaster, DesktopStateRpc } from "./state-broadcast
 import { applyWindowsWindowIcon } from "./windows-icons";
 import { desktopTitleBarStyle } from "./window-style";
 
+const INITIAL_DOCK_SUPPRESSION_MS = 800;
+
 interface DesktopDetachedWindowManagerOptions<Rpc extends DesktopStateRpc> {
   createRpc: (key: string) => Rpc;
   getConfig: () => AppConfig;
@@ -47,6 +49,7 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
   private readonly dockTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly closingPanes = new Set<string>();
   private readonly pendingMoveFlush = new Set<string>();
+  private readonly suppressDockUntil = new Map<string, number>();
 
   constructor(private readonly options: DesktopDetachedWindowManagerOptions<Rpc>) {}
 
@@ -153,6 +156,7 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
     this.clearTimer(this.frameTimers, instanceId);
     this.clearTimer(this.dockTimers, instanceId);
     this.pendingMoveFlush.delete(instanceId);
+    this.suppressDockUntil.delete(instanceId);
     this.options.unregisterWindowRpc(detachedRpcKey(instanceId));
   }
 
@@ -176,6 +180,7 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
     applyWindowsWindowIcon(title);
     updateWindowFrameCache(window, initialFrame, DETACHED_WINDOW_MIN_SIZE);
     this.windows.set(instanceId, window);
+    this.suppressDockUntil.set(instanceId, Date.now() + INITIAL_DOCK_SUPPRESSION_MS);
 
     (window as any).on?.("close", () => {
       const shouldIgnore = this.closingPanes.delete(instanceId);
@@ -234,6 +239,13 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
     }, 120));
 
     this.clearTimer(this.dockTimers, instanceId);
+    const suppressDockUntil = this.suppressDockUntil.get(instanceId) ?? 0;
+    if (Date.now() < suppressDockUntil) {
+      this.options.stateBroadcaster.clearDockPreview(instanceId);
+      return;
+    }
+    this.suppressDockUntil.delete(instanceId);
+
     if (!edge) {
       this.options.stateBroadcaster.clearDockPreview(instanceId);
       return;
