@@ -199,9 +199,9 @@ function Click-WindowControl {
 
   $Bounds = Get-WindowBounds $Window
   $OffsetFromRight = switch ($Action) {
-    "close" { 23 }
-    "maximize" { 51 }
-    "minimize" { 79 }
+    "close" { 25 }
+    "maximize" { 55 }
+    "minimize" { 85 }
   }
   $X = [int]($Bounds.Left + $Bounds.Width - $OffsetFromRight)
   $Y = [int]($Bounds.Top + 14)

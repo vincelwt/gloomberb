@@ -1,8 +1,8 @@
 import { Box, useRendererHost } from "../../ui";
 import { useCallback } from "react";
 
-const WINDOWS_CONTROL_WIDTH_PX = 28;
-const WINDOWS_CONTROL_TRAILING_PADDING_PX = 9;
+const WINDOWS_CONTROL_WIDTH_PX = 30;
+const WINDOWS_CONTROL_TRAILING_PADDING_PX = 10;
 
 type WindowControlAction = "minimize" | "toggle-maximize" | "close";
 
