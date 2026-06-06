@@ -52,6 +52,7 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
   private readonly closingPanes = new Set<string>();
   private readonly pendingMoveFlush = new Set<string>();
   private readonly suppressDockUntil = new Map<string, number>();
+  private readonly windowControlDockSuppressed = new Set<string>();
 
   constructor(private readonly options: DesktopDetachedWindowManagerOptions<Rpc>) {}
 
@@ -71,6 +72,7 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
   suppressAutoDockForRpcKey(rpcKey: string | undefined): void {
     const paneId = paneIdFromDetachedRpcKey(rpcKey);
     if (!paneId || !this.windows.has(paneId)) return;
+    this.windowControlDockSuppressed.add(paneId);
     this.suppressDockUntil.set(paneId, Date.now() + WINDOW_CONTROL_DOCK_SUPPRESSION_MS);
     this.options.stateBroadcaster.clearDockPreview(paneId);
   }
@@ -171,6 +173,7 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
     this.clearTimer(this.dockTimers, instanceId);
     this.pendingMoveFlush.delete(instanceId);
     this.suppressDockUntil.delete(instanceId);
+    this.windowControlDockSuppressed.delete(instanceId);
     this.options.unregisterWindowRpc(detachedRpcKey(instanceId));
   }
 
@@ -253,6 +256,14 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
     }, 120));
 
     this.clearTimer(this.dockTimers, instanceId);
+    if (this.windowControlDockSuppressed.has(instanceId)) {
+      this.options.stateBroadcaster.clearDockPreview(instanceId);
+      if (!edge) {
+        this.windowControlDockSuppressed.delete(instanceId);
+      }
+      return;
+    }
+
     const suppressDockUntil = this.suppressDockUntil.get(instanceId) ?? 0;
     if (Date.now() < suppressDockUntil) {
       this.options.stateBroadcaster.clearDockPreview(instanceId);
