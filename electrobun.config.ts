@@ -40,7 +40,7 @@ const config: ElectrobunConfig = {
       defaultRenderer: "native",
     },
     win: {
-      icon: "src/assets/gloomberb-logo.png",
+      icon: "src/assets/gloomberb-logo.ico",
       defaultRenderer: "native",
     },
   },

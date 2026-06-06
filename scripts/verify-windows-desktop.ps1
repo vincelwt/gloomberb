@@ -5,6 +5,8 @@ $BundleDir = Join-Path $Root "build\stable-win-x64\Gloomberb-inno-source\Gloombe
 $CoreDir = Join-Path $BundleDir "Resources\gloomberb-tui\node_modules\@opentui\core-win32-x64"
 $InstallerPath = Join-Path $Root "artifacts\stable-win-x64-GloomberbSetup.exe"
 $GuiArtifactDir = Join-Path $Root "artifacts\windows-gui-verification"
+$BundleAppIconPath = Join-Path $BundleDir "Resources\app.ico"
+$BundleLogoIconPath = Join-Path $BundleDir "Resources\gloomberb-logo.ico"
 
 New-Item -ItemType Directory -Force -Path $GuiArtifactDir | Out-Null
 
@@ -47,6 +49,29 @@ public static class GloomberbWin32 {
 
   [DllImport("user32.dll")]
   public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+
+  [DllImport("user32.dll", CharSet = CharSet.Auto)]
+  public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+  [DllImport("user32.dll", EntryPoint = "GetClassLongPtrW", SetLastError = true)]
+  public static extern IntPtr GetClassLongPtr64(IntPtr hWnd, int nIndex);
+
+  [DllImport("user32.dll", EntryPoint = "GetClassLongW", SetLastError = true)]
+  public static extern uint GetClassLong32(IntPtr hWnd, int nIndex);
+
+  public static IntPtr GetClassLongPtrCompat(IntPtr hWnd, int nIndex)
+  {
+    if (IntPtr.Size == 8)
+      return GetClassLongPtr64(hWnd, nIndex);
+
+    return new IntPtr((long)GetClassLong32(hWnd, nIndex));
+  }
+
+  [DllImport("user32.dll")]
+  public static extern IntPtr CopyIcon(IntPtr hIcon);
+
+  [DllImport("user32.dll")]
+  public static extern bool DestroyIcon(IntPtr hIcon);
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -288,6 +313,151 @@ function Assert-ScreenshotHasContent {
   }
 }
 
+function Assert-IcoFile {
+  param(
+    [string]$Path,
+    [string]$Label
+  )
+
+  $Bytes = [System.IO.File]::ReadAllBytes($Path)
+  if ($Bytes.Length -lt 6 -or $Bytes[0] -ne 0 -or $Bytes[1] -ne 0 -or $Bytes[2] -ne 1 -or $Bytes[3] -ne 0) {
+    throw "$Label is not a valid ICO file: $Path"
+  }
+
+  $ImageCount = [BitConverter]::ToUInt16($Bytes, 4)
+  if ($ImageCount -lt 1) {
+    throw "$Label does not contain any icon images: $Path"
+  }
+}
+
+function Assert-GloomberbIconImage {
+  param(
+    [string]$Path,
+    [string]$Label
+  )
+
+  $Bitmap = [System.Drawing.Bitmap]::FromFile($Path)
+  try {
+    $OpaquePixels = 0
+    $RedPixels = 0
+    $GreenPixels = 0
+    $LightPixels = 0
+
+    for ($Y = 0; $Y -lt $Bitmap.Height; $Y += 1) {
+      for ($X = 0; $X -lt $Bitmap.Width; $X += 1) {
+        $Color = $Bitmap.GetPixel($X, $Y)
+        if ($Color.A -lt 16) {
+          continue
+        }
+
+        $OpaquePixels += 1
+        if ($Color.R -ge 170 -and $Color.G -le 140 -and $Color.B -le 140) {
+          $RedPixels += 1
+        }
+        if ($Color.G -ge 170 -and $Color.R -le 150 -and $Color.B -le 130) {
+          $GreenPixels += 1
+        }
+        if ($Color.R -ge 210 -and $Color.G -ge 210 -and $Color.B -ge 210) {
+          $LightPixels += 1
+        }
+      }
+    }
+
+    $MinimumAccentPixels = [Math]::Max(4, [int][Math]::Floor($OpaquePixels * 0.01))
+    if ($RedPixels -lt $MinimumAccentPixels -or $GreenPixels -lt $MinimumAccentPixels -or $LightPixels -lt $MinimumAccentPixels) {
+      throw "$Label does not look like the Gloomberb icon: $(@{ width = $Bitmap.Width; height = $Bitmap.Height; opaque = $OpaquePixels; red = $RedPixels; green = $GreenPixels; light = $LightPixels; minimum = $MinimumAccentPixels } | ConvertTo-Json -Compress)"
+    }
+  } finally {
+    $Bitmap.Dispose()
+  }
+}
+
+function Export-AssociatedIcon {
+  param(
+    [string]$ExecutablePath,
+    [string]$OutputPath,
+    [string]$Label
+  )
+
+  $Icon = [System.Drawing.Icon]::ExtractAssociatedIcon($ExecutablePath)
+  if (-not $Icon) {
+    throw "Could not extract associated icon for ${Label}: $ExecutablePath"
+  }
+
+  try {
+    $Bitmap = $Icon.ToBitmap()
+    try {
+      $Bitmap.Save($OutputPath, [System.Drawing.Imaging.ImageFormat]::Png)
+    } finally {
+      $Bitmap.Dispose()
+    }
+  } finally {
+    $Icon.Dispose()
+  }
+
+  Assert-ScreenshotHasContent $OutputPath "$Label associated icon"
+  Assert-GloomberbIconImage $OutputPath "$Label associated icon"
+}
+
+function Get-WindowIconHandle {
+  param([object]$Window)
+
+  $Handle = [IntPtr]::new([long]$Window.Handle)
+  $WmGetIcon = [uint32]0x007F
+  foreach ($IconType in @(2, 0, 1)) {
+    $IconHandle = [GloomberbWin32]::SendMessage($Handle, $WmGetIcon, [IntPtr]::new([int]$IconType), [IntPtr]::Zero)
+    if ($IconHandle -ne [IntPtr]::Zero) {
+      return $IconHandle
+    }
+  }
+
+  foreach ($ClassIndex in @(-34, -14)) {
+    $IconHandle = [GloomberbWin32]::GetClassLongPtrCompat($Handle, $ClassIndex)
+    if ($IconHandle -ne [IntPtr]::Zero) {
+      return $IconHandle
+    }
+  }
+
+  return [IntPtr]::Zero
+}
+
+function Export-WindowIcon {
+  param(
+    [object]$Window,
+    [string]$OutputPath,
+    [string]$Label
+  )
+
+  $IconHandle = Get-WindowIconHandle $Window
+  if ($IconHandle -eq [IntPtr]::Zero) {
+    throw "Could not read window icon handle for ${Label}."
+  }
+
+  $IconCopy = [GloomberbWin32]::CopyIcon($IconHandle)
+  if ($IconCopy -eq [IntPtr]::Zero) {
+    throw "Could not copy window icon handle for ${Label}."
+  }
+
+  try {
+    $Icon = [System.Drawing.Icon]::FromHandle($IconCopy)
+    try {
+      $Bitmap = $Icon.ToBitmap()
+      try {
+        $Bitmap.Save($OutputPath, [System.Drawing.Imaging.ImageFormat]::Png)
+      } finally {
+        $Bitmap.Dispose()
+      }
+    } finally {
+      $Icon.Dispose()
+    }
+  } finally {
+    [void][GloomberbWin32]::DestroyIcon($IconCopy)
+  }
+
+  Assert-ScreenshotHasContent $OutputPath "$Label window icon"
+  Assert-GloomberbIconImage $OutputPath "$Label window icon"
+}
+
 function Resolve-HomeDir {
   if ($env:HOME) {
     return $env:HOME
@@ -392,6 +562,8 @@ $RequiredPaths = @(
   (Join-Path $BundleDir "bin\launcher.exe"),
   (Join-Path $BundleDir "bin\bun.exe"),
   (Join-Path $BundleDir "bin\gloomberb.cmd"),
+  $BundleAppIconPath,
+  $BundleLogoIconPath,
   (Join-Path $BundleDir "Resources\gloomberb-tui\tui-entry.js"),
   (Join-Path $CoreDir "index.js"),
   (Join-Path $Root "artifacts\stable-win-x64-Gloomberb-Setup.zip"),
@@ -405,6 +577,21 @@ foreach ($Path in $RequiredPaths) {
     throw "Missing expected Windows desktop file: $Path"
   }
 }
+
+Assert-IcoFile $BundleAppIconPath "Bundled app icon"
+Assert-IcoFile $BundleLogoIconPath "Bundled logo icon"
+Export-AssociatedIcon `
+  -ExecutablePath (Join-Path $BundleDir "bin\launcher.exe") `
+  -OutputPath (Join-Path $GuiArtifactDir "windows-icon-launcher.png") `
+  -Label "Launcher"
+Export-AssociatedIcon `
+  -ExecutablePath (Join-Path $BundleDir "bin\bun.exe") `
+  -OutputPath (Join-Path $GuiArtifactDir "windows-icon-bun.png") `
+  -Label "TUI runtime"
+Export-AssociatedIcon `
+  -ExecutablePath $InstallerPath `
+  -OutputPath (Join-Path $GuiArtifactDir "windows-icon-installer.png") `
+  -Label "Installer"
 
 $NativeLibraries = Get-ChildItem -Path $CoreDir -Filter "*.dll" -File -ErrorAction SilentlyContinue
 if (-not $NativeLibraries) {
@@ -484,6 +671,15 @@ try {
   if (-not $DetachedWindow) {
     throw "Could not find the detached watchlist window in the Windows GUI smoke test."
   }
+
+  Export-WindowIcon `
+    -Window $MainWindow `
+    -OutputPath (Join-Path $GuiArtifactDir "windows-window-icon-main.png") `
+    -Label "Main window"
+  Export-WindowIcon `
+    -Window $DetachedWindow `
+    -OutputPath (Join-Path $GuiArtifactDir "windows-window-icon-popout.png") `
+    -Label "Detached pop-out"
 
   $PopOutScreenshot = Join-Path $GuiArtifactDir "windows-gui-popout.png"
   $CapturedPopOutWindow = $false

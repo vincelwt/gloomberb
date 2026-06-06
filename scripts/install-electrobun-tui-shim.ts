@@ -1,4 +1,4 @@
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 
 type TargetOs = "darwin" | "linux" | "win";
@@ -166,10 +166,26 @@ function normalizeWindowsExecutableNames(runtimePath: string): void {
   }
 }
 
+function assertWindowsIconFile(path: string): void {
+  const header = readFileSync(path).subarray(0, 4);
+  if (header.length < 4 || header[0] !== 0 || header[1] !== 0 || header[2] !== 1 || header[3] !== 0) {
+    throw new Error(`Windows icon is not a valid ICO file: ${path}`);
+  }
+}
+
 function createWindowsIcon(resourcesPath: string): string {
+  const sourceIcoPath = join(process.cwd(), "src", "assets", "gloomberb-logo.ico");
   const pngToIcoCli = join(process.cwd(), "node_modules", "png-to-ico", "bin", "cli.js");
   const sourcePngPath = join(process.cwd(), "src", "assets", "gloomberb-logo.png");
   const iconPath = join(resourcesPath, "gloomberb-logo.ico");
+  const appIconPath = join(resourcesPath, "app.ico");
+  if (existsSync(sourceIcoPath)) {
+    assertWindowsIconFile(sourceIcoPath);
+    cpSync(sourceIcoPath, iconPath, { dereference: true });
+    cpSync(sourceIcoPath, appIconPath, { dereference: true });
+    return iconPath;
+  }
+
   const converted = Bun.spawnSync({
     cmd: [process.execPath, pngToIcoCli, sourcePngPath],
     stdout: "pipe",
@@ -179,6 +195,9 @@ function createWindowsIcon(resourcesPath: string): string {
     process.exit(converted.exitCode ?? 1);
   }
   writeFileSync(iconPath, converted.stdout);
+  writeFileSync(appIconPath, converted.stdout);
+  assertWindowsIconFile(iconPath);
+  assertWindowsIconFile(appIconPath);
   return iconPath;
 }
 

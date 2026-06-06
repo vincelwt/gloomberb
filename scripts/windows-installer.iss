@@ -30,7 +30,8 @@ OutputBaseFilename=GloomberbSetup
 Compression=lzma2
 SolidCompression=yes
 SetupLogging=yes
-UninstallDisplayIcon={app}\bin\launcher.exe
+SetupIconFile={#SourceDir}\Resources\gloomberb-logo.ico
+UninstallDisplayIcon={app}\Resources\gloomberb-logo.ico
 WizardStyle=modern
 ChangesEnvironment=yes
 
@@ -41,8 +42,8 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\Gloomberb"; Filename: "{app}\bin\launcher.exe"; WorkingDir: "{app}\bin"
-Name: "{autodesktop}\Gloomberb"; Filename: "{app}\bin\launcher.exe"; WorkingDir: "{app}\bin"; Tasks: desktopicon
+Name: "{autoprograms}\Gloomberb"; Filename: "{app}\bin\launcher.exe"; WorkingDir: "{app}\bin"; IconFilename: "{app}\Resources\gloomberb-logo.ico"
+Name: "{autodesktop}\Gloomberb"; Filename: "{app}\bin\launcher.exe"; WorkingDir: "{app}\bin"; IconFilename: "{app}\Resources\gloomberb-logo.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\bin\launcher.exe"; Description: "Launch Gloomberb"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}\bin"
