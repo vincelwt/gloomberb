@@ -27,7 +27,7 @@ import { applyWindowsWindowIcon } from "./windows-icons";
 import { desktopTitleBarStyle } from "./window-style";
 
 const INITIAL_DOCK_SUPPRESSION_MS = 800;
-const WINDOW_CONTROL_DOCK_SUPPRESSION_MS = 1_500;
+const WINDOW_CONTROL_DOCK_SUPPRESSION_MS = 5_000;
 
 interface DesktopDetachedWindowManagerOptions<Rpc extends DesktopStateRpc> {
   createRpc: (key: string) => Rpc;
