@@ -652,6 +652,22 @@ function Stop-ProcessIds {
   }
 }
 
+function Disable-InstalledDesktopUpdates {
+  param([string]$InstallDir)
+
+  $VersionPath = Join-Path $InstallDir "Resources\version.json"
+  if (-not (Test-Path $VersionPath)) {
+    throw "Installed desktop version metadata was not found: $VersionPath"
+  }
+
+  $VersionInfo = Get-Content $VersionPath -Raw | ConvertFrom-Json
+  $VersionInfo.channel = "dev"
+  $VersionInfo.baseUrl = ""
+  $VersionInfo |
+    ConvertTo-Json -Depth 8 |
+    Set-Content -Path $VersionPath -Encoding UTF8
+}
+
 function Write-JsonFile {
   param(
     [string]$Path,
@@ -887,6 +903,8 @@ try {
   if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
   }
+
+  Disable-InstalledDesktopUpdates -InstallDir $InstallDir
 
   Capture-OnboardingScreenshot `
     -InstallDir $InstallDir `

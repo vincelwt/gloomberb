@@ -15,6 +15,11 @@ import {
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
 import { EmptyState } from "../../../components";
 import { ResolvedStockChart } from "../../../components/chart/stock-chart";
+import { PriceReturnStrip } from "../../../components/price-performance";
+import {
+  appendQuoteToPriceReturnHistory,
+  buildPriceReturnFields,
+} from "../../../market-data/performance";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import {
@@ -96,6 +101,19 @@ export function OverviewTab({
     baseCurrency,
     toBase,
   });
+  const performanceFields = buildPriceReturnFields(
+    appendQuoteToPriceReturnHistory(financials?.priceHistory ?? [], quote),
+  ).map((field) => {
+    if (field.value != null) return field;
+    if (field.id === "1Y" && fundamentals?.return1Y != null) {
+      return { ...field, value: fundamentals.return1Y };
+    }
+    if (field.id === "3Y" && fundamentals?.return3Y != null) {
+      return { ...field, value: fundamentals.return3Y };
+    }
+    return field;
+  });
+  const hasPerformance = performanceFields.some((field) => field.value != null);
   const positionRows = buildPositionRows({
     ticker,
     quote,
@@ -208,6 +226,13 @@ export function OverviewTab({
             ticker={ticker}
             financials={financials}
           />
+        )}
+
+        {hasPerformance && (
+          <Box flexDirection="column">
+            <SectionHeader title="Price Return" />
+            <PriceReturnStrip fields={performanceFields} width={contentWidth} />
+          </Box>
         )}
 
         {stats.length > 0 && (

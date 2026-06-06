@@ -2,8 +2,6 @@ import type { PricePoint } from "../../../types/financials";
 import type { LocalPlotPointer } from "../core/pointer";
 import type { ComparisonChartRenderMode } from "../core/types";
 import type { projectComparisonChartData } from "../comparison/data";
-import { formatPercentRaw } from "../../../utils/format";
-import { formatMarketPriceWithCurrency } from "../../../market-data/market/format";
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -40,36 +38,6 @@ export function buildComparisonNativeBitmapKey(
     marketSessionKey,
     fingerprint,
   ].join("::");
-}
-
-export function getLegendColumns(width: number): number {
-  if (width >= 110) return 3;
-  if (width >= 72) return 2;
-  return 1;
-}
-
-export function clipText(text: string, width: number): string {
-  if (width <= 0) return "";
-  if (text.length <= width) return text.padEnd(width);
-  if (width <= 3) return text.slice(0, width);
-  return `${text.slice(0, width - 3)}...`;
-}
-
-export function formatLegendSummary(
-  symbol: string,
-  rawValue: number | null,
-  baseValue: number | null,
-  currency: string,
-  priceRange: number | undefined,
-): string {
-  if (rawValue === null) return `${symbol} waiting`;
-  const price = formatMarketPriceWithCurrency(rawValue, currency, {
-    minimumFractionDigits: 2,
-    precisionOffset: 1,
-    priceRange,
-  });
-  if (baseValue === null || baseValue === 0) return `${symbol} ${price}`;
-  return `${symbol} ${price} ${formatPercentRaw(((rawValue - baseValue) / baseValue) * 100)}`;
 }
 
 export function getInitialComparisonMode(mode: string | undefined): ComparisonChartRenderMode {

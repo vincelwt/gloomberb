@@ -68,6 +68,28 @@ function makeFinancials(symbol: string, currency: string, closes: number[]): Tic
   };
 }
 
+function makeDatedFinancials(symbol: string, currency: string, closes: Array<[string, number]>): TickerFinancials {
+  const latest = closes.at(-1);
+  const latestClose = latest?.[1] ?? 0;
+  const latestDate = latest ? Date.parse(`${latest[0]}T00:00:00Z`) : Date.now();
+  return {
+    annualStatements: [],
+    quarterlyStatements: [],
+    quote: {
+      symbol,
+      price: latestClose,
+      currency,
+      change: latestClose - (closes[0]?.[1] ?? latestClose),
+      changePercent: closes[0]?.[1] ? ((latestClose - closes[0]![1]) / closes[0]![1]) * 100 : 0,
+      lastUpdated: latestDate,
+    },
+    priceHistory: closes.map(([date, close]) => ({
+      date: new Date(`${date}T00:00:00Z`),
+      close,
+    })),
+  };
+}
+
 function createProvider(historyBySymbol: Record<string, number[]>, currencyBySymbol: Record<string, string>): DataProvider {
   return {
     id: "test-provider",
@@ -99,6 +121,22 @@ function createProvider(historyBySymbol: Record<string, number[]>, currencyBySym
       close,
     })),
   };
+}
+
+function createDatedProvider(financialsBySymbol: Record<string, TickerFinancials>): DataProvider {
+  const provider = createProvider({}, {});
+  provider.getTickerFinancials = async (symbol) => financialsBySymbol[symbol] ?? makeDatedFinancials(symbol, "USD", []);
+  provider.getQuote = async (symbol) => financialsBySymbol[symbol]?.quote ?? {
+    symbol,
+    price: 0,
+    currency: "USD",
+    change: 0,
+    changePercent: 0,
+    lastUpdated: Date.now(),
+  };
+  provider.getPriceHistory = async (symbol) => financialsBySymbol[symbol]?.priceHistory ?? [];
+  provider.getPriceHistoryForResolution = async (symbol) => financialsBySymbol[symbol]?.priceHistory ?? [];
+  return provider;
 }
 
 function createRegistrySpy(spy: { selected: string[]; focused: string[] }): PluginRegistry {
@@ -314,7 +352,7 @@ describe("comparisonChartPlugin", () => {
     expect(frame).not.toContain("side by side");
   });
 
-  test("updates every legend value from the crosshair position", async () => {
+  test("updates every return summary range value from the crosshair position", async () => {
     const provider = createProvider({
       AAPL: [100, 102, 104],
       MSFT: [200, 202, 204],
@@ -343,8 +381,12 @@ describe("comparisonChartPlugin", () => {
 
     let frame = testSetup!.captureCharFrame();
     expect(frame).not.toContain("AAPL - 1D");
-    expect(frame).toContain("AAPL $104.00 +4.00%");
-    expect(frame).toContain("MSFT $204.00 +2.00%");
+    expect(frame).toContain("Sym");
+    expect(frame).toContain("Rng");
+    expect(frame).toContain("1Y");
+    expect(frame).toContain("5Y");
+    expect(frame).toMatch(/> AAPL\s+\+4\.00%/);
+    expect(frame).toMatch(/MSFT\s+\+2\.00%/);
 
     await act(async () => {
       await testSetup!.mockMouse.moveTo(2, 4);
@@ -353,8 +395,45 @@ describe("comparisonChartPlugin", () => {
     await flushFrames();
 
     frame = testSetup!.captureCharFrame();
-    expect(frame).toContain("AAPL $100.00 0.00%");
-    expect(frame).toContain("MSFT $200.00 0.00%");
+    expect(frame).toMatch(/> AAPL\s+0\.00%/);
+    expect(frame).toMatch(/MSFT\s+0\.00%/);
+  });
+
+  test("sorts comparison summary rows by one-year return", async () => {
+    const rows = {
+      SLOW: makeDatedFinancials("SLOW", "USD", [["2025-01-02", 100], ["2026-01-02", 105]]),
+      FAST: makeDatedFinancials("FAST", "USD", [["2025-01-02", 100], ["2026-01-02", 150]]),
+      MID: makeDatedFinancials("MID", "USD", [["2025-01-02", 100], ["2026-01-02", 125]]),
+    };
+    const provider = createDatedProvider(rows);
+    setSharedMarketDataForTests(provider);
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedRegistryForTests(createRegistrySpy({ selected: [], focused: [] }));
+
+    await mountComparisonHarness({
+      axisMode: "percent",
+      symbols: ["SLOW", "FAST", "MID"],
+      symbolsText: "SLOW, FAST, MID",
+    }, [
+      makeTicker("SLOW", "USD"),
+      makeTicker("FAST", "USD"),
+      makeTicker("MID", "USD"),
+    ], Object.entries(rows));
+
+    await flushFrames();
+
+    const frame = testSetup!.captureCharFrame();
+    const table = frame.slice(frame.indexOf("Sym"));
+    const fastIndex = table.indexOf("FAST");
+    const midIndex = table.indexOf("MID");
+    const slowIndex = table.indexOf("SLOW");
+
+    expect(fastIndex).toBeGreaterThanOrEqual(0);
+    expect(midIndex).toBeGreaterThanOrEqual(0);
+    expect(slowIndex).toBeGreaterThanOrEqual(0);
+    expect(fastIndex).toBeLessThan(midIndex);
+    expect(midIndex).toBeLessThan(slowIndex);
   });
 
   test("extends lagging comparison histories with the latest quote", async () => {
@@ -406,11 +485,11 @@ describe("comparisonChartPlugin", () => {
     await flushFrames();
 
     const frame = testSetup!.captureCharFrame();
-    expect(frame).toContain("AAPL $150.00 +");
-    expect(frame).toContain("MSFT $250.00 +");
+    expect(frame).toMatch(/> AAPL\s+\+47\.06%/);
+    expect(frame).toMatch(/MSFT\s+\+23\.76%/);
   });
 
-  test("updates comparison legends from chart-owned quote streams", async () => {
+  test("updates comparison return summary from chart-owned quote streams", async () => {
     let emitQuote: ((symbol: string, price: number) => void) | null = null;
     const provider = createProvider({
       AAPL: [100, 102],
@@ -464,7 +543,7 @@ describe("comparisonChartPlugin", () => {
     await flushFrames();
 
     const frame = testSetup!.captureCharFrame();
-    expect(frame).toContain("AAPL $155.00 +");
+    expect(frame).toMatch(/> AAPL\s+\+51\.96%/);
   });
 
   test("does not refetch resolution support when only comparison prices update", async () => {

@@ -90,20 +90,6 @@ export function buildOverviewStats({
       valueColor: priceColor(fundamentals.revenueGrowth),
     });
   }
-  if (fundamentals?.return1Y != null) {
-    stats.push({
-      label: "1Y Return",
-      value: formatPercent(fundamentals.return1Y),
-      valueColor: priceColor(fundamentals.return1Y),
-    });
-  }
-  if (fundamentals?.return3Y != null) {
-    stats.push({
-      label: "3Y Return",
-      value: formatPercent(fundamentals.return3Y),
-      valueColor: priceColor(fundamentals.return3Y),
-    });
-  }
   if (fundamentals?.enterpriseValue) {
     stats.push({ label: "EV", value: formatCompact(fundamentals.enterpriseValue) });
   }
