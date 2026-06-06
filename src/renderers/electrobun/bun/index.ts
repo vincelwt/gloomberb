@@ -49,6 +49,7 @@ import { handleDesktopBackendRequest } from "./desktop/backend-requests";
 import { initializeDesktopBackend } from "./desktop/initialization";
 import { applyWindowsWindowIcon } from "./desktop/windows-icons";
 import { desktopTitleBarStyle } from "./desktop/window-style";
+import { applyDesktopWindowControl, type DesktopWindowControlAction } from "./desktop/window-controls";
 
 type DesktopRpc = ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>;
 
@@ -275,6 +276,15 @@ function closeAllDetachedWindows(): void {
   detachedWindowManager.closeAll();
 }
 
+function controlWindowForRpcKey(windowKey: string | undefined, action: DesktopWindowControlAction): boolean {
+  const targetWindow = windowKey === MAIN_WINDOW_RPC_KEY
+    ? mainWindow
+    : detachedWindowManager.getWindowForRpcKey(windowKey);
+  if (!targetWindow) return false;
+  applyDesktopWindowControl(targetWindow, action);
+  return true;
+}
+
 async function initialize(
   rpc: DesktopRpc,
   payload: Record<string, unknown>,
@@ -345,6 +355,7 @@ async function handleBackendRequest(
       restartDesktopApp,
       rpc,
       teardownServices,
+      controlWindowForRpcKey,
       trackContextMenuRequest: (requestId, targetRpc) => {
         contextMenuRequestRpcs.clear();
         contextMenuRequestRpcs.set(requestId, targetRpc);

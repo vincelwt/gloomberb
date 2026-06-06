@@ -12,6 +12,7 @@ import {
 import {
   detachedRpcKey,
   focusWindowForRpcKey,
+  paneIdFromDetachedRpcKey,
 } from "../window/focus";
 import {
   applyWindowMoveEvent,
@@ -59,6 +60,11 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
 
   focusWindowForRpcKey(rpcKey: string | undefined): boolean {
     return focusWindowForRpcKey(rpcKey, this.options.getMainWindow(), this.windows);
+  }
+
+  getWindowForRpcKey(rpcKey: string | undefined): BrowserWindow | null {
+    const paneId = paneIdFromDetachedRpcKey(rpcKey);
+    return paneId ? this.windows.get(paneId) ?? null : null;
   }
 
   resolveFrame(instanceId: string): WindowFrame {

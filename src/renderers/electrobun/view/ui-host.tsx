@@ -35,13 +35,13 @@ function currentDesktopPlatform(): string {
 }
 
 const DESKTOP_PLATFORM = currentDesktopPlatform();
-const USES_TITLEBAR_OVERLAY = !/win/i.test(DESKTOP_PLATFORM);
+const USES_WINDOWS_CONTROLS = /win/i.test(DESKTOP_PLATFORM);
 
 export const webUiHost: UiHost = {
   kind: "desktop-web",
   capabilities: {
     nativePaneChrome: true,
-    titleBarOverlay: USES_TITLEBAR_OVERLAY,
+    titleBarOverlay: true,
     precisePointer: true,
     fractionalViewport: true,
     cellWidthPx: WEB_CELL_WIDTH,
@@ -49,6 +49,7 @@ export const webUiHost: UiHost = {
     pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
     canvasCharts: true,
     nativeContextMenu: NATIVE_CONTEXT_MENU_SUPPORTED,
+    windowControls: USES_WINDOWS_CONTROLS ? "windows" : undefined,
   },
   Box: WebBox,
   Text: WebText,
@@ -124,6 +125,9 @@ export const webRendererHost: RendererHost = {
   },
   startWindowDrag() {
     startElectrobunWindowDrag();
+  },
+  async controlWindow(action) {
+    await backendRequest("host.windowControl", { action });
   },
   async openExternal(url) {
     await backendRequest("host.openExternal", { url });

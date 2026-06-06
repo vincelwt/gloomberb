@@ -58,6 +58,22 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
+[data-gloom-role="window-controls"] {
+  height: 100%;
+  color: var(--gloom-header-text, #f2f2f2);
+}
+[data-gloom-role="window-control"] {
+  color: color-mix(in srgb, var(--gloom-header-text, #f2f2f2) 86%, transparent);
+  transition: background-color 90ms linear, color 90ms linear;
+}
+[data-gloom-role="window-control"]:hover {
+  background: color-mix(in srgb, var(--gloom-header-text, #f2f2f2) 13%, transparent);
+  color: var(--gloom-header-text, #f2f2f2);
+}
+[data-gloom-role="window-control"][data-window-control-action="close"]:hover {
+  background: #c42b1c;
+  color: #ffffff;
+}
 [data-gloom-role="pane-window"][data-floating="true"] {
   border: 0;
   border-radius: 6px;

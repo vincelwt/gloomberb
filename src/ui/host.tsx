@@ -260,6 +260,7 @@ export interface UiHost {
     canvasCharts?: boolean;
     nativeCharts?: boolean;
     nativeContextMenu?: boolean;
+    windowControls?: "windows";
   };
   Box: ComponentType<BoxProps>;
   Text: ComponentType<TextProps>;
@@ -289,6 +290,7 @@ export interface UiHost {
 export interface RendererHost {
   requestExit(): void;
   startWindowDrag?(): Promise<void> | void;
+  controlWindow?(action: "minimize" | "toggle-maximize" | "close"): Promise<void> | void;
   openExternal(url: string): Promise<void>;
   copyText(text: string): Promise<void>;
   copyPngImage?(pngBase64: string): Promise<void>;

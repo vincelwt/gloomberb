@@ -13,6 +13,7 @@ import { PaneContent } from "./pane/content";
 import { resolvePaneBodyFrame } from "./pane/sizing";
 import { getPaneDisplayTitle } from "./pane/title";
 import { TITLEBAR_OVERLAY_HEIGHT_PX, getTitlebarLeadingInset } from "./titlebar-overlay";
+import { WindowControls } from "./window-controls";
 import {
   createDoubleEscapeCloseState,
   recordDoubleEscapeClose,
@@ -41,7 +42,8 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
     typeof document === "undefined" ? true : document.hasFocus()
   ));
   const { width, height } = useViewport();
-  const { cellHeightPx = 18, nativePaneChrome, titleBarOverlay } = useUiCapabilities();
+  const { cellHeightPx = 18, nativePaneChrome, titleBarOverlay, windowControls } = useUiCapabilities();
+  const showWindowControls = windowControls === "windows";
   const titlebarLeadingInset = titleBarOverlay ? getTitlebarLeadingInset() : 0;
   const instance = useAppSelector((state) => findPaneInstance(state.config.layout, desktopWindowBridge.paneId) ?? null);
   const paneDef = instance ? pluginRegistry.panes.get(instance.paneId) ?? null : null;
@@ -173,7 +175,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
                 flexGrow={1}
                 minWidth={0}
                 paddingLeft={titleBarOverlay ? titlebarLeadingInset : 1}
-                paddingRight={1}
+                paddingRight={showWindowControls ? 0 : 1}
               >
                 <Box flexGrow={1} minWidth={0} overflow="hidden">
                   <Text fg={paneTitleText(focused, true)} selectable={false} data-gloom-role="pane-title">{title}</Text>
@@ -190,6 +192,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
                     {" ... "}
                   </Text>
                 )}
+                {showWindowControls ? <WindowControls /> : null}
               </Box>
             </Box>
             <PaneBodyFrame layoutProps={bodyFrame.layoutProps} backgroundColor={background}>

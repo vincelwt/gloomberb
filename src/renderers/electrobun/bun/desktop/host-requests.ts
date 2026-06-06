@@ -3,10 +3,13 @@ import { ContextMenu, Utils, type BrowserWindow } from "electrobun/bun";
 import { buildSoundCommand } from "../../../../notifications/app-notifier";
 import type { DesktopRestartMessage } from "../../shared/protocol";
 import { getContextMenuRequestId, normalizeContextMenuItems } from "../context-menu/normalize";
+import { MAIN_WINDOW_RPC_KEY } from "../window/focus";
+import type { DesktopWindowControlAction } from "./window-controls";
 
 interface DesktopHostRequestOptions<TRpc> {
   clearMainWindow: () => void;
   closeAllDetachedWindows: () => void;
+  controlWindowForRpcKey: (windowKey: string | undefined, action: DesktopWindowControlAction) => boolean;
   focusWindowForRpcKey: (windowKey: string) => void;
   getMainWindow: () => BrowserWindow | null;
   getRpcWindowKey: (rpc: TRpc) => string | undefined;
@@ -37,9 +40,17 @@ function playNotificationSound(sound: string | undefined): void {
   }
 }
 
+function normalizeWindowControlAction(action: unknown): DesktopWindowControlAction {
+  if (action === "minimize" || action === "toggle-maximize" || action === "close") {
+    return action;
+  }
+  throw new Error("host.windowControl requires a valid action.");
+}
+
 export function handleDesktopHostRequest<TRpc>({
   clearMainWindow,
   closeAllDetachedWindows,
+  controlWindowForRpcKey,
   focusWindowForRpcKey,
   getMainWindow,
   getRpcWindowKey,
@@ -67,6 +78,26 @@ export function handleDesktopHostRequest<TRpc>({
         return null;
       }
       Utils.quit();
+      return null;
+    }
+    case "host.windowControl": {
+      const action = normalizeWindowControlAction(payload.action);
+      const windowKey = getRpcWindowKey(rpc);
+      if (action === "close" && windowKey === MAIN_WINDOW_RPC_KEY) {
+        closeAllDetachedWindows();
+        teardownServices();
+        const mainWindow = getMainWindow();
+        if (mainWindow) {
+          mainWindow.close();
+          clearMainWindow();
+          return null;
+        }
+        Utils.quit();
+        return null;
+      }
+      if (!controlWindowForRpcKey(windowKey, action)) {
+        throw new Error("No desktop window is registered for this request.");
+      }
       return null;
     }
     case "host.openExternal":
