@@ -1,9 +1,11 @@
 $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
+$PackageJson = Get-Content (Join-Path $Root "package.json") -Raw | ConvertFrom-Json
 $BundleDir = Join-Path $Root "build\stable-win-x64\Gloomberb-inno-source\Gloomberb"
 $CoreDir = Join-Path $BundleDir "Resources\gloomberb-tui\node_modules\@opentui\core-win32-x64"
 $InstallerPath = Join-Path $Root "artifacts\stable-win-x64-GloomberbSetup.exe"
+$UpdateManifestPath = Join-Path $Root "artifacts\stable-win-x64-update.json"
 $GuiArtifactDir = Join-Path $Root "artifacts\windows-gui-verification"
 $BundleAppIconPath = Join-Path $BundleDir "Resources\app.ico"
 $BundleLogoIconPath = Join-Path $BundleDir "Resources\gloomberb-logo.ico"
@@ -544,6 +546,28 @@ function Export-AssociatedIcon {
   Assert-IconHasTransparentCorners $OutputPath "$Label associated icon"
 }
 
+function Assert-WindowsUpdateManifest {
+  param([string]$Path)
+
+  if (-not (Test-Path $Path)) {
+    throw "Missing Windows desktop update manifest: $Path"
+  }
+
+  $Manifest = Get-Content $Path -Raw | ConvertFrom-Json
+  if ($Manifest.version -ne $PackageJson.version) {
+    throw "Windows update manifest version mismatch: expected $($PackageJson.version), got $($Manifest.version)"
+  }
+  if ($Manifest.platform -ne "win") {
+    throw "Windows update manifest platform mismatch: expected win, got $($Manifest.platform)"
+  }
+  if ($Manifest.arch -ne "x64") {
+    throw "Windows update manifest arch mismatch: expected x64, got $($Manifest.arch)"
+  }
+  if ([string]::IsNullOrWhiteSpace([string]$Manifest.hash)) {
+    throw "Windows update manifest is missing the bundle hash."
+  }
+}
+
 function Get-WindowIconHandle {
   param([object]$Window)
 
@@ -786,7 +810,7 @@ $RequiredPaths = @(
   (Join-Path $CoreDir "index.js"),
   (Join-Path $Root "artifacts\stable-win-x64-Gloomberb-Setup.zip"),
   (Join-Path $Root "artifacts\stable-win-x64-Gloomberb.tar.zst"),
-  (Join-Path $Root "artifacts\stable-win-x64-update.json"),
+  $UpdateManifestPath,
   $InstallerPath
 )
 
@@ -796,6 +820,7 @@ foreach ($Path in $RequiredPaths) {
   }
 }
 
+Assert-WindowsUpdateManifest $UpdateManifestPath
 Assert-IcoFile $BundleAppIconPath "Bundled app icon"
 Assert-IcoFile $BundleLogoIconPath "Bundled logo icon"
 Export-AssociatedIcon `
