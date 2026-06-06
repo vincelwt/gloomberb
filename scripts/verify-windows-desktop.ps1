@@ -928,12 +928,6 @@ try {
     -OutputPath (Join-Path $GuiArtifactDir "windows-window-icon-popout.png") `
     -Label "Detached pop-out"
 
-  Assert-CustomWindowControls `
-    -Window $DetachedWindow `
-    -Label "Detached pop-out"
-
-  Save-WindowInventory (Join-Path $GuiArtifactDir "windows-after-launch.txt")
-
   $MainScreenshot = Join-Path $GuiArtifactDir "windows-gui-main.png"
   $MainWindow = Capture-WindowScreenshotByTitle `
     -Title "Gloomberb" `
@@ -946,6 +940,12 @@ try {
     -Title "Detached Watchlist" `
     -Path $PopOutScreenshot `
     -Label "Detached pop-out"
+
+  Assert-CustomWindowControls `
+    -Window $DetachedWindow `
+    -Label "Detached pop-out"
+
+  Save-WindowInventory (Join-Path $GuiArtifactDir "windows-after-launch.txt")
 
   $DesktopScreenshot = Join-Path $GuiArtifactDir "windows-gui-desktop.png"
   Capture-DesktopScreenshot $DesktopScreenshot
