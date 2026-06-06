@@ -435,6 +435,153 @@ function Assert-ScreenshotHasContent {
   }
 }
 
+function Test-WindowControlGlyphPixel {
+  param([System.Drawing.Color]$Color)
+
+  if ($Color.A -le 120 -or $Color.R -le 120 -or $Color.G -le 120 -or $Color.B -le 120) {
+    return $false
+  }
+
+  $MaxChannel = [Math]::Max($Color.R, [Math]::Max($Color.G, $Color.B))
+  $MinChannel = [Math]::Min($Color.R, [Math]::Min($Color.G, $Color.B))
+  return ($MaxChannel - $MinChannel) -lt 80
+}
+
+function Measure-WindowCloseGlyphPadding {
+  param(
+    [string]$Path,
+    [string]$Label
+  )
+
+  $Bitmap = [System.Drawing.Bitmap]::FromFile($Path)
+  try {
+    $Width = $Bitmap.Width
+    $Height = $Bitmap.Height
+    $MaxY = [Math]::Min(60, $Height)
+    $MinX = [Math]::Max(0, $Width - 200)
+    $Mask = [System.Collections.Generic.HashSet[string]]::new()
+    $Seen = [System.Collections.Generic.HashSet[string]]::new()
+
+    for ($Y = 0; $Y -lt $MaxY; $Y += 1) {
+      for ($X = $MinX; $X -lt $Width; $X += 1) {
+        if (Test-WindowControlGlyphPixel -Color ($Bitmap.GetPixel($X, $Y))) {
+          [void]$Mask.Add("$X,$Y")
+        }
+      }
+    }
+
+    $Components = @()
+    $Directions = @(
+      @(1, 0), @(-1, 0), @(0, 1), @(0, -1),
+      @(1, 1), @(1, -1), @(-1, 1), @(-1, -1)
+    )
+
+    foreach ($StartKey in $Mask) {
+      if ($Seen.Contains($StartKey)) {
+        continue
+      }
+
+      $Queue = [System.Collections.Generic.Queue[string]]::new()
+      $Queue.Enqueue($StartKey)
+      [void]$Seen.Add($StartKey)
+      $StartParts = $StartKey -split ","
+      $MinComponentX = [int]$StartParts[0]
+      $MaxComponentX = [int]$StartParts[0]
+      $MinComponentY = [int]$StartParts[1]
+      $MaxComponentY = [int]$StartParts[1]
+      $Count = 0
+
+      while ($Queue.Count -gt 0) {
+        $CurrentKey = $Queue.Dequeue()
+        $Parts = $CurrentKey -split ","
+        $CurrentX = [int]$Parts[0]
+        $CurrentY = [int]$Parts[1]
+        $Count += 1
+        $MinComponentX = [Math]::Min($MinComponentX, $CurrentX)
+        $MaxComponentX = [Math]::Max($MaxComponentX, $CurrentX)
+        $MinComponentY = [Math]::Min($MinComponentY, $CurrentY)
+        $MaxComponentY = [Math]::Max($MaxComponentY, $CurrentY)
+
+        foreach ($Direction in $Directions) {
+          $NextX = $CurrentX + [int]$Direction[0]
+          $NextY = $CurrentY + [int]$Direction[1]
+          if ($NextX -lt $MinX -or $NextX -ge $Width -or $NextY -lt 0 -or $NextY -ge $MaxY) {
+            continue
+          }
+
+          $NextKey = "$NextX,$NextY"
+          if ($Mask.Contains($NextKey) -and -not $Seen.Contains($NextKey)) {
+            [void]$Seen.Add($NextKey)
+            $Queue.Enqueue($NextKey)
+          }
+        }
+      }
+
+      if ($Count -ge 2) {
+        $Components += [pscustomobject]@{
+          MinX = $MinComponentX
+          MaxX = $MaxComponentX
+          MinY = $MinComponentY
+          MaxY = $MaxComponentY
+          Count = $Count
+        }
+      }
+    }
+
+    if ($Components.Count -eq 0) {
+      throw "$Label window control glyphs could not be measured."
+    }
+
+    $RightmostX = ($Components | Measure-Object -Property MaxX -Maximum).Maximum
+    $CloseParts = @($Components | Where-Object { $_.MaxX -ge ($RightmostX - 10) })
+    if ($CloseParts.Count -eq 0) {
+      throw "$Label close control glyph could not be measured."
+    }
+
+    $CloseMinX = ($CloseParts | Measure-Object -Property MinX -Minimum).Minimum
+    $CloseMaxX = ($CloseParts | Measure-Object -Property MaxX -Maximum).Maximum
+    $CloseMinY = ($CloseParts | Measure-Object -Property MinY -Minimum).Minimum
+    $CloseMaxY = ($CloseParts | Measure-Object -Property MaxY -Maximum).Maximum
+    $TopInset = [int]$CloseMinY
+    $RightInset = [int]($Width - 1 - $CloseMaxX)
+
+    [pscustomobject]@{
+      Label = $Label
+      Image = $Path
+      Width = $Width
+      Height = $Height
+      CloseGlyph = [pscustomobject]@{
+        MinX = [int]$CloseMinX
+        MaxX = [int]$CloseMaxX
+        MinY = [int]$CloseMinY
+        MaxY = [int]$CloseMaxY
+        Parts = $CloseParts.Count
+      }
+      TopInset = $TopInset
+      RightInset = $RightInset
+      Delta = [int]($RightInset - $TopInset)
+    }
+  } finally {
+    $Bitmap.Dispose()
+  }
+}
+
+function Assert-WindowControlPadding {
+  param(
+    [string]$Path,
+    [string]$Label
+  )
+
+  $Measurement = Measure-WindowCloseGlyphPadding -Path $Path -Label $Label
+  Write-Host "$Label close glyph padding: top=$($Measurement.TopInset) right=$($Measurement.RightInset) delta=$($Measurement.Delta)"
+
+  if ([Math]::Abs($Measurement.Delta) -gt 2) {
+    throw "$Label close glyph padding is not balanced: $($Measurement | ConvertTo-Json -Depth 5 -Compress)"
+  }
+
+  return $Measurement
+}
+
 function Assert-IcoFile {
   param(
     [string]$Path,
@@ -940,6 +1087,18 @@ try {
     -Title "Detached Watchlist" `
     -Path $PopOutScreenshot `
     -Label "Detached pop-out"
+
+  $ControlPaddingMeasurements = @(
+    Assert-WindowControlPadding `
+      -Path $MainScreenshot `
+      -Label "Main window"
+    Assert-WindowControlPadding `
+      -Path $PopOutScreenshot `
+      -Label "Detached pop-out"
+  )
+  $ControlPaddingMeasurements |
+    ConvertTo-Json -Depth 6 |
+    Set-Content -Path (Join-Path $GuiArtifactDir "windows-control-padding.json") -Encoding UTF8
 
   Assert-CustomWindowControls `
     -Window $DetachedWindow `

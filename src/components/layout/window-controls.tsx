@@ -3,7 +3,7 @@ import { useCallback } from "react";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "./titlebar-overlay";
 
 const WINDOWS_CONTROL_SIZE_PX = TITLEBAR_OVERLAY_HEIGHT_PX;
-// Hidden Windows resize chrome still appears inside the captured window edge.
+const WINDOWS_CONTROL_GROUP_WIDTH_PX = WINDOWS_CONTROL_SIZE_PX * 3;
 const MAIN_WINDOW_EDGE_OVERHANG_PX = 11;
 const DETACHED_WINDOW_EDGE_OVERHANG_PX = 18;
 
@@ -23,10 +23,12 @@ function stopMouse(event: { stopPropagation?: () => void; preventDefault?: () =>
   event.preventDefault?.();
 }
 
-function WindowControlIcon({ action }: { action: WindowControlAction }) {
+function WindowControlIcon({ action, edgeOffset }: { action: WindowControlAction; edgeOffset: number }) {
+  const style = edgeOffset > 0 ? { transform: `translateX(${edgeOffset}px)` } : undefined;
+
   if (action === "minimize") {
     return (
-      <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true">
+      <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true" style={style}>
         <path d="M2.5 6.5H9.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="square" />
       </svg>
     );
@@ -34,14 +36,14 @@ function WindowControlIcon({ action }: { action: WindowControlAction }) {
 
   if (action === "toggle-maximize") {
     return (
-      <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true">
+      <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true" style={style}>
         <rect x="3" y="3" width="6" height="6" stroke="currentColor" strokeWidth="1.25" />
       </svg>
     );
   }
 
   return (
-    <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true">
+    <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true" style={style}>
       <path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
     </svg>
   );
@@ -53,7 +55,7 @@ interface WindowControlsProps {
 
 export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
   const rendererHost = useRendererHost();
-  const edgeOverhang = windowKind === "detached" ? DETACHED_WINDOW_EDGE_OVERHANG_PX : MAIN_WINDOW_EDGE_OVERHANG_PX;
+  const edgeOffset = windowKind === "detached" ? DETACHED_WINDOW_EDGE_OVERHANG_PX : MAIN_WINDOW_EDGE_OVERHANG_PX;
 
   const controlWindow = useCallback((action: WindowControlAction, event: { stopPropagation?: () => void; preventDefault?: () => void }) => {
     stopMouse(event);
@@ -65,18 +67,19 @@ export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
       flexDirection="row"
       alignItems="stretch"
       flexShrink={0}
+      width={`${WINDOWS_CONTROL_GROUP_WIDTH_PX}px`}
       className="electrobun-webkit-app-region-no-drag"
       data-gloom-role="window-controls"
       aria-hidden={false}
-      style={{
-        transform: `translateX(${edgeOverhang}px)`,
-      }}
     >
       {WINDOWS_CONTROLS.map((control) => (
         <Box
           key={control.action}
           alignItems="center"
           justifyContent="center"
+          flexShrink={0}
+          width={`${WINDOWS_CONTROL_SIZE_PX}px`}
+          height="100%"
           data-gloom-role="window-control"
           data-window-control-action={control.action}
           data-gloom-interactive="true"
@@ -85,12 +88,8 @@ export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
           title={control.label}
           className="electrobun-webkit-app-region-no-drag"
           onMouseDown={(event: { stopPropagation?: () => void; preventDefault?: () => void }) => controlWindow(control.action, event)}
-          style={{
-            width: WINDOWS_CONTROL_SIZE_PX,
-            height: "100%",
-          }}
         >
-          <WindowControlIcon action={control.action} />
+          <WindowControlIcon action={control.action} edgeOffset={edgeOffset} />
         </Box>
       ))}
     </Box>
