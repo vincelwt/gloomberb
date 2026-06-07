@@ -3,6 +3,7 @@ import type { AssetDataProvider } from "../types/data-provider";
 import type { NewsDataProvider } from "../types/capability-route-source";
 
 type CapabilityOperationKind = "read" | "query" | "action" | "stream";
+type CapabilitySideEffectLevel = "none" | "local-write" | "network-write" | "external-trade" | "external-side-effect";
 
 type CapabilityKind =
   | "asset-data"
@@ -20,9 +21,22 @@ interface CapabilityHandlerContext {
 
 type CapabilityStreamEmit<T = unknown> = (event: T) => void;
 
+export interface CapabilityOperationCliManifest {
+  summary?: string;
+  inputShape?: string;
+  outputShape?: string;
+  examples?: string[];
+  sideEffectLevel?: CapabilitySideEffectLevel;
+  requirements?: string[];
+  batch?: boolean;
+  formats?: Array<"text" | "json" | "csv" | "ndjson">;
+  safety?: string[];
+}
+
 export interface CapabilityOperation<I = unknown, O = unknown, E = unknown> {
   kind: CapabilityOperationKind;
   rendererSafe?: boolean;
+  cli?: CapabilityOperationCliManifest;
   input?: CapabilitySchema<I>;
   output?: CapabilitySchema<O>;
   cachePolicy?: CachePolicyMap[keyof CachePolicyMap];
@@ -55,6 +69,15 @@ export interface CapabilityOperationManifest {
   id: string;
   kind: CapabilityOperationKind;
   rendererSafe: boolean;
+  summary?: string;
+  inputShape?: string;
+  outputShape?: string;
+  examples?: string[];
+  sideEffectLevel?: CapabilitySideEffectLevel;
+  requirements?: string[];
+  batch?: boolean;
+  formats?: Array<"text" | "json" | "csv" | "ndjson">;
+  safety?: string[];
 }
 
 export interface CapabilityManifest {

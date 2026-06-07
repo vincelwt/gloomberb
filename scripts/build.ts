@@ -107,7 +107,7 @@ async function build(targetConfig: BuildTarget) {
   const target = `bun-${bunOs}-${arch}`;
   console.log(`Building ${target}...`);
   await runProcess(
-    ["bun", "build", "--compile", `--target=${target}`, "src/index.tsx", `--outfile=${outfile}`],
+    ["bun", "build", "--compile", `--target=${target}`, "src/cli/entry.ts", `--outfile=${outfile}`],
     `Failed to build ${target}`,
     { env: { ...process.env, GLOOMBERB_API_URL: "https://api.gloom.sh" } },
   );

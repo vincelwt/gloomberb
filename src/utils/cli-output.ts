@@ -8,9 +8,15 @@ export interface CliTableColumn {
 }
 
 const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
+let colorEnabledOverride: boolean | null = null;
 
 function colorEnabled(): boolean {
+  if (colorEnabledOverride != null) return colorEnabledOverride;
   return !!process.stdout.isTTY && process.env.NO_COLOR !== "1" && process.env.TERM !== "dumb";
+}
+
+export function setCliColorEnabledOverride(value: boolean | null): void {
+  colorEnabledOverride = value;
 }
 
 function applyAnsi(text: string, code: string): string {

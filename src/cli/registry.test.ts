@@ -18,6 +18,7 @@ const originalHome = process.env.HOME;
 
 afterEach(async () => {
   process.env.HOME = originalHome;
+  process.exitCode = 0;
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -180,6 +181,45 @@ describe("CLI dispatch", () => {
 
     expect(result).toEqual({ kind: "handled" });
     expect(stdout).toContain("ok:hello world");
+  });
+
+  test("renders plugin command failures through structured output", async () => {
+    process.env.HOME = await createTempHome("gloomberb-cli-registry-failure-home-");
+    const originalExitCode = process.exitCode;
+    process.exitCode = undefined;
+    try {
+      const { result, stderr } = await captureConsole(() => dispatchCli(
+        ["fail-example", "--json"],
+        {
+          externalPlugins: [{
+            plugin: {
+              id: "failing-cli",
+              name: "Failing CLI",
+              version: "1.0.0",
+              cliCommands: [{
+                name: "fail-example",
+                description: "Fail on purpose",
+                execute: (_args, ctx) => ctx.fail("Synthetic failure.", "Synthetic details."),
+              }],
+            },
+            path: "/tmp/failing-cli",
+          }],
+        },
+      ));
+
+      expect(result).toEqual({ kind: "handled" });
+      expect(process.exitCode).toBe(1);
+      expect(JSON.parse(stderr)).toEqual({
+        ok: false,
+        error: {
+          code: "cli_error",
+          message: "Synthetic failure.",
+          details: "Synthetic details.",
+        },
+      });
+    } finally {
+      process.exitCode = originalExitCode ?? 0;
+    }
   });
 
   test("routes prediction market commands and aliases through launch-ui requests", async () => {

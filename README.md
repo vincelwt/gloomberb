@@ -70,21 +70,42 @@ Open command mode with `Ctrl+P`, then type a command. Press `` ` `` to open tick
 
 ## CLI
 
-Running `gloomberb` with no arguments launches the terminal UI. Use `gloomberb help` to see the full command list.
+Running `gloomberb` with no arguments launches the terminal UI. Normal commands run through a headless CLI path; use `gloomberb launch-ui` when a script should explicitly open the UI.
+
+Human-readable output is the default. Automation can opt into structured output with `--json`, `--csv`, or `--ndjson`. JSON output favors the richest fetched model available and includes display-column metadata when a command has table columns; CSV and NDJSON use the command's tabular row view. Common global flags include `--limit`, `--refresh`, `--quiet`, `--no-color`, `--dry-run`, and `--yes`.
 
 | Command | Use |
 |---------|-----|
 | `gloomberb` | Launch the terminal UI |
+| `gloomberb launch-ui` | Explicitly launch the terminal UI |
 | `gloomberb help` | Show all CLI commands |
-| `gloomberb search <query>` | Search tickers and company names |
+| `gloomberb api list|get|invoke|subscribe` | Inspect and call plugin capabilities directly |
+| `gloomberb quote <symbols>` | Fetch current quotes |
+| `gloomberb search <query>` / `provider-search <query>` | Search tickers and provider symbols |
 | `gloomberb ticker <symbol>` | Show quote, ownership, and financials |
+| `gloomberb history|financials|fundamentals|options <symbol>` | Fetch research data |
+| `gloomberb news|filings|holders|insider|13f|analyst|events|valuation <symbol>` | Fetch company research feeds |
+| `gloomberb movers|indices|sectors|fx|fear-greed|earnings` | Fetch market overview data |
+| `gloomberb econ|fred|yield-curve` | Fetch macro data |
+| `gloomberb compare|correlation|relationship <symbols>` | Compare securities |
 | `gloomberb portfolio [action]` | Manage manual portfolios |
 | `gloomberb watchlist [action]` | Manage watchlists |
+| `gloomberb notes|alerts [action]` | Manage local notes and alerts |
+| `gloomberb broker|ibkr [action]` | Inspect broker integrations; trading actions require explicit account/profile and `--yes` |
+| `gloomberb ai providers|ask|screen` | Use configured AI providers and screeners |
+| `gloomberb rss fetch <url>` | Fetch an RSS feed |
+| `gloomberb buildout|congress|substack|x-feed|tweets` | Access cloud and social data sources when an existing session is available |
+| `gloomberb provider status` | Inspect enabled data providers |
+| `gloomberb config|cache|plugin|layout|pane|debug|doctor|version|changelog` | Inspect and manage local app state |
+| `gloomberb fn [...]` | Run a pane-backed report command |
+| `gloomberb shot [...]` | Capture a pane-backed screenshot |
 | `gloomberb predictions [...]` | Launch Prediction Markets |
 | `gloomberb plugins` | List installed plugins |
 | `gloomberb install <user/repo>` | Install a plugin from GitHub |
 | `gloomberb remove <name>` | Remove an installed plugin |
 | `gloomberb update [name]` | Update plugins |
+
+Commands that need a signed-in cloud session may return `auth_required`; sign-in, account management, and chat workflows are still handled in the app UI for now.
 
 ## Plugins
 

@@ -1,4 +1,5 @@
 import { saveConfig } from "../../../../data/config/store";
+import { countCollectionTickers } from "../../../../cli/helpers";
 import { resolveTickerForCli } from "../../../../cli/ticker-resolution";
 import { cliStyles, renderStat } from "../../../../utils/cli-output";
 import { formatMarketCostWithCurrency, formatMarketQuantity } from "../../../../market-data/market/format";
@@ -17,6 +18,28 @@ import { parseFiniteNumber, requireManualPortfolio } from "./shared";
 async function listCollections(ctx: CliCommandContext) {
   const { config, store, persistence } = await ctx.initConfigData();
   const tickers = await store.loadAllTickers();
+  if (ctx.cliOptions.format !== "text") {
+    ctx.printResult({
+      data: {
+        portfolios: config.portfolios.map((portfolio) => ({
+          id: portfolio.id,
+          name: portfolio.name,
+          currency: portfolio.currency,
+          brokerId: portfolio.brokerId ?? "",
+          brokerInstanceId: portfolio.brokerInstanceId ?? "",
+          brokerAccountId: portfolio.brokerAccountId ?? "",
+          tickerCount: countCollectionTickers(tickers, "portfolios", portfolio.id),
+        })),
+        watchlists: config.watchlists.map((watchlist) => ({
+          id: watchlist.id,
+          name: watchlist.name,
+          tickerCount: countCollectionTickers(tickers, "watchlists", watchlist.id),
+        })),
+      },
+    });
+    persistence.close();
+    return;
+  }
   console.log(renderCollectionOverview(config, tickers));
   persistence.close();
 }

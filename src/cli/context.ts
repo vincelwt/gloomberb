@@ -4,15 +4,22 @@ import { getDataDir, loadConfig } from "../data/config/store";
 import { AppPersistence } from "../data/app-persistence";
 import { TickerRepository } from "../data/ticker-repository";
 import { AssetDataRouter } from "../sources/provider-router";
+import { createAppServices } from "../core/app-services";
 import type { PluginCapability } from "../capabilities";
 import type { AppConfig } from "../types/config";
 import type { GloomPlugin } from "../types/plugin";
 import { getLoadablePlugins } from "../plugins/catalog";
+import type { PluginRegistry } from "../plugins/registry";
+import type { LoadedExternalPlugin } from "../plugins/loader";
 import { fail } from "./errors";
 import type { ConfigContext, MarketContext } from "./types";
 
 interface CliContextOptions {
   plugins?: GloomPlugin[];
+}
+
+interface CliServicesOptions {
+  externalPlugins?: LoadedExternalPlugin[];
 }
 
 function resolveCliCapabilities(config: AppConfig, plugins: GloomPlugin[]): PluginCapability[] {
@@ -55,9 +62,35 @@ export async function initMarketData(options: CliContextOptions = {}): Promise<M
   const plugins = options.plugins ?? getLoadablePlugins();
   const capabilities = resolveCliCapabilities(context.config, plugins);
   const dataProvider = new AssetDataRouter(null, [], context.persistence.resources);
-  dataProvider.attachRegistry({
+  const registryAdapter: Pick<PluginRegistry, "brokers" | "getEnabledCapabilities"> = {
     brokers: new Map(),
     getEnabledCapabilities: (kind?: string) => capabilities.filter((capability) => !kind || capability.kind === kind),
-  } as any);
+  };
+  dataProvider.attachRegistry(registryAdapter as PluginRegistry);
+  dataProvider.setConfigAccessor(() => context.config);
   return { ...context, dataProvider };
+}
+
+export async function initCliServices(options: CliServicesOptions = {}) {
+  const dataDir = await getDataDir();
+  if (!dataDir || !existsSync(dataDir)) {
+    fail("No data directory configured.", "Run gloomberb once to initialize your local data.");
+  }
+
+  const config = await loadConfig(dataDir);
+  const services = createAppServices({
+    config,
+    externalPlugins: options.externalPlugins ?? [],
+  });
+  services.providerRouter.setConfigAccessor(() => config);
+  await services.ready;
+  return {
+    config,
+    dataDir,
+    services,
+    dataProvider: services.providerRouter,
+    persistence: services.persistence,
+    store: services.tickerRepository,
+    destroy: () => services.destroy(),
+  };
 }

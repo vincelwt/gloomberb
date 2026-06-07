@@ -12,7 +12,7 @@ import { assetDataProvider, newsProvider } from "../capabilities";
 import type { AppConfig } from "../types/config";
 import type { DataProvider } from "../types/data-provider";
 import { debugLog } from "../utils/debug-log";
-import { measurePerf } from "../utils/perf-marks";
+import { measurePerf, measurePerfAsync } from "../utils/perf-marks";
 import { setIbkrPortfolioPerformanceResourceStore } from "../plugins/ibkr/portfolio-performance";
 
 const servicesLog = debugLog.createLogger("services");
@@ -25,6 +25,7 @@ export interface AppServices {
   marketData: MarketDataCoordinator;
   pluginRegistry: PluginRegistry;
   newsService: NewsService;
+  ready: Promise<void>;
   destroy(): void;
 }
 
@@ -68,10 +69,11 @@ export function createAppServices({
   setSharedMarketDataCoordinator(marketData);
 
   const plugins = getLoadablePlugins(externalPlugins);
+  const pluginReadyPromises: Promise<void>[] = [];
   for (const plugin of plugins) {
-    measurePerf("startup.services.register-plugin", () => {
-      void pluginRegistry.register(plugin);
-    }, { pluginId: plugin.id });
+    pluginReadyPromises.push(measurePerfAsync("startup.services.register-plugin", () => (
+      pluginRegistry.register(plugin)
+    ), { pluginId: plugin.id }));
   }
   measurePerf("startup.services.news-start", () => {
     newsService.start();
@@ -86,6 +88,7 @@ export function createAppServices({
     marketData,
     pluginRegistry,
     newsService,
+    ready: Promise.all(pluginReadyPromises).then(() => {}),
     destroy() {
       setSharedMarketDataCoordinator(null);
       setSharedNewsService(null);

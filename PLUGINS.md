@@ -67,7 +67,7 @@ For external plugins, create a directory in `~/.gloomberb/plugins/`:
 
 ## What plugins can do
 
-Use `setup()` for interactive runtime registration, and `cliCommands` for root-level CLI commands that should be discoverable without running plugin setup.
+Use `setup()` for interactive runtime registration, `capabilities` for reusable headless services, and `cli.commands` for root-level CLI commands that should be discoverable without rendering panes. The older `cliCommands` array still works, but new plugins should prefer the typed `cli.commands` descriptor because it exposes summaries, input/output shape, formats, safety notes, and side-effect level to `gloomberb help`, `gloomberb catalog --json`, and `gloomberb api list`.
 
 ## Renderer-neutral UI
 
@@ -137,7 +137,7 @@ Commands registered with `ctx.registerCommand({ shortcut, shortcutArg })` and pa
 
 ### CLI commands
 
-Plugins can also declare root CLI commands directly on the plugin object:
+Plugins can declare root CLI commands directly on the plugin object. Prefer `cli.commands` for new commands; keep `cliCommands` only for compatibility with older plugins.
 
 ```typescript
 import type { GloomPlugin } from "gloomberb/types/plugin";
@@ -146,39 +146,50 @@ export const myPlugin: GloomPlugin = {
   id: "my-plugin",
   name: "My Plugin",
   version: "1.0.0",
-  cliCommands: [
-    {
-      name: "my-plugin",
-      aliases: ["mp"],
-      description: "Run a plugin-owned CLI command",
-      help: {
-        usage: ["my-plugin [action]"],
-        sections: [{
-          title: "My Plugin CLI",
-          columns: [
-            { header: "Action" },
-            { header: "Example" },
-          ],
-          rows: [
-            ["run", "gloomberb my-plugin run"],
-          ],
-        }],
+  cli: {
+    commands: [
+      {
+        name: "my-plugin",
+        aliases: ["mp"],
+        summary: "Run a plugin-owned CLI command",
+        inputShape: "my-plugin run [--limit N]",
+        outputShape: "rows: [{ id, label }]",
+        formats: ["text", "json", "csv", "ndjson"],
+        sideEffectLevel: "none",
+        examples: ["gloomberb my-plugin run --json"],
+        async execute(args, ctx) {
+          if (args[0] !== "run") {
+            ctx.fail("Usage: gloomberb my-plugin run");
+          }
+
+          const services = await ctx.initServices();
+          try {
+            ctx.printResult(
+              {
+                data: [
+                  { id: "demo", label: `Using data dir ${services.config.dataDir}` },
+                ],
+              },
+              {
+                columns: [
+                  { key: "id", header: "ID" },
+                  { key: "label", header: "Label" },
+                ],
+              },
+            );
+          } finally {
+            services.close();
+          }
+        },
       },
-      async execute(args, ctx) {
-        if (args[0] === "run") {
-          const { config, persistence } = await ctx.initConfigData();
-          console.log(`Using data dir ${config.dataDir}`);
-          persistence.close();
-          return;
-        }
-        ctx.fail("Usage: gloomberb my-plugin run");
-      },
-    },
-  ],
+    ],
+  },
 };
 ```
 
-Each CLI command owns one root namespace and parses its own subactions internally.
+Each CLI command owns one root namespace and parses its own subactions internally. Commands should call shared service/model code or capabilities, not pane React components. Only explicit visual commands such as screenshots should route through pane rendering.
+
+For automation, prefer returning the richest useful structured model in `ctx.printResult({ data })` and use `rows`/`columns` render options to keep text, CSV, and NDJSON compact. JSON output preserves `data` and includes display-column metadata, so agents can inspect both the full model and the human/table projection without scraping terminal text.
 
 Available CLI context helpers:
 
@@ -186,6 +197,9 @@ Available CLI context helpers:
 |------|---------------|
 | `ctx.initConfigData()` | Load config, persistence, and ticker storage |
 | `ctx.initMarketData()` | Load config plus the plugin-aware asset-data router |
+| `ctx.initServices()` | Load the full headless service set, including config, persistence, ticker repository, asset-data router, news service, plugin registry, and capability registry |
+| `ctx.cliOptions` | Parsed global flags such as output format, `--limit`, `--refresh`, `--dry-run`, and `--yes` |
+| `ctx.printResult(...)` | Render text, JSON, CSV, or NDJSON through the shared CLI result contract |
 | `ctx.fail(...)` | Print an error and exit |
 | `ctx.closeAndFail(...)` | Close persistence, then print an error and exit |
 | `ctx.output.*` | CLI formatting helpers (`cliStyles`, `renderSection`, `renderTable`, `renderStat`, `colorBySign`) |
@@ -222,6 +236,27 @@ Plugins contribute data and services through capabilities. A capability declares
 - `asset-data` for quotes, financials, search, FX, price history, options, filings, holders, analyst research, corporate actions, earnings calendars, article summaries, and quote streams.
 - `news` for ticker and global news feeds.
 - `plugin-service` for narrow renderer-safe service escape hatches.
+
+Capability operations can also include CLI manifest metadata. This is what makes the operation understandable to automation without plugin-specific documentation:
+
+```typescript
+{
+  kind: "query",
+  rendererSafe: true,
+  cli: {
+    summary: "Fetch a custom research report",
+    inputShape: "{ symbol: string }",
+    outputShape: "{ symbol, rating, notes }",
+    formats: ["text", "json"],
+    sideEffectLevel: "none",
+    requirements: ["enabled plugin"],
+    examples: ['gloomberb api invoke my-plugin.research \'{"symbol":"AAPL"}\' --json'],
+  },
+  handler: async (input) => ({ symbol: input.symbol, rating: "watch", notes: [] }),
+}
+```
+
+Use `sideEffectLevel: "local-write"` for local mutations, `"network-write"` for remote writes, `"external-trade"` for order placement/cancel/modify, and `"external-side-effect"` for other irreversible external actions. Mutating CLI commands should support `--dry-run` where practical and require `--yes` for dangerous operations.
 
 ```typescript
 import { assetDataProvider, newsProvider } from "gloomberb/capabilities";

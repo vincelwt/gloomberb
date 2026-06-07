@@ -4,6 +4,8 @@ import type { PluginEvents } from "../plugins/event-bus";
 import type { PluginLogger } from "../utils/debug-log";
 import type { BrokerAdapter } from "./broker";
 import type { PluginCapability } from "../capabilities";
+import type { CliGlobalOptions } from "../cli/options";
+import type { CliResult, CliResultRenderOptions } from "../cli/result";
 import type { ContextMenuContext, ContextMenuItem } from "./context-menu";
 import type {
   AppConfig,
@@ -245,6 +247,8 @@ export type CliDispatchResult =
 export interface CliCommandContext {
   initConfigData(): Promise<import("../cli/types").ConfigContext>;
   initMarketData(): Promise<import("../cli/types").MarketContext>;
+  initServices(): Promise<import("../cli/types").CliServicesContext>;
+  cliOptions: CliGlobalOptions;
   plugins: GloomPlugin[];
   fail(message: string, details?: string): never;
   closeAndFail(
@@ -259,6 +263,10 @@ export interface CliCommandContext {
     renderStat: typeof import("../utils/cli-output").renderStat;
     renderTable: typeof import("../utils/cli-output").renderTable;
   };
+  printResult<T, Row extends Record<string, unknown> = Record<string, unknown>>(
+    result: CliResult<T>,
+    options?: CliResultRenderOptions<T, Row>,
+  ): void;
   log: PluginLogger;
 }
 
@@ -268,6 +276,25 @@ export interface CliCommandDef {
   description: string;
   help?: CliCommandHelp;
   execute(args: string[], ctx: CliCommandContext): void | CliDispatchResult | Promise<void | CliDispatchResult>;
+}
+
+export interface PluginCliCommandDescriptor {
+  name: string;
+  aliases?: string[];
+  summary: string;
+  inputShape?: string;
+  outputShape?: string;
+  examples?: string[];
+  sideEffectLevel?: "none" | "local-write" | "network-write" | "external-trade" | "external-side-effect";
+  requirements?: string[];
+  batch?: boolean;
+  formats?: Array<"text" | "json" | "csv" | "ndjson">;
+  safety?: string[];
+  execute?: CliCommandDef["execute"];
+}
+
+export interface PluginCliDescriptor {
+  commands?: PluginCliCommandDescriptor[];
 }
 
 export interface CommandDef {
@@ -489,6 +516,7 @@ export interface GloomPlugin {
   toggleable?: boolean;
   order?: number;
   cliCommands?: CliCommandDef[];
+  cli?: PluginCliDescriptor;
 
   setup?(ctx: GloomPluginContext): void | Promise<void>;
   dispose?(): void;

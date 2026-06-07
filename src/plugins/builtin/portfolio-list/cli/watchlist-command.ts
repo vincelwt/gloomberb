@@ -129,6 +129,23 @@ async function removeTickerFromWatchlist(watchlistName: string, symbol: string, 
 async function listWatchlists(ctx: CliCommandContext) {
   const { config, store, persistence } = await ctx.initConfigData();
   const tickers = await store.loadAllTickers();
+  const rows = config.watchlists.map((watchlist) => ({
+    id: watchlist.id,
+    name: watchlist.name,
+    tickerCount: countCollectionTickers(tickers, "watchlists", watchlist.id),
+  }));
+
+  if (ctx.cliOptions.format !== "text") {
+    ctx.printResult({ data: rows }, {
+      columns: [
+        { key: "name", header: "Watchlist" },
+        { key: "id", header: "ID" },
+        { key: "tickerCount", header: "Tickers", align: "right" },
+      ],
+    });
+    persistence.close();
+    return;
+  }
 
   console.log(renderSection("Watchlists"));
   if (config.watchlists.length === 0) {
@@ -143,10 +160,10 @@ async function listWatchlists(ctx: CliCommandContext) {
       { header: "ID" },
       { header: "Tickers", align: "right" },
     ],
-    config.watchlists.map((watchlist) => [
+    rows.map((watchlist) => [
       watchlist.name,
       watchlist.id,
-      String(countCollectionTickers(tickers, "watchlists", watchlist.id)),
+      String(watchlist.tickerCount),
     ]),
   ));
   persistence.close();

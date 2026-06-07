@@ -58,6 +58,7 @@ export class CapabilityRegistry {
           id,
           kind: operation.kind,
           rendererSafe: operation.rendererSafe === true,
+          ...operation.cli,
         }));
       return {
         id: capability.id,

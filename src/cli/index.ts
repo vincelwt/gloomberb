@@ -1,7 +1,8 @@
 import { VERSION } from "../version";
-import type { CliCommandDef, CliDispatchResult } from "../types/plugin";
+import type { CliCommandDef, CliDispatchResult, CliLaunchRequest } from "../types/plugin";
 import type { LoadedExternalPlugin } from "../plugins/loader";
 import { loadCliConfigIfAvailable } from "./context";
+import { parseCliGlobalArgs } from "./options";
 import {
   buildCliCommandRegistry,
   createCliCommandContext,
@@ -10,9 +11,21 @@ import {
   renderCliHelp,
   type CliCommandRegistry,
 } from "./registry";
-import { fail } from "./errors";
+import { fail, inferCliErrorOptions, printCliError } from "./errors";
+import { setCliColorEnabledOverride } from "../utils/cli-output";
 import { search, searchCandidatesForCli, buildSearchReport } from "./commands/search";
 import { ticker, buildTickerReport } from "./commands/ticker";
+import { apiCliCommand } from "./commands/api";
+import { marketDataCliCommands } from "./commands/market";
+import { overviewCliCommands } from "./commands/overview";
+import { createSystemCliCommands } from "./commands/system";
+import {
+  aiCliCommand,
+  brokerCliCommand,
+  cloudCliCommands,
+  ibkrCliCommand,
+  rssCliCommand,
+} from "./commands/automation";
 import {
   installPlugin,
   listPlugins,
@@ -22,7 +35,11 @@ import {
 import { runPaneCatalog, runPaneFunction, runPaneScreenshot } from "./pane-functions";
 
 function createCoreCliCommands(renderHelp: () => string): CliCommandDef[] {
-  return [
+  let commands: CliCommandDef[] = [];
+  const launchUiRequest: CliLaunchRequest = {
+    applyConfig: (config) => ({ config }),
+  };
+  commands = [
     {
       name: "help",
       aliases: ["--help", "-h"],
@@ -30,9 +47,27 @@ function createCoreCliCommands(renderHelp: () => string): CliCommandDef[] {
       help: {
         usage: ["help"],
       },
-      execute: () => {
-        console.log(renderHelp());
+      execute: (_args, ctx) => {
+        if (ctx.cliOptions.format === "text") {
+          console.log(renderHelp());
+          return;
+        }
+        ctx.printResult({ data: commands.map((command) => ({
+          name: command.name,
+          aliases: command.aliases ?? [],
+          description: command.description,
+          usage: command.help?.usage ?? [],
+        })) });
       },
+    },
+    {
+      name: "launch-ui",
+      aliases: ["ui"],
+      description: "Launch the terminal UI explicitly",
+      help: {
+        usage: ["launch-ui"],
+      },
+      execute: () => ({ kind: "launch-ui", request: launchUiRequest }),
     },
     {
       name: "search",
@@ -45,6 +80,7 @@ function createCoreCliCommands(renderHelp: () => string): CliCommandDef[] {
         await search(query, {
           initMarketData: ctx.initMarketData,
           fail: ctx.fail,
+          ...(ctx.cliOptions.format === "text" ? {} : { printResult: ctx.printResult }),
         });
       },
     },
@@ -62,6 +98,7 @@ function createCoreCliCommands(renderHelp: () => string): CliCommandDef[] {
         await ticker(symbol!, {
           initMarketData: ctx.initMarketData,
           closeAndFail: ctx.closeAndFail,
+          ...(ctx.cliOptions.format === "text" ? {} : { printResult: ctx.printResult }),
         });
       },
     },
@@ -148,7 +185,17 @@ function createCoreCliCommands(renderHelp: () => string): CliCommandDef[] {
         listPlugins();
       },
     },
+    apiCliCommand,
+    ...marketDataCliCommands,
+    ...overviewCliCommands,
+    ...createSystemCliCommands(() => commands),
+    brokerCliCommand,
+    ibkrCliCommand,
+    aiCliCommand,
+    rssCliCommand,
+    ...cloudCliCommands,
   ];
+  return commands;
 }
 
 export interface DispatchCliOptions {
@@ -170,7 +217,16 @@ async function createRegistry(options: DispatchCliOptions = {}): Promise<CliComm
 export { buildSearchReport, buildTickerReport, searchCandidatesForCli };
 
 export async function dispatchCli(args: string[], options: DispatchCliOptions = {}): Promise<CliDispatchResult> {
-  const command = args[0];
+  let parsed;
+  try {
+    parsed = parseCliGlobalArgs(args);
+  } catch (error) {
+    printCliError(error, inferCliErrorOptions(args));
+    process.exitCode = 1;
+    return { kind: "handled" };
+  }
+  setCliColorEnabledOverride(parsed.options.color);
+  const command = parsed.args[0];
   if (!command) {
     return { kind: "unhandled" };
   }
@@ -181,11 +237,17 @@ export async function dispatchCli(args: string[], options: DispatchCliOptions = 
     return { kind: "unhandled" };
   }
 
-  const result = await resolved.command.execute(
-    args.slice(1),
-    createCliCommandContext(resolved.ownerId, registry.plugins),
-  );
-  return normalizeCliDispatchResult(result);
+  try {
+    const result = await resolved.command.execute(
+      parsed.args.slice(1),
+      createCliCommandContext(resolved.ownerId, registry, parsed.options),
+    );
+    return normalizeCliDispatchResult(result);
+  } catch (error) {
+    printCliError(error, parsed.options);
+    process.exitCode = 1;
+    return { kind: "handled" };
+  }
 }
 
 export async function runCli(args: string[], options: DispatchCliOptions = {}): Promise<boolean> {

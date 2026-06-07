@@ -12,10 +12,12 @@ import {
 import { initMarketData } from "../context";
 import { fail } from "../errors";
 import type { MarketContext } from "../types";
+import type { CliCommandContext } from "../../types/plugin";
 
 interface SearchCommandDependencies {
   initMarketData?: () => Promise<MarketContext>;
   fail?: (message: string, details?: string) => never;
+  printResult?: CliCommandContext["printResult"];
 }
 
 export async function searchCandidatesForCli({
@@ -52,6 +54,28 @@ export async function searchCandidatesForCli({
 
 function resolveSearchName(candidate: TickerSearchCandidate): string {
   return candidate.detail.split(" | ")[0] || candidate.detail || "—";
+}
+
+function searchCandidateRows(candidates: TickerSearchCandidate[]) {
+  return candidates.map((candidate) => ({
+    category: candidate.category,
+    symbol: candidate.label,
+    name: resolveSearchName(candidate),
+    exchange: candidate.result?.exchange
+      || candidate.result?.primaryExchange
+      || candidate.ticker?.metadata.exchange
+      || candidate.right
+      || "",
+    type: candidate.result?.type
+      || candidate.result?.brokerContract?.secType
+      || candidate.ticker?.metadata.assetCategory
+      || "",
+    source: candidate.kind === "ticker"
+      ? "Saved"
+      : candidate.result?.brokerLabel || candidate.result?.providerId || "Provider",
+    providerId: candidate.result?.providerId ?? "",
+    saved: candidate.kind === "ticker",
+  }));
 }
 
 export function buildSearchReport({
@@ -118,6 +142,21 @@ export async function search(query: string, dependencies: SearchCommandDependenc
     tickers,
     dataProvider,
   });
+
+  if (dependencies.printResult) {
+    dependencies.printResult({ data: searchCandidateRows(candidates), metadata: { query: trimmedQuery } }, {
+      columns: [
+        { key: "category", header: "Category" },
+        { key: "symbol", header: "Symbol" },
+        { key: "name", header: "Name" },
+        { key: "exchange", header: "Exchange" },
+        { key: "type", header: "Type" },
+        { key: "source", header: "Source" },
+      ],
+    });
+    persistence.close();
+    return;
+  }
 
   console.log(buildSearchReport({
     query: trimmedQuery,

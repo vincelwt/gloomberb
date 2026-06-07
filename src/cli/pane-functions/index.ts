@@ -76,11 +76,20 @@ export async function runPaneScreenshot(args: string[], ctx: CliCommandContext) 
 export async function runPaneCatalog(args: string[], ctx: CliCommandContext) {
   await runPaneCliCommand(ctx, async () => {
     const parsed = parsePaneCatalogArgs(args);
+    const effectiveParsed = {
+      ...parsed,
+      limit: ctx.cliOptions.limit ?? parsed.limit,
+    };
     const context = await ctx.initMarketData();
     const registry = await createPaneCatalog(context, ctx.plugins);
     try {
       const entries = await buildPaneCatalogEntries(registry, context);
-      console.log(renderPaneCatalogReport(filterPaneCatalogEntries(entries, parsed.query), parsed));
+      const filtered = filterPaneCatalogEntries(entries, parsed.query);
+      if (ctx.cliOptions.format === "text") {
+        console.log(renderPaneCatalogReport(filtered, effectiveParsed));
+      } else {
+        ctx.printResult({ data: filtered.slice(0, effectiveParsed.limit) });
+      }
     } finally {
       registry.destroy();
       context.persistence.close();

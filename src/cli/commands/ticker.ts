@@ -17,6 +17,7 @@ import type { FinancialStatement, TickerFinancials } from "../../types/financial
 import type { SecFilingItem } from "../../types/data-provider";
 import type { NewsArticle } from "../../news/types";
 import type { TickerRecord } from "../../types/ticker";
+import type { CliCommandContext } from "../../types/plugin";
 import { createBaseConverter } from "../base-converter";
 import { initMarketData } from "../context";
 import { closeAndFail } from "../errors";
@@ -40,6 +41,7 @@ const SEC_FILING_LIMIT = 5;
 interface TickerCommandDependencies {
   initMarketData?: () => Promise<MarketContext>;
   closeAndFail?: typeof closeAndFail;
+  printResult?: CliCommandContext["printResult"];
 }
 
 function appendMetricSection(lines: string[], title: string, metrics: Array<[string, string]>) {
@@ -367,6 +369,78 @@ export async function buildTickerReport({
   return lines.join("\n");
 }
 
+function buildTickerStructuredData({
+  symbol,
+  tickerFile,
+  financials,
+  config,
+  notes,
+  recentNews,
+  recentSecFilings,
+}: {
+  symbol: string;
+  tickerFile: TickerRecord | null;
+  financials: TickerFinancials;
+  config: AppConfig;
+  notes: string;
+  recentNews: NewsArticle[];
+  recentSecFilings: SecFilingItem[];
+}) {
+  const quote = financials.quote;
+  return {
+    symbol,
+    quote: quote ? {
+      symbol: quote.symbol,
+      name: quote.name,
+      price: quote.price,
+      change: quote.change,
+      changePercent: quote.changePercent,
+      currency: quote.currency,
+      marketCap: quote.marketCap ?? null,
+      volume: quote.volume ?? null,
+      exchangeName: quote.exchangeName ?? "",
+      fullExchangeName: quote.fullExchangeName ?? "",
+      marketState: quote.marketState ?? "",
+      dataSource: quote.dataSource ?? "",
+      providerId: quote.providerId ?? "",
+      lastUpdated: quote.lastUpdated ? new Date(quote.lastUpdated).toISOString() : "",
+    } : null,
+    ticker: tickerFile ? {
+      ticker: tickerFile.metadata.ticker,
+      name: tickerFile.metadata.name ?? "",
+      exchange: tickerFile.metadata.exchange ?? "",
+      assetCategory: tickerFile.metadata.assetCategory ?? "",
+      sector: tickerFile.metadata.sector ?? "",
+      industry: tickerFile.metadata.industry ?? "",
+      portfolios: formatPortfolioNames(config, tickerFile.metadata.portfolios),
+      watchlists: formatWatchlistNames(config, tickerFile.metadata.watchlists),
+      positions: tickerFile.metadata.positions,
+    } : null,
+    fundamentals: financials.fundamentals,
+    profile: financials.profile,
+    latestAnnual: financials.annualStatements.at(-1) ?? null,
+    latestQuarter: financials.quarterlyStatements.at(-1) ?? null,
+    annualStatementCount: financials.annualStatements.length,
+    quarterlyStatementCount: financials.quarterlyStatements.length,
+    notes,
+    recentNews: recentNews.map((item) => ({
+      title: item.title,
+      source: item.source,
+      publishedAt: item.publishedAt instanceof Date ? item.publishedAt.toISOString() : item.publishedAt,
+      url: item.url,
+      summary: item.summary ?? "",
+    })),
+    recentSecFilings: recentSecFilings.map((filing) => ({
+      form: filing.form,
+      filingDate: filing.filingDate instanceof Date ? filing.filingDate.toISOString() : filing.filingDate,
+      accessionNumber: filing.accessionNumber,
+      filingUrl: filing.filingUrl,
+      primaryDocumentUrl: filing.primaryDocumentUrl ?? "",
+      description: getFilingDescription(filing) ?? "",
+    })),
+  };
+}
+
 export async function ticker(symbol: string, dependencies: TickerCommandDependencies = {}) {
   const initMarketDataFn = dependencies.initMarketData ?? initMarketData;
   const closeAndFailCommand = dependencies.closeAndFail ?? closeAndFail;
@@ -379,8 +453,12 @@ export async function ticker(symbol: string, dependencies: TickerCommandDependen
   let financials: TickerFinancials | null = null;
   try {
     financials = await dataProvider.getTickerFinancials(normalized, exchange);
-  } catch (err: any) {
-    closeAndFailCommand(persistence, `Failed to fetch data for ${normalized}.`, err?.message);
+  } catch (error) {
+    closeAndFailCommand(
+      persistence,
+      `Failed to fetch data for ${normalized}.`,
+      error instanceof Error ? error.message : String(error),
+    );
   }
 
   if (!financials?.quote) {
@@ -409,16 +487,30 @@ export async function ticker(symbol: string, dependencies: TickerCommandDependen
   const recentNews = newsResult.status === "fulfilled" ? newsResult.value : [];
   const recentSecFilings = secFilingsResult.status === "fulfilled" ? secFilingsResult.value : [];
 
-  console.log(await buildTickerReport({
-    symbol: normalized,
-    tickerFile,
-    financials: resolvedFinancials,
-    config,
-    toBase,
-    notes,
-    recentNews,
-    recentSecFilings,
-  }));
+  if (dependencies.printResult) {
+    dependencies.printResult({
+      data: buildTickerStructuredData({
+        symbol: normalized,
+        tickerFile,
+        financials: resolvedFinancials,
+        config,
+        notes,
+        recentNews,
+        recentSecFilings,
+      }),
+    });
+  } else {
+    console.log(await buildTickerReport({
+      symbol: normalized,
+      tickerFile,
+      financials: resolvedFinancials,
+      config,
+      toBase,
+      notes,
+      recentNews,
+      recentSecFilings,
+    }));
+  }
 
   persistence.close();
 }

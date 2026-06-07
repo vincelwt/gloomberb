@@ -21,8 +21,7 @@ export function setConfigStoreHost(host: ConfigStoreHost | null): void {
 
 async function loadNodeHost(): Promise<ConfigStoreHost> {
   if (!nodeHostPromise) {
-    const modulePath = "./node";
-    nodeHostPromise = import(modulePath) as Promise<ConfigStoreHost>;
+    nodeHostPromise = import("./node") as Promise<ConfigStoreHost>;
   }
   return nodeHostPromise;
 }

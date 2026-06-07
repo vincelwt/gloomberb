@@ -16,18 +16,26 @@ import { ToastHostProvider } from "../../ui/toast";
 import { colors } from "../../theme/colors";
 import { startMainThreadMonitor } from "../../utils/main-thread-monitor";
 import { measurePerfAsync } from "../../utils/perf-marks";
+import type { CliLaunchRequest } from "../../types/plugin";
 
-export async function startOpenTuiApp(): Promise<void> {
+export interface StartOpenTuiAppOptions {
+  externalPlugins?: Awaited<ReturnType<typeof loadExternalPlugins>>;
+  cliArgs?: string[];
+  skipCliDispatch?: boolean;
+  cliLaunchRequest?: CliLaunchRequest | null;
+}
+
+export async function startOpenTuiApp(options: StartOpenTuiAppOptions = {}): Promise<void> {
   setConfigStoreHost(nodeConfigStoreHost);
   debugLog.interceptConsole();
 
   const appLog = debugLog.createLogger("app");
   appLog.info("Gloomberb starting");
 
-  const cliArgs = process.argv.slice(2);
-  const externalPlugins = await measurePerfAsync("startup.opentui.load-external-plugins", () => loadExternalPlugins());
-  let cliLaunchRequest = null;
-  if (cliArgs.length > 0) {
+  const cliArgs = options.cliArgs ?? process.argv.slice(2);
+  const externalPlugins = options.externalPlugins ?? await measurePerfAsync("startup.opentui.load-external-plugins", () => loadExternalPlugins());
+  let cliLaunchRequest = options.cliLaunchRequest ?? null;
+  if (!options.skipCliDispatch && cliArgs.length > 0) {
     const dispatchResult = await dispatchCli(cliArgs, { externalPlugins });
     if (dispatchResult.kind === "handled") return;
     if (dispatchResult.kind === "launch-ui") {

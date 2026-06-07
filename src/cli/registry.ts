@@ -1,9 +1,17 @@
 import type { AppConfig } from "../types/config";
-import type { CliCommandContext, CliCommandDef, CliDispatchResult, GloomPlugin } from "../types/plugin";
+import type {
+  CliCommandContext,
+  CliCommandDef,
+  CliDispatchResult,
+  GloomPlugin,
+  PluginCliCommandDescriptor,
+} from "../types/plugin";
 import type { LoadedExternalPlugin } from "../plugins/loader";
 import { getPluginCatalog } from "../plugins/catalog";
-import { initConfigData, initMarketData } from "./context";
+import { initCliServices, initConfigData, initMarketData } from "./context";
 import { closeAndFail, fail } from "./errors";
+import { DEFAULT_CLI_OPTIONS, type CliGlobalOptions } from "./options";
+import { printCliResult } from "./result";
 import {
   cliStyles,
   colorBySign,
@@ -26,6 +34,8 @@ export interface CliCommandRegistry {
   lookup: ReadonlyMap<string, RegisteredCliCommand>;
   config: AppConfig | null;
   plugins: GloomPlugin[];
+  externalPlugins: LoadedExternalPlugin[];
+  descriptors: Array<{ pluginId: string; descriptor: PluginCliCommandDescriptor }>;
 }
 
 interface BuildCliCommandRegistryOptions {
@@ -59,6 +69,19 @@ export function normalizeCliDispatchResult(result: void | CliDispatchResult): Cl
 
 function getCommandUsageLabel(command: CliCommandDef): string {
   return command.help?.usage?.[0] ?? command.name;
+}
+
+function descriptorToCommand(descriptor: PluginCliCommandDescriptor): CliCommandDef | null {
+  if (!descriptor.execute) return null;
+  return {
+    name: descriptor.name,
+    aliases: descriptor.aliases,
+    description: descriptor.summary,
+    help: descriptor.examples?.length
+      ? { usage: descriptor.examples }
+      : undefined,
+    execute: descriptor.execute,
+  };
 }
 
 function renderHelpSections(registry: CliCommandRegistry): string[] {
@@ -149,6 +172,7 @@ export function buildCliCommandRegistry({
   }
 
   const loadablePlugins: GloomPlugin[] = [];
+  const descriptors: Array<{ pluginId: string; descriptor: PluginCliCommandDescriptor }> = [];
   for (const entry of catalog) {
     if (entry.error) {
       registryLog.warn(`Skipping external plugin "${entry.plugin.id}" for CLI registration.`, {
@@ -160,6 +184,11 @@ export function buildCliCommandRegistry({
     loadablePlugins.push(entry.plugin);
     for (const command of entry.plugin.cliCommands ?? []) {
       registerCommand(command, entry.plugin.id, "plugin");
+    }
+    for (const descriptor of entry.plugin.cli?.commands ?? []) {
+      descriptors.push({ pluginId: entry.plugin.id, descriptor });
+      const command = descriptorToCommand(descriptor);
+      if (command) registerCommand(command, entry.plugin.id, "plugin");
     }
   }
 
@@ -180,14 +209,25 @@ export function buildCliCommandRegistry({
     lookup,
     config,
     plugins: loadablePlugins,
+    externalPlugins,
+    descriptors,
   };
 }
 
-export function createCliCommandContext(ownerId: string, plugins: GloomPlugin[]): CliCommandContext {
+export function createCliCommandContext(
+  ownerId: string,
+  registryOrPlugins: Pick<CliCommandRegistry, "plugins" | "externalPlugins"> | GloomPlugin[],
+  cliOptions: CliGlobalOptions = DEFAULT_CLI_OPTIONS,
+): CliCommandContext {
+  const registry = Array.isArray(registryOrPlugins)
+    ? { plugins: registryOrPlugins, externalPlugins: [] }
+    : registryOrPlugins;
   return {
     initConfigData,
-    initMarketData: () => initMarketData({ plugins }),
-    plugins,
+    initMarketData: () => initMarketData({ plugins: registry.plugins }),
+    initServices: () => initCliServices({ externalPlugins: registry.externalPlugins }),
+    cliOptions,
+    plugins: registry.plugins,
     fail,
     closeAndFail,
     output: {
@@ -197,6 +237,7 @@ export function createCliCommandContext(ownerId: string, plugins: GloomPlugin[])
       renderStat,
       renderTable,
     },
+    printResult: (result, options) => printCliResult(result, cliOptions, options),
     log: debugLog.createLogger(ownerId === "core" ? "cli" : ownerId),
   };
 }

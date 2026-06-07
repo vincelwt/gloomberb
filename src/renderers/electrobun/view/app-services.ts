@@ -7,7 +7,7 @@ import type { AppServices } from "../../../core/app-services";
 import type { AppConfig } from "../../../types/config";
 import { newsProvider } from "../../../capabilities";
 import { debugLog } from "../../../utils/debug-log";
-import { measurePerf } from "../../../utils/perf-marks";
+import { measurePerf, measurePerfAsync } from "../../../utils/perf-marks";
 import { getRendererBuiltinPlugins } from "../../../plugins/catalog-ui";
 import { createRemoteAssetDataClient } from "./remote/asset-data-client";
 import { RemotePersistence } from "./remote/persistence";
@@ -47,10 +47,11 @@ export function createAppServices({ config }: { config: AppConfig }): AppService
   }));
 
   const plugins = getRendererBuiltinPlugins();
+  const pluginReadyPromises: Promise<void>[] = [];
   for (const plugin of plugins) {
-    measurePerf("startup.services.register-plugin", () => {
-      void pluginRegistry.register(plugin);
-    }, { pluginId: plugin.id });
+    pluginReadyPromises.push(measurePerfAsync("startup.services.register-plugin", () => (
+      pluginRegistry.register(plugin)
+    ), { pluginId: plugin.id }));
   }
   measurePerf("startup.services.news-start", () => {
     newsService.start();
@@ -65,6 +66,7 @@ export function createAppServices({ config }: { config: AppConfig }): AppService
     marketData,
     pluginRegistry,
     newsService,
+    ready: Promise.all(pluginReadyPromises).then(() => {}),
     destroy() {
       setSharedMarketDataCoordinator(null);
       setSharedNewsService(null);

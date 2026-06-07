@@ -22,6 +22,7 @@ const originalHome = process.env.HOME;
 
 afterEach(async () => {
   process.env.HOME = originalHome;
+  process.exitCode = 0;
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -96,12 +97,12 @@ async function captureConsole<T>(fn: () => Promise<T> | T): Promise<{ result: T;
   }
 }
 
-async function captureConsoleFailure(fn: () => Promise<unknown> | unknown): Promise<{ stdout: string; stderr: string; error: unknown }> {
+async function captureConsoleFailure(fn: () => Promise<unknown> | unknown): Promise<{ stdout: string; stderr: string; exitCode: string | number | undefined }> {
   const logs: string[] = [];
   const errors: string[] = [];
   const originalLog = console.log;
   const originalError = console.error;
-  const originalExit = process.exit;
+  const originalExitCode = process.exitCode;
 
   console.log = (...args: unknown[]) => {
     logs.push(args.map(String).join(" "));
@@ -109,23 +110,22 @@ async function captureConsoleFailure(fn: () => Promise<unknown> | unknown): Prom
   console.error = (...args: unknown[]) => {
     errors.push(args.map(String).join(" "));
   };
-  process.exit = ((code?: number) => {
-    throw new Error(`process.exit:${code ?? 0}`);
-  }) as typeof process.exit;
+  process.exitCode = undefined;
 
   try {
     await fn();
-    throw new Error("Expected command to fail.");
-  } catch (error) {
+    if (process.exitCode == null || process.exitCode === 0) {
+      throw new Error("Expected command to fail.");
+    }
     return {
       stdout: logs.join("\n"),
       stderr: errors.join("\n"),
-      error,
+      exitCode: process.exitCode,
     };
   } finally {
     console.log = originalLog;
     console.error = originalError;
-    process.exit = originalExit;
+    process.exitCode = originalExitCode ?? 0;
   }
 }
 
@@ -226,7 +226,7 @@ describe("CLI portfolio commands", () => {
     });
 
     const result = await captureConsoleFailure(() => runCli(["portfolio", "create", "Research"]));
-    expect(String(result.error)).toContain("process.exit:1");
+    expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('Portfolio "Research" already exists.');
   });
 
@@ -370,7 +370,7 @@ describe("CLI portfolio commands", () => {
     });
 
     const result = await captureConsoleFailure(() => runCli(["portfolio", "add", "IBKR Account", "NVDA"]));
-    expect(String(result.error)).toContain("process.exit:1");
+    expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('Portfolio "IBKR Account" is broker-managed and cannot be modified manually.');
   });
 });
