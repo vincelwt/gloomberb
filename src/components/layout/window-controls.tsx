@@ -55,7 +55,6 @@ export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
   const rendererHost = useRendererHost();
   const edgeOffset = windowKind === "detached" ? DETACHED_WINDOW_EDGE_OVERHANG_PX : MAIN_WINDOW_EDGE_OVERHANG_PX;
   const groupStyle = edgeOffset > 0 ? { transform: `translateX(${edgeOffset}px)` } : undefined;
-  const controlStyle = edgeOffset > 0 ? { paddingRight: `${edgeOffset}px` } : undefined;
 
   const controlWindow = useCallback((action: WindowControlAction, event: { stopPropagation?: () => void; preventDefault?: () => void }) => {
     stopMouse(event);
@@ -89,7 +88,6 @@ export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
           aria-label={control.label}
           title={control.label}
           className="electrobun-webkit-app-region-no-drag"
-          style={controlStyle}
           onMouseDown={(event: { stopPropagation?: () => void; preventDefault?: () => void }) => controlWindow(control.action, event)}
         >
           <WindowControlIcon action={control.action} />

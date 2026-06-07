@@ -11,8 +11,8 @@ type DesktopWindowStyleMask = {
   FullSizeContentView?: boolean;
 };
 
-const MAIN_WINDOW_BUTTON_EDGE_OFFSET_PX = 5.5;
-const DETACHED_WINDOW_BUTTON_EDGE_OFFSET_PX = 9;
+const MAIN_WINDOW_BUTTON_EDGE_OFFSET_PX = 11;
+const DETACHED_WINDOW_BUTTON_EDGE_OFFSET_PX = 18;
 
 export function desktopTitleBarStyle(): DesktopTitleBarStyle {
   if (process.platform === "darwin") return "hiddenInset";
