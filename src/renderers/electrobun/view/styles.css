@@ -63,7 +63,15 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   color: var(--gloom-header-text, #f2f2f2);
 }
 [data-gloom-role="window-control"] {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
   color: color-mix(in srgb, var(--gloom-header-text, #f2f2f2) 86%, transparent);
+  cursor: pointer;
   transition: background-color 90ms linear, color 90ms linear;
 }
 [data-gloom-role="window-control"] svg {
