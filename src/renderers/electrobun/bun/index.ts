@@ -49,7 +49,11 @@ import { handleDesktopBackendRequest } from "./desktop/backend-requests";
 import { initializeDesktopBackend } from "./desktop/initialization";
 import { applyWindowsCustomChrome } from "./desktop/windows-custom-chrome";
 import { applyWindowsWindowIcon } from "./desktop/windows-icons";
-import { desktopTitleBarStyle, desktopWindowButtonOffset, desktopWindowStyleMask } from "./desktop/window-style";
+import {
+  desktopTitleBarStyle,
+  desktopWindowRenderer,
+  desktopWindowStyleMask,
+} from "./desktop/window-style";
 import { applyDesktopWindowControl, type DesktopWindowControlAction } from "./desktop/window-controls";
 
 type DesktopRpc = ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>;
@@ -459,11 +463,10 @@ mainWindow = new BrowserWindow({
   title: "Gloomberb",
   frame: initialMainWindowFrame,
   url: "views://mainview/index.html",
-  renderer: "native",
+  renderer: desktopWindowRenderer(),
   rpc: mainRpc,
   styleMask: desktopWindowStyleMask(),
   titleBarStyle: desktopTitleBarStyle(),
-  trafficLightOffset: desktopWindowButtonOffset(),
   navigationRules: JSON.stringify(["views://*"]),
   sandbox: false,
 });

@@ -22,7 +22,16 @@ const maximizedWindowRestoreFrames = new WeakMap<ControllableDesktopWindow, Desk
 function normalizeFrame(frame: Partial<DesktopWindowFrame> | null | undefined): DesktopWindowFrame | null {
   if (!frame) return null;
   const { x, y, width, height } = frame;
-  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height)) {
+  if (
+    typeof x !== "number"
+    || typeof y !== "number"
+    || typeof width !== "number"
+    || typeof height !== "number"
+    || !Number.isFinite(x)
+    || !Number.isFinite(y)
+    || !Number.isFinite(width)
+    || !Number.isFinite(height)
+  ) {
     return null;
   }
   return { x, y, width, height };
@@ -56,7 +65,7 @@ export function applyDesktopWindowControl(
   if (maximizedWindowRestoreFrames.has(window)) {
     maximizedWindowRestoreFrames.delete(window);
     window.unmaximize?.();
-    restoreWindowFrame(window, restoreFrame);
+    restoreWindowFrame(window, restoreFrame ?? null);
     return;
   }
   maximizedWindowRestoreFrames.set(window, readWindowFrame(window));

@@ -56,8 +56,8 @@ export function win32OrNull(): Win32 | null {
   return cachedWin32;
 }
 
-export function wideString(value: string): Buffer {
-  return Buffer.from(`${value}\0`, "utf16le");
+export function wideString(value: string): Uint8Array {
+  return Uint8Array.from(Buffer.from(`${value}\0`, "utf16le"));
 }
 
 function readWindowProcessId(win32: Win32, windowHandle: Pointer): number {

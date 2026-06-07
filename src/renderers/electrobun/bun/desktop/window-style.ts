@@ -1,8 +1,5 @@
 type DesktopTitleBarStyle = "default" | "hidden" | "hiddenInset";
-type DesktopWindowButtonOffset = {
-  x: number;
-  y: number;
-};
+type DesktopWindowRenderer = "native" | "cef";
 type DesktopWindowStyleMask = {
   Borderless?: boolean;
   Closable?: boolean;
@@ -17,8 +14,9 @@ export function desktopTitleBarStyle(): DesktopTitleBarStyle {
   return "hidden";
 }
 
-export function desktopWindowButtonOffset(): DesktopWindowButtonOffset {
-  return { x: 0, y: 0 };
+export function desktopWindowRenderer(): DesktopWindowRenderer {
+  if (process.platform === "win32") return "cef";
+  return "native";
 }
 
 export function desktopWindowStyleMask(): DesktopWindowStyleMask {

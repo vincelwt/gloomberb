@@ -25,7 +25,11 @@ import {
 import type { DesktopStateBroadcaster, DesktopStateRpc } from "./state-broadcaster";
 import { applyWindowsCustomChrome } from "./windows-custom-chrome";
 import { applyWindowsWindowIcon } from "./windows-icons";
-import { desktopTitleBarStyle, desktopWindowButtonOffset, desktopWindowStyleMask } from "./window-style";
+import {
+  desktopTitleBarStyle,
+  desktopWindowRenderer,
+  desktopWindowStyleMask,
+} from "./window-style";
 
 const INITIAL_DOCK_SUPPRESSION_MS = 800;
 const WINDOW_CONTROL_DOCK_SUPPRESSION_MS = 5_000;
@@ -189,11 +193,10 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
       title,
       frame: initialFrame,
       url: "views://mainview/index.html",
-      renderer: "native",
+      renderer: desktopWindowRenderer(),
       rpc: rpc as never,
       styleMask: desktopWindowStyleMask(),
       titleBarStyle: desktopTitleBarStyle(),
-      trafficLightOffset: desktopWindowButtonOffset(),
       navigationRules: JSON.stringify(["views://*"]),
       sandbox: false,
     });

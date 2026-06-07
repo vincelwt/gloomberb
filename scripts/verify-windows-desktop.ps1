@@ -531,17 +531,29 @@ function Get-UiAutomationDiagnostics {
   }
 
   $Handle = Get-WindowHandle $Window
-  $RootElement = [System.Windows.Automation.AutomationElement]::FromHandle($Handle)
+  try {
+    $RootElement = [System.Windows.Automation.AutomationElement]::FromHandle($Handle)
+  } catch {
+    return @([pscustomobject]@{
+      Error = "UI Automation root element could not be read: $($_.Exception.Message)"
+    })
+  }
   if (-not $RootElement) {
     return @([pscustomobject]@{
       Error = "UI Automation root element could not be read."
     })
   }
 
-  $Elements = $RootElement.FindAll(
-    [System.Windows.Automation.TreeScope]::Descendants,
-    [System.Windows.Automation.Condition]::TrueCondition
-  )
+  try {
+    $Elements = $RootElement.FindAll(
+      [System.Windows.Automation.TreeScope]::Descendants,
+      [System.Windows.Automation.Condition]::TrueCondition
+    )
+  } catch {
+    return @([pscustomobject]@{
+      Error = "UI Automation descendants could not be read: $($_.Exception.Message)"
+    })
+  }
   $Diagnostics = New-Object System.Collections.Generic.List[object]
   foreach ($Element in $Elements) {
     $Current = $Element.Current
@@ -1035,6 +1047,22 @@ function Assert-WindowsUpdateManifest {
   }
 }
 
+function Disable-InstalledDesktopUpdatesForSmokeTest {
+  param([string]$InstallDir)
+
+  $VersionJsonPath = Join-Path $InstallDir "Resources\version.json"
+  if (-not (Test-Path $VersionJsonPath)) {
+    throw "Installed desktop version metadata was not found: $VersionJsonPath"
+  }
+
+  $VersionInfo = Get-Content $VersionJsonPath -Raw | ConvertFrom-Json
+  $VersionInfo | Add-Member -NotePropertyName "channel" -NotePropertyValue "dev" -Force
+  $VersionInfo | Add-Member -NotePropertyName "baseUrl" -NotePropertyValue "" -Force
+  $VersionInfo |
+    ConvertTo-Json -Depth 8 |
+    Set-Content -Path $VersionJsonPath -Encoding UTF8
+}
+
 function Get-WindowIconHandle {
   param([object]$Window)
 
@@ -1354,6 +1382,8 @@ try {
   if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
   }
+
+  Disable-InstalledDesktopUpdatesForSmokeTest -InstallDir $InstallDir
 
   Capture-OnboardingScreenshot `
     -InstallDir $InstallDir `
