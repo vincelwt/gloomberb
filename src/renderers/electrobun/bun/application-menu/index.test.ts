@@ -9,4 +9,13 @@ describe("desktop application menu", () => {
   test("keeps the native application menu on macOS", () => {
     expect(buildDesktopApplicationMenu("darwin")).toEqual(buildApplicationMenu());
   });
+
+  test("routes macOS quit through an explicit command item", () => {
+    const appMenu = buildApplicationMenu()[0]?.submenu;
+    expect(appMenu?.at(-1)).toMatchObject({
+      label: "Quit Gloomberb",
+      accelerator: "CmdOrCtrl+Q",
+      data: { type: "quit" },
+    });
+  });
 });

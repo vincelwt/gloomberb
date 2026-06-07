@@ -281,6 +281,15 @@ function closeAllDetachedWindows(): void {
   detachedWindowManager.closeAll();
 }
 
+function quitDesktopApp(): void {
+  closeAllDetachedWindows();
+  teardownServices();
+  const window = mainWindow;
+  mainWindow = null;
+  window?.close();
+  Utils.quit();
+}
+
 function controlWindowForRpcKey(windowKey: string | undefined, action: DesktopWindowControlAction): boolean {
   const targetWindow = windowKey === MAIN_WINDOW_RPC_KEY
     ? mainWindow
@@ -444,6 +453,10 @@ ApplicationMenu.on("application-menu-clicked", (event: unknown) => {
   if (!command) return;
   if (command.type === "open-devtools") {
     openMainWindowDevTools();
+    return;
+  }
+  if (command.type === "quit") {
+    quitDesktopApp();
     return;
   }
   if (!isWindowRpcReady(MAIN_WINDOW_RPC_KEY)) return;
