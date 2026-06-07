@@ -54,7 +54,6 @@ interface WindowControlsProps {
 export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
   const rendererHost = useRendererHost();
   const edgeOffset = windowKind === "detached" ? DETACHED_WINDOW_EDGE_OVERHANG_PX : MAIN_WINDOW_EDGE_OVERHANG_PX;
-  const groupStyle = edgeOffset > 0 ? { paddingLeft: edgeOffset } : undefined;
 
   const controlWindow = useCallback((action: WindowControlAction, event: { stopPropagation?: () => void; preventDefault?: () => void }) => {
     stopMouse(event);
@@ -71,8 +70,8 @@ export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
       data-gloom-role="window-controls"
       data-window-kind={windowKind}
       aria-hidden={false}
-      style={groupStyle}
     >
+      {edgeOffset > 0 ? <Box flexShrink={0} width={`${edgeOffset}px`} height="100%" /> : null}
       {WINDOWS_CONTROLS.map((control) => (
         <Box
           key={control.action}
