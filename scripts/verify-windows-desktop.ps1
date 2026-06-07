@@ -26,6 +26,9 @@ public static class GloomberbWin32 {
   public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
   [DllImport("user32.dll")]
+  public static extern bool EnumChildWindows(IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+  [DllImport("user32.dll")]
   public static extern bool IsWindowVisible(IntPtr hWnd);
 
   [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -33,6 +36,9 @@ public static class GloomberbWin32 {
 
   [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
   public static extern int GetWindowTextLength(IntPtr hWnd);
+
+  [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
 
   [DllImport("user32.dll")]
   public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
@@ -458,6 +464,129 @@ function Save-WindowGeometry {
     ConvertTo-Json -Depth 8 |
     Set-Content -Path $Path -Encoding UTF8
   return $Geometry
+}
+
+function Get-WindowTitleText {
+  param([IntPtr]$Handle)
+
+  $TextLength = [GloomberbWin32]::GetWindowTextLength($Handle)
+  if ($TextLength -le 0) {
+    return ""
+  }
+
+  $TitleBuilder = New-Object System.Text.StringBuilder ($TextLength + 1)
+  [void][GloomberbWin32]::GetWindowText($Handle, $TitleBuilder, $TitleBuilder.Capacity)
+  $TitleBuilder.ToString()
+}
+
+function Get-WindowClassName {
+  param([IntPtr]$Handle)
+
+  $ClassBuilder = New-Object System.Text.StringBuilder 256
+  [void][GloomberbWin32]::GetClassName($Handle, $ClassBuilder, $ClassBuilder.Capacity)
+  $ClassBuilder.ToString()
+}
+
+function Get-ChildWindowDiagnostics {
+  param([object]$Window)
+
+  $ParentHandle = Get-WindowHandle $Window
+  $Children = New-Object System.Collections.Generic.List[object]
+  $Callback = [GloomberbWin32+EnumWindowsProc]{
+    param([IntPtr]$Handle, [IntPtr]$Param)
+
+    $Rect = New-Object GloomberbWindowRect
+    $Bounds = $null
+    if ([GloomberbWin32]::GetWindowRect($Handle, [ref]$Rect)) {
+      $Bounds = Convert-WindowRect $Rect
+    }
+
+    $ProcessIdValue = [uint32]0
+    [void][GloomberbWin32]::GetWindowThreadProcessId($Handle, [ref]$ProcessIdValue)
+    $Children.Add([pscustomobject]@{
+      Handle = $Handle.ToInt64()
+      ProcessId = [int]$ProcessIdValue
+      Visible = [GloomberbWin32]::IsWindowVisible($Handle)
+      ClassName = Get-WindowClassName $Handle
+      Text = Get-WindowTitleText $Handle
+      Bounds = $Bounds
+    })
+    return $true
+  }
+
+  [void][GloomberbWin32]::EnumChildWindows($ParentHandle, $Callback, [IntPtr]::Zero)
+  $Children
+}
+
+function Get-UiAutomationDiagnostics {
+  param([object]$Window)
+
+  try {
+    Add-Type -AssemblyName UIAutomationClient
+    Add-Type -AssemblyName UIAutomationTypes
+  } catch {
+    return @([pscustomobject]@{
+      Error = "UI Automation assemblies could not be loaded: $($_.Exception.Message)"
+    })
+  }
+
+  $Handle = Get-WindowHandle $Window
+  $RootElement = [System.Windows.Automation.AutomationElement]::FromHandle($Handle)
+  if (-not $RootElement) {
+    return @([pscustomobject]@{
+      Error = "UI Automation root element could not be read."
+    })
+  }
+
+  $Elements = $RootElement.FindAll(
+    [System.Windows.Automation.TreeScope]::Descendants,
+    [System.Windows.Automation.Condition]::TrueCondition
+  )
+  $Diagnostics = New-Object System.Collections.Generic.List[object]
+  foreach ($Element in $Elements) {
+    $Current = $Element.Current
+    $Rectangle = $Current.BoundingRectangle
+    if ($Rectangle.IsEmpty) {
+      $Bounds = $null
+    } else {
+      $Bounds = [pscustomobject]@{
+        Left = [int]$Rectangle.Left
+        Top = [int]$Rectangle.Top
+        Right = [int]$Rectangle.Right
+        Bottom = [int]$Rectangle.Bottom
+        Width = [int]$Rectangle.Width
+        Height = [int]$Rectangle.Height
+      }
+    }
+
+    $Diagnostics.Add([pscustomobject]@{
+      ControlType = $Current.ControlType.ProgrammaticName
+      Name = $Current.Name
+      AutomationId = $Current.AutomationId
+      ClassName = $Current.ClassName
+      LocalizedControlType = $Current.LocalizedControlType
+      IsOffscreen = $Current.IsOffscreen
+      Bounds = $Bounds
+    })
+  }
+
+  $Diagnostics
+}
+
+function Save-WindowDiagnostics {
+  param(
+    [object]$Window,
+    [string]$Path,
+    [string]$Label
+  )
+
+  [pscustomobject]@{
+    Label = $Label
+    ChildWindows = @(Get-ChildWindowDiagnostics $Window)
+    UiAutomation = @(Get-UiAutomationDiagnostics $Window)
+  } |
+    ConvertTo-Json -Depth 8 |
+    Set-Content -Path $Path -Encoding UTF8
 }
 
 function Capture-WindowScreenshot {
@@ -1314,6 +1443,14 @@ try {
   $WindowGeometry |
     ConvertTo-Json -Depth 8 |
     Set-Content -Path (Join-Path $GuiArtifactDir "windows-window-geometry.json") -Encoding UTF8
+  Save-WindowDiagnostics `
+    -Window $MainWindow `
+    -Path (Join-Path $GuiArtifactDir "windows-main-diagnostics.json") `
+    -Label "Main window"
+  Save-WindowDiagnostics `
+    -Window $DetachedWindow `
+    -Path (Join-Path $GuiArtifactDir "windows-popout-diagnostics.json") `
+    -Label "Detached pop-out"
 
   Assert-WindowControlPaddingMeasurement ($ControlPaddingMeasurements | Where-Object { $_.Label -eq "Main window" })
   Assert-WindowControlPaddingMeasurement ($ControlPaddingMeasurements | Where-Object { $_.Label -eq "Detached pop-out" })
