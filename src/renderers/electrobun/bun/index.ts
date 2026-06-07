@@ -47,7 +47,6 @@ import { handleDesktopHostRequest } from "./desktop/host-requests";
 import { handleDesktopWorkspaceRequest } from "./desktop/workspace/requests";
 import { handleDesktopBackendRequest } from "./desktop/backend-requests";
 import { initializeDesktopBackend } from "./desktop/initialization";
-import { applyWindowsCustomChrome } from "./desktop/windows-chrome";
 import { applyWindowsWindowIcon } from "./desktop/windows-icons";
 import { desktopTitleBarStyle, desktopWindowButtonOffset, desktopWindowStyleMask } from "./desktop/window-style";
 import { applyDesktopWindowControl, type DesktopWindowControlAction } from "./desktop/window-controls";
@@ -468,7 +467,6 @@ mainWindow = new BrowserWindow({
   sandbox: false,
 });
 applyWindowsWindowIcon("Gloomberb");
-applyWindowsCustomChrome("Gloomberb");
 updateWindowFrameCache(mainWindow, initialMainWindowFrame, MAIN_WINDOW_MIN_SIZE);
 detachedWindowManager.focusWindowForRpcKey(MAIN_WINDOW_RPC_KEY);
 (mainWindow as any).on?.("move", (event: WindowMoveEvent) => {
