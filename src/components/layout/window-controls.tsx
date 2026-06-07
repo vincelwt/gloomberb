@@ -6,6 +6,7 @@ const WINDOWS_CONTROL_SIZE_PX = TITLEBAR_OVERLAY_HEIGHT_PX;
 export const WINDOWS_CONTROL_GROUP_WIDTH_PX = WINDOWS_CONTROL_SIZE_PX * 3;
 const MAIN_WINDOW_CONTROL_EDGE_SHIFT_PX = 11;
 const DETACHED_WINDOW_CONTROL_EDGE_SHIFT_PX = 18;
+const DEBUG_WINDOW_CONTROL_ORIGIN = true;
 
 type WindowControlAction = "minimize" | "toggle-maximize" | "close";
 
@@ -77,7 +78,7 @@ export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
         top: 0,
         right: `-${edgeShift}px`,
         zIndex: 40,
-        backgroundColor: "inherit",
+        backgroundColor: DEBUG_WINDOW_CONTROL_ORIGIN ? "#ff00ff" : "inherit",
       }}
     >
       {WINDOWS_CONTROLS.map((control) => (
@@ -96,6 +97,9 @@ export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
           title={control.label}
           className="electrobun-webkit-app-region-no-drag"
           onMouseDown={(event: { stopPropagation?: () => void; preventDefault?: () => void }) => controlWindow(control.action, event)}
+          style={{
+            color: DEBUG_WINDOW_CONTROL_ORIGIN ? "#00ff00" : undefined,
+          }}
         >
           <WindowControlIcon action={control.action} />
         </Box>
