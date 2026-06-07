@@ -23,6 +23,7 @@ import {
   type WindowResizeEvent,
 } from "./window-events";
 import type { DesktopStateBroadcaster, DesktopStateRpc } from "./state-broadcaster";
+import { applyWindowsCustomChrome } from "./windows-chrome";
 import { applyWindowsWindowIcon } from "./windows-icons";
 import { desktopTitleBarStyle, desktopWindowButtonOffset, desktopWindowStyleMask } from "./window-style";
 
@@ -197,6 +198,7 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
       sandbox: false,
     });
     applyWindowsWindowIcon(title);
+    applyWindowsCustomChrome(title);
     updateWindowFrameCache(window, initialFrame, DETACHED_WINDOW_MIN_SIZE);
     this.windows.set(instanceId, window);
     this.suppressDockUntil.set(instanceId, Date.now() + INITIAL_DOCK_SUPPRESSION_MS);

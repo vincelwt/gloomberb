@@ -4,8 +4,6 @@ import { TITLEBAR_OVERLAY_HEIGHT_PX } from "./titlebar-overlay";
 
 const WINDOWS_CONTROL_SIZE_PX = TITLEBAR_OVERLAY_HEIGHT_PX;
 const WINDOWS_CONTROL_GROUP_WIDTH_PX = WINDOWS_CONTROL_SIZE_PX * 3;
-const MAIN_WINDOW_EDGE_OVERHANG_PX = 11;
-const DETACHED_WINDOW_EDGE_OVERHANG_PX = 18;
 
 type WindowControlAction = "minimize" | "toggle-maximize" | "close";
 
@@ -53,7 +51,6 @@ interface WindowControlsProps {
 
 export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
   const rendererHost = useRendererHost();
-  const edgeOffset = windowKind === "detached" ? DETACHED_WINDOW_EDGE_OVERHANG_PX : MAIN_WINDOW_EDGE_OVERHANG_PX;
 
   const controlWindow = useCallback((action: WindowControlAction, event: { stopPropagation?: () => void; preventDefault?: () => void }) => {
     stopMouse(event);
@@ -71,7 +68,6 @@ export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
       data-window-kind={windowKind}
       aria-hidden={false}
     >
-      {edgeOffset > 0 ? <Box flexShrink={0} width={`${edgeOffset}px`} height="100%" /> : null}
       {WINDOWS_CONTROLS.map((control) => (
         <Box
           key={control.action}
