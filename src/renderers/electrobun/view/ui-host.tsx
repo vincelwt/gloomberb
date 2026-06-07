@@ -40,10 +40,24 @@ function currentDesktopPlatform(): string {
 
 const DESKTOP_PLATFORM = currentDesktopPlatform();
 const USES_WINDOWS_CONTROLS = !/(darwin|ipad|iphone|linux|mac)/i.test(DESKTOP_PLATFORM);
+const NON_WINDOWS_DESKTOP_PLATFORMS = /^(darwin|linux|freebsd|openbsd|aix|sunos)$/i;
+
+function usesWindowsWindowControls(desktopPlatform?: string): boolean {
+  const platform = desktopPlatform?.trim();
+  if (!platform) {
+    return USES_WINDOWS_CONTROLS;
+  }
+  if (/^win/i.test(platform)) {
+    return true;
+  }
+  if (NON_WINDOWS_DESKTOP_PLATFORMS.test(platform)) {
+    return false;
+  }
+  return USES_WINDOWS_CONTROLS;
+}
 
 export function createWebUiHost(desktopPlatform?: string): UiHost {
-  const usesWindowsControls = desktopPlatform === "win32"
-    || (desktopPlatform == null && USES_WINDOWS_CONTROLS);
+  const usesWindowsControls = usesWindowsWindowControls(desktopPlatform);
 
   return {
     kind: "desktop-web",
