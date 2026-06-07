@@ -3,7 +3,8 @@ import {
   DEFAULT_LIVE_CHART_REFRESH_INTERVAL_MS,
   useChartQueries,
 } from "../../../market-data/hooks";
-import { buildChartKey } from "../../../market-data/selectors";
+import type { ChartRequest, InstrumentRef } from "../../../market-data/request-types";
+import { buildChartKey, resolveEntryData } from "../../../market-data/selectors";
 import { getSharedMarketData } from "../../../plugins/registry";
 import { blendHex, colors, getComparisonSeriesColor } from "../../../theme/colors";
 import type { BrokerContractRef } from "../../../types/instrument";
@@ -24,6 +25,8 @@ import type {
   ComparisonChartViewState,
 } from "../core/types";
 
+const COMPARISON_PERFORMANCE_RANGE = "5Y" as const;
+
 export interface ComparisonChartSymbolSource {
   symbol: string;
   currency: string | undefined;
@@ -38,6 +41,16 @@ export interface ComparisonChartSymbolSource {
 interface UseComparisonChartRenderDataOptions {
   symbolSources: ComparisonChartSymbolSource[];
   viewState: ComparisonChartViewState;
+}
+
+function instrumentFromSymbolSource(source: ComparisonChartSymbolSource): InstrumentRef {
+  return {
+    symbol: source.symbol,
+    exchange: source.exchange,
+    brokerId: source.brokerId,
+    brokerInstanceId: source.brokerInstanceId,
+    instrument: source.instrument,
+  };
 }
 
 export function useComparisonChartRenderData({
@@ -143,19 +156,23 @@ export function useComparisonChartRenderData({
   );
   const chartRequests = useMemo(() => (
     symbolSources.map((source) => ({
-      instrument: {
-        symbol: source.symbol,
-        exchange: source.exchange,
-        brokerId: source.brokerId,
-        brokerInstanceId: source.brokerInstanceId,
-        instrument: source.instrument,
-      },
+      instrument: instrumentFromSymbolSource(source),
       bufferRange: viewState.bufferRange,
       granularity: effectiveResolution === "auto" ? "range" as const : "resolution" as const,
       resolution: effectiveResolution === "auto" ? undefined : effectiveResolution,
     }))
   ), [effectiveResolution, symbolSources, viewState.bufferRange]);
+  const performanceRequests = useMemo<ChartRequest[]>(() => (
+    symbolSources.map((source) => ({
+      instrument: instrumentFromSymbolSource(source),
+      bufferRange: COMPARISON_PERFORMANCE_RANGE,
+      granularity: "range",
+    }))
+  ), [symbolSources]);
   const chartEntries = useChartQueries(chartRequests, {
+    refreshIntervalMs: DEFAULT_LIVE_CHART_REFRESH_INTERVAL_MS,
+  });
+  const performanceEntries = useChartQueries(performanceRequests, {
     refreshIntervalMs: DEFAULT_LIVE_CHART_REFRESH_INTERVAL_MS,
   });
   const entryStates = useMemo(() => chartRequests.map((request) => (
@@ -182,6 +199,17 @@ export function useComparisonChartRenderData({
       points,
     };
   }), [chartEntries, chartRequests, symbolSources]);
+  const performanceHistoryBySymbol = useMemo(() => {
+    const bySymbol = new Map<string, PricePoint[]>();
+    symbolSources.forEach((source, index) => {
+      const request = performanceRequests[index];
+      const history = request ? resolveEntryData(performanceEntries.get(buildChartKey(request))) : null;
+      if (history?.length) {
+        bySymbol.set(source.symbol, history);
+      }
+    });
+    return bySymbol;
+  }, [performanceEntries, performanceRequests, symbolSources]);
 
   return {
     availableManualResolutions,
@@ -192,6 +220,7 @@ export function useComparisonChartRenderData({
     isUpdating,
     resolutionChips,
     selectionSupportMap,
+    performanceHistoryBySymbol,
     series,
     supportMap,
   };

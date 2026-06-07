@@ -24,17 +24,21 @@ export function useComparisonChartSymbolSources(symbols: string[]): {
   const marketFinancials = useTickerFinancialsMap(stableTickers);
   const symbolSources = useMemo<ComparisonChartSymbolSource[]>(() => stableSymbols.map((symbol) => {
     const ticker = tickers.get(symbol) ?? null;
-    const financial = marketFinancials.get(symbol) ?? financials.get(symbol) ?? null;
+    const marketFinancial = marketFinancials.get(symbol) ?? null;
+    const storedFinancial = financials.get(symbol) ?? null;
     const instrument = ticker?.metadata.broker_contracts?.[0] ?? null;
+    const quote = marketFinancial?.quote ?? storedFinancial?.quote;
     return {
       symbol,
-      currency: financial?.quote?.currency ?? ticker?.metadata.currency,
-      quote: financial?.quote,
+      currency: quote?.currency ?? ticker?.metadata.currency,
+      quote,
       exchange: ticker?.metadata.exchange ?? "",
       brokerId: instrument?.brokerId,
       brokerInstanceId: instrument?.brokerInstanceId,
       instrument,
-      priceHistory: financial?.priceHistory ?? [],
+      priceHistory: marketFinancial?.priceHistory?.length
+        ? marketFinancial.priceHistory
+        : storedFinancial?.priceHistory ?? [],
     };
   }), [financials, marketFinancials, stableSymbols, tickers]);
 

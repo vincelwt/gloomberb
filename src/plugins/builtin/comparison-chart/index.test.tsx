@@ -13,7 +13,7 @@ import { Box } from "../../../ui";
 import { cloneLayout, createDefaultConfig } from "../../../types/config";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import type { DataProvider } from "../../../types/data-provider";
-import type { TickerFinancials } from "../../../types/financials";
+import type { PricePoint, TickerFinancials } from "../../../types/financials";
 import type { PluginRegistry } from "../../registry";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../runtime";
 import { setSharedMarketDataForTests, setSharedRegistryForTests } from "../../registry";
@@ -90,6 +90,13 @@ function makeDatedFinancials(symbol: string, currency: string, closes: Array<[st
   };
 }
 
+function makeDatedPriceHistory(closes: Array<[string, number]>): PricePoint[] {
+  return closes.map(([date, close]) => ({
+    date: new Date(`${date}T00:00:00Z`),
+    close,
+  }));
+}
+
 function createProvider(historyBySymbol: Record<string, number[]>, currencyBySymbol: Record<string, string>): DataProvider {
   return {
     id: "test-provider",
@@ -136,6 +143,30 @@ function createDatedProvider(financialsBySymbol: Record<string, TickerFinancials
   };
   provider.getPriceHistory = async (symbol) => financialsBySymbol[symbol]?.priceHistory ?? [];
   provider.getPriceHistoryForResolution = async (symbol) => financialsBySymbol[symbol]?.priceHistory ?? [];
+  return provider;
+}
+
+function createRangeAwareDatedProvider({
+  fullHistoryBySymbol,
+  shortHistoryBySymbol,
+}: {
+  fullHistoryBySymbol: Record<string, Array<[string, number]>>;
+  shortHistoryBySymbol: Record<string, Array<[string, number]>>;
+}): DataProvider {
+  const financialsBySymbol = Object.fromEntries(
+    Object.entries(shortHistoryBySymbol).map(([symbol, history]) => [
+      symbol,
+      makeDatedFinancials(symbol, "USD", history),
+    ]),
+  );
+  const provider = createDatedProvider(financialsBySymbol);
+  const resolveHistory = (symbol: string, range: string) => makeDatedPriceHistory(
+    range === "5Y"
+      ? fullHistoryBySymbol[symbol] ?? shortHistoryBySymbol[symbol] ?? []
+      : shortHistoryBySymbol[symbol] ?? [],
+  );
+  provider.getPriceHistory = async (symbol, _exchange, range) => resolveHistory(symbol, range);
+  provider.getPriceHistoryForResolution = async (symbol, _exchange, range) => resolveHistory(symbol, range);
   return provider;
 }
 
@@ -397,6 +428,46 @@ describe("comparisonChartPlugin", () => {
     frame = testSetup!.captureCharFrame();
     expect(frame).toMatch(/> AAPL\s+0\.00%/);
     expect(frame).toMatch(/MSFT\s+0\.00%/);
+  });
+
+  test("keeps fixed return horizons independent from the selected chart range", async () => {
+    const shortHistory = {
+      AAPL: [["2025-01-02", 180], ["2026-01-02", 200]],
+      MSFT: [["2025-01-02", 300], ["2026-01-02", 330]],
+    } satisfies Record<string, Array<[string, number]>>;
+    const fullHistory = {
+      AAPL: [["2021-01-02", 100], ["2023-01-02", 150], ["2025-01-02", 180], ["2026-01-02", 200]],
+      MSFT: [["2021-01-02", 220], ["2023-01-02", 270], ["2025-01-02", 300], ["2026-01-02", 330]],
+    } satisfies Record<string, Array<[string, number]>>;
+    const provider = createRangeAwareDatedProvider({
+      fullHistoryBySymbol: fullHistory,
+      shortHistoryBySymbol: shortHistory,
+    });
+    setSharedMarketDataForTests(provider);
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedRegistryForTests(createRegistrySpy({ selected: [], focused: [] }));
+
+    await mountComparisonHarness({
+      axisMode: "percent",
+      rangePreset: "1Y",
+      chartResolution: "1d",
+      symbols: ["AAPL", "MSFT"],
+      symbolsText: "AAPL, MSFT",
+    }, [
+      makeTicker("AAPL", "USD"),
+      makeTicker("MSFT", "USD"),
+    ], [
+      ["AAPL", makeDatedFinancials("AAPL", "USD", shortHistory.AAPL)],
+      ["MSFT", makeDatedFinancials("MSFT", "USD", shortHistory.MSFT)],
+    ]);
+
+    await flushFrames(8);
+
+    const frame = testSetup!.captureCharFrame();
+    expect(frame).toContain("5Y");
+    expect(frame).toMatch(/> AAPL\s+\+11\.11%[^\n]*\+100\.00%/);
+    expect(frame).toMatch(/MSFT\s+\+10\.00%[^\n]*\+50\.00%/);
   });
 
   test("sorts comparison summary rows by one-year return", async () => {

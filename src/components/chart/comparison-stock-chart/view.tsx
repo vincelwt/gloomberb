@@ -270,6 +270,7 @@ function ComparisonStockChartView({
     isUpdating,
     resolutionChips,
     selectionSupportMap,
+    performanceHistoryBySymbol,
     series,
     supportMap,
   } = useComparisonChartRenderData({
@@ -279,7 +280,11 @@ function ComparisonStockChartView({
   const performanceBySymbol = useMemo(() => {
     const bySymbol = new Map<string, PriceReturnField[]>();
     for (const source of symbolSources) {
-      const sourceHistory = appendQuoteToPriceReturnHistory(source.priceHistory, source.quote);
+      const baselineHistory = performanceHistoryBySymbol.get(source.symbol) ?? [];
+      const sourceHistory = appendQuoteToPriceReturnHistory(
+        baselineHistory.length >= 2 ? baselineHistory : source.priceHistory,
+        source.quote,
+      );
       const fallbackHistory = series.find((entry) => entry.symbol === source.symbol)?.points ?? [];
       bySymbol.set(
         source.symbol,
@@ -287,7 +292,7 @@ function ComparisonStockChartView({
       );
     }
     return bySymbol;
-  }, [series, symbolSources]);
+  }, [performanceHistoryBySymbol, series, symbolSources]);
   const summarySymbols = useMemo(
     () => sortSymbolsByOneYearReturn(symbols, performanceBySymbol),
     [performanceBySymbol, symbols],
