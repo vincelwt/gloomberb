@@ -462,7 +462,7 @@ mainWindow = new BrowserWindow({
   rpc: mainRpc,
   styleMask: desktopWindowStyleMask(),
   titleBarStyle: desktopTitleBarStyle(),
-  trafficLightOffset: desktopWindowButtonOffset("main"),
+  trafficLightOffset: desktopWindowButtonOffset(),
   navigationRules: JSON.stringify(["views://*"]),
   sandbox: false,
 });

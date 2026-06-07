@@ -16,12 +16,8 @@ export function desktopTitleBarStyle(): DesktopTitleBarStyle {
   return "hidden";
 }
 
-export function desktopWindowButtonOffset(windowKind: "main" | "detached" = "main"): DesktopWindowButtonOffset {
-  if (process.platform !== "win32") return { x: 0, y: 0 };
-  return {
-    x: windowKind === "detached" ? 18 : 11,
-    y: 0,
-  };
+export function desktopWindowButtonOffset(): DesktopWindowButtonOffset {
+  return { x: 0, y: 0 };
 }
 
 export function desktopWindowStyleMask(): DesktopWindowStyleMask {

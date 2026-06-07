@@ -192,7 +192,7 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
       rpc: rpc as never,
       styleMask: desktopWindowStyleMask(),
       titleBarStyle: desktopTitleBarStyle(),
-      trafficLightOffset: desktopWindowButtonOffset("detached"),
+      trafficLightOffset: desktopWindowButtonOffset(),
       navigationRules: JSON.stringify(["views://*"]),
       sandbox: false,
     });
