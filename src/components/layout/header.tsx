@@ -18,7 +18,7 @@ import { formatMarketPrice } from "../../market-data/market/format";
 import { marketStateLabel, marketStateColor, getActiveQuoteDisplay } from "../../market-data/market/status";
 import { VERSION } from "../../version";
 import { getTitlebarLeadingInset } from "./titlebar-overlay";
-import { WindowControls } from "./window-controls";
+import { WindowControls, WINDOWS_CONTROL_GROUP_WIDTH_PX } from "./window-controls";
 
 const SPY_REFRESH_MS = 5 * 60_000; // 5 min
 const UPDATE_NOTICE_DURATION_MS = 5_000;
@@ -169,6 +169,7 @@ export function Header() {
           boxShadow: `0 -1px 0 ${colors.header}, inset 0 1px 0 ${colors.header}`,
           paddingLeft: 8,
           paddingRight: showWindowControls ? 0 : 12,
+          position: "relative",
         }}
       >
         <Box paddingLeft={titlebarLeadingInset} flexDirection="row" alignItems="center" gap={1}>
@@ -201,6 +202,7 @@ export function Header() {
         <Box paddingRight={showWindowControls ? 1 : 0}>
           <Text fg={colors.headerText}>{baseCurrency}</Text>
         </Box>
+        {showWindowControls ? <Box flexShrink={0} width={`${WINDOWS_CONTROL_GROUP_WIDTH_PX}px`} /> : null}
         {showWindowControls ? <WindowControls /> : null}
       </Box>
     );

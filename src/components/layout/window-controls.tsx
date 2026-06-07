@@ -3,7 +3,7 @@ import { useCallback } from "react";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "./titlebar-overlay";
 
 const WINDOWS_CONTROL_SIZE_PX = TITLEBAR_OVERLAY_HEIGHT_PX;
-const WINDOWS_CONTROL_GROUP_WIDTH_PX = WINDOWS_CONTROL_SIZE_PX * 3;
+export const WINDOWS_CONTROL_GROUP_WIDTH_PX = WINDOWS_CONTROL_SIZE_PX * 3;
 
 type WindowControlAction = "minimize" | "toggle-maximize" | "close";
 
@@ -67,6 +67,13 @@ export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
       data-gloom-role="window-controls"
       data-window-kind={windowKind}
       aria-hidden={false}
+      style={{
+        position: "absolute",
+        top: 0,
+        right: 0,
+        zIndex: 40,
+        backgroundColor: "inherit",
+      }}
     >
       {WINDOWS_CONTROLS.map((control) => (
         <Box

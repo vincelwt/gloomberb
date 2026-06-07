@@ -13,7 +13,7 @@ import { PaneContent } from "./pane/content";
 import { resolvePaneBodyFrame } from "./pane/sizing";
 import { getPaneDisplayTitle } from "./pane/title";
 import { TITLEBAR_OVERLAY_HEIGHT_PX, getTitlebarLeadingInset } from "./titlebar-overlay";
-import { WindowControls } from "./window-controls";
+import { WindowControls, WINDOWS_CONTROL_GROUP_WIDTH_PX } from "./window-controls";
 import {
   createDoubleEscapeCloseState,
   recordDoubleEscapeClose,
@@ -174,8 +174,10 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
                 alignItems="center"
                 flexGrow={1}
                 minWidth={0}
+                backgroundColor={titleBackground}
                 paddingLeft={titleBarOverlay ? titlebarLeadingInset : 1}
                 paddingRight={showWindowControls ? 0 : 1}
+                style={{ position: "relative" }}
               >
                 <Box flexGrow={1} minWidth={0} overflow="hidden">
                   <Text fg={paneTitleText(focused, true)} selectable={false} data-gloom-role="pane-title">{title}</Text>
@@ -192,6 +194,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
                     {" ... "}
                   </Text>
                 )}
+                {showWindowControls ? <Box flexShrink={0} width={`${WINDOWS_CONTROL_GROUP_WIDTH_PX}px`} /> : null}
                 {showWindowControls ? <WindowControls windowKind="detached" /> : null}
               </Box>
             </Box>
