@@ -10,6 +10,9 @@ type DesktopWindowStyleMask = {
   Titled?: boolean;
   FullSizeContentView?: boolean;
 };
+type DesktopWindowButtonTarget = {
+  setWindowButtonPosition?: (x: number, y: number) => void;
+};
 
 const MAIN_WINDOW_BUTTON_EDGE_OFFSET_PX = 11;
 const DETACHED_WINDOW_BUTTON_EDGE_OFFSET_PX = 18;
@@ -25,6 +28,15 @@ export function desktopWindowButtonOffset(windowKind: "main" | "detached" = "mai
     x: windowKind === "detached" ? DETACHED_WINDOW_BUTTON_EDGE_OFFSET_PX : MAIN_WINDOW_BUTTON_EDGE_OFFSET_PX,
     y: 0,
   };
+}
+
+export function applyDesktopWindowButtonOffset(
+  window: DesktopWindowButtonTarget,
+  windowKind: "main" | "detached" = "main",
+): void {
+  if (process.platform !== "win32") return;
+  const offset = desktopWindowButtonOffset(windowKind);
+  window.setWindowButtonPosition?.(offset.x, offset.y);
 }
 
 export function desktopWindowStyleMask(): DesktopWindowStyleMask {
