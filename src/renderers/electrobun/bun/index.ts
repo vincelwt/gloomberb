@@ -48,7 +48,7 @@ import { handleDesktopWorkspaceRequest } from "./desktop/workspace/requests";
 import { handleDesktopBackendRequest } from "./desktop/backend-requests";
 import { initializeDesktopBackend } from "./desktop/initialization";
 import { applyWindowsWindowIcon } from "./desktop/windows-icons";
-import { desktopTitleBarStyle, desktopWindowButtonOffset, desktopWindowStyleMask } from "./desktop/window-style";
+import { desktopTitleBarStyle, desktopWindowButtonOffset, desktopWindowStyleMask, desktopWindowTransparent } from "./desktop/window-style";
 import { applyDesktopWindowControl, type DesktopWindowControlAction } from "./desktop/window-controls";
 
 type DesktopRpc = ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>;
@@ -463,6 +463,7 @@ mainWindow = new BrowserWindow({
   styleMask: desktopWindowStyleMask(),
   titleBarStyle: desktopTitleBarStyle(),
   trafficLightOffset: desktopWindowButtonOffset("main"),
+  transparent: desktopWindowTransparent(),
   navigationRules: JSON.stringify(["views://*"]),
   sandbox: false,
 });

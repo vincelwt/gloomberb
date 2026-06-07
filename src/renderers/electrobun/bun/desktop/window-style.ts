@@ -22,6 +22,10 @@ export function desktopWindowButtonOffset(windowKind: "main" | "detached" = "mai
   return { x: 0, y: 0 };
 }
 
+export function desktopWindowTransparent(): boolean {
+  return process.platform === "win32";
+}
+
 export function desktopWindowStyleMask(): DesktopWindowStyleMask {
   if (process.platform !== "win32") return {};
   return {
