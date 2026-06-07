@@ -53,6 +53,29 @@ public static class GloomberbWin32 {
   public static extern bool GetWindowRect(IntPtr hWnd, out GloomberbWindowRect rect);
 
   [DllImport("user32.dll")]
+  public static extern bool GetClientRect(IntPtr hWnd, out GloomberbWindowRect rect);
+
+  [DllImport("user32.dll")]
+  public static extern bool ClientToScreen(IntPtr hWnd, ref GloomberbPoint point);
+
+  [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+  public static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
+
+  [DllImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]
+  public static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
+
+  public static IntPtr GetWindowLongPtrCompat(IntPtr hWnd, int nIndex)
+  {
+    if (IntPtr.Size == 8)
+      return GetWindowLongPtr64(hWnd, nIndex);
+
+    return new IntPtr(GetWindowLong32(hWnd, nIndex));
+  }
+
+  [DllImport("dwmapi.dll")]
+  public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out GloomberbWindowRect pvAttribute, int cbAttribute);
+
+  [DllImport("user32.dll")]
   public static extern bool SetCursorPos(int x, int y);
 
   [DllImport("user32.dll")]
@@ -88,6 +111,12 @@ public struct GloomberbWindowRect {
   public int Top;
   public int Right;
   public int Bottom;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct GloomberbPoint {
+  public int X;
+  public int Y;
 }
 "@
 
@@ -297,6 +326,140 @@ function Get-WindowBounds {
   }
 }
 
+function Convert-WindowRect {
+  param([GloomberbWindowRect]$Rect)
+
+  [pscustomobject]@{
+    Left = $Rect.Left
+    Top = $Rect.Top
+    Right = $Rect.Right
+    Bottom = $Rect.Bottom
+    Width = $Rect.Right - $Rect.Left
+    Height = $Rect.Bottom - $Rect.Top
+  }
+}
+
+function Get-WindowClientBounds {
+  param([object]$Window)
+
+  $Handle = [IntPtr]::new([long]$Window.Handle)
+  $ClientRect = New-Object GloomberbWindowRect
+  if (-not [GloomberbWin32]::GetClientRect($Handle, [ref]$ClientRect)) {
+    throw "Could not read client bounds for $($Window.ProcessName) $($Window.Handle)."
+  }
+
+  $ClientOrigin = New-Object GloomberbPoint
+  if (-not [GloomberbWin32]::ClientToScreen($Handle, [ref]$ClientOrigin)) {
+    throw "Could not map client bounds for $($Window.ProcessName) $($Window.Handle)."
+  }
+
+  $Width = $ClientRect.Right - $ClientRect.Left
+  $Height = $ClientRect.Bottom - $ClientRect.Top
+  if ($Width -le 1 -or $Height -le 1) {
+    throw "Client bounds are invalid for $($Window.ProcessName) $($Window.Handle): $($ClientRect | ConvertTo-Json -Compress)"
+  }
+
+  [pscustomobject]@{
+    Left = $ClientOrigin.X
+    Top = $ClientOrigin.Y
+    Width = $Width
+    Height = $Height
+  }
+}
+
+function Get-WindowGeometry {
+  param(
+    [object]$Window,
+    [string]$Label
+  )
+
+  $Handle = [IntPtr]::new([long]$Window.Handle)
+  $WindowRect = New-Object GloomberbWindowRect
+  if (-not [GloomberbWin32]::GetWindowRect($Handle, [ref]$WindowRect)) {
+    throw "Could not read window geometry for $($Window.ProcessName) $($Window.Handle)."
+  }
+
+  $ClientRect = New-Object GloomberbWindowRect
+  if (-not [GloomberbWin32]::GetClientRect($Handle, [ref]$ClientRect)) {
+    throw "Could not read client geometry for $($Window.ProcessName) $($Window.Handle)."
+  }
+
+  $ClientOrigin = New-Object GloomberbPoint
+  if (-not [GloomberbWin32]::ClientToScreen($Handle, [ref]$ClientOrigin)) {
+    throw "Could not map client geometry for $($Window.ProcessName) $($Window.Handle)."
+  }
+
+  $WindowBounds = Convert-WindowRect $WindowRect
+  $ClientWidth = $ClientRect.Right - $ClientRect.Left
+  $ClientHeight = $ClientRect.Bottom - $ClientRect.Top
+  $ClientScreenBounds = [pscustomobject]@{
+    Left = $ClientOrigin.X
+    Top = $ClientOrigin.Y
+    Right = $ClientOrigin.X + $ClientWidth
+    Bottom = $ClientOrigin.Y + $ClientHeight
+    Width = $ClientWidth
+    Height = $ClientHeight
+  }
+
+  $DwmBounds = $null
+  $DwmRect = New-Object GloomberbWindowRect
+  try {
+    $DwmResult = [GloomberbWin32]::DwmGetWindowAttribute(
+      $Handle,
+      9,
+      [ref]$DwmRect,
+      [System.Runtime.InteropServices.Marshal]::SizeOf([type][GloomberbWindowRect])
+    )
+    if ($DwmResult -eq 0) {
+      $DwmBounds = Convert-WindowRect $DwmRect
+    }
+  } catch {
+    $DwmBounds = $null
+  }
+
+  $StylePtr = [GloomberbWin32]::GetWindowLongPtrCompat($Handle, -16)
+  $Style = [uint32]($StylePtr.ToInt64() -band [int64]0xffffffff)
+
+  [pscustomobject]@{
+    Label = $Label
+    Title = $Window.MainWindowTitle
+    ProcessName = $Window.ProcessName
+    ProcessId = $Window.Id
+    Handle = $Window.Handle
+    Style = [pscustomobject]@{
+      Value = ("0x{0:X8}" -f $Style)
+      Caption = [bool]($Style -band 0x00c00000)
+      SystemMenu = [bool]($Style -band 0x00080000)
+      ThickFrame = [bool]($Style -band 0x00040000)
+      MinimizeBox = [bool]($Style -band 0x00020000)
+      MaximizeBox = [bool]($Style -band 0x00010000)
+    }
+    WindowBounds = $WindowBounds
+    DwmExtendedFrameBounds = $DwmBounds
+    ClientBounds = $ClientScreenBounds
+    ClientInsets = [pscustomobject]@{
+      Left = $ClientScreenBounds.Left - $WindowBounds.Left
+      Top = $ClientScreenBounds.Top - $WindowBounds.Top
+      Right = $WindowBounds.Right - $ClientScreenBounds.Right
+      Bottom = $WindowBounds.Bottom - $ClientScreenBounds.Bottom
+    }
+  }
+}
+
+function Save-WindowGeometry {
+  param(
+    [object]$Window,
+    [string]$Path,
+    [string]$Label
+  )
+
+  $Geometry = Get-WindowGeometry -Window $Window -Label $Label
+  $Geometry |
+    ConvertTo-Json -Depth 8 |
+    Set-Content -Path $Path -Encoding UTF8
+  return $Geometry
+}
+
 function Capture-WindowScreenshot {
   param(
     [object]$Window,
@@ -304,6 +467,24 @@ function Capture-WindowScreenshot {
   )
 
   $Bounds = Get-WindowBounds $Window
+  $Bitmap = New-Object System.Drawing.Bitmap $Bounds.Width, $Bounds.Height
+  $Graphics = [System.Drawing.Graphics]::FromImage($Bitmap)
+  try {
+    $Graphics.CopyFromScreen($Bounds.Left, $Bounds.Top, 0, 0, [System.Drawing.Size]::new($Bounds.Width, $Bounds.Height))
+    $Bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
+  } finally {
+    $Graphics.Dispose()
+    $Bitmap.Dispose()
+  }
+}
+
+function Capture-WindowClientScreenshot {
+  param(
+    [object]$Window,
+    [string]$Path
+  )
+
+  $Bounds = Get-WindowClientBounds $Window
   $Bitmap = New-Object System.Drawing.Bitmap $Bounds.Width, $Bounds.Height
   $Graphics = [System.Drawing.Graphics]::FromImage($Bitmap)
   try {
@@ -580,6 +761,16 @@ function Assert-WindowControlPadding {
   }
 
   return $Measurement
+}
+
+function Assert-WindowControlPaddingMeasurement {
+  param([object]$Measurement)
+
+  Write-Host "$($Measurement.Label) close glyph padding: top=$($Measurement.TopInset) right=$($Measurement.RightInset) delta=$($Measurement.Delta)"
+
+  if ([Math]::Abs($Measurement.Delta) -gt 2) {
+    throw "$($Measurement.Label) close glyph padding is not balanced: $($Measurement | ConvertTo-Json -Depth 5 -Compress)"
+  }
 }
 
 function Assert-IcoFile {
@@ -1081,24 +1272,51 @@ try {
     -Path $MainScreenshot `
     -Label "Main window" `
     -InitialDelaySeconds 8
+  $MainGeometry = Save-WindowGeometry `
+    -Window $MainWindow `
+    -Path (Join-Path $GuiArtifactDir "windows-main-geometry.json") `
+    -Label "Main window"
+  $MainClientScreenshot = Join-Path $GuiArtifactDir "windows-gui-main-client.png"
+  Capture-WindowClientScreenshot $MainWindow $MainClientScreenshot
+  Assert-ScreenshotHasContent $MainClientScreenshot "Main window client area"
 
   $PopOutScreenshot = Join-Path $GuiArtifactDir "windows-gui-popout.png"
   $DetachedWindow = Capture-WindowScreenshotByTitle `
     -Title "Detached Watchlist" `
     -Path $PopOutScreenshot `
     -Label "Detached pop-out"
+  $DetachedGeometry = Save-WindowGeometry `
+    -Window $DetachedWindow `
+    -Path (Join-Path $GuiArtifactDir "windows-popout-geometry.json") `
+    -Label "Detached pop-out"
+  $PopOutClientScreenshot = Join-Path $GuiArtifactDir "windows-gui-popout-client.png"
+  Capture-WindowClientScreenshot $DetachedWindow $PopOutClientScreenshot
+  Assert-ScreenshotHasContent $PopOutClientScreenshot "Detached pop-out client area"
 
   $ControlPaddingMeasurements = @(
-    Assert-WindowControlPadding `
+    Measure-WindowCloseGlyphPadding `
       -Path $MainScreenshot `
       -Label "Main window"
-    Assert-WindowControlPadding `
+    Measure-WindowCloseGlyphPadding `
+      -Path $MainClientScreenshot `
+      -Label "Main window client area"
+    Measure-WindowCloseGlyphPadding `
       -Path $PopOutScreenshot `
       -Label "Detached pop-out"
+    Measure-WindowCloseGlyphPadding `
+      -Path $PopOutClientScreenshot `
+      -Label "Detached pop-out client area"
   )
+  $WindowGeometry = @($MainGeometry, $DetachedGeometry)
   $ControlPaddingMeasurements |
     ConvertTo-Json -Depth 6 |
     Set-Content -Path (Join-Path $GuiArtifactDir "windows-control-padding.json") -Encoding UTF8
+  $WindowGeometry |
+    ConvertTo-Json -Depth 8 |
+    Set-Content -Path (Join-Path $GuiArtifactDir "windows-window-geometry.json") -Encoding UTF8
+
+  Assert-WindowControlPaddingMeasurement ($ControlPaddingMeasurements | Where-Object { $_.Label -eq "Main window" })
+  Assert-WindowControlPaddingMeasurement ($ControlPaddingMeasurements | Where-Object { $_.Label -eq "Detached pop-out" })
 
   Assert-CustomWindowControls `
     -Window $DetachedWindow `
