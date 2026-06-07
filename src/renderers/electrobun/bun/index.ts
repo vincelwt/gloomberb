@@ -48,7 +48,7 @@ import { handleDesktopWorkspaceRequest } from "./desktop/workspace/requests";
 import { handleDesktopBackendRequest } from "./desktop/backend-requests";
 import { initializeDesktopBackend } from "./desktop/initialization";
 import { applyWindowsWindowIcon } from "./desktop/windows-icons";
-import { desktopTitleBarStyle, desktopWindowButtonOffset, desktopWindowStyleMask } from "./desktop/window-style";
+import { applyDesktopWindowButtonOffset, desktopTitleBarStyle, desktopWindowButtonOffset, desktopWindowStyleMask } from "./desktop/window-style";
 import { applyDesktopWindowControl, type DesktopWindowControlAction } from "./desktop/window-controls";
 
 type DesktopRpc = ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>;
@@ -466,6 +466,7 @@ mainWindow = new BrowserWindow({
   navigationRules: JSON.stringify(["views://*"]),
   sandbox: false,
 });
+applyDesktopWindowButtonOffset(mainWindow, "main");
 applyWindowsWindowIcon("Gloomberb");
 updateWindowFrameCache(mainWindow, initialMainWindowFrame, MAIN_WINDOW_MIN_SIZE);
 detachedWindowManager.focusWindowForRpcKey(MAIN_WINDOW_RPC_KEY);
