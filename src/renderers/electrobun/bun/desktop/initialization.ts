@@ -91,6 +91,7 @@ function buildInitializationPayload(
     desktopThemePreview: options.desktopThemePreview,
     pluginState: loadDesktopPluginState(services.pluginRegistry),
     capabilityManifests: services.pluginRegistry.capabilities.manifests({ rendererOnly: true }),
+    desktopPlatform: process.platform,
     windowKind: windowTarget.kind,
     paneId: windowTarget.paneId,
   };

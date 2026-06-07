@@ -14,6 +14,7 @@ export interface ElectrobunBackendInit {
   desktopThemePreview: DesktopThemePreviewState;
   pluginState: Record<string, Record<string, unknown>>;
   capabilityManifests: CapabilityManifest[];
+  desktopPlatform: string;
   windowKind: "main" | "detached";
   paneId?: string;
 }
