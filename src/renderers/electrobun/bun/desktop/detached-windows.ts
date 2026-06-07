@@ -24,7 +24,7 @@ import {
 } from "./window-events";
 import type { DesktopStateBroadcaster, DesktopStateRpc } from "./state-broadcaster";
 import { applyWindowsWindowIcon } from "./windows-icons";
-import { applyDesktopWindowButtonOffset, desktopTitleBarStyle, desktopWindowButtonOffset, desktopWindowStyleMask } from "./window-style";
+import { desktopTitleBarStyle, desktopWindowButtonOffset, desktopWindowStyleMask } from "./window-style";
 
 const INITIAL_DOCK_SUPPRESSION_MS = 800;
 const WINDOW_CONTROL_DOCK_SUPPRESSION_MS = 5_000;
@@ -196,7 +196,6 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
       navigationRules: JSON.stringify(["views://*"]),
       sandbox: false,
     });
-    applyDesktopWindowButtonOffset(window, "detached");
     applyWindowsWindowIcon(title);
     updateWindowFrameCache(window, initialFrame, DETACHED_WINDOW_MIN_SIZE);
     this.windows.set(instanceId, window);

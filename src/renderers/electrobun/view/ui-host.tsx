@@ -39,7 +39,7 @@ function currentDesktopPlatform(): string {
 }
 
 const DESKTOP_PLATFORM = currentDesktopPlatform();
-const USES_WINDOWS_CONTROLS = /win/i.test(DESKTOP_PLATFORM);
+const USES_WINDOWS_CONTROLS = !/(darwin|ipad|iphone|linux|mac)/i.test(DESKTOP_PLATFORM);
 
 export const webUiHost: UiHost = {
   kind: "desktop-web",
