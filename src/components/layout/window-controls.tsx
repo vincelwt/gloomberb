@@ -26,23 +26,23 @@ function stopMouse(event: { stopPropagation?: () => void; preventDefault?: () =>
 function WindowControlIcon({ action }: { action: WindowControlAction }) {
   if (action === "minimize") {
     return (
-      <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true">
-        <path d="M2.5 6.5H9.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="square" />
+      <svg viewBox="0 0 20 12" width="20" height="10" fill="none" aria-hidden="true">
+        <path d="M13.5 6.5H19.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="square" />
       </svg>
     );
   }
 
   if (action === "toggle-maximize") {
     return (
-      <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true">
-        <rect x="3" y="3" width="6" height="6" stroke="currentColor" strokeWidth="1.25" />
+      <svg viewBox="0 0 20 12" width="20" height="10" fill="none" aria-hidden="true">
+        <rect x="14" y="3" width="6" height="6" stroke="currentColor" strokeWidth="1.25" />
       </svg>
     );
   }
 
   return (
-    <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true">
-      <path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+    <svg viewBox="0 0 20 12" width="20" height="10" fill="none" aria-hidden="true">
+      <path d="M14 3L20 9M20 3L14 9" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
     </svg>
   );
 }
