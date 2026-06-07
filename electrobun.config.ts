@@ -40,8 +40,9 @@ const config: ElectrobunConfig = {
       defaultRenderer: "native",
     },
     win: {
+      bundleCEF: true,
       icon: "src/assets/gloomberb-logo-windows.ico",
-      defaultRenderer: "native",
+      defaultRenderer: "cef",
     },
   },
   scripts: {
