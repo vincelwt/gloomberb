@@ -4,7 +4,7 @@ import { TITLEBAR_OVERLAY_HEIGHT_PX } from "./titlebar-overlay";
 
 const WINDOWS_CONTROL_SIZE_PX = TITLEBAR_OVERLAY_HEIGHT_PX;
 const WINDOWS_CONTROL_GROUP_WIDTH_PX = WINDOWS_CONTROL_SIZE_PX * 3;
-const MAIN_WINDOW_EDGE_OVERHANG_PX = 5.5;
+const MAIN_WINDOW_EDGE_OVERHANG_PX = 6;
 const DETACHED_WINDOW_EDGE_OVERHANG_PX = 9;
 
 type WindowControlAction = "minimize" | "toggle-maximize" | "close";
