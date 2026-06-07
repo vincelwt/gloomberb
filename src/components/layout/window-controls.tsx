@@ -23,12 +23,10 @@ function stopMouse(event: { stopPropagation?: () => void; preventDefault?: () =>
   event.preventDefault?.();
 }
 
-function WindowControlIcon({ action, edgeOffset }: { action: WindowControlAction; edgeOffset: number }) {
-  const style = edgeOffset > 0 ? { transform: `translateX(${edgeOffset}px)` } : undefined;
-
+function WindowControlIcon({ action }: { action: WindowControlAction }) {
   if (action === "minimize") {
     return (
-      <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true" style={style}>
+      <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true">
         <path d="M2.5 6.5H9.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="square" />
       </svg>
     );
@@ -36,14 +34,14 @@ function WindowControlIcon({ action, edgeOffset }: { action: WindowControlAction
 
   if (action === "toggle-maximize") {
     return (
-      <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true" style={style}>
+      <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true">
         <rect x="3" y="3" width="6" height="6" stroke="currentColor" strokeWidth="1.25" />
       </svg>
     );
   }
 
   return (
-    <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true" style={style}>
+    <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true">
       <path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
     </svg>
   );
@@ -56,6 +54,7 @@ interface WindowControlsProps {
 export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
   const rendererHost = useRendererHost();
   const edgeOffset = windowKind === "detached" ? DETACHED_WINDOW_EDGE_OVERHANG_PX : MAIN_WINDOW_EDGE_OVERHANG_PX;
+  const groupStyle = edgeOffset > 0 ? { transform: `translateX(${edgeOffset}px)` } : undefined;
 
   const controlWindow = useCallback((action: WindowControlAction, event: { stopPropagation?: () => void; preventDefault?: () => void }) => {
     stopMouse(event);
@@ -71,6 +70,7 @@ export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
       className="electrobun-webkit-app-region-no-drag"
       data-gloom-role="window-controls"
       aria-hidden={false}
+      style={groupStyle}
     >
       {WINDOWS_CONTROLS.map((control) => (
         <Box
@@ -89,7 +89,7 @@ export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
           className="electrobun-webkit-app-region-no-drag"
           onMouseDown={(event: { stopPropagation?: () => void; preventDefault?: () => void }) => controlWindow(control.action, event)}
         >
-          <WindowControlIcon action={control.action} edgeOffset={edgeOffset} />
+          <WindowControlIcon action={control.action} />
         </Box>
       ))}
     </Box>
