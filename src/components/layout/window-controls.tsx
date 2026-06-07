@@ -68,10 +68,10 @@ export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
       data-window-kind={windowKind}
       aria-hidden={false}
       style={{
-        position: "absolute",
+        position: "fixed",
         top: 0,
         right: 0,
-        zIndex: 40,
+        zIndex: 1000,
         backgroundColor: "inherit",
       }}
     >
