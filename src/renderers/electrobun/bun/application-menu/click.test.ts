@@ -30,6 +30,15 @@ describe("applicationMenuCommand", () => {
     })).toEqual({ type: "open-devtools" });
   });
 
+  test("parses the native quit command", () => {
+    expect(applicationMenuCommand({
+      data: {
+        action: ELECTROBUN_APPLICATION_MENU_ACTION,
+        data: { type: "quit" },
+      },
+    })).toEqual({ type: "quit" });
+  });
+
   test("ignores unknown command types", () => {
     expect(applicationMenuCommand({
       data: {

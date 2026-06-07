@@ -6,7 +6,8 @@ const GITHUB_ISSUE_URL = "https://github.com/vincelwt/gloomberb/issues/new/choos
 
 export type ElectrobunApplicationMenuCommand =
   | DesktopApplicationMenuCommand
-  | { type: "open-devtools" };
+  | { type: "open-devtools" }
+  | { type: "quit" };
 
 function commandItem(
   label: string,
@@ -38,7 +39,7 @@ export function buildApplicationMenu(): ApplicationMenuItemConfig[] {
         { role: "hideOthers" },
         { role: "showAll" },
         { type: "divider" },
-        { role: "quit" },
+        commandItem("Quit Gloomberb", { type: "quit" }, { accelerator: "CmdOrCtrl+Q" }),
       ],
     },
     {
