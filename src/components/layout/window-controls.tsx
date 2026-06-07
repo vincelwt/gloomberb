@@ -54,7 +54,10 @@ interface WindowControlsProps {
 export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
   const rendererHost = useRendererHost();
   const edgeOffset = windowKind === "detached" ? DETACHED_WINDOW_EDGE_OVERHANG_PX : MAIN_WINDOW_EDGE_OVERHANG_PX;
-  const groupStyle = edgeOffset > 0 ? { marginRight: `-${edgeOffset}px` } : undefined;
+  const groupStyle = edgeOffset > 0 ? {
+    marginRight: `-${edgeOffset}px`,
+    paddingLeft: `${edgeOffset}px`,
+  } : undefined;
 
   const controlWindow = useCallback((action: WindowControlAction, event: { stopPropagation?: () => void; preventDefault?: () => void }) => {
     stopMouse(event);
