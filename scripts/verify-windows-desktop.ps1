@@ -1047,22 +1047,6 @@ function Assert-WindowsUpdateManifest {
   }
 }
 
-function Disable-InstalledDesktopUpdatesForSmokeTest {
-  param([string]$InstallDir)
-
-  $VersionJsonPath = Join-Path $InstallDir "Resources\version.json"
-  if (-not (Test-Path $VersionJsonPath)) {
-    throw "Installed desktop version metadata was not found: $VersionJsonPath"
-  }
-
-  $VersionInfo = Get-Content $VersionJsonPath -Raw | ConvertFrom-Json
-  $VersionInfo | Add-Member -NotePropertyName "channel" -NotePropertyValue "dev" -Force
-  $VersionInfo | Add-Member -NotePropertyName "baseUrl" -NotePropertyValue "" -Force
-  $VersionInfo |
-    ConvertTo-Json -Depth 8 |
-    Set-Content -Path $VersionJsonPath -Encoding UTF8
-}
-
 function Get-WindowIconHandle {
   param([object]$Window)
 
@@ -1145,6 +1129,22 @@ function Stop-ProcessIds {
     Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
     Wait-Process -Id $ProcessId -Timeout 10 -ErrorAction SilentlyContinue
   }
+}
+
+function Disable-InstalledDesktopUpdates {
+  param([string]$InstallDir)
+
+  $VersionPath = Join-Path $InstallDir "Resources\version.json"
+  if (-not (Test-Path $VersionPath)) {
+    throw "Installed desktop version metadata was not found: $VersionPath"
+  }
+
+  $VersionInfo = Get-Content $VersionPath -Raw | ConvertFrom-Json
+  $VersionInfo.channel = "dev"
+  $VersionInfo.baseUrl = ""
+  $VersionInfo |
+    ConvertTo-Json -Depth 8 |
+    Set-Content -Path $VersionPath -Encoding UTF8
 }
 
 function Write-JsonFile {
@@ -1383,7 +1383,7 @@ try {
     exit $LASTEXITCODE
   }
 
-  Disable-InstalledDesktopUpdatesForSmokeTest -InstallDir $InstallDir
+  Disable-InstalledDesktopUpdates -InstallDir $InstallDir
 
   Capture-OnboardingScreenshot `
     -InstallDir $InstallDir `

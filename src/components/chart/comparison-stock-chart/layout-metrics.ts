@@ -1,5 +1,4 @@
 import type { ChartAxisMode } from "../core/types";
-import { getLegendColumns } from "./helpers";
 
 export interface ComparisonChartLayoutMetrics {
   axisGap: number;
@@ -36,15 +35,16 @@ export function resolveComparisonChartLayoutMetrics({
   const controlRows = 2;
   const timeAxisRows = 1;
   const helpRows = 0;
-  const legendColumns = getLegendColumns(width);
-  const legendNeededRows = symbolCount > 0 ? Math.ceil(symbolCount / legendColumns) : 0;
-  const legendRows = legendNeededRows > 0
-    ? Math.min(4, Math.max(Math.min(height - (headerRows + controlRows + timeAxisRows + helpRows + 4), legendNeededRows), 1))
+  const legendColumns = 1;
+  const legendNeededRows = symbolCount > 0 ? symbolCount + 1 : 0;
+  const legendAvailableRows = Math.max(height - (headerRows + controlRows + timeAxisRows + helpRows + 6), 0);
+  const legendRows = legendNeededRows > 0 && legendAvailableRows > 0
+    ? Math.min(5, Math.max(2, Math.min(legendAvailableRows, legendNeededRows)))
     : 0;
   const chartHeight = Math.max(height - headerRows - controlRows - timeAxisRows - helpRows - legendRows, 4);
   const minChartWidth = 20;
   const measurementChartWidth = Math.max(width - axisSectionWidthBudget - axisGap, minChartWidth);
-  const legendItemWidth = Math.max(Math.floor((width - Math.max(legendColumns - 1, 0)) / legendColumns), 20);
+  const legendItemWidth = Math.max(width, 20);
 
   return {
     axisGap,

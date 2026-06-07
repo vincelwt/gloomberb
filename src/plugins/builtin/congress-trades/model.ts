@@ -8,6 +8,8 @@ import type {
 export const CONGRESS_TRADES_PANE_ID = "congress-trades";
 export const CONGRESS_TRADE_LIMIT = 200;
 export const CONGRESS_FILING_LIMIT = 20;
+export const CONGRESS_MEMBER_TRADE_LIMIT = 2000;
+export const CONGRESS_MEMBER_FILING_LIMIT = 500;
 
 export type CongressTab = "trades" | "members";
 export type LoadStatus = "idle" | "loading" | "loaded" | "error";
@@ -25,6 +27,7 @@ export type TradeColumnId =
   | "side"
   | "ticker"
   | "amount"
+  | "asset"
   | "owner";
 export type TradeColumn = DataTableColumn & { id: TradeColumnId };
 export type MemberColumnId =
@@ -104,6 +107,8 @@ function compareTrade(
       return compareText(left.ticker ?? "", right.ticker ?? "");
     case "amount":
       return (left.amountHigh ?? left.amountLow ?? 0) - (right.amountHigh ?? right.amountLow ?? 0);
+    case "asset":
+      return compareText(left.assetName, right.assetName);
     case "owner":
       return compareText(left.owner, right.owner);
   }
@@ -169,6 +174,30 @@ export function buildTradeColumns(width: number): TradeColumn[] {
     { id: "ticker", label: "TICKER", width: tickerWidth, align: "left" },
     { id: "amount", label: "AMOUNT", width: amountWidth, align: "right" },
     { id: "owner", label: "OWNER", width: ownerWidth, align: "left" },
+  ];
+}
+
+export function buildMemberTradeColumns(width: number): TradeColumn[] {
+  const filedWidth = 7;
+  const txWidth = 7;
+  const sideWidth = 8;
+  const tickerWidth = 12;
+  const amountWidth = 14;
+  const ownerWidth = 8;
+  const lagWidth = 5;
+  const assetWidth = Math.max(
+    18,
+    width - filedWidth - txWidth - sideWidth - tickerWidth - amountWidth - ownerWidth - lagWidth - 9,
+  );
+  return [
+    { id: "filed", label: "FILED", width: filedWidth, align: "left" },
+    { id: "tx", label: "TX", width: txWidth, align: "left" },
+    { id: "side", label: "SIDE", width: sideWidth, align: "left" },
+    { id: "ticker", label: "TICKER", width: tickerWidth, align: "left" },
+    { id: "amount", label: "AMOUNT", width: amountWidth, align: "right" },
+    { id: "asset", label: "ASSET", width: assetWidth, align: "left" },
+    { id: "owner", label: "OWNER", width: ownerWidth, align: "left" },
+    { id: "lag", label: "LAG", width: lagWidth, align: "right" },
   ];
 }
 

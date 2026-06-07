@@ -5,6 +5,11 @@ import { blendHex, colors } from "../../../theme/colors";
 import { useThemeColors } from "../../../theme/theme-context";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { useQuoteStreaming } from "../../../state/hooks/quote-streaming";
+import {
+  appendQuoteToPriceReturnHistory,
+  buildPriceReturnFields,
+  type PriceReturnField,
+} from "../../../market-data/performance";
 import type { QuoteSubscriptionTarget } from "../../../types/data-provider";
 import {
   type ChartRendererPreference,
@@ -170,6 +175,27 @@ function useComparisonChartQuoteStreaming({
   useQuoteStreaming(streamingTargets);
 }
 
+function getOneYearReturn(fields: readonly PriceReturnField[]): number | null {
+  return fields.find((field) => field.id === "1Y")?.value ?? null;
+}
+
+function sortSymbolsByOneYearReturn(
+  symbols: readonly string[],
+  performanceBySymbol: ReadonlyMap<string, PriceReturnField[]>,
+): string[] {
+  const originalIndex = new Map(symbols.map((symbol, index) => [symbol, index]));
+  return [...symbols].sort((left, right) => {
+    const leftReturn = getOneYearReturn(performanceBySymbol.get(left) ?? []);
+    const rightReturn = getOneYearReturn(performanceBySymbol.get(right) ?? []);
+    if (leftReturn != null && rightReturn != null && leftReturn !== rightReturn) {
+      return rightReturn - leftReturn;
+    }
+    if (leftReturn != null && rightReturn == null) return -1;
+    if (leftReturn == null && rightReturn != null) return 1;
+    return (originalIndex.get(left) ?? 0) - (originalIndex.get(right) ?? 0);
+  });
+}
+
 function ComparisonStockChartView({
   paneId,
   width,
@@ -250,6 +276,22 @@ function ComparisonStockChartView({
     symbolSources,
     viewState,
   });
+  const performanceBySymbol = useMemo(() => {
+    const bySymbol = new Map<string, PriceReturnField[]>();
+    for (const source of symbolSources) {
+      const sourceHistory = appendQuoteToPriceReturnHistory(source.priceHistory, source.quote);
+      const fallbackHistory = series.find((entry) => entry.symbol === source.symbol)?.points ?? [];
+      bySymbol.set(
+        source.symbol,
+        buildPriceReturnFields(sourceHistory.length >= 2 ? sourceHistory : fallbackHistory),
+      );
+    }
+    return bySymbol;
+  }, [series, symbolSources]);
+  const summarySymbols = useMemo(
+    () => sortSymbolsByOneYearReturn(symbols, performanceBySymbol),
+    [performanceBySymbol, symbols],
+  );
 
   useEffect(() => {
     if (symbols.includes(viewState.selectedSymbol ?? "")) return;
@@ -311,7 +353,7 @@ function ComparisonStockChartView({
     cursorY: viewState.cursorY,
     renderer,
     setViewState,
-    symbols,
+    symbols: summarySymbols,
   });
   const {
     activePreset,
@@ -352,7 +394,6 @@ function ComparisonStockChartView({
     result,
     staticScene,
     timeAxisLabel,
-    visiblePriceRange,
   } = useComparisonChartRenderOutput({
     axisMode,
     chartColors,
@@ -386,7 +427,7 @@ function ComparisonStockChartView({
     setResolution,
     setViewState,
     supportMap,
-    symbols,
+    symbols: summarySymbols,
     updateDisplayCursorTarget,
     viewState,
     visibleDateWindow,
@@ -479,15 +520,14 @@ function ComparisonStockChartView({
       legend={(
         <ComparisonChartLegend
           legendActiveIndex={legendActiveIndex}
-          legendColumns={legendColumns}
           legendItemWidth={legendItemWidth}
           legendRows={legendRows}
           onOpenSymbol={onOpenSymbol}
           onSelectSymbol={setSelectedSymbol}
+          performanceBySymbol={performanceBySymbol}
           projection={projection}
           selectedSymbol={viewState.selectedSymbol}
-          symbols={symbols}
-          visiblePriceRange={visiblePriceRange}
+          symbols={summarySymbols}
         />
       )}
       plotBitmaps={plotBitmaps}
