@@ -53,7 +53,7 @@ export const webUiHost: UiHost = {
     pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
     canvasCharts: true,
     nativeContextMenu: NATIVE_CONTEXT_MENU_SUPPORTED,
-    windowControls: USES_WINDOWS_CONTROLS ? "windows" : undefined,
+    windowControls: "windows",
   },
   Box: WebBox,
   Text: WebText,
