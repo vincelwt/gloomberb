@@ -13,6 +13,7 @@ type DesktopWindowStyleMask = {
 
 export function desktopTitleBarStyle(): DesktopTitleBarStyle {
   if (process.platform === "darwin") return "hiddenInset";
+  if (process.platform === "win32") return "default";
   return "hidden";
 }
 
