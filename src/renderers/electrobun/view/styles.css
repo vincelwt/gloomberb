@@ -32,14 +32,8 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 [data-gloom-role="app-header"][data-titlebar-overlay="true"],
 .electrobun-webkit-app-region-drag {
   cursor: default;
-  -webkit-app-region: drag;
-  app-region: drag;
   -webkit-user-select: none;
   user-select: none;
-}
-.electrobun-webkit-app-region-no-drag {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
 }
 [data-titlebar-overlay="true"] {
   min-height: __TITLEBAR_OVERLAY_HEIGHT_PX__px;
@@ -55,8 +49,7 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 [data-titlebar-overlay="true"] a,
 [data-titlebar-overlay="true"] .electrobun-webkit-app-region-no-drag,
 [data-titlebar-overlay="true"] [data-gloom-interactive="true"] {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
+  cursor: pointer;
 }
 [data-gloom-role="window-controls"] {
   height: 100%;

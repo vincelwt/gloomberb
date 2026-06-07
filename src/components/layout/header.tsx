@@ -1,5 +1,5 @@
-import { Box, SpinnerMark, Text, TextAttributes, useUiCapabilities } from "../../ui";
-import { useEffect, type ReactNode } from "react";
+import { Box, SpinnerMark, Text, TextAttributes, useRendererHost, useUiCapabilities } from "../../ui";
+import { useCallback, useEffect, type ReactNode } from "react";
 import { blendHex, colors, priceColor } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
 import { useAppActive } from "../../state/app/activity";
@@ -124,6 +124,7 @@ function UpdateStatus() {
 
 export function Header() {
   useThemeColors();
+  const rendererHost = useRendererHost();
   const baseCurrency = useAppSelector(selectBaseCurrency);
   const appActive = useAppActive();
   const { titleBarOverlay, windowControls } = useUiCapabilities();
@@ -150,6 +151,11 @@ export function Header() {
     ? `SPY ${formatMarketPrice(activeSpyQuote.price, { assetCategory: "ETF" })} ${formatPercentRaw(activeSpyQuote.changePercent)}`
     : "SPY —";
 
+  const startWindowDrag = useCallback(() => {
+    if (!titleBarOverlay) return;
+    void rendererHost.startWindowDrag?.();
+  }, [rendererHost, titleBarOverlay]);
+
   // Market status
   const mktState = spyQuote?.marketState;
   const mktLabel = mktState ? marketStateLabel(mktState) : "";
@@ -164,7 +170,7 @@ export function Header() {
         backgroundColor={colors.header}
         data-gloom-role="app-header"
         data-titlebar-overlay="true"
-        className="electrobun-webkit-app-region-drag"
+        onMouseDown={startWindowDrag}
         style={{
           boxShadow: `0 -1px 0 ${colors.header}, inset 0 1px 0 ${colors.header}`,
           paddingLeft: 8,
@@ -215,7 +221,7 @@ export function Header() {
       backgroundColor={colors.header}
       data-gloom-role="app-header"
       data-titlebar-overlay={titleBarOverlay ? "true" : undefined}
-      className={titleBarOverlay ? "electrobun-webkit-app-region-drag" : undefined}
+      onMouseDown={startWindowDrag}
     >
       <Box paddingLeft={titleBarOverlay ? titlebarLeadingInset : 1}>
         <Text attributes={TextAttributes.BOLD} fg={colors.headerText}>
