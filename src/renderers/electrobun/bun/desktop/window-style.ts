@@ -3,6 +3,13 @@ type DesktopWindowButtonOffset = {
   x: number;
   y: number;
 };
+type DesktopWindowStyleMask = {
+  Borderless?: boolean;
+  Closable?: boolean;
+  Miniaturizable?: boolean;
+  Titled?: boolean;
+  FullSizeContentView?: boolean;
+};
 
 const MAIN_WINDOW_BUTTON_EDGE_OFFSET_PX = 11;
 const DETACHED_WINDOW_BUTTON_EDGE_OFFSET_PX = 18;
@@ -16,5 +23,16 @@ export function desktopWindowButtonOffset(windowKind: "main" | "detached" = "mai
   return {
     x: windowKind === "detached" ? DETACHED_WINDOW_BUTTON_EDGE_OFFSET_PX : MAIN_WINDOW_BUTTON_EDGE_OFFSET_PX,
     y: 0,
+  };
+}
+
+export function desktopWindowStyleMask(): DesktopWindowStyleMask {
+  if (process.platform !== "win32") return {};
+  return {
+    Borderless: true,
+    Closable: false,
+    Miniaturizable: false,
+    Titled: false,
+    FullSizeContentView: true,
   };
 }

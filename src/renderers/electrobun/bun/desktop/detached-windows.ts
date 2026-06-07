@@ -24,7 +24,7 @@ import {
 } from "./window-events";
 import type { DesktopStateBroadcaster, DesktopStateRpc } from "./state-broadcaster";
 import { applyWindowsWindowIcon } from "./windows-icons";
-import { desktopTitleBarStyle, desktopWindowButtonOffset } from "./window-style";
+import { desktopTitleBarStyle, desktopWindowButtonOffset, desktopWindowStyleMask } from "./window-style";
 
 const INITIAL_DOCK_SUPPRESSION_MS = 800;
 const WINDOW_CONTROL_DOCK_SUPPRESSION_MS = 5_000;
@@ -190,6 +190,7 @@ export class DesktopDetachedWindowManager<Rpc extends DesktopStateRpc> {
       url: "views://mainview/index.html",
       renderer: "native",
       rpc: rpc as never,
+      styleMask: desktopWindowStyleMask(),
       titleBarStyle: desktopTitleBarStyle(),
       trafficLightOffset: desktopWindowButtonOffset("detached"),
       navigationRules: JSON.stringify(["views://*"]),
