@@ -31,7 +31,11 @@ function currentDesktopPlatform(): string {
   const navigatorWithUserAgentData = navigator as Navigator & {
     userAgentData?: { platform?: string };
   };
-  return navigatorWithUserAgentData.userAgentData?.platform ?? navigator.platform ?? "";
+  return [
+    navigatorWithUserAgentData.userAgentData?.platform,
+    navigator.platform,
+    navigator.userAgent,
+  ].filter((value): value is string => Boolean(value)).join(" ");
 }
 
 const DESKTOP_PLATFORM = currentDesktopPlatform();
