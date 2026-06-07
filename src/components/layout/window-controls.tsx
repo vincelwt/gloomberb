@@ -54,9 +54,9 @@ interface WindowControlsProps {
 export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
   const rendererHost = useRendererHost();
   const edgeOffset = windowKind === "detached" ? DETACHED_WINDOW_EDGE_OVERHANG_PX : MAIN_WINDOW_EDGE_OVERHANG_PX;
-  const groupStyle = edgeOffset > 0 ? {
-    marginRight: `-${edgeOffset}px`,
-    paddingLeft: `${edgeOffset}px`,
+  const controlStyle = edgeOffset > 0 ? {
+    left: `${edgeOffset}px`,
+    position: "relative",
   } : undefined;
 
   const controlWindow = useCallback((action: WindowControlAction, event: { stopPropagation?: () => void; preventDefault?: () => void }) => {
@@ -73,7 +73,6 @@ export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
       className="electrobun-webkit-app-region-no-drag"
       data-gloom-role="window-controls"
       aria-hidden={false}
-      style={groupStyle}
     >
       {WINDOWS_CONTROLS.map((control) => (
         <Box
@@ -90,6 +89,7 @@ export function WindowControls({ windowKind = "main" }: WindowControlsProps) {
           aria-label={control.label}
           title={control.label}
           className="electrobun-webkit-app-region-no-drag"
+          style={controlStyle}
           onMouseDown={(event: { stopPropagation?: () => void; preventDefault?: () => void }) => controlWindow(control.action, event)}
         >
           <WindowControlIcon action={control.action} />
