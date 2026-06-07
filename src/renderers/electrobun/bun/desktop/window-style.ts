@@ -15,7 +15,9 @@ const MAIN_WINDOW_BUTTON_EDGE_OFFSET_PX = 11;
 const DETACHED_WINDOW_BUTTON_EDGE_OFFSET_PX = 18;
 
 export function desktopTitleBarStyle(): DesktopTitleBarStyle {
-  return process.platform === "darwin" ? "hiddenInset" : "hidden";
+  if (process.platform === "darwin") return "hiddenInset";
+  if (process.platform === "win32") return "default";
+  return "hidden";
 }
 
 export function desktopWindowButtonOffset(windowKind: "main" | "detached" = "main"): DesktopWindowButtonOffset {
