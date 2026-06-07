@@ -29,6 +29,18 @@ function loadWin32() {
       args: [FFIType.ptr, FFIType.int, FFIType.ptr],
       returns: FFIType.ptr,
     },
+    GetWindowLongPtrW: {
+      args: [FFIType.ptr, FFIType.int],
+      returns: FFIType.i64,
+    },
+    SetWindowLongPtrW: {
+      args: [FFIType.ptr, FFIType.int, FFIType.i64],
+      returns: FFIType.i64,
+    },
+    SetWindowPos: {
+      args: [FFIType.ptr, FFIType.ptr, FFIType.int, FFIType.int, FFIType.int, FFIType.int, FFIType.u32],
+      returns: FFIType.bool,
+    },
   });
 }
 
