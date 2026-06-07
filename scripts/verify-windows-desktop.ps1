@@ -52,6 +52,24 @@ public static class GloomberbWin32 {
   [DllImport("user32.dll")]
   public static extern bool GetWindowRect(IntPtr hWnd, out GloomberbWindowRect rect);
 
+  [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+  [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+  public static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
+
+  [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+  public static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+  [DllImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]
+  public static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
+
+  [DllImport("user32.dll", EntryPoint = "SetWindowLongW", SetLastError = true)]
+  public static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
+
+  [DllImport("user32.dll", SetLastError = true)]
+  public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
   [DllImport("user32.dll")]
   public static extern bool SetCursorPos(int x, int y);
 
@@ -73,6 +91,22 @@ public static class GloomberbWin32 {
       return GetClassLongPtr64(hWnd, nIndex);
 
     return new IntPtr((long)GetClassLong32(hWnd, nIndex));
+  }
+
+  public static IntPtr GetWindowLongPtrCompat(IntPtr hWnd, int nIndex)
+  {
+    if (IntPtr.Size == 8)
+      return GetWindowLongPtr64(hWnd, nIndex);
+
+    return new IntPtr((long)GetWindowLong32(hWnd, nIndex));
+  }
+
+  public static IntPtr SetWindowLongPtrCompat(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
+  {
+    if (IntPtr.Size == 8)
+      return SetWindowLongPtr64(hWnd, nIndex, dwNewLong);
+
+    return new IntPtr((long)SetWindowLong32(hWnd, nIndex, dwNewLong.ToInt32()));
   }
 
   [DllImport("user32.dll")]
@@ -185,6 +219,61 @@ function Get-WindowHandle {
   param([object]$Window)
 
   [IntPtr]::new([long]$Window.Handle)
+}
+
+function Get-WindowClassName {
+  param([object]$Window)
+
+  $Builder = New-Object System.Text.StringBuilder 256
+  [void][GloomberbWin32]::GetClassName((Get-WindowHandle $Window), $Builder, $Builder.Capacity)
+  $Builder.ToString()
+}
+
+function Get-WindowStyleValue {
+  param([object]$Window)
+
+  [GloomberbWin32]::GetWindowLongPtrCompat((Get-WindowHandle $Window), -16).ToInt64()
+}
+
+function Format-WindowStyleHex {
+  param([Int64]$Style)
+
+  "0x{0:X8}" -f ($Style -band ([Int64]0xFFFFFFFF))
+}
+
+function Apply-DiagnosticCustomChrome {
+  param(
+    [object]$Window,
+    [string]$Label
+  )
+
+  $Handle = Get-WindowHandle $Window
+  $BeforeStyle = Get-WindowStyleValue $Window
+  $CaptionBits = ([Int64]0x00C00000) -bor ([Int64]0x00080000) -bor ([Int64]0x00020000) -bor ([Int64]0x00010000)
+  $NextStyle = $BeforeStyle -band (-bnot $CaptionBits)
+  $SWP_NOSIZE = 0x0001
+  $SWP_NOMOVE = 0x0002
+  $SWP_NOZORDER = 0x0004
+  $SWP_NOACTIVATE = 0x0010
+  $SWP_FRAMECHANGED = 0x0020
+  $FrameChangedFlags = [uint32]($SWP_NOSIZE -bor $SWP_NOMOVE -bor $SWP_NOZORDER -bor $SWP_NOACTIVATE -bor $SWP_FRAMECHANGED)
+
+  [void][GloomberbWin32]::SetWindowLongPtrCompat($Handle, -16, [IntPtr]::new($NextStyle))
+  $SetWindowPosResult = [GloomberbWin32]::SetWindowPos($Handle, [IntPtr]::Zero, 0, 0, 0, 0, $FrameChangedFlags)
+  Start-Sleep -Milliseconds 500
+  $AfterStyle = Get-WindowStyleValue $Window
+
+  [pscustomobject]@{
+    Label = $Label
+    Handle = $Window.Handle
+    ProcessName = $Window.ProcessName
+    Title = $Window.MainWindowTitle
+    ClassName = Get-WindowClassName $Window
+    BeforeStyle = Format-WindowStyleHex $BeforeStyle
+    RequestedStyle = Format-WindowStyleHex $NextStyle
+    AfterStyle = Format-WindowStyleHex $AfterStyle
+    SetWindowPos = $SetWindowPosResult
+  }
 }
 
 function Click-WindowControl {
@@ -1065,6 +1154,14 @@ try {
   if (-not $DetachedWindow) {
     throw "Could not find the detached watchlist window in the Windows GUI smoke test."
   }
+
+  $ChromeProbe = @(
+    Apply-DiagnosticCustomChrome -Window $MainWindow -Label "Main window"
+    Apply-DiagnosticCustomChrome -Window $DetachedWindow -Label "Detached pop-out"
+  )
+  $ChromeProbeJson = $ChromeProbe | ConvertTo-Json -Depth 5
+  $ChromeProbeJson | Set-Content -Path (Join-Path $GuiArtifactDir "windows-chrome-probe.json") -Encoding UTF8
+  Write-Host $ChromeProbeJson
 
   Export-WindowIcon `
     -Window $MainWindow `
