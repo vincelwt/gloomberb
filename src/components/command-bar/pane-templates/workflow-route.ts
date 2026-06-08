@@ -16,7 +16,17 @@ import {
   getPaneTemplateDisplayLabel,
 } from "./items";
 
+function paneTemplateHasConfigFields(template: PaneTemplateDef): boolean {
+  if (template.wizard?.some((step) => step.type !== "info")) {
+    return true;
+  }
+  return !!buildGeneratedTemplateField(template, null).field;
+}
+
 export function shouldOpenPaneTemplateConfig(template: PaneTemplateDef, arg?: string): boolean {
+  if (!paneTemplateHasConfigFields(template)) {
+    return false;
+  }
   if (template.wizard && template.wizard.length > 0) {
     if (!arg?.trim()) {
       return true;

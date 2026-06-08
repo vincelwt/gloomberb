@@ -117,6 +117,42 @@ function registerOptionalTextPane(pluginRegistry: MutablePaneRegistry): void {
   });
 }
 
+function registerQueryOnlyPane(pluginRegistry: MutablePaneRegistry): void {
+  mutableRegistryMap(pluginRegistry.panes).set("prediction-markets", {
+    id: "prediction-markets",
+    name: "Prediction Markets",
+    component: () => null,
+    defaultPosition: "left",
+    defaultMode: "floating",
+  });
+  mutableRegistryMap(pluginRegistry.paneTemplates).set("new-prediction-markets-pane", {
+    id: "new-prediction-markets-pane",
+    paneId: "prediction-markets",
+    label: "Prediction Markets",
+    description: "Open a new prediction markets browser pane",
+    keywords: ["prediction", "markets", "polymarket", "kalshi", "events"],
+    shortcut: { prefix: "PM", argPlaceholder: "query", argKind: "text" },
+  });
+}
+
+function registerShortcutOnlyPane(pluginRegistry: MutablePaneRegistry): void {
+  mutableRegistryMap(pluginRegistry.panes).set("top-news", {
+    id: "top-news",
+    name: "Top News",
+    component: () => null,
+    defaultPosition: "right",
+    defaultMode: "floating",
+  });
+  mutableRegistryMap(pluginRegistry.paneTemplates).set("top-news-pane", {
+    id: "top-news-pane",
+    paneId: "top-news",
+    label: "Top News",
+    description: "Curated top market stories ranked by importance",
+    keywords: ["top", "news", "headlines", "stories"],
+    shortcut: { prefix: "TOP" },
+  });
+}
+
 describe("CommandBar pane and layout routes", () => {
   const layoutModeConfig = (config: AppConfig): AppConfig => {
     const research = cloneLayout(config.layout);
@@ -270,6 +306,46 @@ describe("CommandBar pane and layout routes", () => {
     expect(created).toEqual([{ templateId: "optional-search-pane", options: undefined }]);
     expect(testSetup.captureCharFrame()).not.toContain("Create Pane");
   });
+
+  for (const scenario of [
+    {
+      query: "prediction markets",
+      register: registerQueryOnlyPane,
+      templateId: "new-prediction-markets-pane",
+    },
+    {
+      query: "top news",
+      register: registerShortcutOnlyPane,
+      templateId: "top-news-pane",
+    },
+  ] as const) {
+    test(`creates ${scenario.templateId} directly when it has no config fields`, async () => {
+      const created: CreatedPaneCall[] = [];
+
+      testSetup = await testRender(<CommandBarHarness
+        query={scenario.query}
+        live
+        configurePluginRegistry={(pluginRegistry) => {
+          scenario.register(pluginRegistry);
+          recordPaneCreations(pluginRegistry, created);
+        }}
+      />, {
+        width: 100,
+        height: 18,
+      });
+
+      await testSetup.renderOnce();
+
+      await act(async () => {
+        testSetup!.mockInput.pressEnter();
+        await Bun.sleep(0);
+        await testSetup!.renderOnce();
+      });
+
+      expect(created).toEqual([{ templateId: scenario.templateId, options: undefined }]);
+      expect(testSetup.captureCharFrame()).not.toContain("Create Pane");
+    });
+  }
 
   test("shows pane templates that share the same shortcut", async () => {
     testSetup = await testRender(<CommandBarHarness
