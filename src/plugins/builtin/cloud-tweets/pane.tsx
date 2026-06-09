@@ -267,6 +267,7 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
       inputRef={searchInputRef}
       onFocus={focusSearch}
       onBlur={blurSearch}
+      onNavigateDown={blurSearch}
       onQueryChange={updateFeedQuery}
     />
   ) : null;
@@ -309,6 +310,7 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
           load={loadActiveFeed}
           onResult={markFeedResult}
           onError={markFeedError}
+          onFocusSearch={focusSearch}
           emptyStateTitle={searchEnabled ? "No tweets" : "Enter a search query"}
           emptyStateHint={searchEnabled ? activeFeedQuery : undefined}
         />

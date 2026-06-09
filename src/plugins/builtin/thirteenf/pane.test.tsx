@@ -224,6 +224,32 @@ describe("ThirteenFPane", () => {
     ).toBeUndefined();
   });
 
+  test("moves from the first fund row to search with Up", async () => {
+    setHttpFetchTransport(async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith("/topfunds")) {
+        return json([
+          { cik: "1", name: "Alpha Capital", period_of_report: "2026-03-31", pnl: null },
+        ]);
+      }
+      return json([]);
+    });
+
+    await act(async () => {
+      testSetup = await testRender(<Harness />, { width: 100, height: 20 });
+    });
+    await renderFrames();
+
+    await emitKeypress({ name: "up", sequence: "\u001B[A" });
+    await act(async () => {
+      await testSetup!.mockInput.typeText("BRK");
+      await testSetup!.renderOnce();
+    });
+    await renderFrames(2);
+
+    expect(testSetup!.captureCharFrame()).toContain("BRK");
+  });
+
   test("rapid keyboard navigation activates the current rendered row", async () => {
     setHttpFetchTransport(async (url) => {
       const path = new URL(String(url)).pathname;

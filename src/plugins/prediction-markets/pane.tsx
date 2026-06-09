@@ -1,6 +1,6 @@
 import { Box, Input, Text } from "../../ui";
 import { useCallback, useMemo, useRef } from "react";
-import { DataTableStackView, Tabs, usePaneFooter } from "../../components";
+import { DataTableStackView, Tabs, usePaneFooter, type DataTableKeyEvent } from "../../components";
 import { createRowValueCache } from "../../components/ui/row-value-cache";
 import type { PaneProps } from "../../types/plugin";
 import { colors } from "../../theme/colors";
@@ -9,6 +9,7 @@ import { usePredictionMarketsController } from "./controller";
 import { PredictionMarketDetailPane } from "./detail/pane";
 import { getPredictionColumnValue } from "./metrics";
 import { BROWSE_TABS, VENUE_TABS } from "./navigation";
+import { isPlainArrowUp, stopSearchFocusNavigation } from "../../utils/search-focus-navigation";
 import type {
   PredictionBrowseTab,
   PredictionCategoryId,
@@ -217,6 +218,15 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     watchlistedRowKeys,
   ]);
 
+  const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (controller.selectedIndex <= 0 && isPlainArrowUp(event)) {
+      stopSearchFocusNavigation(event);
+      controller.actions.focusSearch();
+      return true;
+    }
+    return false;
+  }, [controller.actions.focusSearch, controller.selectedIndex]);
+
   const detailContent =
     controller.selectedSummary && controller.selectedRow ? (
       <Box
@@ -271,6 +281,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       }}
       onActivate={(row) =>
         controller.actions.openSelectedRow(row.key)}
+      onRootKeyDown={handleRootKeyDown}
       columns={controller.visibleColumns}
       items={controller.visibleRows}
       sortColumnId={controller.sortPreference.columnId}

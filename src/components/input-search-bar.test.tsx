@@ -18,7 +18,13 @@ afterEach(async () => {
   testSetup = undefined;
 });
 
-function Harness({ actions }: { actions: AppAction[] }) {
+function Harness({
+  actions,
+  onNavigateDown,
+}: {
+  actions: AppAction[];
+  onNavigateDown?: () => void;
+}) {
   const state = createInitialState(createDefaultConfig("/tmp/gloomberb-input-search-bar"));
   const inputRef = useRef<InputRenderable | null>(null);
   const [active, setActive] = useState(true);
@@ -38,6 +44,7 @@ function Harness({ actions }: { actions: AppAction[] }) {
         inputRef={inputRef}
         placeholder="search"
         debounceMs={100}
+        onNavigateDown={onNavigateDown}
         onFocus={() => {}}
         onBlur={() => {}}
         onQueryChange={() => {}}
@@ -67,5 +74,30 @@ describe("InputSearchBar", () => {
       { type: "SET_INPUT_CAPTURED", captured: true },
       { type: "SET_INPUT_CAPTURED", captured: false },
     ]);
+  });
+
+  test("moves from the active search input to the table with Down", async () => {
+    const actions: AppAction[] = [];
+    let navigatedDown = 0;
+
+    testSetup = await testRender(
+      <Harness
+        actions={actions}
+        onNavigateDown={() => {
+          navigatedDown += 1;
+        }}
+      />,
+      { width: 40, height: 4 },
+    );
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("down");
+      await testSetup!.renderOnce();
+    });
+
+    expect(navigatedDown).toBe(1);
   });
 });

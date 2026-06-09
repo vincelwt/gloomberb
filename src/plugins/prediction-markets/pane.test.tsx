@@ -265,6 +265,25 @@ describe("prediction markets pane interactions", () => {
     expect(frame).not.toContain("\u2190 Back");
   });
 
+  test("moves focus between search and the market table with arrows", async () => {
+    installPredictionMarketMocks();
+
+    testSetup = await testRender(<Harness />, { width: 120, height: 34 });
+    await flushFrames(testSetup);
+
+    await emitKeypress(testSetup, { name: "up", sequence: "\u001b[A" });
+    await flushFrames(testSetup);
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("? search markets");
+
+    await emitKeypress(testSetup, { name: "down", sequence: "\u001b[B" });
+    await flushFrames(testSetup);
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("/ search markets");
+  });
+
   test("supports detail outcome navigation and escape return from the keyboard", async () => {
     attachPredictionMarketsPersistence(new MemoryPersistence());
 

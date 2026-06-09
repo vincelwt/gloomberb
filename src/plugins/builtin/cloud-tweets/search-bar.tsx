@@ -15,6 +15,7 @@ export function TwitterFeedSearchBar({
   inputRef,
   onFocus,
   onBlur,
+  onNavigateDown,
   onQueryChange,
 }: {
   feed: TwitterFeed;
@@ -25,6 +26,7 @@ export function TwitterFeedSearchBar({
   inputRef: RefObject<InputRenderable | null>;
   onFocus: () => void;
   onBlur: () => void;
+  onNavigateDown?: () => void;
   onQueryChange: (feedId: string, query: string) => void;
 }) {
   const updateQuery = useCallback((value: string) => {
@@ -43,6 +45,7 @@ export function TwitterFeedSearchBar({
       debounceMs={TWEET_SEARCH_DEBOUNCE_MS}
       onFocus={onFocus}
       onBlur={onBlur}
+      onNavigateDown={onNavigateDown}
       onQueryChange={updateQuery}
     />
   );

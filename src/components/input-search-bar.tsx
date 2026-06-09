@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState, type RefObject } from "react";
 import { Box, Input, Text, type InputRenderable } from "../ui";
 import { colors } from "../theme/colors";
 import { useAppInputCapture } from "../state/app/input-capture";
+import { useShortcut } from "../react/input";
+import { isPlainArrowDown, stopSearchFocusNavigation } from "../utils/search-focus-navigation";
 
 export function InputSearchBar({
   value,
@@ -13,6 +15,7 @@ export function InputSearchBar({
   placeholder,
   debounceMs,
   normalizeValue = identity,
+  onNavigateDown,
   onFocus,
   onBlur,
   onQueryChange,
@@ -26,12 +29,23 @@ export function InputSearchBar({
   placeholder: string;
   debounceMs: number;
   normalizeValue?: (value: string) => string;
+  onNavigateDown?: () => void;
   onFocus: () => void;
   onBlur: () => void;
   onQueryChange: (query: string) => void;
 }) {
   const [draft, setDraft] = useState(value);
   useAppInputCapture(focused && active);
+
+  useShortcut((event) => {
+    if (!onNavigateDown || !isPlainArrowDown(event)) return;
+    stopSearchFocusNavigation(event);
+    onNavigateDown();
+  }, {
+    allowEditable: true,
+    enabled: focused && active && !!onNavigateDown,
+    phase: "before",
+  });
 
   useEffect(() => {
     setDraft(value);

@@ -1,6 +1,7 @@
 import { useCallback, type RefObject } from "react";
 import { type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
+import { isPlainArrowDown, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { getAdjacentPredictionCategoryId } from "../categories";
 import { resolvePredictionKeyboardCommand } from "../keyboard";
 import { getAdjacentPredictionVenueScope } from "../navigation";
@@ -16,6 +17,11 @@ import type {
 interface PredictionKeyboardEvent {
   name?: string;
   sequence?: string;
+  ctrl?: boolean;
+  meta?: boolean;
+  super?: boolean;
+  alt?: boolean;
+  option?: boolean;
   shift?: boolean;
   preventDefault?: () => void;
   stopPropagation?: () => void;
@@ -102,6 +108,11 @@ export function usePredictionControllerKeyboard({
       const command = resolvePredictionKeyboardCommand(event);
 
       if (searchFocused) {
+        if (isPlainArrowDown(event)) {
+          stopSearchFocusNavigation(event);
+          blurSearch();
+          return;
+        }
         if (command === "escape") {
           event.stopPropagation?.();
           event.preventDefault?.();
