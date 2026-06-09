@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Input, Text, type InputRenderable } from "../../../../ui";
 import { useShortcut } from "../../../../react/input";
 import { useAppDispatch, useAppSelector } from "../../../../state/app/context";
+import { useAppInputCapture } from "../../../../state/app/input-capture";
 import { getSharedRegistry } from "../../../registry";
 import { usePluginAppActions } from "../../../runtime";
 import { colors, priceColor } from "../../../../theme/colors";
@@ -102,6 +103,7 @@ export function QuickAddTickerInput({
   const [inputValue, setInputValue] = useState("");
   const [validation, setValidation] = useState<QuickAddValidation>(IDLE_VALIDATION);
   const [submitting, setSubmitting] = useState(false);
+  useAppInputCapture(inputFocused && focused);
 
   const focusInput = useCallback(() => {
     if (!focused) return;
@@ -121,13 +123,6 @@ export function QuickAddTickerInput({
   useEffect(() => {
     onFocusChange?.(inputFocused && focused);
   }, [focused, inputFocused, onFocusChange]);
-
-  useEffect(() => {
-    if (inputFocused && focused) {
-      dispatch({ type: "SET_INPUT_CAPTURED", captured: true });
-      return () => dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
-    }
-  }, [dispatch, focused, inputFocused]);
 
   useEffect(() => {
     if (!focused && inputFocused) {

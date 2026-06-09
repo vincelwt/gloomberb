@@ -363,7 +363,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
                 activeValue={activeCollectionId}
                 onSelect={handleCollectionSelect}
                 compact
-                focused={focused}
+                focused={focused && !quickAddFocused}
               />
             </Box>
           </Box>

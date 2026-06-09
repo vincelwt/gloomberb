@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type RefObject } from "react";
 import { Box, Input, Text, type InputRenderable } from "../ui";
 import { colors } from "../theme/colors";
+import { useAppInputCapture } from "../state/app/input-capture";
 
 export function InputSearchBar({
   value,
@@ -30,6 +31,7 @@ export function InputSearchBar({
   onQueryChange: (query: string) => void;
 }) {
   const [draft, setDraft] = useState(value);
+  useAppInputCapture(focused && active);
 
   useEffect(() => {
     setDraft(value);
