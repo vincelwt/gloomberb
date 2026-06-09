@@ -12,6 +12,7 @@ import {
   type ComparisonChartRenderMode,
   type TimeRange,
 } from "../core/types";
+import type { MouseInteractionEvent } from "../core/pointer";
 
 const MODE_CHIPS: Record<ComparisonChartRenderMode, string> = {
   area: "A",
@@ -22,6 +23,7 @@ interface ComparisonChartToolbarProps {
   activePreset: TimeRange | null;
   availableManualResolutions: ManualChartResolution[];
   effectiveResolution: ChartResolution;
+  focusPaneForMouseInteraction: (event: MouseInteractionEvent | null | undefined) => void;
   isUpdating: boolean;
   onRangeSelect: (range: TimeRange) => void;
   onRenderModeSelect: (mode: ComparisonChartRenderMode) => void;
@@ -36,6 +38,7 @@ export function ComparisonChartToolbar({
   activePreset,
   availableManualResolutions,
   effectiveResolution,
+  focusPaneForMouseInteraction,
   isUpdating,
   onRangeSelect,
   onRenderModeSelect,
@@ -54,7 +57,8 @@ export function ComparisonChartToolbar({
               key={range}
               fg={activePreset === range ? colors.textBright : (isRangePresetSupported(range, availableManualResolutions) ? colors.textDim : colors.textMuted)}
               attributes={activePreset === range ? TextAttributes.BOLD : 0}
-              onMouseDown={() => {
+              onMouseDown={(event: any) => {
+                focusPaneForMouseInteraction(event);
                 if (isRangePresetSupported(range, availableManualResolutions)) {
                   onRangeSelect(range);
                 }
@@ -73,7 +77,10 @@ export function ComparisonChartToolbar({
               key={resolution}
               fg={effectiveResolution === resolution ? colors.textBright : colors.textDim}
               attributes={effectiveResolution === resolution ? TextAttributes.BOLD : 0}
-              onMouseDown={() => onResolutionSelect(resolution)}
+              onMouseDown={(event: any) => {
+                focusPaneForMouseInteraction(event);
+                onResolutionSelect(resolution);
+              }}
             >
               {getChartResolutionLabel(resolution)}
             </Text>
@@ -89,7 +96,10 @@ export function ComparisonChartToolbar({
               key={mode}
               fg={renderMode === mode ? colors.textBright : colors.textDim}
               attributes={renderMode === mode ? TextAttributes.BOLD : 0}
-              onMouseDown={() => onRenderModeSelect(mode)}
+              onMouseDown={(event: any) => {
+                focusPaneForMouseInteraction(event);
+                onRenderModeSelect(mode);
+              }}
             >
               {MODE_CHIPS[mode]}
             </Text>

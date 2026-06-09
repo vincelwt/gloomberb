@@ -3,6 +3,11 @@ import { blendHex, colors, priceColor } from "../theme/colors";
 import { displayWidth, formatPercent, padTo } from "../utils/format";
 import type { PriceReturnField } from "../market-data/performance";
 
+type MouseInteractionEvent = {
+  stopPropagation?: () => void;
+  preventDefault?: () => void;
+};
+
 const STRIP_COLUMN_GAP = 1;
 const RETURN_CELL_MIN_WIDTH = 7;
 const SYMBOL_COLUMN_MIN_WIDTH = 6;
@@ -100,12 +105,14 @@ function chooseComparisonFieldIds(width: number, availableIds: readonly string[]
 
 export function PriceReturnTable({
   height,
+  onFocusInteraction,
   onOpenSymbol,
   onSelectSymbol,
   rows,
   width,
 }: {
   height: number;
+  onFocusInteraction?: (event: MouseInteractionEvent | null | undefined) => void;
   onOpenSymbol: (symbol: string) => void;
   onSelectSymbol: (symbol: string) => void;
   rows: PriceReturnTableRow[];
@@ -151,7 +158,8 @@ export function PriceReturnTable({
             width={width}
             backgroundColor={row.selected ? blendHex(colors.panel, colors.borderFocused, 0.18) : colors.panel}
             onMouseMove={() => onSelectSymbol(row.symbol)}
-            onMouseDown={() => {
+            onMouseDown={(event: any) => {
+              onFocusInteraction?.(event);
               onSelectSymbol(row.symbol);
               onOpenSymbol(row.symbol);
             }}

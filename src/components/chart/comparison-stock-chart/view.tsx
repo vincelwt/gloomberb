@@ -345,6 +345,7 @@ function ComparisonStockChartView({
     displayCursor,
     displayCursorX,
     displayCursorY,
+    focusPaneForMouseInteraction,
     mouseCrosshairDisabledRef,
     plotRef,
     scrollPanCellRemainderRef,
@@ -356,6 +357,7 @@ function ComparisonStockChartView({
     chartWidth,
     cursorX: viewState.cursorX,
     cursorY: viewState.cursorY,
+    focused,
     renderer,
     setViewState,
     symbols: summarySymbols,
@@ -449,6 +451,7 @@ function ComparisonStockChartView({
     chartWidth,
     commitSelectionCursor,
     expandBufferRange,
+    focusPaneForMouseInteraction,
     mouseCrosshairDisabledRef,
     plotRef,
     pointCount: projection.dates.length,
@@ -527,6 +530,7 @@ function ComparisonStockChartView({
           legendActiveIndex={legendActiveIndex}
           legendItemWidth={legendItemWidth}
           legendRows={legendRows}
+          onFocusInteraction={focusPaneForMouseInteraction}
           onOpenSymbol={onOpenSymbol}
           onSelectSymbol={setSelectedSymbol}
           performanceBySymbol={performanceBySymbol}
@@ -547,6 +551,7 @@ function ComparisonStockChartView({
           activePreset={activePreset}
           availableManualResolutions={availableManualResolutions}
           effectiveResolution={effectiveResolution}
+          focusPaneForMouseInteraction={focusPaneForMouseInteraction}
           isUpdating={isUpdating}
           onRangeSelect={setRangePreset}
           onRenderModeSelect={(mode) => setViewState((current) => ({ ...current, renderMode: mode }))}
