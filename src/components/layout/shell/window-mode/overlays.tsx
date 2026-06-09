@@ -40,6 +40,13 @@ interface ShellWindowModeOverlaysProps {
   windowModeDockMovePreview: WindowEditDockMovePreview | null;
 }
 
+function getHighlightedPaneId(windowMode: WindowEditState | null, focusedPaneId: string | null): string | null {
+  if (windowMode?.mode === "move" && windowMode.focus.kind === "dock-move") {
+    return windowMode.focus.targetId;
+  }
+  return windowMode?.paneId ?? focusedPaneId;
+}
+
 function windowModeBannerKey(windowMode: WindowEditState): string {
   const focusKey = windowMode.focus.kind === "dock-move"
     ? `${windowMode.focus.targetId}:${windowMode.focus.position}`
@@ -69,7 +76,7 @@ export function ShellWindowModeOverlays({
   windowMode,
   windowModeDockMovePreview,
 }: ShellWindowModeOverlaysProps) {
-  const highlightedPaneId = windowMode?.paneId ?? focusedPaneId;
+  const highlightedPaneId = getHighlightedPaneId(windowMode, focusedPaneId);
   const highlightedFloatingPane = highlightedPaneId
     ? visibleFloatingPanes.find((entry) => entry.pane.instance.instanceId === highlightedPaneId)
     : null;

@@ -6,6 +6,7 @@ import {
   findDockLeaf,
   getNodeAtPath,
   replaceNodeAtPath,
+  type DockGeometryOptions,
   type DockTarget,
   type LayoutBounds,
 } from "./dock-tree";
@@ -116,11 +117,17 @@ export function applyDrop(layout: LayoutConfig, draggedId: string, dropTarget: D
   return insertRelativeToLeaf(layout, draggedId, dropTarget.targetId, direction);
 }
 
-export function simulateDrop(layout: LayoutConfig, draggedId: string, dropTarget: DropTarget, bounds: LayoutBounds): LayoutSimulation {
+export function simulateDrop(
+  layout: LayoutConfig,
+  draggedId: string,
+  dropTarget: DropTarget,
+  bounds: LayoutBounds,
+  options?: DockGeometryOptions,
+): LayoutSimulation {
   const nextLayout = applyDrop(layout, draggedId, dropTarget);
   return {
     layout: nextLayout,
-    previewRect: getLeafRect(nextLayout, draggedId, bounds),
+    previewRect: getLeafRect(nextLayout, draggedId, bounds, options),
   };
 }
 

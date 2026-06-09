@@ -226,10 +226,55 @@ export function cycleWindowEditFocus(
   return targets[(currentIndex + delta + targets.length) % targets.length] ?? targets[0]!;
 }
 
-export function getWindowEditPaneIds(layout: LayoutConfig): string[] {
-  const dockedIds = getDockLeafLayouts(layout, { x: 0, y: 0, width: 120, height: 40 }).map((entry) => entry.instanceId);
+function getWindowEditDockPaneIds(
+  layout: LayoutConfig,
+  bounds: LayoutBounds,
+  dockGeometryOptions: DockGeometryOptions,
+): string[] {
+  return getDockLeafLayouts(layout, bounds, dockGeometryOptions).map((entry) => entry.instanceId);
+}
+
+export function getWindowEditPaneIds(
+  layout: LayoutConfig,
+  bounds: LayoutBounds,
+  dockGeometryOptions: DockGeometryOptions,
+): string[] {
+  const dockedIds = getWindowEditDockPaneIds(layout, bounds, dockGeometryOptions);
   const floatingIds = layout.floating.map((entry) => entry.instanceId);
   return [...dockedIds, ...floatingIds];
+}
+
+export function cycleWindowEditTarget(
+  state: WindowEditState,
+  bounds: LayoutBounds,
+  dockGeometryOptions: DockGeometryOptions,
+  delta: 1 | -1,
+): WindowEditState {
+  if (state.mode !== "move" || state.focus.kind !== "dock-move") {
+    return state;
+  }
+
+  const targetIds = getWindowEditDockPaneIds(state.previewLayout, bounds, dockGeometryOptions)
+    .filter((paneId) => paneId !== state.paneId);
+  if (targetIds.length === 0) {
+    return {
+      ...state,
+      focus: normalizeWindowEditFocus({ kind: "move" }, state.previewLayout, state.paneId, state.mode, bounds, dockGeometryOptions),
+    };
+  }
+
+  const currentIndex = targetIds.indexOf(state.focus.targetId);
+  const startIndex = currentIndex >= 0
+    ? currentIndex
+    : delta === 1
+      ? -1
+      : 0;
+  const targetId = targetIds[(startIndex + delta + targetIds.length) % targetIds.length] ?? targetIds[0]!;
+  return {
+    ...state,
+    focus: normalizeWindowEditFocus({ ...state.focus, targetId }, state.previewLayout, state.paneId, state.mode, bounds, dockGeometryOptions),
+    notice: undefined,
+  };
 }
 
 export function raiseWindowEditPane(layout: LayoutConfig, paneId: string): LayoutConfig {

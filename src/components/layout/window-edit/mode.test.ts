@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { LayoutConfig } from "../../../types/config";
-import { cycleWindowEditPane, getWindowEditPaneIds, type WindowEditState } from "./mode";
+import {
+  cycleWindowEditPane,
+  cycleWindowEditTarget,
+  getWindowEditPaneIds,
+  type WindowEditState,
+} from "./mode";
+import { resolveWindowEditDockMovePreview } from "./presentation";
 
 const bounds = { x: 0, y: 0, width: 120, height: 40 };
 
@@ -38,18 +44,83 @@ describe("window edit mode", () => {
       dirty: false,
     };
 
-    state = cycleWindowEditPane(state, getWindowEditPaneIds(state.previewLayout), bounds, {}, 1);
+    state = cycleWindowEditPane(state, getWindowEditPaneIds(state.previewLayout, bounds, {}), bounds, {}, 1);
     expect(state.paneId).toBe("dock-b");
 
-    state = cycleWindowEditPane(state, getWindowEditPaneIds(state.previewLayout), bounds, {}, 1);
+    state = cycleWindowEditPane(state, getWindowEditPaneIds(state.previewLayout, bounds, {}), bounds, {}, 1);
     expect(state.paneId).toBe("float-a");
     expect(state.previewLayout.floating.find((entry) => entry.instanceId === "float-a")?.zIndex)
       .toBeGreaterThan(state.previewLayout.floating.find((entry) => entry.instanceId === "float-b")?.zIndex ?? 0);
 
-    state = cycleWindowEditPane(state, getWindowEditPaneIds(state.previewLayout), bounds, {}, 1);
+    state = cycleWindowEditPane(state, getWindowEditPaneIds(state.previewLayout, bounds, {}), bounds, {}, 1);
     expect(state.paneId).toBe("float-b");
 
-    state = cycleWindowEditPane(state, getWindowEditPaneIds(state.previewLayout), bounds, {}, 1);
+    state = cycleWindowEditPane(state, getWindowEditPaneIds(state.previewLayout, bounds, {}), bounds, {}, 1);
     expect(state.paneId).toBe("dock-a");
+  });
+
+  test("cycles dock move targets without changing the selected window", () => {
+    const layout: LayoutConfig = {
+      dockRoot: {
+        kind: "split",
+        axis: "horizontal",
+        ratio: 0.5,
+        first: { kind: "pane", instanceId: "source" },
+        second: {
+          kind: "split",
+          axis: "vertical",
+          ratio: 0.5,
+          first: { kind: "pane", instanceId: "target-a" },
+          second: { kind: "pane", instanceId: "target-b" },
+        },
+      },
+      instances: [
+        pane("source"),
+        pane("target-a"),
+        pane("target-b"),
+      ],
+      floating: [],
+      detached: [],
+    };
+    const state: WindowEditState = {
+      paneId: "source",
+      previewLayout: layout,
+      mode: "move",
+      focus: { kind: "dock-move", targetId: "target-a", position: "right" },
+      dirty: false,
+    };
+
+    const next = cycleWindowEditTarget(state, bounds, { reserveDividerGutters: true }, 1);
+
+    expect(next.paneId).toBe("source");
+    expect(next.focus).toEqual({ kind: "dock-move", targetId: "target-b", position: "right" });
+  });
+
+  test("uses dock geometry options for dock move preview rectangles", () => {
+    const layout: LayoutConfig = {
+      dockRoot: {
+        kind: "split",
+        axis: "horizontal",
+        ratio: 0.5,
+        first: { kind: "pane", instanceId: "left" },
+        second: { kind: "pane", instanceId: "right" },
+      },
+      instances: [
+        pane("left"),
+        pane("right"),
+      ],
+      floating: [],
+      detached: [],
+    };
+    const state: WindowEditState = {
+      paneId: "left",
+      previewLayout: layout,
+      mode: "move",
+      focus: { kind: "dock-move", targetId: "right", position: "right" },
+      dirty: false,
+    };
+
+    expect(resolveWindowEditDockMovePreview(state, bounds, { reserveDividerGutters: true })?.rect)
+      .toEqual({ x: 61, y: 0, width: 59, height: 40 });
   });
 });

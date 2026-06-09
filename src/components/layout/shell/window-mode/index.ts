@@ -13,6 +13,7 @@ import {
   applyWindowEditDirection,
   cycleWindowEditFocus,
   cycleWindowEditPane,
+  cycleWindowEditTarget,
   directionFromWindowEditKey,
   getWindowEditPaneIds,
   normalizeWindowEditFocus,
@@ -72,7 +73,10 @@ export function useShellWindowMode({
   );
   const windowModePaneId = windowMode?.paneId;
   const activeLayout = windowMode?.previewLayout ?? visibleLayout;
-  const windowModePaneIds = useMemo(() => getWindowEditPaneIds(activeLayout), [activeLayout]);
+  const windowModePaneIds = useMemo(
+    () => getWindowEditPaneIds(activeLayout, bounds, dockGeometryOptions),
+    [activeLayout, bounds, dockGeometryOptions],
+  );
   const windowModeDockMovePreview = useMemo(
     () => resolveWindowEditDockMovePreview(windowMode, bounds, dockGeometryOptions),
     [bounds, dockGeometryOptions, windowMode],
@@ -210,12 +214,16 @@ export function useShellWindowMode({
       }
     } else if (name === "w") {
       setWindowMode((current) => current
-        ? cycleWindowEditPane(current, windowModePaneIds, bounds, dockGeometryOptions, event.shift ? -1 : 1)
+        ? current.mode === "move" && current.focus.kind === "dock-move"
+          ? cycleWindowEditTarget(current, bounds, dockGeometryOptions, event.shift ? -1 : 1)
+          : cycleWindowEditPane(current, windowModePaneIds, bounds, dockGeometryOptions, event.shift ? -1 : 1)
         : current);
     } else if (name === "tab") {
       setWindowMode((current) => current
         ? current.mode === "move"
-          ? cycleWindowEditPane(current, windowModePaneIds, bounds, dockGeometryOptions, event.shift ? -1 : 1)
+          ? current.focus.kind === "dock-move"
+            ? cycleWindowEditTarget(current, bounds, dockGeometryOptions, event.shift ? -1 : 1)
+            : cycleWindowEditPane(current, windowModePaneIds, bounds, dockGeometryOptions, event.shift ? -1 : 1)
           : {
               ...current,
               focus: cycleWindowEditFocus(

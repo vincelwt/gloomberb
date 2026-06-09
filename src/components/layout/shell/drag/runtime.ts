@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   type DockDividerLayout,
+  type DockGeometryOptions,
   type DockLeafLayout,
   type FloatingRect,
   type LayoutBounds,
@@ -146,6 +147,7 @@ interface UseShellPointerRuntimeOptions {
   closePaneMenu: () => void;
   contentHeight: number;
   dispatch: Dispatch<AppAction>;
+  dockGeometryOptions: DockGeometryOptions;
   dockDividerLayouts: DockDividerLayout[];
   dockLeafLayouts: DockLeafLayout[];
   dragRuntime: ShellDragRuntimeState;
@@ -179,6 +181,7 @@ export function useShellPointerRuntime({
   closePaneMenu,
   contentHeight,
   dispatch,
+  dockGeometryOptions,
   dockDividerLayouts,
   dockLeafLayouts,
   dragRuntime,
@@ -206,6 +209,7 @@ export function useShellPointerRuntime({
     bounds,
     contentHeight,
     dispatch,
+    dockGeometryOptions,
     dockLeafLayouts,
     focusPane,
     dragRuntime,

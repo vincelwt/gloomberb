@@ -73,7 +73,7 @@ export function windowEditStatusLine(
 export function windowEditHelpText(state: WindowEditState): string {
   if (state.mode === "move") {
     if (state.focus.kind === "dock-move") {
-      return "arrows/hjkl choose side  m retarget  Tab/w window  d float  r resize  Enter commit/exit  Esc exit/cancel";
+      return "arrows/hjkl choose side  Tab/w target  m window  d float  r resize  Enter commit/exit  Esc exit/cancel";
     }
     return "Tab/w window  d dock/float  r resize  arrows/hjkl target/move  Shift fast  Enter commit/exit  Esc exit/cancel";
   }
@@ -100,6 +100,7 @@ export function resolveWindowEditDockMovePreview(
     state.paneId,
     leafDropTarget(focus.targetId, focus.position),
     bounds,
+    dockGeometryOptions,
   );
   if (!simulation.previewRect) return null;
   return {
