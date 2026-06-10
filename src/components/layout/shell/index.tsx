@@ -333,6 +333,7 @@ export function Shell({
     closePaneMenu,
     contentHeight,
     dispatch,
+    dockGeometryOptions,
     dockDividerLayouts,
     dockLeafLayouts,
     dragRuntime,

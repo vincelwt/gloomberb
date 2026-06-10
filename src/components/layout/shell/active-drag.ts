@@ -4,6 +4,7 @@ import {
   getRememberedFloatingRect,
   resizeSplitAtPath,
   simulateDrop,
+  type DockGeometryOptions,
   type DockLeafLayout,
   type DropTarget,
   type LayoutBounds,
@@ -32,6 +33,7 @@ interface UseShellActiveDragOptions {
   bounds: LayoutBounds;
   contentHeight: number;
   dispatch: Dispatch<AppAction>;
+  dockGeometryOptions: DockGeometryOptions;
   dockLeafLayouts: DockLeafLayout[];
   dragRuntime: ShellDragRuntimeState;
   focusPane: (paneId: string) => void;
@@ -51,6 +53,7 @@ export function useShellActiveDrag({
   bounds,
   contentHeight,
   dispatch,
+  dockGeometryOptions,
   dockLeafLayouts,
   dragRuntime,
   focusPane,
@@ -117,7 +120,7 @@ export function useShellActiveDrag({
           const hoveredCell = hoveredOverlay.cells.find((cell) => pointInRect(cell.rect, hitX, hitShellY));
           if (hoveredCell) {
             const target: DropTarget = { kind: "leaf", targetId: hoveredOverlay.targetId, position: hoveredCell.position };
-            const simulation = simulateDrop(baseLayout, drag.paneId, target, bounds);
+            const simulation = simulateDrop(baseLayout, drag.paneId, target, bounds, dockGeometryOptions);
             if (simulation.previewRect) {
               updateDockPreview({ kind: "dock", target, rect: simulation.previewRect });
             } else {
@@ -199,6 +202,7 @@ export function useShellActiveDrag({
     bounds,
     contentHeight,
     dispatch,
+    dockGeometryOptions,
     dividerPreviewRef,
     dockLeafLayouts,
     dockPreviewRef,

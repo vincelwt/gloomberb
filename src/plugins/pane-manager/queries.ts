@@ -10,6 +10,7 @@ import {
   countColumnsFromGeometry,
   findDockLeaf,
   getDockLeafLayouts,
+  type DockGeometryOptions,
   type LayoutBounds,
 } from "./dock-tree";
 
@@ -20,8 +21,13 @@ export interface ResolvedPane {
   path?: Array<0 | 1>;
 }
 
-export function getLeafRect(layout: LayoutConfig, instanceId: string, bounds: LayoutBounds): LayoutBounds | null {
-  return getDockLeafLayouts(layout, bounds).find((entry) => entry.instanceId === instanceId)?.rect ?? null;
+export function getLeafRect(
+  layout: LayoutConfig,
+  instanceId: string,
+  bounds: LayoutBounds,
+  options?: DockGeometryOptions,
+): LayoutBounds | null {
+  return getDockLeafLayouts(layout, bounds, options).find((entry) => entry.instanceId === instanceId)?.rect ?? null;
 }
 
 export function resolveDocked(
