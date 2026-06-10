@@ -23,6 +23,8 @@ interface PredictionKeyboardEvent {
   alt?: boolean;
   option?: boolean;
   shift?: boolean;
+  defaultPrevented?: boolean;
+  propagationStopped?: boolean;
   preventDefault?: () => void;
   stopPropagation?: () => void;
 }
@@ -68,6 +70,25 @@ export function usePredictionControllerKeyboard({
   setVenue,
   toggleWatchlist,
 }: UsePredictionControllerKeyboardParams) {
+  const handleSearchNavigation = useCallback(
+    (event: PredictionKeyboardEvent) => {
+      if (!focused || !searchFocused) return;
+
+      if (isPlainArrowDown(event)) {
+        stopSearchFocusNavigation(event);
+        blurSearch();
+        return;
+      }
+
+      if (resolvePredictionKeyboardCommand(event) === "escape") {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        blurSearch();
+      }
+    },
+    [blurSearch, focused, searchFocused],
+  );
+
   const cycleDetailOutcome = useCallback(
     (direction: "previous" | "next") => {
       if (detailTab !== "overview" || sortedOutcomeMarkets.length === 0) {
@@ -104,20 +125,11 @@ export function usePredictionControllerKeyboard({
 
   const handleKeyboard = useCallback(
     (event: PredictionKeyboardEvent) => {
+      if (event.defaultPrevented || event.propagationStopped) return;
       if (!focused) return;
       const command = resolvePredictionKeyboardCommand(event);
 
       if (searchFocused) {
-        if (isPlainArrowDown(event)) {
-          stopSearchFocusNavigation(event);
-          blurSearch();
-          return;
-        }
-        if (command === "escape") {
-          event.stopPropagation?.();
-          event.preventDefault?.();
-          blurSearch();
-        }
         return;
       }
 
@@ -226,6 +238,12 @@ export function usePredictionControllerKeyboard({
       toggleWatchlist,
     ],
   );
+
+  useShortcut(handleSearchNavigation, {
+    allowEditable: true,
+    enabled: focused && searchFocused,
+    phase: "before",
+  });
 
   useShortcut(handleKeyboard);
 }

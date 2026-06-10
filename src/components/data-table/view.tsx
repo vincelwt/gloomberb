@@ -26,6 +26,11 @@ export type DataTableKeyEvent = TableViewKeyEvent;
 
 const DATA_TABLE_SELECTION_COMMIT_DELAY_MS = 150;
 
+export interface DataTableRootKeyContext {
+  selectedIndex: number;
+  itemCount: number;
+}
+
 export type DataTableSelectionChangeReason =
   | "keyboard"
   | "pointer"
@@ -95,7 +100,10 @@ export interface DataTableViewProps<
   hoveredIdx?: number | null;
   setHoveredIdx?: (index: number | null) => void;
   keyboardNavigation?: boolean;
-  onRootKeyDown?: (event: DataTableKeyEvent) => boolean | void;
+  onRootKeyDown?: (
+    event: DataTableKeyEvent,
+    context: DataTableRootKeyContext,
+  ) => boolean | void;
   resetScrollKey?: unknown;
 }
 
@@ -486,7 +494,10 @@ export function DataTableView<
     if (event.defaultPrevented || event.propagationStopped) return;
     if (!focused || !keyboardNavigation) return;
 
-    if (onRootKeyDown?.(event)) return;
+    if (onRootKeyDown?.(event, {
+      selectedIndex: effectiveSelectedIndexRef.current,
+      itemCount: tableProps.items.length,
+    })) return;
     if (tableProps.items.length === 0) return;
 
     if (isNextTableRowKey(event)) {

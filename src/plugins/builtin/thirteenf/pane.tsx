@@ -15,6 +15,7 @@ import {
   Tabs,
   usePaneFooter,
   type DataTableKeyEvent,
+  type DataTableRootKeyContext,
 } from "../../../components";
 import { useShortcut } from "../../../react/input";
 import { usePaneSettingValue } from "../../../state/app/context";
@@ -314,8 +315,11 @@ export function ThirteenFPane({ focused, width, height }: PaneProps) {
     ? "Loading 13F funds..."
     : error ?? warning ?? "No 13F funds found.";
 
-  const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (selectedIndex <= 0 && isPlainArrowUp(event)) {
+  const handleRootKeyDown = useCallback((
+    event: DataTableKeyEvent,
+    context: DataTableRootKeyContext,
+  ) => {
+    if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
       stopSearchFocusNavigation(event);
       focusSearch();
       return true;
@@ -333,7 +337,7 @@ export function ThirteenFPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [focusSearch, refresh, selectedIndex]);
+  }, [focusSearch, refresh]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>

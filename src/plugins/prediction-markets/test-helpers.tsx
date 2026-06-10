@@ -531,6 +531,7 @@ export async function emitKeypress(
   event: {
     name?: string;
     sequence?: string;
+    targetEditable?: boolean;
     shift?: boolean;
   },
 ) {

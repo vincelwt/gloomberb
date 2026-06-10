@@ -271,13 +271,26 @@ describe("prediction markets pane interactions", () => {
     testSetup = await testRender(<Harness />, { width: 120, height: 34 });
     await flushFrames(testSetup);
 
+    await emitKeypress(testSetup, { name: "j", sequence: "j" });
+    await flushFrames(testSetup, 1);
+
     await emitKeypress(testSetup, { name: "up", sequence: "\u001b[A" });
     await flushFrames(testSetup);
 
     let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("/ search markets");
+
+    await emitKeypress(testSetup, { name: "up", sequence: "\u001b[A" });
+    await flushFrames(testSetup);
+
+    frame = testSetup.captureCharFrame();
     expect(frame).toContain("? search markets");
 
-    await emitKeypress(testSetup, { name: "down", sequence: "\u001b[B" });
+    await emitKeypress(testSetup, {
+      name: "down",
+      sequence: "\u001b[B",
+      targetEditable: true,
+    });
     await flushFrames(testSetup);
 
     frame = testSetup.captureCharFrame();

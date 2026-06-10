@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import { useViewport } from "../../../react/input";
+import { useAppInputCapture } from "../../../state/app/input-capture";
 import { usePaneInstance } from "../../../state/app/context";
 import {
   useDebouncedPluginPaneState,
@@ -101,6 +102,7 @@ export function usePredictionMarketsController({
   const [searchFocused, setSearchFocused] = useState(false);
   const [initialParamsApplied, setInitialParamsApplied] = useState(false);
   const appViewport = useViewport();
+  useAppInputCapture(focused && searchFocused);
 
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);

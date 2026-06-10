@@ -6,6 +6,7 @@ import { formatTimeAgo } from "../../utils/format";
 import { isPlainKey } from "../../utils/keyboard";
 import { toTimestampMillis } from "../../utils/timestamp";
 import { DataTableStackView } from "../data-table/stack-view";
+import type { DataTableRootKeyContext } from "../data-table/view";
 import {
   activeStackIndex,
   sortIndexedStackRows,
@@ -45,9 +46,16 @@ interface FeedDataTableStackViewProps {
   rootAfter?: ReactNode;
   onRootKeyDown?: (event: {
     name?: string;
+    sequence?: string;
+    ctrl?: boolean;
+    meta?: boolean;
+    super?: boolean;
+    alt?: boolean;
+    option?: boolean;
+    shift?: boolean;
     preventDefault?: () => void;
     stopPropagation?: () => void;
-  }) => boolean | void;
+  }, context: DataTableRootKeyContext) => boolean | void;
   sourceLabel?: string;
   titleLabel?: string;
   emptyStateTitle?: string;

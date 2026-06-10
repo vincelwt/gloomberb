@@ -6,6 +6,7 @@ import {
   usePaneFooter,
   type DataTableCell,
   type DataTableKeyEvent,
+  type DataTableRootKeyContext,
 } from "../../../components";
 import { TickerBadgeText } from "../../../components/ticker/badge/text";
 import { RemoteImage } from "../../../components/ui";
@@ -222,8 +223,11 @@ export function TweetSearchTable({
     ));
   }, []);
 
-  const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (onFocusSearch && activeIndex <= 0 && isPlainArrowUp(event)) {
+  const handleRootKeyDown = useCallback((
+    event: DataTableKeyEvent,
+    context: DataTableRootKeyContext,
+  ) => {
+    if (onFocusSearch && context.selectedIndex <= 0 && isPlainArrowUp(event)) {
       stopSearchFocusNavigation(event);
       onFocusSearch();
       return true;
@@ -233,7 +237,7 @@ export function TweetSearchTable({
     event.stopPropagation?.();
     reload();
     return true;
-  }, [activeIndex, onFocusSearch, reload]);
+  }, [onFocusSearch, reload]);
 
   const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (event.name !== "o") return false;
