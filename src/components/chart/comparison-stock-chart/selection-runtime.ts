@@ -1,6 +1,7 @@
-import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { BoxRenderable, NativeRendererHost } from "../../../ui";
-import { buildDisplayCursorState } from "../core/pointer";
+import { useAppDispatch, usePaneInstanceId } from "../../../state/app/context";
+import { buildDisplayCursorState, type MouseInteractionEvent } from "../core/pointer";
 import type { ComparisonChartViewState } from "../core/types";
 import { useChartDisplayCursor, useChartDisplayCursorLayoutRemap } from "../display-cursor";
 import { clamp } from "./helpers";
@@ -10,6 +11,7 @@ interface UseComparisonChartSelectionRuntimeOptions {
   chartWidth: number;
   cursorX: number | null;
   cursorY: number | null;
+  focused: boolean;
   renderer: NativeRendererHost;
   setViewState: Dispatch<SetStateAction<ComparisonChartViewState>>;
   symbols: string[];
@@ -20,6 +22,7 @@ export function useComparisonChartSelectionRuntime({
   chartWidth,
   cursorX: viewCursorX,
   cursorY: viewCursorY,
+  focused,
   renderer,
   setViewState,
   symbols,
@@ -28,6 +31,7 @@ export function useComparisonChartSelectionRuntime({
   displayCursor: ReturnType<typeof useChartDisplayCursor>["displayCursor"];
   displayCursorX: number | null;
   displayCursorY: number | null;
+  focusPaneForMouseInteraction: (event: MouseInteractionEvent | null | undefined) => void;
   mouseCrosshairDisabledRef: MutableRefObject<boolean>;
   plotRef: MutableRefObject<BoxRenderable | null>;
   scrollPanCellRemainderRef: MutableRefObject<number>;
@@ -35,6 +39,8 @@ export function useComparisonChartSelectionRuntime({
   setSelectedSymbol: (symbol: string) => void;
   updateDisplayCursorTarget: ReturnType<typeof useChartDisplayCursor>["updateDisplayCursorTarget"];
 } {
+  const dispatch = useAppDispatch();
+  const paneId = usePaneInstanceId();
   const plotRef = useRef<BoxRenderable | null>(null);
   const mouseCrosshairDisabledRef = useRef(false);
   const scrollPanCellRemainderRef = useRef(0);
@@ -51,6 +57,16 @@ export function useComparisonChartSelectionRuntime({
   const cursorY = viewCursorY !== null ? clamp(viewCursorY, 0, chartHeight - 1) : null;
   const displayCursorX = displayCursor.cellX !== null ? clamp(displayCursor.cellX, 0, chartWidth - 1) : null;
   const displayCursorY = displayCursor.cellY !== null ? clamp(displayCursor.cellY, 0, chartHeight - 1) : null;
+
+  const focusPaneForMouseInteraction = useCallback((
+    event: MouseInteractionEvent | null | undefined,
+  ) => {
+    event?.stopPropagation?.();
+    event?.preventDefault?.();
+    if (!focused) {
+      dispatch({ type: "FOCUS_PANE", paneId });
+    }
+  }, [dispatch, focused, paneId]);
 
   const setSelectedSymbol = (symbol: string) => {
     setViewState((current) => (
@@ -101,6 +117,7 @@ export function useComparisonChartSelectionRuntime({
     displayCursor,
     displayCursorX,
     displayCursorY,
+    focusPaneForMouseInteraction,
     mouseCrosshairDisabledRef,
     plotRef,
     scrollPanCellRemainderRef,

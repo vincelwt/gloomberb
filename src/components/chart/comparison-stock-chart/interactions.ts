@@ -28,6 +28,7 @@ import {
   resolveCursorMotionKind,
   type ChartMouseEvent,
   type DisplayCursorState,
+  type MouseInteractionEvent,
 } from "../core/pointer";
 import type {
   ComparisonChartSeries,
@@ -48,6 +49,7 @@ interface UseComparisonChartPointerInteractionsOptions {
   chartWidth: number;
   commitSelectionCursor: (next: { cursorX: number | null; cursorY: number | null }) => void;
   expandBufferRange: (action: PendingExpansionAction) => boolean;
+  focusPaneForMouseInteraction: (event: MouseInteractionEvent | null | undefined) => void;
   mouseCrosshairDisabledRef: MutableRefObject<boolean>;
   plotRef: RefObject<BoxRenderable | null>;
   pointCount: number;
@@ -65,6 +67,7 @@ export function useComparisonChartPointerInteractions({
   chartWidth,
   commitSelectionCursor,
   expandBufferRange,
+  focusPaneForMouseInteraction,
   mouseCrosshairDisabledRef,
   plotRef,
   pointCount,
@@ -113,13 +116,14 @@ export function useComparisonChartPointerInteractions({
 
   const handlePlotDown = useCallback((event: ChartMouseEvent) => {
     consumeChartMouseEvent(event);
+    focusPaneForMouseInteraction(null);
     mouseCrosshairDisabledRef.current = false;
     if (!syncPointerCursor(event)) return;
     dragRef.current = {
       startGlobalX: getGlobalMouseX(event, renderer),
       startWindow: visibleDateWindow,
     };
-  }, [mouseCrosshairDisabledRef, renderer, syncPointerCursor, visibleDateWindow]);
+  }, [focusPaneForMouseInteraction, mouseCrosshairDisabledRef, renderer, syncPointerCursor, visibleDateWindow]);
 
   const handlePlotDrag = useCallback((event: ChartMouseEvent) => {
     consumeChartMouseEvent(event);
@@ -147,6 +151,7 @@ export function useComparisonChartPointerInteractions({
 
   const handlePlotScroll = useCallback((event: ChartMouseEvent) => {
     consumeChartMouseEvent(event);
+    focusPaneForMouseInteraction(null);
     const direction = event.scroll?.direction;
     if (!direction) return;
     const scrollPan = consumeScrollPanMovement(
@@ -179,6 +184,7 @@ export function useComparisonChartPointerInteractions({
     chartWidth,
     dateBounds,
     expandBufferRange,
+    focusPaneForMouseInteraction,
     scrollPanCellRemainderRef,
     series,
     seriesDates,

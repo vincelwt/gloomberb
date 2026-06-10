@@ -31,6 +31,8 @@ export interface ChartMouseEvent {
   };
 }
 
+export type MouseInteractionEvent = Pick<ChartMouseEvent, "stopPropagation" | "preventDefault">;
+
 export function consumeChartMouseEvent(event: Pick<ChartMouseEvent, "stopPropagation" | "preventDefault">): void {
   event.stopPropagation?.();
   event.preventDefault?.();

@@ -6,6 +6,7 @@ import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../
 import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane/footer";
 import {
   AppContext,
+  type AppAction,
   createInitialState,
   PaneInstanceProvider,
 } from "../../../state/app/context";
@@ -29,6 +30,12 @@ let testSetup: Awaited<ReturnType<typeof createTestRenderer>> | undefined;
 let root: ReturnType<typeof createRoot> | undefined;
 let sharedCoordinator: MarketDataCoordinator | null = null;
 const actEnvironment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+
+interface ComparisonHarnessOptions {
+  dispatch?: (action: AppAction) => void;
+  focused?: boolean;
+  focusedPaneId?: string | null;
+}
 
 function makeTicker(symbol: string, currency: string): TickerRecord {
   return {
@@ -202,7 +209,13 @@ function createComparisonHarness(
   tickers: TickerRecord[],
   financials: Array<[string, TickerFinancials]>,
   runtime: PluginRuntimeAccess,
+  options: ComparisonHarnessOptions = {},
 ) {
+  const {
+    dispatch = () => {},
+    focused = true,
+    focusedPaneId = focused ? TEST_PANE_ID : null,
+  } = options;
   const config = createDefaultConfig("/tmp/gloomberb-compare");
   const layout = {
     dockRoot: { kind: "pane" as const, instanceId: TEST_PANE_ID },
@@ -220,7 +233,7 @@ function createComparisonHarness(
     layouts: [{ name: "Default", layout: cloneLayout(layout) }],
   };
   const state = createInitialState(nextConfig);
-  state.focusedPaneId = TEST_PANE_ID;
+  state.focusedPaneId = focusedPaneId;
   state.tickers = new Map(tickers.map((ticker) => [ticker.metadata.ticker, ticker]));
   state.financials = new Map(financials);
 
@@ -233,7 +246,7 @@ function createComparisonHarness(
   }) => ReactElement;
 
   return (
-    <AppContext value={{ state, dispatch: () => {} }}>
+    <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
         <PluginRenderProvider pluginId="comparison-chart" runtime={runtime}>
           <PaneFooterProvider>
@@ -242,11 +255,11 @@ function createComparisonHarness(
                 <ComparisonPane
                   paneId={TEST_PANE_ID}
                   paneType="comparison-chart"
-                  focused
+                  focused={focused}
                   width={120}
                   height={19}
                 />
-                <PaneFooterBar footer={footer} focused width={120} />
+                <PaneFooterBar footer={footer} focused={focused} width={120} />
               </Box>
             )}
           </PaneFooterProvider>
@@ -272,13 +285,14 @@ async function mountComparisonHarness(
   tickers: TickerRecord[],
   financials: Array<[string, TickerFinancials]>,
   spy: { selected: string[]; focused: string[]; settings?: string[] } = { selected: [], focused: [] },
+  options: ComparisonHarnessOptions = {},
 ) {
   actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
   testSetup = await createTestRenderer({ width: 120, height: 20 });
   root = createRoot(testSetup.renderer);
   await act(async () => {
     root!.render(
-      createComparisonHarness(settings, tickers, financials, createRuntimeSpy(spy)),
+      createComparisonHarness(settings, tickers, financials, createRuntimeSpy(spy), options),
     );
     await Promise.resolve();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -428,6 +442,45 @@ describe("comparisonChartPlugin", () => {
     frame = testSetup!.captureCharFrame();
     expect(frame).toMatch(/> AAPL\s+0\.00%/);
     expect(frame).toMatch(/MSFT\s+0\.00%/);
+  });
+
+  test("focuses the pane when an unfocused comparison plot is clicked", async () => {
+    const dispatched: AppAction[] = [];
+    const provider = createProvider({
+      AAPL: [100, 102, 104],
+      MSFT: [200, 202, 204],
+    }, {
+      AAPL: "USD",
+      MSFT: "USD",
+    });
+    setSharedMarketDataForTests(provider);
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedRegistryForTests(createRegistrySpy({ selected: [], focused: [] }));
+
+    await mountComparisonHarness({
+      axisMode: "percent",
+      symbols: ["AAPL", "MSFT"],
+      symbolsText: "AAPL, MSFT",
+    }, [
+      makeTicker("AAPL", "USD"),
+      makeTicker("MSFT", "USD"),
+    ], [
+      ["AAPL", makeFinancials("AAPL", "USD", [100, 102, 104])],
+      ["MSFT", makeFinancials("MSFT", "USD", [200, 202, 204])],
+    ], { selected: [], focused: [] }, {
+      dispatch: (action) => { dispatched.push(action); },
+      focused: false,
+      focusedPaneId: "ticker-detail:main",
+    });
+
+    await flushFrames();
+    await act(async () => {
+      await testSetup!.mockMouse.click(20, 8);
+      await testSetup!.renderOnce();
+    });
+
+    expect(dispatched).toContainEqual({ type: "FOCUS_PANE", paneId: TEST_PANE_ID });
   });
 
   test("keeps fixed return horizons independent from the selected chart range", async () => {

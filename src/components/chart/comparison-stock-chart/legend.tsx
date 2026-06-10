@@ -1,11 +1,13 @@
 import type { ComparisonChartProjection } from "../comparison/data";
 import { PriceReturnTable, type PriceReturnTableRow } from "../../price-performance";
 import type { PriceReturnField } from "../../../market-data/performance";
+import type { MouseInteractionEvent } from "../core/pointer";
 
 interface ComparisonChartLegendProps {
   legendActiveIndex: number | null;
   legendItemWidth: number;
   legendRows: number;
+  onFocusInteraction: (event: MouseInteractionEvent | null | undefined) => void;
   onOpenSymbol: (symbol: string) => void;
   onSelectSymbol: (symbol: string) => void;
   performanceBySymbol: ReadonlyMap<string, PriceReturnField[]>;
@@ -36,6 +38,7 @@ export function ComparisonChartLegend({
   legendActiveIndex,
   legendItemWidth,
   legendRows,
+  onFocusInteraction,
   onOpenSymbol,
   onSelectSymbol,
   performanceBySymbol,
@@ -61,6 +64,7 @@ export function ComparisonChartLegend({
   return (
     <PriceReturnTable
       height={legendRows}
+      onFocusInteraction={onFocusInteraction}
       onOpenSymbol={onOpenSymbol}
       onSelectSymbol={onSelectSymbol}
       rows={rows}
