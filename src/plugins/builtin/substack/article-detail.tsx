@@ -38,6 +38,25 @@ function wrappedTextProps(width: number) {
   } as const;
 }
 
+const ARTICLE_IMAGE_MAX_WIDTH = 152;
+const ARTICLE_IMAGE_MAX_HEIGHT = 26;
+const ARTICLE_IMAGE_MIN_HEIGHT = 6;
+const ARTICLE_IMAGE_LEGACY_HEIGHT_CAP = 14;
+
+export function resolveArticleImageSize(lineWidth: number) {
+  const safeLineWidth = Math.max(1, Math.floor(lineWidth));
+  const width = Math.min(safeLineWidth, ARTICLE_IMAGE_MAX_WIDTH);
+  const legacyHeight = Math.min(ARTICLE_IMAGE_LEGACY_HEIGHT_CAP, Math.floor(width * 0.32));
+  const expandedHeight = Math.floor(width * 0.18);
+  return {
+    width,
+    height: Math.max(ARTICLE_IMAGE_MIN_HEIGHT, Math.min(
+      ARTICLE_IMAGE_MAX_HEIGHT,
+      Math.max(legacyHeight, expandedHeight),
+    )),
+  };
+}
+
 function normalizedTwitterUsername(username: string | null | undefined): string | null {
   const normalized = username?.trim().replace(/^@/, "") ?? "";
   return /^[A-Za-z0-9_]{1,15}$/.test(normalized) ? normalized : null;
@@ -337,8 +356,7 @@ export const ArticleDetail = memo(function ArticleDetail({
   const blocks = resolved?.contentBlocks ?? [];
   const fallbackImageUrls = resolved?.imageUrls.length ? resolved.imageUrls : article.imageUrls;
   const lineWidth = Math.max(1, width - 2);
-  const imageWidth = Math.min(lineWidth, 86);
-  const imageHeight = Math.max(6, Math.min(14, Math.floor(imageWidth * 0.32)));
+  const { width: imageWidth, height: imageHeight } = resolveArticleImageSize(lineWidth);
 
   return (
     <ScrollBox ref={scrollRef} scrollY focusable={false} flexGrow={1} paddingX={1}>
