@@ -3,7 +3,13 @@ import { TestDialogProvider, testRender } from "../../../renderers/opentui/test-
 import { openTuiUiHost } from "../../../renderers/opentui/ui-host";
 import type { ReactNode } from "react";
 import { act, useReducer, useState } from "react";
-import { AppContext, appReducer, createInitialState } from "../../../state/app/context";
+import {
+  AppContext,
+  appReducer,
+  createInitialState,
+  resolveTickerForPane,
+  usePaneTicker,
+} from "../../../state/app/context";
 import { cloneLayout, createDefaultConfig, TICKER_RESEARCH_PANE_ID, type LayoutConfig } from "../../../types/config";
 import type { PluginRegistry } from "../../../plugins/registry";
 import type { PaneProps } from "../../../types/plugin";
@@ -154,11 +160,13 @@ function ShellTransientHarness({
   registry: PluginRegistry;
   controls: {
     dispatch?: (action: ShellTestAction) => void;
+    state?: ReturnType<typeof createInitialState>;
     transientLayout: TransientLayoutState | null;
   };
 }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
   controls.dispatch = dispatch;
+  controls.state = state;
   return (
     <AppContext value={{ state, dispatch }}>
       <TransientLayoutProvider>
@@ -667,6 +675,7 @@ describe("Shell", () => {
     const registry = createShellPluginRegistry();
     const controls: {
       dispatch?: (action: ShellTestAction) => void;
+      state?: ReturnType<typeof createInitialState>;
       transientLayout: TransientLayoutState | null;
     } = { transientLayout: null };
 
@@ -710,6 +719,103 @@ describe("Shell", () => {
       id: "pane-focus",
       active: true,
     });
+  });
+
+  test("restores the focus source layout state when reactivating transient focus", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-transient-focus-state-test");
+    const mainPane = requireLayoutInstance(config, "portfolio-list:main");
+    const detailPane = requireLayoutInstance(config, "ticker-detail:main");
+    const defaultLayout = {
+      dockRoot: {
+        kind: "split" as const,
+        axis: "horizontal" as const,
+        ratio: 0.5,
+        first: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+        second: { kind: "pane" as const, instanceId: "ticker-detail:main" },
+      },
+      instances: [{ ...mainPane }, { ...detailPane }],
+      floating: [],
+      detached: [],
+    };
+    const monitorLayout = cloneLayout(defaultLayout);
+    config.layout = cloneLayout(defaultLayout);
+    config.layouts = [
+      {
+        name: "Default",
+        layout: cloneLayout(defaultLayout),
+        focusedPaneId: "ticker-detail:main",
+        paneState: {
+          "portfolio-list:main": { collectionId: "main", cursorSymbol: "MSTR" },
+          "ticker-detail:main": { activeTabId: "overview" },
+        },
+      },
+      {
+        name: "Monitor",
+        layout: monitorLayout,
+        focusedPaneId: "ticker-detail:main",
+        paneState: {
+          "portfolio-list:main": { collectionId: "main", cursorSymbol: null },
+          "ticker-detail:main": { activeTabId: "overview" },
+        },
+      },
+    ];
+    config.activeLayoutIndex = 0;
+    const registry = createShellPluginRegistry({
+      tickerDetailComponent: () => {
+        const { symbol } = usePaneTicker();
+        return <text>{`Ticker:${symbol ?? "none"}`}</text>;
+      },
+    });
+    const controls: {
+      dispatch?: (action: ShellTestAction) => void;
+      state?: ReturnType<typeof createInitialState>;
+      transientLayout: TransientLayoutState | null;
+    } = { transientLayout: null };
+
+    testSetup = await testRender(
+      <ShellTransientHarness
+        initialState={createInitialState(config)}
+        registry={registry}
+        controls={controls}
+      />,
+      { width: 100, height: 18 },
+    );
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain("icker:MSTR");
+
+    await emitKeypress({ name: "f", ctrl: true, shift: true });
+    expect(testSetup.captureCharFrame()).toContain("icker:MSTR");
+
+    await act(async () => {
+      controls.transientLayout?.onDeactivate?.();
+      controls.dispatch?.({ type: "SWITCH_LAYOUT", index: 1 });
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+    expect(controls.transientLayout).toMatchObject({
+      id: "pane-focus",
+      active: false,
+    });
+    expect(controls.state?.config.activeLayoutIndex).toBe(1);
+    expect(controls.state?.paneState["portfolio-list:main"]?.cursorSymbol).toBeNull();
+    expect(controls.state ? resolveTickerForPane(controls.state, "ticker-detail:main") : null).toBeNull();
+
+    await act(async () => {
+      controls.transientLayout?.onActivate?.();
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(controls.transientLayout).toMatchObject({
+      id: "pane-focus",
+      active: true,
+    });
+    expect(controls.state?.config.activeLayoutIndex).toBe(0);
+    expect(controls.state?.paneState["portfolio-list:main"]?.cursorSymbol).toBe("MSTR");
+    expect(controls.state ? resolveTickerForPane(controls.state, "ticker-detail:main") : null).toBe("MSTR");
   });
 
   test("exits window mode on Enter without changes", async () => {

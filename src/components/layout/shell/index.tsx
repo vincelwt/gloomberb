@@ -76,6 +76,7 @@ interface ShellProps {
 interface TransientFocusLayoutState {
   paneId: string;
   layout: LayoutConfig;
+  sourceLayoutIndex: number;
   active: boolean;
 }
 
@@ -239,6 +240,19 @@ export function Shell({
     transientFocusLayoutStateRef.current = next;
     setTransientFocusLayoutState(next);
   }, []);
+  const activateTransientFocusState = useCallback((current: TransientFocusLayoutState) => {
+    closePaneMenu();
+    setTransientFocusLayout({ ...current, active: true });
+    const sourceLayout = config.layouts[current.sourceLayoutIndex]?.layout;
+    if (
+      current.sourceLayoutIndex !== config.activeLayoutIndex
+      && sourceLayout
+      && isPaneInLayout(sourceLayout, current.paneId)
+    ) {
+      dispatch({ type: "SWITCH_LAYOUT", index: current.sourceLayoutIndex });
+    }
+    focusPane(current.paneId);
+  }, [closePaneMenu, config.activeLayoutIndex, config.layouts, dispatch, focusPane, setTransientFocusLayout]);
   const toggleFocusedPaneFullscreen = useCallback(() => {
     const current = transientFocusLayoutStateRef.current;
     if (current?.active) {
@@ -246,10 +260,12 @@ export function Shell({
       return true;
     }
 
-    if (current && current.paneId === focusedPaneId) {
-      setTransientFocusLayout({ ...current, active: true });
-      focusPane(current.paneId);
-      closePaneMenu();
+    if (
+      current
+      && current.paneId === focusedPaneId
+      && current.sourceLayoutIndex === config.activeLayoutIndex
+    ) {
+      activateTransientFocusState(current);
       return true;
     }
 
@@ -263,18 +279,26 @@ export function Shell({
     setTransientFocusLayout({
       paneId: focusedPaneId,
       layout: nextLayout,
+      sourceLayoutIndex: config.activeLayoutIndex,
       active: true,
     });
     focusPane(focusedPaneId);
     return true;
-  }, [closePaneMenu, focusedPaneId, focusPane, pluginRegistry, setTransientFocusLayout, visibleLayout]);
+  }, [
+    activateTransientFocusState,
+    closePaneMenu,
+    config.activeLayoutIndex,
+    focusedPaneId,
+    focusPane,
+    pluginRegistry,
+    setTransientFocusLayout,
+    visibleLayout,
+  ]);
   const activateTransientFocusLayout = useCallback(() => {
     const current = transientFocusLayoutStateRef.current;
     if (!current) return;
-    closePaneMenu();
-    setTransientFocusLayout({ ...current, active: true });
-    focusPane(current.paneId);
-  }, [closePaneMenu, focusPane, setTransientFocusLayout]);
+    activateTransientFocusState(current);
+  }, [activateTransientFocusState]);
   const deactivateTransientFocusLayout = useCallback(() => {
     const current = transientFocusLayoutStateRef.current;
     if (!current || !current.active) return;
