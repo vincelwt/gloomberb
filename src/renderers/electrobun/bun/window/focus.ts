@@ -3,6 +3,7 @@ export const MAIN_WINDOW_RPC_KEY = "main";
 const DETACHED_WINDOW_RPC_PREFIX = "detached:";
 
 export interface FocusableElectrobunWindow {
+  activate?: () => void;
   focus?: () => void;
 }
 
@@ -31,6 +32,10 @@ export function focusWindowForRpcKey(
   detachedWindows: ReadonlyMap<string, FocusableElectrobunWindow>,
 ): boolean {
   const window = resolveWindowForRpcKey(rpcKey, mainWindow, detachedWindows);
+  if (window?.activate) {
+    window.activate();
+    return true;
+  }
   if (!window?.focus) return false;
   window.focus();
   return true;

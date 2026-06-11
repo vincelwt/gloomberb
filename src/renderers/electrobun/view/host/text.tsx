@@ -7,20 +7,16 @@ import {
   type StyledTextChunk,
   type TextProps,
 } from "../../../../ui/host";
-import { renderAsciiText } from "../../../../ui/ascii-font";
 import { WEB_CELL_WIDTH } from "../input-host";
+import { webAsciiTextLines, webAsciiTextWordmarkVariant } from "./ascii-text";
 import { hasDirectMouseHandler, mouseHandlers } from "./mouse";
 import { cleanDomProps, commonStyle, textStyle } from "./style";
 
-const WEB_GLOOMBERB_WORDMARK = [
-  "  ____ _                       _               _     ",
-  " / ___| | ___   ___  _ __ ___ | |__   ___ _ __| |__  ",
-  "| |  _| |/ _ \\ / _ \\| '_ ` _ \\| '_ \\ / _ \\ '__| '_ \\ ",
-  "| |_| | | (_) | (_) | | | | | | |_) |  __/ |  | |_) |",
-  " \\____|_|\\___/ \\___/|_| |_| |_|_.__/ \\___|_|  |_.__/ ",
-];
-
 const WEB_WORDMARK_CHAR_WIDTH_PX = Math.max(10, WEB_CELL_WIDTH);
+
+interface WebAsciiTextProps extends AsciiTextProps {
+  desktopPlatform?: string;
+}
 
 function isStyledTextContent(value: unknown): value is { chunks: StyledTextChunk[] } {
   return value instanceof StyledText
@@ -100,16 +96,17 @@ export function WebAsciiText({
   bg,
   backgroundColor,
   selectable = false,
+  desktopPlatform,
   ...props
-}: AsciiTextProps) {
-  const isWordmark = font === "wordmark";
-  const lines = isWordmark && text.trim().toLowerCase() === "gloomberb"
-    ? WEB_GLOOMBERB_WORDMARK
-    : renderAsciiText(text, font);
+}: WebAsciiTextProps) {
+  const wordmarkVariant = webAsciiTextWordmarkVariant(text, font, desktopPlatform);
+  const isCompatWordmark = wordmarkVariant === "compat";
+  const isLegacyWordmark = wordmarkVariant === "legacy";
+  const lines = webAsciiTextLines(text, font, desktopPlatform);
   const resolvedColor = color ?? fg;
   const resolvedBackground = bg ?? backgroundColor;
-  const lineHeightPx = isWordmark ? 16 : 12;
-  const wordmarkWidthPx = isWordmark
+  const lineHeightPx = isCompatWordmark ? 16 : 12;
+  const wordmarkWidthPx = isCompatWordmark
     ? Math.max(...lines.map((line) => line.length)) * WEB_WORDMARK_CHAR_WIDTH_PX
     : undefined;
   return (
@@ -118,15 +115,16 @@ export function WebAsciiText({
       data-gloom-role={(props["data-gloom-role"] as string | undefined) ?? "ascii-text"}
       style={{
         ...commonStyle({ ...props, fg: resolvedColor, bg: resolvedBackground }),
-        display: "block",
+        display: isLegacyWordmark ? "flex" : "block",
+        flexDirection: isLegacyWordmark ? "column" : undefined,
         flexShrink: 0,
         ...(wordmarkWidthPx != null && props.width == null
           ? { width: `${wordmarkWidthPx}px`, minWidth: `${wordmarkWidthPx}px` }
           : {}),
         color: resolvedColor,
         backgroundColor: resolvedBackground,
-        fontFamily: isWordmark ? "\"Cascadia Mono\", Consolas, \"Courier New\", monospace" : undefined,
-        fontSize: isWordmark ? "16px" : undefined,
+        fontFamily: isCompatWordmark ? "\"Cascadia Mono\", Consolas, \"Courier New\", monospace" : undefined,
+        fontSize: isCompatWordmark ? "16px" : undefined,
         fontVariantLigatures: "none",
         lineHeight: `${lineHeightPx}px`,
         whiteSpace: "pre",
@@ -135,7 +133,13 @@ export function WebAsciiText({
         ...(props.style as CSSProperties | undefined),
       }}
     >
-      {lines.join("\n")}
+      {isLegacyWordmark
+        ? lines.map((line, index) => (
+          <span key={index} style={{ display: "block", height: "12px", lineHeight: "12px" }}>
+            {line}
+          </span>
+        ))
+        : lines.join("\n")}
     </div>
   );
 }

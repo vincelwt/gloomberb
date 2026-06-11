@@ -137,7 +137,7 @@ export function createWebUiHost(desktopPlatform?: string): UiHost {
         *
       </span>
     ),
-    AsciiText: WebAsciiText,
+    AsciiText: (props) => <WebAsciiText {...props} desktopPlatform={desktopPlatform} />,
   };
 }
 
