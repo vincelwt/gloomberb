@@ -7,7 +7,18 @@ import {
   syncConfigActiveLayoutState,
 } from "../../../state/app/context";
 import { scheduleConfigSave } from "../../../state/config-save-scheduler";
-import type { ChartResolution, TimeRange } from "./types";
+import {
+  findPaneInstance,
+  type AppConfig,
+} from "../../../types/config";
+import type { ChartRenderMode, ChartResolution, TimeRange } from "./types";
+
+interface ChartRenderModePersistenceState {
+  activePanel: "left" | "right";
+  config: AppConfig;
+  focusedPaneId: string | null;
+  paneState: Record<string, Record<string, unknown>>;
+}
 
 export interface StoredChartSelectionSyncState {
   lastAppliedKey: string;
@@ -76,6 +87,54 @@ export function usePersistChartControlSelection(rangePresetKey: string): (
       currentState.focusedPaneId,
       currentState.activePanel,
     );
+    dispatch({ type: "SET_CONFIG", config: nextConfig });
+    scheduleConfigSave(nextConfig);
+  };
+}
+
+export function createChartRenderModeConfig(
+  currentState: ChartRenderModePersistenceState,
+  paneId: string,
+  renderMode: ChartRenderMode,
+): AppConfig {
+  const currentPane = findPaneInstance(currentState.config.layout, paneId);
+  const layout = currentPane
+    ? setPaneSettings(currentState.config.layout, paneId, {
+        ...(currentPane.settings ?? {}),
+        chartRenderMode: renderMode,
+      })
+    : currentState.config.layout;
+  return syncConfigActiveLayoutState(
+    {
+      ...currentState.config,
+      chartPreferences: {
+        ...currentState.config.chartPreferences,
+        defaultRenderMode: renderMode,
+      },
+      layout,
+    },
+    currentState.paneState,
+    currentState.focusedPaneId,
+    currentState.activePanel,
+  );
+}
+
+export function usePersistChartRenderMode(): (renderMode: ChartRenderMode) => void {
+  const dispatch = useAppDispatch();
+  const stateRef = useAppStateRef();
+  const paneId = usePaneInstanceId();
+
+  return (renderMode) => {
+    const currentState = stateRef.current;
+    const currentPane = findPaneInstance(currentState.config.layout, paneId);
+    if (
+      currentState.config.chartPreferences.defaultRenderMode === renderMode
+      && currentPane?.settings?.chartRenderMode === renderMode
+    ) {
+      return;
+    }
+
+    const nextConfig = createChartRenderModeConfig(currentState, paneId, renderMode);
     dispatch({ type: "SET_CONFIG", config: nextConfig });
     scheduleConfigSave(nextConfig);
   };

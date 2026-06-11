@@ -67,10 +67,10 @@ interface UseStockChartViewportRuntimeOptions {
   persistChartControls: (range: TimeRange, resolution: ChartResolution) => void;
   renderedResolution: ChartResolution;
   selectionSupportMap: ReadonlyMap<ManualChartResolution, TimeRange>;
+  persistChartRenderMode: (mode: ChartRenderMode) => void;
   setPendingAutoWindowOverride: Dispatch<SetStateAction<DateWindowRange | null>>;
   setRenderedAutoView: Dispatch<SetStateAction<AutoRenderedView | null>>;
   setRequestedResolution: Dispatch<SetStateAction<ChartResolution>>;
-  setStoredRenderMode: Dispatch<SetStateAction<ChartRenderMode>>;
   setViewState: Dispatch<SetStateAction<StockChartViewportState>>;
   storedRangePreset: TimeRange;
   storedRenderMode: ChartRenderMode;
@@ -101,12 +101,12 @@ export function useStockChartViewportRuntime({
   pendingCanonicalResetRef,
   pendingExpansionRef,
   persistChartControls,
+  persistChartRenderMode,
   renderedResolution,
   selectionSupportMap,
   setPendingAutoWindowOverride,
   setRenderedAutoView,
   setRequestedResolution,
-  setStoredRenderMode,
   setViewState,
   storedRangePreset,
   storedRenderMode,
@@ -172,10 +172,10 @@ export function useStockChartViewportRuntime({
   });
 
   const persistRenderMode = useCallback((nextMode: ChartRenderMode) => {
-    if (!compact && nextMode !== storedRenderMode) {
-      setStoredRenderMode(nextMode);
+    if (!compact) {
+      persistChartRenderMode(nextMode);
     }
-  }, [compact, setStoredRenderMode, storedRenderMode]);
+  }, [compact, persistChartRenderMode]);
 
   const expandBufferRange = useCallback((action: PendingExpansionAction): boolean => {
     if (compact) return false;

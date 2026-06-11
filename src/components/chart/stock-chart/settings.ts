@@ -3,7 +3,10 @@ import {
   usePaneInstance,
   usePaneSettingValue,
 } from "../../../state/app/context";
-import { usePersistChartControlSelection } from "../core/pane-settings";
+import {
+  usePersistChartControlSelection,
+  usePersistChartRenderMode,
+} from "../core/pane-settings";
 import type { IndicatorConfig } from "../indicators/types";
 import {
   DEFAULT_TICKER_CHART_RANGE_PRESET,
@@ -30,8 +33,9 @@ export function useStockChartSettings({
   const pane = usePaneInstance();
   const [storedRangePreset] = usePaneSettingValue("chartRangePreset", DEFAULT_TICKER_CHART_RANGE_PRESET);
   const [storedResolution] = usePaneSettingValue<ChartResolution>("chartResolution", DEFAULT_TICKER_CHART_RESOLUTION);
-  const [storedRenderMode, setStoredRenderMode] = usePaneSettingValue<ChartRenderMode>("chartRenderMode", defaultRenderMode);
+  const [storedRenderMode] = usePaneSettingValue<ChartRenderMode>("chartRenderMode", defaultRenderMode);
   const persistChartControls = usePersistChartControlSelection("chartRangePreset");
+  const persistChartRenderMode = usePersistChartRenderMode();
   const [viewState, setViewState] = useState<StockChartViewportState>({
     presetRange: compact ? "1Y" : storedRangePreset,
     bufferRange: compact ? "1Y" : storedRangePreset,
@@ -67,7 +71,7 @@ export function useStockChartSettings({
     persistChartControls,
     requestedResolution,
     setRequestedResolution,
-    setStoredRenderMode,
+    persistChartRenderMode,
     setViewState,
     storedRangePreset,
     storedRenderMode,
