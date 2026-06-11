@@ -5,6 +5,8 @@ import { cloneLayout, createDefaultConfig, type LayoutConfig } from "../../types
 import type { AppNotificationRequest } from "../../types/plugin";
 import { StatusBar } from "./status-bar";
 import { setSharedRegistryForTests } from "../../plugins/registry";
+import { useEffect, useState } from "react";
+import { TransientLayoutProvider, useTransientLayout } from "./transient-layout";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -17,6 +19,37 @@ afterEach(() => {
 });
 
 describe("StatusBar", () => {
+  function SeedTransientLayout({
+    onActivate,
+    onDeactivate,
+    onExit,
+  }: {
+    onActivate?: () => void;
+    onDeactivate?: () => void;
+    onExit?: () => void;
+  }) {
+    const { setTransientLayout } = useTransientLayout();
+    const [active, setActive] = useState(true);
+    useEffect(() => {
+      setTransientLayout({
+        id: "pane-focus",
+        label: "^F Focus",
+        active,
+        onActivate: () => {
+          onActivate?.();
+          setActive(true);
+        },
+        onDeactivate: () => {
+          onDeactivate?.();
+          setActive(false);
+        },
+        onExit,
+      });
+      return () => setTransientLayout(null);
+    }, [active, onActivate, onDeactivate, onExit, setTransientLayout]);
+    return null;
+  }
+
   test("opens the command bar from the shortcut hint", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");
     config.layouts = [{ name: "Home", layout: cloneLayout(config.layout) }];
@@ -43,6 +76,78 @@ describe("StatusBar", () => {
     await testSetup.renderOnce();
 
     expect(actions).toContainEqual({ type: "SET_COMMAND_BAR", open: true, query: "" });
+  });
+
+  test("shows a transient focus layout tab without replacing saved layouts", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-transient-layout-test");
+    config.layouts = [
+      { name: "Default", layout: cloneLayout(config.layout) },
+      { name: "Monitor", layout: cloneLayout(config.layout) },
+    ];
+    const state = {
+      ...createInitialState(config),
+      statusBarVisible: true,
+    };
+    const actions: Array<{ type: string; index?: number }> = [];
+    let activateCount = 0;
+    let deactivateCount = 0;
+    let exitCount = 0;
+    const handleActivate = () => { activateCount += 1; };
+    const handleDeactivate = () => { deactivateCount += 1; };
+    const handleExit = () => { exitCount += 1; };
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action as { type: string; index?: number }) }}>
+        <TransientLayoutProvider>
+          <SeedTransientLayout
+            onActivate={handleActivate}
+            onDeactivate={handleDeactivate}
+            onExit={handleExit}
+          />
+          <StatusBar />
+        </TransientLayoutProvider>
+      </AppContext>,
+      { width: 120, height: 1 },
+    );
+
+    await testSetup.renderOnce();
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("^1 Default");
+    expect(frame).toContain("^2 Monitor");
+    expect(frame).toContain("^F Focus");
+
+    const monitorX = frame.split("\n")[0]?.indexOf("^2 Monitor") ?? -1;
+    expect(monitorX).toBeGreaterThanOrEqual(0);
+
+    await testSetup.mockMouse.click(monitorX + 1, 0);
+    await testSetup.renderOnce();
+    await testSetup.renderOnce();
+
+    expect(deactivateCount).toBe(1);
+    expect(exitCount).toBe(0);
+    expect(actions).toContainEqual({ type: "SWITCH_LAYOUT", index: 1 });
+
+    const afterSwitchFrame = testSetup.captureCharFrame();
+    expect(afterSwitchFrame).toContain("^F Focus");
+
+    const focusX = afterSwitchFrame.split("\n")[0]?.indexOf("^F Focus") ?? -1;
+    expect(focusX).toBeGreaterThanOrEqual(0);
+
+    await testSetup.mockMouse.click(focusX + 1, 0);
+    await testSetup.renderOnce();
+
+    expect(activateCount).toBe(1);
+
+    const activeFocusFrame = testSetup.captureCharFrame();
+    const activeFocusX = activeFocusFrame.split("\n")[0]?.indexOf("^F Focus") ?? -1;
+    expect(activeFocusX).toBeGreaterThanOrEqual(0);
+
+    await testSetup.mockMouse.click(activeFocusX + 1, 0);
+    await testSetup.renderOnce();
+
+    expect(exitCount).toBe(1);
   });
 
   test("shows a gridlock tip after a corner snap and runs gridlock on click", async () => {

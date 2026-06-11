@@ -53,6 +53,7 @@ export function inputCaptureAllowsPaneManagementShortcut(
   shortcut: PaneManagementShortcut,
   event: Pick<KeyEventLike, "meta" | "super" | "targetEditable">,
 ): boolean {
+  if (shortcut === "toggle-fullscreen") return event.meta || event.super === true;
   if (shortcut !== "close" && shortcut !== "close-all-floating") return false;
   return event.meta || event.super || event.targetEditable !== true;
 }

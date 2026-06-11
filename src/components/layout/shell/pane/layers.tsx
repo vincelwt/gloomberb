@@ -49,6 +49,7 @@ interface ShellPaneLayersProps {
   startNativeFloatingDrag: (paneId: string, rect: FloatingRect, event: any) => void;
   startNativeFloatResize: (paneId: string, rect: FloatingRect, event: any) => void;
   transientFocusActive: boolean;
+  transientFocusPaneId: string | null;
   visibleFloatingPanes: VisibleFloatingPane[];
   width: number;
   windowModeDockResizePathKey: string | null;
@@ -81,6 +82,7 @@ export function ShellPaneLayers({
   startNativeFloatingDrag,
   startNativeFloatResize,
   transientFocusActive,
+  transientFocusPaneId,
   visibleFloatingPanes,
   width,
   windowModeDockResizePathKey,
@@ -89,8 +91,12 @@ export function ShellPaneLayers({
   return (
     <>
       {dockLeafLayouts.map((leaf) => {
+        if (transientFocusActive && leaf.instanceId !== transientFocusPaneId) return null;
         const pane = paneMap.get(leaf.instanceId);
         if (!pane) return null;
+        const rect = transientFocusActive
+          ? { x: 0, y: 0, width, height: contentHeight }
+          : leaf.rect;
         const focused = focusedPaneId === leaf.instanceId && (!overlayOpen || menuPaneId === leaf.instanceId);
         const windowModeSelected = windowModePaneId === leaf.instanceId;
         const showActions = focused || hoveredPaneId === leaf.instanceId || menuPaneId === leaf.instanceId;
@@ -98,17 +104,17 @@ export function ShellPaneLayers({
           <Box
             key={`dock:${leaf.instanceId}`}
             position="absolute"
-            left={leaf.rect.x}
-            top={leaf.rect.y}
-            width={leaf.rect.width}
-            height={leaf.rect.height}
+            left={rect.x}
+            top={rect.y}
+            width={rect.width}
+            height={rect.height}
           >
             <PaneFooterProvider>
               {(footer) => {
                 const reserveFooter = shouldReservePaneFooter(nativePaneChrome, hasPaneFooterContent(footer));
                 const bodyFrame = resolvePaneBodyFrame({
-                  width: leaf.rect.width,
-                  height: leaf.rect.height,
+                  width: rect.width,
+                  height: rect.height,
                   nativePaneChrome,
                   reserveFooter,
                 });
@@ -117,18 +123,18 @@ export function ShellPaneLayers({
                     paneId={leaf.instanceId}
                     title={getPaneTitle(pane)}
                     focused={focused}
-                    width={leaf.rect.width}
-                    height={leaf.rect.height}
+                    width={rect.width}
+                    height={rect.height}
                     showActions={showActions}
                     windowModeSelected={windowModeSelected}
                     footer={footer}
                     onMouseDown={nativePaneChrome ? (event) => handleNativePaneMouseDown(leaf.instanceId, event) : undefined}
                     onMouseMove={() => setHoveredPaneIfChanged(leaf.instanceId)}
-                    onHeaderMouseDown={nativePaneChrome && !transientFocusActive ? (event) => startNativeDockedDrag(leaf.instanceId, leaf.rect, event) : undefined}
+                    onHeaderMouseDown={nativePaneChrome && !transientFocusActive ? (event) => startNativeDockedDrag(leaf.instanceId, rect, event) : undefined}
                     onHeaderMouseDrag={nativePaneChrome && !transientFocusActive ? handleNativeDrag : undefined}
                     onHeaderMouseDragEnd={nativePaneChrome && !transientFocusActive ? handleNativeDrag : undefined}
-                    onHeaderContextMenu={nativePaneChrome && nativeContextMenu === true ? (event) => handleNativePaneContextMenu(leaf.instanceId, leaf.rect, event) : undefined}
-                    onActionMouseDown={(event) => handlePaneAction(leaf.instanceId, leaf.rect, event)}
+                    onHeaderContextMenu={nativePaneChrome && nativeContextMenu === true ? (event) => handleNativePaneContextMenu(leaf.instanceId, rect, event) : undefined}
+                    onActionMouseDown={(event) => handlePaneAction(leaf.instanceId, rect, event)}
                   >
                     <PaneContent
                       component={pane.def.component}
@@ -147,7 +153,10 @@ export function ShellPaneLayers({
       })}
 
       {visibleFloatingPanes.map(({ pane, rect }) => {
-        const preview = dragFloatingRect?.paneId === pane.instance.instanceId
+        if (transientFocusActive && pane.instance.instanceId !== transientFocusPaneId) return null;
+        const preview = transientFocusActive
+          ? { x: 0, y: 0, width, height: contentHeight }
+          : dragFloatingRect?.paneId === pane.instance.instanceId
           ? constrainFloatingRectToBounds(dragFloatingRect.rect, width, contentHeight)
           : rect;
         const focused = focusedPaneId === pane.instance.instanceId && (!overlayOpen || menuPaneId === pane.instance.instanceId);
@@ -205,6 +214,7 @@ export function ShellPaneLayers({
       })}
 
       {dockDividerLayouts.map((divider) => {
+        if (transientFocusActive) return null;
         const dividerPathKey = pathKey(divider.path);
         const previewActive = dividerPreview?.pathKey === dividerPathKey;
         const active = previewActive || windowModeDockResizePathKey === dividerPathKey;

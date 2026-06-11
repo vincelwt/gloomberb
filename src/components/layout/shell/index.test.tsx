@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { TestDialogProvider, testRender } from "../../../renderers/opentui/test-utils";
 import { openTuiUiHost } from "../../../renderers/opentui/ui-host";
 import type { ReactNode } from "react";
-import { act, useReducer } from "react";
+import { act, useReducer, useState } from "react";
 import { AppContext, appReducer, createInitialState } from "../../../state/app/context";
 import { cloneLayout, createDefaultConfig, TICKER_RESEARCH_PANE_ID, type LayoutConfig } from "../../../types/config";
 import type { PluginRegistry } from "../../../plugins/registry";
@@ -14,7 +14,8 @@ import {
   resolveAppHeaderHeightCells,
   Shell,
 } from "./index";
-import { resolvePaneFullscreenLayout } from "./fullscreen";
+import { resolvePaneFocusSourceLayout } from "./fullscreen";
+import { TransientLayoutProvider, useTransientLayout, type TransientLayoutState } from "../transient-layout";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -132,6 +133,42 @@ async function renderShellForWindowModeTest(
   );
   await testSetup.renderOnce();
   return { actions, registry };
+}
+
+function CaptureTransientLayout({
+  controls,
+}: {
+  controls: { transientLayout: TransientLayoutState | null };
+}) {
+  const { transientLayout } = useTransientLayout();
+  controls.transientLayout = transientLayout;
+  return null;
+}
+
+function ShellTransientHarness({
+  initialState,
+  registry,
+  controls,
+}: {
+  initialState: ReturnType<typeof createInitialState>;
+  registry: PluginRegistry;
+  controls: {
+    dispatch?: (action: ShellTestAction) => void;
+    transientLayout: TransientLayoutState | null;
+  };
+}) {
+  const [state, dispatch] = useReducer(appReducer, initialState);
+  controls.dispatch = dispatch;
+  return (
+    <AppContext value={{ state, dispatch }}>
+      <TransientLayoutProvider>
+        <TestDialogProvider>
+          <Shell pluginRegistry={registry} />
+        </TestDialogProvider>
+        <CaptureTransientLayout controls={controls} />
+      </TransientLayoutProvider>
+    </AppContext>
+  );
 }
 
 function findUpdateLayout(actions: ShellTestAction[]) {
@@ -467,20 +504,22 @@ describe("Shell", () => {
     expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
   });
 
-  test("builds fullscreen as a transient one-pane layout", () => {
+  test("captures the source layout for transient pane focus", () => {
     const config = createDefaultConfig("/tmp/gloomberb-shell-fullscreen-layout-test");
     const layout = cloneLayout(config.layout);
     layout.dockRoot = { kind: "pane", instanceId: "portfolio-list:main" };
     layout.floating = [{ instanceId: "ticker-detail:main", x: 8, y: 2, width: 32, height: 10, zIndex: 75 }];
 
-    const focusedLayout = resolvePaneFullscreenLayout(layout, "ticker-detail:main");
+    const focusedLayout = resolvePaneFocusSourceLayout(layout, "ticker-detail:main");
 
     expect(focusedLayout).toMatchObject({
-      dockRoot: { kind: "pane", instanceId: "ticker-detail:main" },
-      floating: [],
-      detached: [],
+      dockRoot: { kind: "pane", instanceId: "portfolio-list:main" },
+      floating: [{ instanceId: "ticker-detail:main", x: 8, y: 2, width: 32, height: 10, zIndex: 75 }],
     });
-    expect(focusedLayout?.instances.map((instance) => instance.instanceId)).toEqual(["ticker-detail:main"]);
+    expect(focusedLayout).not.toBe(layout);
+    expect(focusedLayout?.instances.map((instance) => instance.instanceId)).toEqual(
+      layout.instances.map((instance) => instance.instanceId),
+    );
   });
 
   test("locks layout-changing mouse drags while fullscreen is active", async () => {
@@ -515,6 +554,162 @@ describe("Shell", () => {
     expect(frame).toContain("Main Portfolio");
     expect(frame).not.toContain("Ticker Research Body");
     expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+  });
+
+  test("keeps focused pane local detail state when maximizing a floating pane", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-fullscreen-local-state-test");
+    const detailPane = requireLayoutInstance(config, "ticker-detail:main");
+    let openDetail: (() => void) | null = null;
+    const registry = createShellPluginRegistry({
+      tickerDetailComponent: () => {
+        const [detailOpen, setDetailOpen] = useState(false);
+        openDetail = () => setDetailOpen(true);
+        return <text>{detailOpen ? "Detail State" : "Table State"}</text>;
+      },
+    });
+    const floatingLayout = {
+      dockRoot: null,
+      instances: [{ ...detailPane }],
+      floating: [{ instanceId: "ticker-detail:main", x: 4, y: 2, width: 40, height: 10, zIndex: 50 }],
+      detached: [],
+    };
+    await renderShellForWindowModeTest(
+      createShellStateWithLayout(config, floatingLayout, "ticker-detail:main"),
+      { registry, width: 80, height: 18 },
+    );
+
+    await act(async () => {
+      openDetail?.();
+      await testSetup!.renderOnce();
+    });
+    expect(testSetup.captureCharFrame()).toContain("etail State");
+
+    await emitKeypress({ name: "f", ctrl: true, shift: true });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("etail State");
+    expect(frame).not.toContain("able State");
+  });
+
+  test("allows pane fullscreen shortcut while text input is captured on desktop", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-fullscreen-captured-input-test");
+    const mainPane = requireLayoutInstance(config, "portfolio-list:main");
+    const detailPane = requireLayoutInstance(config, "ticker-detail:main");
+    const dockedLayout = {
+      dockRoot: {
+        kind: "split" as const,
+        axis: "horizontal" as const,
+        ratio: 0.5,
+        first: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+        second: { kind: "pane" as const, instanceId: "ticker-detail:main" },
+      },
+      instances: [{ ...mainPane }, { ...detailPane }],
+      floating: [],
+      detached: [],
+    };
+    const { actions } = await renderShellForWindowModeTest(
+      {
+        ...createShellStateWithLayout(config, dockedLayout, "portfolio-list:main"),
+        inputCaptured: true,
+      },
+      { width: 80, height: 18 },
+    );
+
+    await emitKeypress({
+      name: "f",
+      key: "f",
+      meta: true,
+      super: true,
+      shift: true,
+      targetEditable: true,
+    } as any);
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Main Portfolio");
+    expect(frame).not.toContain("Ticker Research Body");
+    expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+  });
+
+  test("keeps the transient focus layout available after switching saved layouts", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-transient-focus-layout-tab-test");
+    const mainPane = requireLayoutInstance(config, "portfolio-list:main");
+    const detailPane = requireLayoutInstance(config, "ticker-detail:main");
+    const defaultLayout = {
+      dockRoot: {
+        kind: "split" as const,
+        axis: "horizontal" as const,
+        ratio: 0.5,
+        first: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+        second: { kind: "pane" as const, instanceId: "ticker-detail:main" },
+      },
+      instances: [{ ...mainPane }, { ...detailPane }],
+      floating: [],
+      detached: [],
+    };
+    const monitorLayout = {
+      dockRoot: { kind: "pane" as const, instanceId: "ticker-detail:main" },
+      instances: [{ ...detailPane }],
+      floating: [],
+      detached: [],
+    };
+    config.layout = cloneLayout(defaultLayout);
+    config.layouts = [
+      { name: "Default", layout: cloneLayout(defaultLayout), focusedPaneId: "portfolio-list:main" },
+      { name: "Monitor", layout: cloneLayout(monitorLayout), focusedPaneId: "ticker-detail:main" },
+    ];
+    config.activeLayoutIndex = 0;
+
+    const initialState = {
+      ...createInitialState(config),
+      focusedPaneId: "portfolio-list:main",
+      statusBarVisible: true,
+    };
+    const registry = createShellPluginRegistry();
+    const controls: {
+      dispatch?: (action: ShellTestAction) => void;
+      transientLayout: TransientLayoutState | null;
+    } = { transientLayout: null };
+
+    testSetup = await testRender(
+      <ShellTransientHarness initialState={initialState} registry={registry} controls={controls} />,
+      { width: 100, height: 18 },
+    );
+
+    await testSetup.renderOnce();
+    await emitKeypress({ name: "f", ctrl: true, shift: true });
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Main Portfolio");
+    expect(frame).not.toContain("Ticker Research Body");
+    expect(controls.transientLayout).toMatchObject({
+      id: "pane-focus",
+      active: true,
+    });
+
+    await act(async () => {
+      controls.transientLayout?.onDeactivate?.();
+      controls.dispatch?.({ type: "SWITCH_LAYOUT", index: 1 });
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(controls.transientLayout).toMatchObject({
+      id: "pane-focus",
+      active: false,
+    });
+
+    await act(async () => {
+      controls.transientLayout?.onActivate?.();
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(controls.transientLayout).toMatchObject({
+      id: "pane-focus",
+      active: true,
+    });
   });
 
   test("exits window mode on Enter without changes", async () => {

@@ -14,6 +14,7 @@ import { Header } from "./components/layout/header";
 import { StatusBar } from "./components/layout/status-bar";
 import { Shell } from "./components/layout/shell";
 import { DetachedPaneShell } from "./components/layout/detached-pane-shell";
+import { TransientLayoutProvider } from "./components/layout/transient-layout";
 import { CommandBar } from "./components/command-bar/surface";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard";
 import { useDialog } from "./ui/dialog";
@@ -293,13 +294,15 @@ function AppInner({
     <ContextMenuProvider pluginRegistry={pluginRegistry}>
       <ThemedAppRoot>
         <Header />
-        <Shell
-          pluginRegistry={pluginRegistry}
-          desktopWindowBridge={desktopWindowBridge}
-          desktopDockPreview={desktopDockPreview}
-          commandBarNativeOccluder={commandBarNativeOccluder}
-        />
-        <StatusBar />
+        <TransientLayoutProvider>
+          <Shell
+            pluginRegistry={pluginRegistry}
+            desktopWindowBridge={desktopWindowBridge}
+            desktopDockPreview={desktopDockPreview}
+            commandBarNativeOccluder={commandBarNativeOccluder}
+          />
+          <StatusBar />
+        </TransientLayoutProvider>
         {state.commandBarOpen && (
           <CommandBar
             dataProvider={dataProvider}

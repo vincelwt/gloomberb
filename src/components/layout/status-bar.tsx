@@ -16,6 +16,7 @@ import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
 import { PluginSlot } from "../../react/plugins/plugin-slot";
 import type { ContextMenuItem } from "../../types/context-menu";
 import { Tabs } from "../ui/tabs";
+import { useTransientLayout } from "./transient-layout";
 
 const GRIDLOCK_TIP_DURATION_MS = 60_000;
 
@@ -31,6 +32,7 @@ type LayoutTabItem = {
 
 type StatusBarViewProps = {
   activeLayoutIdx: number;
+  activeLayoutValue: string;
   dismissGridlockTip: (event?: StatusBarEvent) => void;
   handleGridlockTip: (event?: StatusBarEvent) => void;
   handleLayoutSelect: (value: string) => void;
@@ -62,18 +64,40 @@ export function StatusBar() {
   const statusBarVisible = useAppSelector(selectStatusBarVisible);
   const gridlockTipVisible = useAppSelector(selectGridlockTipVisible);
   const gridlockTipSequence = useAppSelector(selectGridlockTipSequence);
+  const { transientLayout } = useTransientLayout();
   const [hoveredControl, setHoveredControl] = useState<string | null>(null);
 
-  const hasMultipleLayouts = layouts.length > 1;
+  const hasMultipleLayouts = layouts.length > 1 || !!transientLayout;
   const showGridlockTip = gridlockTipVisible && !!registry;
-  const layoutTabs = layouts.map((layout, index) => ({
+  const savedLayoutTabs = layouts.map((layout, index) => ({
     label: `^${index + 1} ${truncate(layout.name, 14)}`,
     value: String(index),
   }));
+  const layoutTabs = transientLayout
+    ? [
+      ...savedLayoutTabs,
+      {
+        label: transientLayout.label,
+        value: transientLayout.id,
+      },
+    ]
+    : savedLayoutTabs;
   const layoutTabsWidth = layoutTabs.reduce((sum, tab) => sum + tab.label.length + 2, 0);
+  const activeLayoutValue = transientLayout?.active ? transientLayout.id : String(activeLayoutIdx);
   const handleLayoutSelect = (value: string) => {
+    if (value === transientLayout?.id) {
+      if (transientLayout.active) {
+        transientLayout.onExit?.();
+      } else {
+        transientLayout.onActivate?.();
+      }
+      return;
+    }
     const index = Number(value);
     if (!Number.isInteger(index) || index < 0 || index >= layouts.length) return;
+    if (transientLayout?.active) {
+      transientLayout.onDeactivate?.();
+    }
     dispatch({ type: "SWITCH_LAYOUT", index });
   };
 
@@ -184,11 +208,12 @@ export function StatusBar() {
     );
   }, [activeLayoutIdx, layoutContextMenuItems, layouts, showContextMenu]);
   const handleLayoutTabContextMenu = useCallback((value: string, event: any) => {
+    if (value === transientLayout?.id) return;
     const index = Number(value);
     if (!Number.isInteger(index) || index < 0 || index >= layouts.length) return;
     if (event?.type !== "contextmenu" && event?.button === 2 && nativeContextMenu === true) return;
     void openLayoutContextMenu(index, event);
-  }, [layouts.length, nativeContextMenu, openLayoutContextMenu]);
+  }, [layouts.length, nativeContextMenu, openLayoutContextMenu, transientLayout?.id]);
   const layoutTabItems = layoutTabs.map((tab) => ({
     ...tab,
     onContextMenu: handleLayoutTabContextMenu,
@@ -198,6 +223,7 @@ export function StatusBar() {
 
   const viewProps: StatusBarViewProps = {
     activeLayoutIdx,
+    activeLayoutValue,
     dismissGridlockTip,
     handleGridlockTip,
     handleLayoutSelect,
@@ -272,7 +298,7 @@ function TerminalStatusBar({
 }
 
 function StatusBarLayoutControl({
-  activeLayoutIdx,
+  activeLayoutValue,
   handleLayoutSelect,
   hasMultipleLayouts,
   hoveredControl,
@@ -283,7 +309,7 @@ function StatusBarLayoutControl({
   setHoveredControl,
 }: Pick<
   StatusBarViewProps,
-  | "activeLayoutIdx"
+  | "activeLayoutValue"
   | "handleLayoutSelect"
   | "hasMultipleLayouts"
   | "hoveredControl"
@@ -303,7 +329,7 @@ function StatusBarLayoutControl({
         <Box width={layoutTabsWidth} height={1}>
           <Tabs
             tabs={layoutTabItems}
-            activeValue={String(activeLayoutIdx)}
+            activeValue={activeLayoutValue}
             onSelect={handleLayoutSelect}
             compact
             variant="pill"
