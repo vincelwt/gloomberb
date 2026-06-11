@@ -58,6 +58,7 @@ import {
   type LoadState,
   type PublicationFeedState,
 } from "./pane-state";
+import { useSubstackReadState } from "./read-state";
 
 const PUBLICATION_LOAD_MORE_THRESHOLD_ROWS = 8;
 
@@ -74,6 +75,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     columnId: "published",
     direction: "desc",
   });
+  const { readArticleIds, markArticleRead } = useSubstackReadState();
   const homeFetchGenRef = useRef(0);
   const publicationFetchGenRef = useRef<Record<string, number>>({});
   const detailFetchGenRef = useRef(0);
@@ -206,12 +208,12 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     loadPublication(activePublication, false);
   }, [activePublication, activePublicationTabId, loadPublication, publicationFeeds]);
 
-  const activeFeedState = activeFeedStateFromSources({
+  const activeFeedState = useMemo(() => activeFeedStateFromSources({
     activePublication,
     activePublicationTabId,
     publicationFeeds,
     home,
-  });
+  }), [activePublication, activePublicationTabId, home, publicationFeeds]);
 
   const loadMoreActivePublicationRows = useCallback(() => {
     if (!activePublication || !activePublicationTabId || detailOpen) return;
@@ -335,8 +337,9 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
 
   const openSelectedArticle = useCallback(() => {
     if (!selectedArticle?.url) return;
+    markArticleRead(selectedArticle.id);
     void rendererHost.openExternal(selectedArticle.url);
-  }, [rendererHost, selectedArticle]);
+  }, [markArticleRead, rendererHost, selectedArticle]);
 
   const handleLogin = useCallback((nextAuth: SubstackAuthState) => {
     setAuth(nextAuth);
@@ -477,7 +480,9 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
         selectedArticle={selectedArticle}
         detailContent={detailContent}
         selectedArticleId={selectedArticleId}
+        readArticleIds={readArticleIds}
         onActivate={(article) => {
+          markArticleRead(article.id);
           setSelectedArticleId(article.id, { immediate: true });
           setDetailOpen(true);
         }}

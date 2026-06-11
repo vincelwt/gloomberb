@@ -41,6 +41,7 @@ interface UseShellTerminalPointerRuntimeOptions {
   selectWindowModePane: (paneId: string) => void;
   setHoveredMenuItemId: Dispatch<SetStateAction<string | null>>;
   setMenuState: Dispatch<SetStateAction<ActionMenuState | null>>;
+  transientFocusActive: boolean;
   visibleFloatingPanes: VisibleFloatingPane[];
   width: number;
   windowMode: WindowEditState | null;
@@ -79,6 +80,7 @@ export function useShellTerminalPointerRuntime({
   selectWindowModePane,
   setHoveredMenuItemId,
   setMenuState,
+  transientFocusActive,
   visibleFloatingPanes,
   width,
   windowMode,
@@ -132,25 +134,27 @@ export function useShellTerminalPointerRuntime({
         return;
       }
 
-      for (const divider of dockDividerLayouts) {
-        if (!pointInRect(divider.rect, event.x, shellY)) continue;
-        dragRef.current = {
-          type: "divider",
-          path: divider.path,
-          axis: divider.axis,
-          startX: preciseX,
-          startY: preciseShellY,
-          startRatio: divider.ratio,
-          bounds: divider.bounds,
-        };
-        updateDividerPreview({
-          pathKey: divider.path.join("."),
-          rect: divider.rect,
-          ratio: divider.ratio,
-        });
-        event.stopPropagation();
-        event.preventDefault();
-        return;
+      if (!transientFocusActive) {
+        for (const divider of dockDividerLayouts) {
+          if (!pointInRect(divider.rect, event.x, shellY)) continue;
+          dragRef.current = {
+            type: "divider",
+            path: divider.path,
+            axis: divider.axis,
+            startX: preciseX,
+            startY: preciseShellY,
+            startRatio: divider.ratio,
+            bounds: divider.bounds,
+          };
+          updateDividerPreview({
+            pathKey: divider.path.join("."),
+            rect: divider.rect,
+            ratio: divider.ratio,
+          });
+          event.stopPropagation();
+          event.preventDefault();
+          return;
+        }
       }
 
       for (const leaf of dockLeafLayouts) {
@@ -279,6 +283,11 @@ export function useShellTerminalPointerRuntime({
           event.preventDefault();
           return;
         }
+        if (relativeY === 0 && transientFocusActive) {
+          event.stopPropagation();
+          event.preventDefault();
+          return;
+        }
         if (relativeY === 0) {
           dragRef.current = {
             type: "pane-drag",
@@ -317,6 +326,7 @@ export function useShellTerminalPointerRuntime({
     selectWindowModePane,
     setHoveredMenuItemId,
     setMenuState,
+    transientFocusActive,
     updateDividerPreview,
     updateDragFloatingRect,
     visibleFloatingPanes,

@@ -2,6 +2,7 @@ import type { KeyEventLike } from "../../../react/input";
 
 export const PANE_MANAGEMENT_ACCELERATORS = {
   settings: "CmdOrCtrl+,",
+  fullscreen: "CmdOrCtrl+Shift+F",
   toggleFloating: "CmdOrCtrl+Shift+D",
   popOut: "CmdOrCtrl+Shift+O",
   copyScreenshot: "CmdOrCtrl+Shift+C",
@@ -15,6 +16,7 @@ export const PANE_MANAGEMENT_ACCELERATORS = {
 
 export type PaneManagementShortcut =
   | "settings"
+  | "toggle-fullscreen"
   | "toggle-floating"
   | "pop-out"
   | "copy-screenshot"
@@ -38,6 +40,7 @@ export function resolvePaneManagementShortcut(
   if (!shifted || event.alt) return null;
   if (name === "c") return "copy-screenshot";
   if (name === "d") return "toggle-floating";
+  if (name === "f") return "toggle-fullscreen";
   if (name === "o") return "pop-out";
   if (name === "l") return "layout-actions";
   if (name === "g") return "gridlock-all";
@@ -50,6 +53,7 @@ export function inputCaptureAllowsPaneManagementShortcut(
   shortcut: PaneManagementShortcut,
   event: Pick<KeyEventLike, "meta" | "super" | "targetEditable">,
 ): boolean {
+  if (shortcut === "toggle-fullscreen") return event.meta || event.super === true;
   if (shortcut !== "close" && shortcut !== "close-all-floating") return false;
   return event.meta || event.super || event.targetEditable !== true;
 }

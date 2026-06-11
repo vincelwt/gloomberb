@@ -24,6 +24,7 @@ export function SubstackArticleStack({
   detailOpen,
   selectedArticle,
   selectedArticleId,
+  readArticleIds,
   detailContent,
   activePublication,
   activeFeedState,
@@ -45,6 +46,7 @@ export function SubstackArticleStack({
   detailOpen: boolean;
   selectedArticle: SubstackArticleSummary | null;
   selectedArticleId: string | null;
+  readArticleIds: ReadonlySet<string>;
   detailContent: ReactNode;
   activePublication: SubstackPublication | null;
   activeFeedState: ActiveFeedState;
@@ -78,7 +80,9 @@ export function SubstackArticleStack({
         return {
           text: article.title,
           color: selectedColor ?? colors.text,
-          attributes: TextAttributes.BOLD,
+          attributes: readArticleIds.has(article.id)
+            ? TextAttributes.NONE
+            : TextAttributes.BOLD,
         };
       case "read":
         return {
@@ -86,7 +90,7 @@ export function SubstackArticleStack({
           color: selectedColor ?? colors.textDim,
         };
     }
-  }, []);
+  }, [readArticleIds]);
 
   const bodyAfter = activePublication && sortedRows.length > 0 && (activeFeedState.loading || activeFeedState.loadingMore) ? (
     <Box height={1} paddingX={1}>

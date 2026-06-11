@@ -25,6 +25,7 @@ interface ShellPaneManagementShortcutOptions {
   overlayOpen: boolean;
   popOutFocusedPane(): boolean;
   startWindowMode(paneId?: string, mode?: WindowEditMode): void;
+  toggleFocusedPaneFullscreen(): boolean;
   toggleFocusedPaneFloating(): boolean;
 }
 
@@ -42,6 +43,7 @@ export function useShellPaneManagementShortcuts({
   overlayOpen,
   popOutFocusedPane,
   startWindowMode,
+  toggleFocusedPaneFullscreen,
   toggleFocusedPaneFloating,
 }: ShellPaneManagementShortcutOptions): void {
   const doubleEscapeCloseRef = useRef(createDoubleEscapeCloseState());
@@ -53,6 +55,20 @@ export function useShellPaneManagementShortcuts({
   }, [overlayOpen]);
 
   useShortcut((event) => {
+    const shortcut = resolvePaneManagementShortcut(event);
+    if (shortcut === "toggle-fullscreen" && !overlayOpen) {
+      if (!inputCaptured || inputCaptureAllowsPaneManagementShortcut(shortcut, event)) {
+        if (hasActiveDrag()) {
+          cancelActiveDrag();
+        }
+        if (toggleFocusedPaneFullscreen()) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+      }
+    }
+
     const isEscape = event.name === "escape" || event.name === "esc";
     if (isEscape) {
       const doubleEscapeState = doubleEscapeCloseRef.current;
@@ -90,6 +106,9 @@ export function useShellPaneManagementShortcuts({
         break;
       case "settings":
         handled = openFocusedPaneSettings();
+        break;
+      case "toggle-fullscreen":
+        handled = toggleFocusedPaneFullscreen();
         break;
       case "toggle-floating":
         handled = toggleFocusedPaneFloating();

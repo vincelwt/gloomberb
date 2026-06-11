@@ -1,4 +1,4 @@
-import { useCallback, type RefObject } from "react";
+import { memo, useCallback, useMemo, type RefObject } from "react";
 import { Box, ScrollBox, Text, TextAttributes, useRendererHost, type ScrollBoxRenderable } from "../../../ui";
 import { Spinner } from "../../../components";
 import { RemoteImage } from "../../../components/ui";
@@ -36,6 +36,25 @@ function wrappedTextProps(width: number) {
       overflowWrap: "anywhere",
     },
   } as const;
+}
+
+const ARTICLE_IMAGE_MAX_WIDTH = 152;
+const ARTICLE_IMAGE_MAX_HEIGHT = 26;
+const ARTICLE_IMAGE_MIN_HEIGHT = 6;
+const ARTICLE_IMAGE_LEGACY_HEIGHT_CAP = 14;
+
+export function resolveArticleImageSize(lineWidth: number) {
+  const safeLineWidth = Math.max(1, Math.floor(lineWidth));
+  const width = Math.min(safeLineWidth, ARTICLE_IMAGE_MAX_WIDTH);
+  const legacyHeight = Math.min(ARTICLE_IMAGE_LEGACY_HEIGHT_CAP, Math.floor(width * 0.32));
+  const expandedHeight = Math.floor(width * 0.18);
+  return {
+    width,
+    height: Math.max(ARTICLE_IMAGE_MIN_HEIGHT, Math.min(
+      ARTICLE_IMAGE_MAX_HEIGHT,
+      Math.max(legacyHeight, expandedHeight),
+    )),
+  };
 }
 
 function normalizedTwitterUsername(username: string | null | undefined): string | null {
@@ -251,7 +270,7 @@ function ArticleBlockView({
   }
 }
 
-function ArticleRichContent({
+const ArticleRichContent = memo(function ArticleRichContent({
   blocks,
   fallbackText,
   fallbackImageUrls,
@@ -269,14 +288,20 @@ function ArticleRichContent({
   imageHeight: number;
 }) {
   const rendererHost = useRendererHost();
-  const resolvedBlocks = blocks.length > 0
-    ? blocks
-    : [
-      ...(fallbackText ? [{ type: "paragraph" as const, text: fallbackText }] : []),
-      ...fallbackImageUrls.map((url): SubstackContentBlock => ({ type: "image", url, alt: articleTitle })),
-    ];
-  const tickerText = resolvedBlocks.map(articleBlockText).filter(Boolean).join("\n");
-  const { catalog, openTicker } = useInlineTickers([tickerText], { liveQuotes: false });
+  const resolvedBlocks = useMemo(() => (
+    blocks.length > 0
+      ? blocks
+      : [
+        ...(fallbackText ? [{ type: "paragraph" as const, text: fallbackText }] : []),
+        ...fallbackImageUrls.map((url): SubstackContentBlock => ({ type: "image", url, alt: articleTitle })),
+      ]
+  ), [articleTitle, blocks, fallbackImageUrls, fallbackText]);
+  const tickerText = useMemo(
+    () => resolvedBlocks.map(articleBlockText).filter(Boolean).join("\n"),
+    [resolvedBlocks],
+  );
+  const tickerTexts = useMemo(() => [tickerText], [tickerText]);
+  const { catalog, openTicker } = useInlineTickers(tickerTexts, { liveQuotes: false });
   const openLink = useCallback((url: string) => {
     void rendererHost.openExternal(url);
   }, [rendererHost]);
@@ -307,9 +332,9 @@ function ArticleRichContent({
       ))}
     </Box>
   );
-}
+});
 
-export function ArticleDetail({
+export const ArticleDetail = memo(function ArticleDetail({
   article,
   detail,
   width,
@@ -331,8 +356,7 @@ export function ArticleDetail({
   const blocks = resolved?.contentBlocks ?? [];
   const fallbackImageUrls = resolved?.imageUrls.length ? resolved.imageUrls : article.imageUrls;
   const lineWidth = Math.max(1, width - 2);
-  const imageWidth = Math.min(lineWidth, 86);
-  const imageHeight = Math.max(6, Math.min(14, Math.floor(imageWidth * 0.32)));
+  const { width: imageWidth, height: imageHeight } = resolveArticleImageSize(lineWidth);
 
   return (
     <ScrollBox ref={scrollRef} scrollY focusable={false} flexGrow={1} paddingX={1}>
@@ -356,4 +380,4 @@ export function ArticleDetail({
       </Box>
     </ScrollBox>
   );
-}
+});
