@@ -1,10 +1,24 @@
 import { RGBA, StyledText as OpenTuiStyledText, SyntaxStyle, TextAttributes as OpenTuiTextAttributes } from "@opentui/core";
-import { createElement } from "react";
+import { createElement, forwardRef, type ReactNode } from "react";
 import "opentui-spinner/react";
 import { TextAttributes, type UiHost, type TextProps } from "../../ui/host";
 import { renderAsciiText } from "../../ui/ascii-font";
 import { OpenTuiImageSurface } from "./image/surface";
 import { OpenTuiChartSurface } from "./chart-surface";
+
+interface OpenTuiPrimitiveProps {
+  children?: ReactNode;
+  [key: string]: unknown;
+}
+
+function createOpenTuiPrimitive(tagName: string) {
+  return forwardRef<unknown, OpenTuiPrimitiveProps>(function OpenTuiPrimitive(
+    { children, ...props },
+    ref,
+  ) {
+    return createElement(tagName as any, { ...props, ref }, children as ReactNode);
+  });
+}
 
 function mapTextAttributes(appAttributes: number | undefined, props?: TextProps): number | undefined {
   const flags = typeof appAttributes === "number" ? appAttributes : 0;
@@ -37,41 +51,59 @@ function mapTextContent(content: unknown): unknown {
       fg: mapColor(chunk.fg),
       bg: mapColor(chunk.bg),
       attributes: mapTextAttributes(chunk.attributes as number | undefined),
-    })));
+    })) as any);
   }
   return content;
 }
+
+const OpenTuiBox = createOpenTuiPrimitive("box");
+const OpenTuiScrollBox = createOpenTuiPrimitive("scrollbox");
+const OpenTuiInput = createOpenTuiPrimitive("input");
+const OpenTuiTextarea = createOpenTuiPrimitive("textarea");
+const OpenTuiSpinnerMark = createOpenTuiPrimitive("spinner");
+
+const OpenTuiText = forwardRef<unknown, TextProps>(function OpenTuiText({ children, ...props }, ref) {
+  const textProps = stripTextProps(props);
+  return createElement("text" as any, {
+    ...textProps,
+    ref,
+    content: mapTextContent(textProps.content),
+    attributes: mapTextAttributes(props.attributes as number | undefined, props),
+  }, children as ReactNode);
+});
+
+const OpenTuiSpan = forwardRef<unknown, TextProps>(function OpenTuiSpan({ children, ...props }, ref) {
+  return createElement("span" as any, {
+    ...stripTextProps(props),
+    ref,
+    attributes: mapTextAttributes(props.attributes as number | undefined, props),
+  }, children as ReactNode);
+});
+
+const OpenTuiStrong = forwardRef<unknown, TextProps>(function OpenTuiStrong({ children, ...props }, ref) {
+  return createElement("strong" as any, { ...stripTextProps(props), ref }, children as ReactNode);
+});
+
+const OpenTuiUnderline = forwardRef<unknown, TextProps>(function OpenTuiUnderline({ children, ...props }, ref) {
+  return createElement("u" as any, { ...stripTextProps(props), ref }, children as ReactNode);
+});
 
 export const openTuiUiHost: UiHost = {
   kind: "opentui",
   capabilities: {
     nativeCharts: true,
   },
-  Box: ({ children, ...props }) => <box {...props}>{children}</box>,
-  Text: ({ children, ...props }) => {
-    const textProps = stripTextProps(props);
-    return (
-      <text
-        {...textProps}
-        content={mapTextContent(textProps.content)}
-        attributes={mapTextAttributes(props.attributes as number | undefined, props)}
-      >
-        {children}
-      </text>
-    );
-  },
-  Span: ({ children, ...props }) => createElement("span" as any, {
-    ...stripTextProps(props),
-    attributes: mapTextAttributes(props.attributes as number | undefined, props),
-  }, children),
-  Strong: ({ children, ...props }) => createElement("strong" as any, stripTextProps(props), children),
-  Underline: ({ children, ...props }) => createElement("u" as any, stripTextProps(props), children),
-  ScrollBox: ({ children, ...props }) => <scrollbox {...props}>{children}</scrollbox>,
-  Input: ({ children, ...props }) => createElement("input" as any, props, children),
-  Textarea: ({ children, ...props }) => createElement("textarea" as any, props, children),
+  Box: OpenTuiBox as UiHost["Box"],
+  Text: OpenTuiText as UiHost["Text"],
+  Span: OpenTuiSpan as UiHost["Span"],
+  Strong: OpenTuiStrong as UiHost["Strong"],
+  Underline: OpenTuiUnderline as UiHost["Underline"],
+  ScrollBox: OpenTuiScrollBox as UiHost["ScrollBox"],
+  Input: OpenTuiInput as UiHost["Input"],
+  Textarea: OpenTuiTextarea as UiHost["Textarea"],
   ChartSurface: OpenTuiChartSurface,
   ImageSurface: OpenTuiImageSurface,
-  SpinnerMark: ({ children, ...props }) => createElement("spinner" as any, props, children),
+  SpinnerMark: OpenTuiSpinnerMark as UiHost["SpinnerMark"],
   AsciiText: ({ text, font = "tiny", color, fg, bg, backgroundColor, selectable = false, ...props }) => {
     const resolvedColor = color ?? fg;
     const resolvedBackground = backgroundColor ?? bg;

@@ -143,12 +143,22 @@ export interface TextareaRenderable extends InputRenderable {
   clearLineHighlights?(lineIdx: number): void;
 }
 
+export interface NativeCursorState {
+  x: number;
+  y: number;
+  visible: boolean;
+}
+
+export type NativePostProcessFn = (buffer: unknown, deltaTime: number) => void;
+
 export interface NativeRendererHost {
   terminalWidth: number;
   terminalHeight: number;
   resolution: PixelResolution | null;
   capabilities?: unknown;
   isDestroyed?: boolean;
+  currentFocusedRenderable?: unknown;
+  currentFocusedEditor?: unknown;
   keyInput?: {
     on(event: string, handler: (...args: any[]) => void): void;
     off(event: string, handler: (...args: any[]) => void): void;
@@ -160,8 +170,13 @@ export interface NativeRendererHost {
   registerLifecyclePass(renderable: unknown): void;
   unregisterLifecyclePass(renderable: unknown): void;
   getSelection?(): { getSelectedText(): string } | null;
+  getCursorState?(): NativeCursorState;
+  setCursorPosition?(x: number, y: number, visible?: boolean): void;
+  addPostProcessFn?(processFn: NativePostProcessFn): void;
+  removePostProcessFn?(processFn: NativePostProcessFn): void;
   copyToClipboardOSC52?(text: string): boolean;
   write?(data: string | Uint8Array): boolean;
+  captureMouseRenderable?(renderable: unknown): void;
 }
 
 interface BoxProps {

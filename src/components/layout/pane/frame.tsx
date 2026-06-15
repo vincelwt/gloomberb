@@ -19,13 +19,13 @@ export function getPaneWindowAttributes({
   windowModeSelected?: boolean;
   showBorderColor?: boolean;
 }): Record<string, unknown> {
-  if (!enabled) return {};
-
   const attributes: Record<string, unknown> = {
     "data-gloom-role": role,
-    "data-focused": focused ? "true" : "false",
   };
   if (paneId) attributes["data-gloom-pane-id"] = paneId;
+  if (!enabled) return attributes;
+
+  attributes["data-focused"] = focused ? "true" : "false";
   if (floating != null) attributes["data-floating"] = floating ? "true" : "false";
   if (windowModeSelected != null) {
     attributes["data-window-mode-selected"] = windowModeSelected ? "true" : "false";

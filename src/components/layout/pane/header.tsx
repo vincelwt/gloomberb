@@ -1,5 +1,5 @@
-import { Box, Span, Text, useUiCapabilities } from "../../../ui";
-import type { ReactNode } from "react";
+import { Box, Span, Text, useNativeRenderer, useUiCapabilities } from "../../../ui";
+import { useCallback, useRef, type ReactNode } from "react";
 import { blendHex, colors, floatingPaneTitleBg, paneTitleBg, paneTitleText } from "../../../theme/colors";
 
 const PANE_HEADER_HEIGHT = 1;
@@ -27,6 +27,18 @@ function truncateTitle(title: string, maxWidth: number): string {
   if (title.length <= maxWidth) return title;
   if (maxWidth <= 2) return ".".repeat(maxWidth);
   return `${title.slice(0, maxWidth - 2)}..`;
+}
+
+function captureTerminalPointerDrag(renderer: unknown, renderable: unknown): void {
+  if (!renderable) return;
+  const hostCapture = (renderer as { captureMouseRenderable?: (target: unknown) => void }).captureMouseRenderable;
+  if (typeof hostCapture === "function") {
+    hostCapture.call(renderer, renderable);
+    return;
+  }
+  const capture = (renderer as { setCapturedRenderable?: (target: unknown) => void }).setCapturedRenderable;
+  if (typeof capture !== "function") return;
+  capture.call(renderer, renderable);
 }
 
 function DesktopPaneButton({
@@ -107,11 +119,17 @@ export function PaneHeader({
   onCloseMouseDown,
 }: PaneHeaderProps) {
   const { nativePaneChrome } = useUiCapabilities();
+  const nativeRenderer = useNativeRenderer();
+  const terminalHeaderRef = useRef<unknown>(null);
   const visuallyFocused = focused || windowModeSelected;
   const backgroundColor = floating ? floatingPaneTitleBg(visuallyFocused) : paneTitleBg(visuallyFocused);
   const actionText = showActions ? PANE_HEADER_ACTION : "     ";
   const closeText = floating ? PANE_HEADER_CLOSE : "";
   const textColor = paneTitleText(visuallyFocused, floating);
+  const handleTerminalHeaderMouseDown = useCallback((event: any) => {
+    captureTerminalPointerDrag(nativeRenderer, terminalHeaderRef.current);
+    onHeaderMouseDown?.(event);
+  }, [nativeRenderer, onHeaderMouseDown]);
 
   if (nativePaneChrome) {
     return (
@@ -201,7 +219,16 @@ export function PaneHeader({
     const fill = "─".repeat(fillLen);
 
     return (
-      <Box height={PANE_HEADER_HEIGHT} width={width} backgroundColor={backgroundColor} flexDirection="row">
+      <Box
+        ref={terminalHeaderRef}
+        height={PANE_HEADER_HEIGHT}
+        width={width}
+        backgroundColor={backgroundColor}
+        flexDirection="row"
+        onMouseDown={handleTerminalHeaderMouseDown}
+        onMouseDrag={onHeaderMouseDrag}
+        onMouseDragEnd={onHeaderMouseDragEnd}
+      >
         <Text fg={borderColor} selectable={false}>{"┌─"}</Text>
         <Text fg={textColor} selectable={false}>{`${PANE_HEADER_GRIP}${clippedTitle}`}</Text>
         <Text fg={borderColor} selectable={false}>{fill}</Text>
@@ -229,7 +256,16 @@ export function PaneHeader({
   const padding = " ".repeat(Math.max(0, titleWidth - clippedTitle.length));
 
   return (
-    <Box height={PANE_HEADER_HEIGHT} width={width} backgroundColor={backgroundColor} flexDirection="row">
+    <Box
+      ref={terminalHeaderRef}
+      height={PANE_HEADER_HEIGHT}
+      width={width}
+      backgroundColor={backgroundColor}
+      flexDirection="row"
+      onMouseDown={handleTerminalHeaderMouseDown}
+      onMouseDrag={onHeaderMouseDrag}
+      onMouseDragEnd={onHeaderMouseDragEnd}
+    >
       <Text fg={textColor} selectable={false}>
         {`${PANE_HEADER_GRIP}${clippedTitle}${padding}`}
       </Text>
