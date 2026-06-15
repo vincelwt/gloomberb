@@ -1,4 +1,4 @@
-import { AsciiText, Box, Text, compactContextMenuItems, useContextMenu, useUiHost } from "../../../ui";
+import { AsciiText, Box, Text, compactContextMenuItems, useContextMenu, useUiHost, type BoxRenderable } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRendererHost, useUiCapabilities } from "../../../ui";
 import { useViewport } from "../../../react/input";
@@ -61,6 +61,10 @@ import {
 import { useShellPaneActions } from "./pane/actions";
 import { resolvePaneFocusSourceLayout } from "./fullscreen";
 import { useTransientLayout } from "../transient-layout";
+import {
+  resolveShellCursorOcclusionRects,
+  useShellCursorOcclusionGuard,
+} from "./cursor-occlusion";
 
 export { resolveAppHeaderHeightCells } from "./chrome";
 export { buildNativeWindowState } from "./native/window-state";
@@ -102,6 +106,7 @@ export function Shell({
   const { nativePaneChrome = false, nativeContextMenu, precisePointer, titleBarOverlay, cellHeightPx } = useUiCapabilities();
   const { showContextMenu } = useContextMenu();
   const { width, height } = useViewport();
+  const shellRef = useRef<BoxRenderable | null>(null);
 
   const appHeaderHeight = resolveAppHeaderHeightCells({ titleBarOverlay, cellHeightPx });
   const contentHeight = Math.max(1, height - appHeaderHeight - (statusBarVisible ? 1 : 0));
@@ -124,7 +129,11 @@ export function Shell({
   }, []);
   const overlayOpen = commandBarOpen || dialogOpen || !!menuState;
 
-  const dragRuntime = useShellDragRuntimeState({ contentHeight, width });
+  const dragRuntime = useShellDragRuntimeState({
+    contentHeight,
+    throttleFloatingPreview: nativePaneChrome,
+    width,
+  });
   const {
     cancelActiveDrag,
     dividerPreview,
@@ -208,6 +217,27 @@ export function Shell({
     disabledPaneIds,
     pluginRegistry,
     width,
+  });
+  const cursorOcclusionRects = useMemo(() => resolveShellCursorOcclusionRects({
+    contentHeight,
+    dragFloatingRect,
+    nativePaneChrome,
+    overlayOpen,
+    transientFocusActive,
+    visibleFloatingPanes,
+    width,
+  }), [
+    contentHeight,
+    dragFloatingRect,
+    nativePaneChrome,
+    overlayOpen,
+    transientFocusActive,
+    visibleFloatingPanes,
+    width,
+  ]);
+  useShellCursorOcclusionGuard({
+    occlusionRects: cursorOcclusionRects,
+    shellRef,
   });
 
   const {
@@ -485,6 +515,7 @@ export function Shell({
 
   return (
     <Box
+      ref={shellRef}
       flexDirection="row"
       flexGrow={1}
       height={nativePaneChrome ? undefined : contentHeight}

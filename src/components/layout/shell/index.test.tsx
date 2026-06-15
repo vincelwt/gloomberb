@@ -13,6 +13,7 @@ import {
 import { cloneLayout, createDefaultConfig, TICKER_RESEARCH_PANE_ID, type LayoutConfig } from "../../../types/config";
 import type { PluginRegistry } from "../../../plugins/registry";
 import type { PaneProps } from "../../../types/plugin";
+import { Textarea } from "../../../ui";
 import { Header } from "../header";
 import {
   buildNativeWindowState,
@@ -222,7 +223,7 @@ describe("Header", () => {
     );
 
     await testSetup.renderOnce();
-    const frame = testSetup.captureCharFrame();
+    const frame = testSetup!.captureCharFrame();
 
     expect(frame).toContain("v0.3.0 available");
     expect(frame).toContain("starting download");
@@ -242,7 +243,7 @@ describe("Header", () => {
     );
 
     await testSetup.renderOnce();
-    const frame = testSetup.captureCharFrame();
+    const frame = testSetup!.captureCharFrame();
 
     expect(frame).toContain("v0.3.0 available");
     expect(frame).toContain("run npm install -g gloomberb@latest");
@@ -562,6 +563,95 @@ describe("Shell", () => {
     expect(frame).toContain("Main Portfolio");
     expect(frame).not.toContain("Ticker Research Body");
     expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+  });
+
+  test("updates the floating pane preview before mouse release", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-live-floating-drag-test");
+    const floatingLayout = cloneLayout(config.layout);
+    floatingLayout.dockRoot = { kind: "pane", instanceId: "portfolio-list:main" };
+    floatingLayout.floating = [{ instanceId: "ticker-detail:main", x: 8, y: 2, width: 32, height: 10, zIndex: 75 }];
+    await renderShellForWindowModeTest(
+      createShellStateWithLayout(config, floatingLayout, "ticker-detail:main"),
+      { width: 80, height: 18 },
+    );
+
+    await act(async () => {
+      await testSetup!.mockMouse.pressDown(10, 3);
+      await testSetup!.renderOnce();
+      await testSetup!.mockMouse.moveTo(16, 6);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup!.captureCharFrame();
+    const rows = frame.split("\n");
+    expect(rows[2]?.indexOf("┌─:: Main Portfolio") ?? -1).toBeLessThan(0);
+    expect(rows[5]?.indexOf("┌─:: Main Portfolio")).toBeGreaterThanOrEqual(14);
+
+    await act(async () => {
+      await testSetup!.mockMouse.release(16, 6);
+      await testSetup!.renderOnce();
+    });
+  });
+
+  test("keeps the focused textarea cursor visible when it is not covered", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-cursor-visible-test");
+    const mainPane = requireLayoutInstance(config, "portfolio-list:main");
+    const detailPane = requireLayoutInstance(config, "ticker-detail:main");
+    const registry = createShellPluginRegistry({
+      portfolioListComponent: ({ focused, width, height }) => (
+        <Textarea
+          initialValue=""
+          focused={focused}
+          width={width}
+          height={Math.max(1, height)}
+        />
+      ),
+      tickerDetailComponent: () => <text>Chart Body</text>,
+    });
+    const layout = {
+      dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+      instances: [{ ...mainPane }, { ...detailPane }],
+      floating: [{ instanceId: "ticker-detail:main", x: 30, y: 2, width: 24, height: 8, zIndex: 75 }],
+      detached: [],
+    };
+    await renderShellForWindowModeTest(
+      createShellStateWithLayout(config, layout, "portfolio-list:main"),
+      { registry, width: 80, height: 18 },
+    );
+    await testSetup!.renderOnce();
+
+    expect(testSetup!.renderer.getCursorState().visible).toBe(true);
+  });
+
+  test("hides the textarea cursor when a higher floating pane covers it", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-cursor-occlusion-test");
+    const mainPane = requireLayoutInstance(config, "portfolio-list:main");
+    const detailPane = requireLayoutInstance(config, "ticker-detail:main");
+    const registry = createShellPluginRegistry({
+      portfolioListComponent: ({ focused, width, height }) => (
+        <Textarea
+          initialValue=""
+          focused={focused}
+          width={width}
+          height={Math.max(1, height)}
+        />
+      ),
+      tickerDetailComponent: () => <text>Chart Body</text>,
+    });
+    const layout = {
+      dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+      instances: [{ ...mainPane }, { ...detailPane }],
+      floating: [{ instanceId: "ticker-detail:main", x: 0, y: 0, width: 40, height: 8, zIndex: 75 }],
+      detached: [],
+    };
+    await renderShellForWindowModeTest(
+      createShellStateWithLayout(config, layout, "portfolio-list:main"),
+      { registry, width: 80, height: 18 },
+    );
+    await testSetup!.renderOnce();
+
+    expect(testSetup!.renderer.getCursorState().visible).toBe(false);
   });
 
   test("keeps focused pane local detail state when maximizing a floating pane", async () => {

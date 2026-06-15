@@ -138,8 +138,14 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
     get isDestroyed() {
       return renderer.isDestroyed;
     },
+    get currentFocusedRenderable() {
+      return renderer.currentFocusedRenderable ?? null;
+    },
+    get currentFocusedEditor() {
+      return renderer.currentFocusedEditor ?? null;
+    },
     get keyInput() {
-      return renderer.keyInput;
+      return renderer.keyInput as unknown as NativeRendererHost["keyInput"];
     },
     on: (event, handler) => renderer.on(event, handler),
     off: (event, handler) => renderer.off(event, handler),
@@ -147,7 +153,17 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
     registerLifecyclePass: (renderable) => renderer.registerLifecyclePass(renderable as any),
     unregisterLifecyclePass: (renderable) => renderer.unregisterLifecyclePass(renderable as any),
     getSelection: () => renderer.getSelection(),
+    getCursorState: () => renderer.getCursorState(),
+    setCursorPosition: (x, y, visible = true) => renderer.setCursorPosition(x, y, visible),
+    addPostProcessFn: (processFn) => renderer.addPostProcessFn(processFn as any),
+    removePostProcessFn: (processFn) => renderer.removePostProcessFn(processFn as any),
     copyToClipboardOSC52: (text) => renderer.copyToClipboardOSC52(text),
+    captureMouseRenderable(renderable) {
+      const capture = (renderer as unknown as { setCapturedRenderable?: (target: unknown) => void }).setCapturedRenderable;
+      if (typeof capture === "function") {
+        capture.call(renderer, renderable);
+      }
+    },
     write(data) {
       if (renderer.isDestroyed) return false;
       const writer = (renderer as unknown as { writeOut?: (payload: string | Uint8Array) => void }).writeOut;

@@ -86,9 +86,11 @@ export interface ShellDragRuntimeState {
 
 export function useShellDragRuntimeState({
   contentHeight,
+  throttleFloatingPreview = false,
   width,
 }: {
   contentHeight: number;
+  throttleFloatingPreview?: boolean;
   width: number;
 }): ShellDragRuntimeState {
   const dragRef = useRef<DragMode | null>(null);
@@ -104,15 +106,20 @@ export function useShellDragRuntimeState({
   });
 
   const updateDragFloatingRect = useCallback((next: { paneId: string; rect: FloatingRect } | null) => {
-    pendingDragFloatingRectRef.current = next
+    const constrainedNext = next
       ? { paneId: next.paneId, rect: constrainFloatingRectToBounds(next.rect, width, contentHeight) }
       : null;
+    pendingDragFloatingRectRef.current = constrainedNext;
     if (!next) {
       setDragFloatingRect(null);
       return;
     }
+    if (!throttleFloatingPreview) {
+      setDragFloatingRect(constrainedNext);
+      return;
+    }
     flushDragFloatingRect();
-  }, [contentHeight, flushDragFloatingRect, width]);
+  }, [contentHeight, flushDragFloatingRect, throttleFloatingPreview, width]);
 
   const updateDividerPreview = useCallback((next: DividerPreviewState | null) => {
     dividerPreviewRef.current = next;
