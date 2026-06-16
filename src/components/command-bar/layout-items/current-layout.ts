@@ -87,7 +87,11 @@ export function buildCurrentLayoutItems({
       kind: "action",
       action: () => {
         const { width, height } = pluginRegistry.getTermSizeFn();
-        persistLayoutChange(gridlockAllPanes(currentLayout, { x: 0, y: 0, width, height }));
+        persistLayoutChange(gridlockAllPanes(
+          currentLayout,
+          { x: 0, y: 0, width, height },
+          pluginRegistry.panes,
+        ));
         notifyGridlockRevert();
         closeAll({ revertThemePreview: false });
       },

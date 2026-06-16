@@ -49,7 +49,12 @@ export {
   swapPanes,
 } from "./pane-manager/docking";
 
-export { removeFloatingPanes, removePane } from "./pane-manager/layout-state";
+export {
+  removeFloatingPanes,
+  removePane,
+  removeUnavailablePaneTypes,
+  type PaneTypeAvailability,
+} from "./pane-manager/layout-state";
 export { gridlockAllPanes } from "./pane-manager/gridlock";
 export type {
   DropTarget,

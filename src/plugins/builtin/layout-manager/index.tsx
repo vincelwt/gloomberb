@@ -105,7 +105,11 @@ export const layoutManagerPlugin: GloomPlugin = {
       execute: async () => {
         if (!getStateRef) return;
         const { layout, termWidth, termHeight } = getStateRef();
-        persistLayout(ctx, gridlockAllPanes(layout, { x: 0, y: 0, width: termWidth, height: termHeight }));
+        persistLayout(ctx, gridlockAllPanes(
+          layout,
+          { x: 0, y: 0, width: termWidth, height: termHeight },
+          ctx.getPaneDef,
+        ));
         notifyGridlockComplete(ctx.notify, () => {
           dispatchRef?.({ type: "UNDO_LAYOUT" });
         });

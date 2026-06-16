@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "../../renderers/opentui/test-utils";
 import { AppContext, createInitialState } from "../../state/app/context";
-import { cloneLayout, createDefaultConfig, type LayoutConfig } from "../../types/config";
+import { cloneLayout, createDefaultConfig, TICKER_RESEARCH_PANE_ID, type LayoutConfig } from "../../types/config";
 import type { AppNotificationRequest } from "../../types/plugin";
 import { StatusBar } from "./status-bar";
 import { setSharedRegistryForTests } from "../../plugins/registry";
@@ -174,6 +174,10 @@ describe("StatusBar", () => {
     const notifications: AppNotificationRequest[] = [];
 
     setSharedRegistryForTests({
+      panes: new Map([
+        ["portfolio-list", {}],
+        [TICKER_RESEARCH_PANE_ID, {}],
+      ]),
       getLayoutFn: () => state.config.layout,
       getTermSizeFn: () => ({ width: 120, height: 40 }),
       updateLayoutFn: (layout: LayoutConfig) => { updatedLayout = layout; },
@@ -233,6 +237,7 @@ describe("StatusBar", () => {
     globalThis.clearTimeout = (() => {}) as typeof clearTimeout;
 
     setSharedRegistryForTests({
+      panes: new Map(),
       getLayoutFn: () => state.config.layout,
       getTermSizeFn: () => ({ width: 120, height: 40 }),
       updateLayoutFn: () => {},

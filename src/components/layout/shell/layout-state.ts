@@ -6,8 +6,9 @@ import {
   type ResolvedPane,
 } from "../../../plugins/pane-manager";
 import type { PluginRegistry } from "../../../plugins/registry";
-import { removePaneInstances, type LayoutConfig } from "../../../types/config";
+import type { LayoutConfig } from "../../../types/config";
 import { constrainFloatingRectToBounds } from "./drag";
+import { resolveShellVisibleLayout } from "./visible-layout";
 
 interface ShellVisibleLayoutOptions {
   disabledPlugins: readonly string[];
@@ -34,15 +35,9 @@ export function useShellVisibleLayout({
     return paneIds;
   }, [disabledPlugins, pluginRegistry]);
 
-  const hiddenInstanceIds = useMemo(() => (
-    layout.instances
-      .filter((instance) => disabledPaneIds.has(instance.paneId))
-      .map((instance) => instance.instanceId)
-  ), [disabledPaneIds, layout.instances]);
-
   const visibleLayout = useMemo(
-    () => (hiddenInstanceIds.length > 0 ? removePaneInstances(layout, hiddenInstanceIds) : layout),
-    [hiddenInstanceIds, layout],
+    () => resolveShellVisibleLayout(layout, disabledPaneIds, pluginRegistry.panes),
+    [disabledPaneIds, layout, pluginRegistry.panes],
   );
 
   return { disabledPaneIds, visibleLayout };

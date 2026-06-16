@@ -8,15 +8,23 @@ import {
   getDockLeafLayouts,
   type LayoutBounds,
 } from "./dock-tree";
-import { finalizeLayout } from "./layout-state";
+import {
+  finalizeLayout,
+  removeUnavailablePaneTypes,
+  type PaneTypeAvailability,
+} from "./layout-state";
 
 export function gridlockAllPanes(
   layout: LayoutConfig,
   bounds: LayoutBounds = { x: 0, y: 0, width: 120, height: 40 },
+  paneTypes?: PaneTypeAvailability,
 ): LayoutConfig {
-  const dockedRects: GridlockRect[] = getDockLeafLayouts(layout, bounds)
+  const visibleLayout = paneTypes
+    ? removeUnavailablePaneTypes(layout, paneTypes)
+    : layout;
+  const dockedRects: GridlockRect[] = getDockLeafLayouts(visibleLayout, bounds)
     .map((leaf) => ({ instanceId: leaf.instanceId, ...leaf.rect }));
-  const floatingRects: GridlockRect[] = layout.floating.map((entry) => ({
+  const floatingRects: GridlockRect[] = visibleLayout.floating.map((entry) => ({
     instanceId: entry.instanceId,
     x: entry.x,
     y: entry.y,
@@ -24,10 +32,10 @@ export function gridlockAllPanes(
     height: entry.height,
   }));
   const allRects = [...dockedRects, ...floatingRects];
-  if (allRects.length === 0) return layout;
+  if (allRects.length === 0) return visibleLayout;
 
   return finalizeLayout({
-    ...layout,
+    ...visibleLayout,
     dockRoot: inferDockTreeFromRects(allRects, boundsForRects(allRects)),
     floating: [],
   });

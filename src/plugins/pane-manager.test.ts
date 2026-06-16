@@ -109,6 +109,39 @@ describe("pane-manager split-tree drops", () => {
     expect(getDockedPaneIds(next)).toHaveLength(layout.instances.length);
   });
 
+  test("gridlock drops pane types that cannot render before tiling", () => {
+    const layout: LayoutConfig = {
+      dockRoot: {
+        kind: "split" as const,
+        axis: "horizontal" as const,
+        ratio: 0.5,
+        first: {
+          kind: "split" as const,
+          axis: "vertical" as const,
+          ratio: 0.5,
+          first: { kind: "pane" as const, instanceId: "missing:main" },
+          second: { kind: "pane" as const, instanceId: "chat:main" },
+        },
+        second: { kind: "pane" as const, instanceId: "sectors:main" },
+      },
+      instances: [
+        createPaneInstance("missing-plugin", { instanceId: "missing:main" }),
+        createPaneInstance("chat", { instanceId: "chat:main" }),
+        createPaneInstance("sectors", { instanceId: "sectors:main" }),
+      ],
+      floating: [],
+      detached: [],
+    };
+
+    const next = gridlockAllPanes(layout, BOUNDS, new Set(["chat", "sectors"]));
+
+    expect(next.instances.map((instance) => instance.instanceId)).toEqual(["chat:main", "sectors:main"]);
+    expect(getDockedPaneIds(next)).toEqual(["chat:main", "sectors:main"]);
+    expect(getLeafRect(next, "missing:main", BOUNDS)).toBeNull();
+    expect(getLeafRect(next, "chat:main", BOUNDS)).toEqual({ x: 0, y: 0, width: 60, height: 40 });
+    expect(getLeafRect(next, "sectors:main", BOUNDS)).toEqual({ x: 60, y: 0, width: 60, height: 40 });
+  });
+
   test("gridlock infers a matching tiled layout from arranged windows", () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");
     let layout: LayoutConfig = {

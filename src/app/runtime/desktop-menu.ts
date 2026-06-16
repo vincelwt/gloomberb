@@ -54,7 +54,11 @@ export function useDesktopApplicationMenuRuntime({
           break;
         case "layout-gridlock": {
           const { width, height } = pluginRegistry.getTermSizeFn();
-          pluginRegistry.updateLayoutFn(gridlockAllPanes(stateRef.current.config.layout, { x: 0, y: 0, width, height }));
+          pluginRegistry.updateLayoutFn(gridlockAllPanes(
+            stateRef.current.config.layout,
+            { x: 0, y: 0, width, height },
+            pluginRegistry.panes,
+          ));
           notifyGridlockComplete(pluginRegistry.notify.bind(pluginRegistry), () => {
             dispatch({ type: "UNDO_LAYOUT" });
           });

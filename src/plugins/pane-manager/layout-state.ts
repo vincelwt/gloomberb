@@ -169,3 +169,28 @@ export function removeFloatingPanes(layout: LayoutConfig): LayoutConfig {
     layout.floating.map((entry) => entry.instanceId),
   ));
 }
+
+export type PaneTypeAvailability = { has(paneId: string): boolean } | ((paneId: string) => unknown);
+
+function paneTypeIsAvailable(availability: PaneTypeAvailability, paneId: string): boolean {
+  return typeof availability === "function"
+    ? !!availability(paneId)
+    : availability.has(paneId);
+}
+
+export function removeUnavailablePaneTypes(
+  layout: LayoutConfig,
+  availability: PaneTypeAvailability,
+  options: { disabledPaneIds?: ReadonlySet<string> } = {},
+): LayoutConfig {
+  const unavailableInstanceIds = layout.instances
+    .filter((instance) => (
+      options.disabledPaneIds?.has(instance.paneId)
+      || !paneTypeIsAvailable(availability, instance.paneId)
+    ))
+    .map((instance) => instance.instanceId);
+
+  return unavailableInstanceIds.length > 0
+    ? removePaneInstances(layout, unavailableInstanceIds)
+    : layout;
+}

@@ -114,7 +114,11 @@ export function StatusBar() {
     event?.stopPropagation?.();
     if (!registry) return;
     const { width, height } = registry.getTermSizeFn();
-    registry.updateLayoutFn(gridlockAllPanes(registry.getLayoutFn(), { x: 0, y: 0, width, height }));
+    registry.updateLayoutFn(gridlockAllPanes(
+      registry.getLayoutFn(),
+      { x: 0, y: 0, width, height },
+      registry.panes,
+    ));
     notifyGridlockComplete(registry.notify.bind(registry), () => {
       dispatch({ type: "UNDO_LAYOUT" });
     });
