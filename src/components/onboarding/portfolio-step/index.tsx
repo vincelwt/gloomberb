@@ -2,7 +2,6 @@ import { BrokerFieldsPanel } from "./broker-fields-panel";
 import { BrokerSetupPanel } from "./broker-setup-panel";
 import { BrokerSyncPanel } from "./broker-sync-panel";
 import { PortfolioChoicePanel } from "./choose-panel";
-import { ManualPortfolioNamePanel } from "./manual-name-panel";
 import type { PortfolioStepProps, PortfolioSub } from "./types";
 
 export type { PortfolioSub };
@@ -14,17 +13,6 @@ export function PortfolioStep(props: PortfolioStepProps) {
         choices={props.choices}
         optionIdx={props.optionIdx}
         onOptionSelect={props.onOptionSelect}
-      />
-    );
-  }
-
-  if (props.sub === "manual-name") {
-    return (
-      <ManualPortfolioNamePanel
-        portfolioName={props.portfolioName}
-        onNameChange={props.onNameChange}
-        editing={props.editing}
-        inputRef={props.inputRef}
       />
     );
   }

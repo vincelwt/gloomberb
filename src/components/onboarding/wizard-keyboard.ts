@@ -74,9 +74,7 @@ export function useOnboardingKeyboard({
     if (editingField) {
       if (event.name === "return") {
         setEditingField(false);
-        if (portfolioSub === "manual-name") {
-          nextStep();
-        } else if (portfolioSub === "broker-fields" && selectedBrokerId) {
+        if (portfolioSub === "broker-fields" && selectedBrokerId) {
           const currentField = activeBrokerFields[brokerFieldIdx];
           if (!currentField) {
             void syncSelectedBroker();
@@ -125,8 +123,7 @@ export function useOnboardingKeyboard({
           if (choice.id === "manual") {
             resetBrokerSync();
             setSelectedBrokerId(null);
-            setPortfolioSub("manual-name");
-            setEditingField(true);
+            nextStep();
           } else {
             resetBrokerSync();
             setSelectedBrokerId(choice.id);

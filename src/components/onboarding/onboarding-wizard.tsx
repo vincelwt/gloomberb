@@ -36,7 +36,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
   const [themeIdx, setThemeIdx] = useState(0);
   const [portfolioSub, setPortfolioSub] = useState<PortfolioSub>("choose");
   const [portfolioOptionIdx, setPortfolioOptionIdx] = useState(0);
-  const [portfolioName, setPortfolioName] = useState("Main Portfolio");
+  const portfolioName = "Main Portfolio";
   const [brokerValues, setBrokerValues] = useState<Record<string, Record<string, string>>>({});
   const [selectedBrokerId, setSelectedBrokerId] = useState<string | null>(null);
   const [brokerFieldIdx, setBrokerFieldIdx] = useState(0);
@@ -255,8 +255,6 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
             choices={portfolioChoices}
             optionIdx={portfolioOptionIdx}
             onOptionSelect={setPortfolioOptionIdx}
-            portfolioName={portfolioName}
-            onNameChange={setPortfolioName}
             selectedBrokerId={selectedBrokerId}
             brokerFields={activeBrokerFields}
             brokerFieldIdx={brokerFieldIdx}
@@ -270,7 +268,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
           />
         )}
         {step === "shortcuts" && (
-          <ShortcutsStep pluginRegistry={pluginRegistry} />
+          <ShortcutsStep />
         )}
         {step === "ready" && (
           <ReadyStep

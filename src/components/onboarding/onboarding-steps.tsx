@@ -1,8 +1,6 @@
-import { useMemo } from "react";
 import { AsciiText, Box, Span, Strong, Text, TextAttributes, useUiHost } from "../../ui";
 import { colors } from "../../theme/colors";
 import { themes } from "../../theme/themes";
-import type { PluginRegistry } from "../../plugins/registry";
 import { detectShortcutPlatform, formatPrimaryShortcut, getShortcutDisplayMode } from "../../utils/shortcut-labels";
 export { PortfolioStep, type PortfolioSub } from "./portfolio-step";
 
@@ -95,7 +93,7 @@ export function ThemeStep({ themeIds, selectedIdx, height }: { themeIds: string[
   );
 }
 
-export function ShortcutsStep({ pluginRegistry }: { pluginRegistry: PluginRegistry }) {
+export function ShortcutsStep() {
   const uiHost = useUiHost();
   const shortcutPlatform = detectShortcutPlatform();
   const shortcutDisplayMode = getShortcutDisplayMode(uiHost.kind);
@@ -109,30 +107,12 @@ export function ShortcutsStep({ pluginRegistry }: { pluginRegistry: PluginRegist
     { key: "q", desc: "Quit" },
   ];
 
-  const commandPrefixes = useMemo(() => {
-    const builtIn = [
-      { key: "DES AAPL", desc: "Open security details" },
-      { key: "TH", desc: "Switch theme" },
-      { key: "PL", desc: "Toggle plugins" },
-      { key: "PS", desc: "Edit the current window settings" },
-      { key: "HELP", desc: "Open the help window" },
-    ];
-
-    const builtInKeys = new Set(builtIn.map((entry) => entry.key.split(" ")[0]));
-    const pluginPrefixes: { key: string; desc: string }[] = [];
-
-    for (const [, template] of pluginRegistry.paneTemplates) {
-      if (!template.shortcut) continue;
-      if (builtInKeys.has(template.shortcut.prefix)) continue;
-      const label = template.shortcut.argPlaceholder
-        ? `${template.shortcut.prefix} <${template.shortcut.argPlaceholder}>`
-        : template.shortcut.prefix;
-      pluginPrefixes.push({ key: label, desc: template.label });
-    }
-
-    pluginPrefixes.sort((a, b) => a.key.localeCompare(b.key));
-    return [...builtIn, ...pluginPrefixes];
-  }, [pluginRegistry]);
+  const commandPrefixes = [
+    { key: "DES AAPL", desc: "Open security details" },
+    { key: "TH", desc: "Switch theme" },
+    { key: "PL", desc: "Toggle plugins" },
+    { key: "HELP", desc: "Open the help window" },
+  ];
 
   const COL = 20;
 
@@ -152,7 +132,7 @@ export function ShortcutsStep({ pluginRegistry }: { pluginRegistry: PluginRegist
 
       <Box height={2} />
       <Box height={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Command-bar prefixes"}</Text>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Basic command prefixes"}</Text>
       </Box>
       <Box height={1} />
       <Box height={1}>

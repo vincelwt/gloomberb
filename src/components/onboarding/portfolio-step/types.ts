@@ -3,15 +3,13 @@ import type { InputRenderable } from "../../../ui";
 import type { BrokerConfigField } from "../../../types/broker";
 import type { ListViewItem } from "../../ui";
 
-export type PortfolioSub = "choose" | "manual-name" | "broker-setup" | "broker-fields" | "broker-sync";
+export type PortfolioSub = "choose" | "broker-setup" | "broker-fields" | "broker-sync";
 
 export interface PortfolioStepProps {
   sub: PortfolioSub;
   choices: ListViewItem[];
   optionIdx: number;
   onOptionSelect: (idx: number) => void;
-  portfolioName: string;
-  onNameChange: (name: string) => void;
   selectedBrokerId: string | null;
   brokerFields: BrokerConfigField[];
   brokerFieldIdx: number;

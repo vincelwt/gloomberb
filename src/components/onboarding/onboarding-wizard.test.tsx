@@ -93,11 +93,14 @@ afterEach(async () => {
 });
 
 describe("OnboardingWizard", () => {
-  test("uses backspace to go back when not editing and keeps backspace for text deletion while editing", async () => {
+  test("skips manual portfolio naming and shows compact starter shortcuts", async () => {
     const pluginRegistry = {
       allPlugins: new Map(),
       brokers: new Map(),
-      paneTemplates: new Map(),
+      paneTemplates: new Map([[
+        "ai",
+        { label: "AI Screener", shortcut: { prefix: "AI", argPlaceholder: "prompt" } },
+      ]]),
       getPaneTemplatePluginId: () => undefined,
       tickerRepository: createTickerRepository(),
       persistence: { resources: undefined },
@@ -132,16 +135,14 @@ describe("OnboardingWizard", () => {
     expect(frame).toContain("Create Manual Portfolio");
 
     await emitKeypress(testSetup, { name: "return", sequence: "\r" });
-    frame = await waitForFrameToContain("Main Portfolio");
-    expect(frame).toContain("Main Portfolio");
-
-    await act(async () => {
-      testSetup!.mockInput.pressBackspace();
-      await testSetup!.renderOnce();
-    });
-    frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Main Portfoli");
-    expect(frame).not.toContain("Create Manual Portfolio");
+    frame = await waitForFrameToContain("After launch shortcuts");
+    expect(frame).toContain("Basic command prefixes");
+    expect(frame).toContain("DES AAPL");
+    expect(frame).toContain("HELP");
+    expect(frame).not.toContain("Name your portfolio");
+    expect(frame).not.toContain("Command-bar prefixes");
+    expect(frame).not.toContain("AI <prompt>");
+    expect(frame).not.toContain("AI Screener");
   });
 
   test("waits for broker positions to import before completing onboarding", async () => {
