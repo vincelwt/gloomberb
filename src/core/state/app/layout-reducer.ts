@@ -1,4 +1,4 @@
-import { cloneLayout, DEFAULT_LAYOUT, type SavedLayout } from "../../../types/config";
+import { cloneLayout, createBlankLayout, type SavedLayout } from "../../../types/config";
 import {
   clonePaneStateMap,
   cloneSavedLayout,
@@ -96,7 +96,7 @@ export function reduceLayoutAction(state: AppState, action: AppAction): AppState
       );
       const newLayout: SavedLayout = {
         name: action.name,
-        layout: cloneLayout(DEFAULT_LAYOUT),
+        layout: createBlankLayout(),
         paneState: {},
       };
       const layouts = [...currentConfig.layouts, newLayout];

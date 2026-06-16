@@ -309,6 +309,12 @@ const DEFAULT_MONITOR_LAYOUT: LayoutConfig = {
 };
 
 export const DEFAULT_LAYOUT = DEFAULT_HOME_LAYOUT;
+const BLANK_LAYOUT: LayoutConfig = {
+  dockRoot: null,
+  instances: [],
+  floating: [],
+  detached: [],
+};
 
 let nextPaneInstanceSeq = 0;
 
@@ -592,6 +598,10 @@ export function cloneLayout(layout: LayoutConfig): LayoutConfig {
     floating: layout.floating.map((entry) => ({ ...entry })),
     detached: detached.map((entry) => ({ ...entry })),
   };
+}
+
+export function createBlankLayout(): LayoutConfig {
+  return cloneLayout(BLANK_LAYOUT);
 }
 
 export function findPaneInstance(layout: LayoutConfig, instanceId: string): PaneInstanceConfig | undefined {

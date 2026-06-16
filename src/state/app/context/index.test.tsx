@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cloneLayout, createDefaultConfig } from "../../../types/config";
+import { cloneLayout, createBlankLayout, createDefaultConfig } from "../../../types/config";
 import { appReducer, createInitialState } from "./index";
 
 describe("appReducer command bar state", () => {
@@ -150,11 +150,10 @@ describe("appReducer command bar state", () => {
 
     const noUndoOnFreshLayout = appReducer(state, { type: "UNDO_LAYOUT" });
     expect(noUndoOnFreshLayout.config.activeLayoutIndex).toBe(newLayoutIndex);
-    expect(noUndoOnFreshLayout.config.layout.dockRoot && noUndoOnFreshLayout.config.layout.dockRoot.kind === "split"
-      ? noUndoOnFreshLayout.config.layout.dockRoot.ratio
-      : null).toBe(defaultRatio);
+    expect(noUndoOnFreshLayout.config.layout).toEqual(createBlankLayout());
+    expect(noUndoOnFreshLayout.focusedPaneId).toBeNull();
 
-    const secondLayout = cloneLayout(noUndoOnFreshLayout.config.layout);
+    const secondLayout = cloneLayout(initial.config.layout);
     if (!secondLayout.dockRoot || secondLayout.dockRoot.kind !== "split") {
       throw new Error("expected split dock root");
     }
@@ -172,9 +171,7 @@ describe("appReducer command bar state", () => {
     const backToSecond = appReducer(firstUndone, { type: "SWITCH_LAYOUT", index: newLayoutIndex });
     const secondUndone = appReducer(backToSecond, { type: "UNDO_LAYOUT" });
     expect(secondUndone.config.activeLayoutIndex).toBe(newLayoutIndex);
-    expect(secondUndone.config.layout.dockRoot && secondUndone.config.layout.dockRoot.kind === "split"
-      ? secondUndone.config.layout.dockRoot.ratio
-      : null).toBe(defaultRatio);
+    expect(secondUndone.config.layout).toEqual(createBlankLayout());
   });
 
   test("tracks manual update-check feedback", () => {
