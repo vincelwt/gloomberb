@@ -300,6 +300,7 @@ describe("PortfolioAnalyticsPane", () => {
               excessLiquidity: 12000,
               buyingPower: 30000,
               netLiquidation: 125000,
+              grossPositionValue: 113636,
               dailyPnl: 900,
               unrealizedPnl: 777,
               realizedPnl: -25,
@@ -319,6 +320,8 @@ describe("PortfolioAnalyticsPane", () => {
 
     const frame = testSetup!.captureCharFrame();
     expect(frame).toContain("Net Liq       125k");
+    expect(frame).toContain("Val           113.6k");
+    expect(frame).toContain("Margin Lev    1.1x");
     expect(frame).toContain("Cash          -50k");
     expect(frame).toContain("Day           +900");
     expect(frame).toContain("P&L           +777");

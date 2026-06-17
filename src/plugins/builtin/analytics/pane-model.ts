@@ -54,6 +54,15 @@ function formatAccountFreshness(account: ResolvedPortfolioAccountState["account"
   return account.updatedAt ? formatRelativeAge(account.updatedAt) : null;
 }
 
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function formatMarginLeverage(netLiquidation: number | undefined, totalMarketValue: number): string | null {
+  if (!finiteNumber(netLiquidation) || !finiteNumber(totalMarketValue) || totalMarketValue <= 0) return null;
+  return `${(netLiquidation / totalMarketValue).toFixed(1)}x`;
+}
+
 export function buildPortfolioChartTargets(portfolioTickers: TickerRecord[]): PortfolioChartTarget[] {
   return portfolioTickers.flatMap((ticker) => {
     const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
@@ -124,6 +133,7 @@ export function buildAnalyticsSummaryRows({
   const account = accountState?.account;
   const accountMetrics = resolvePortfolioAccountMetrics(portfolioStats, account);
   const accountFreshness = formatAccountFreshness(account);
+  const totalMarketValue = resolvePortfolioMarketValue(portfolioStats, account);
 
   if (account?.netLiquidation != null) {
     rows.push({
@@ -137,9 +147,19 @@ export function buildAnalyticsSummaryRows({
   rows.push({
     id: "total-value",
     label: "Val",
-    value: formatCompact(resolvePortfolioMarketValue(portfolioStats, account)),
+    value: formatCompact(totalMarketValue),
     color: colors.text,
   });
+
+  const marginLeverage = formatMarginLeverage(account?.netLiquidation, totalMarketValue);
+  if (marginLeverage) {
+    rows.push({
+      id: "margin-leverage",
+      label: "Margin Lev",
+      value: marginLeverage,
+      color: colors.text,
+    });
+  }
 
   if (account?.totalCashValue != null) {
     rows.push({
