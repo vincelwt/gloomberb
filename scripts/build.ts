@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { gzipSync } from "zlib";
 import { syncVersion } from "./sync-version";
+import { OPEN_TUI_NATIVE_SMOKE_COMMAND } from "../src/cli/native-smoke";
 
 const rootDir = join(import.meta.dir, "..");
 
@@ -12,13 +13,14 @@ interface BuildTarget {
   arch: "arm64" | "x64";
   bunOs: "darwin" | "linux" | "windows";
   extension: "" | ".exe";
+  nativePackageName: string;
 }
 
 const targets: BuildTarget[] = [
-  { os: "darwin", arch: "arm64", bunOs: "darwin", extension: "" },
-  { os: "linux", arch: "x64", bunOs: "linux", extension: "" },
-  { os: "linux", arch: "arm64", bunOs: "linux", extension: "" },
-  { os: "windows", arch: "x64", bunOs: "windows", extension: ".exe" },
+  { os: "darwin", arch: "arm64", bunOs: "darwin", extension: "", nativePackageName: "@opentui/core-darwin-arm64" },
+  { os: "linux", arch: "x64", bunOs: "linux", extension: "", nativePackageName: "@opentui/core-linux-x64" },
+  { os: "linux", arch: "arm64", bunOs: "linux", extension: "", nativePackageName: "@opentui/core-linux-arm64" },
+  { os: "windows", arch: "x64", bunOs: "windows", extension: ".exe", nativePackageName: "@opentui/core-win32-x64" },
 ];
 
 const args = process.argv.slice(2);
@@ -87,10 +89,23 @@ async function smokeTestBinary(outfile: string, os: string, arch: string) {
 
   console.log("Smoke testing packaged binary...");
   await runProcess(
+    [outfile, OPEN_TUI_NATIVE_SMOKE_COMMAND],
+    `Packaged binary failed to load OpenTUI native package: ${outfile}`,
+    { stdout: "ignore" },
+  );
+  await runProcess(
     [outfile, "help"],
     `Packaged binary failed to launch: ${outfile}`,
     { stdout: "ignore" },
   );
+}
+
+function buildCompileEntrySource(nativePackageName: string): string {
+  return [
+    `import ${JSON.stringify(nativePackageName)};`,
+    `import "../src/cli/entry.ts";`,
+    "",
+  ].join("\n");
 }
 
 function compressGzip(path: string): string {
@@ -101,16 +116,24 @@ function compressGzip(path: string): string {
 }
 
 async function build(targetConfig: BuildTarget) {
-  const { os, arch, bunOs, extension } = targetConfig;
+  const { os, arch, bunOs, extension, nativePackageName } = targetConfig;
   mkdirSync(join(rootDir, "dist"), { recursive: true });
   const outfile = join(rootDir, `dist/gloomberb-${os}-${arch}${extension}`);
+  const compileEntry = join(rootDir, "dist", `.gloomberb-compile-entry-${os}-${arch}.ts`);
   const target = `bun-${bunOs}-${arch}`;
   console.log(`Building ${target}...`);
-  await runProcess(
-    ["bun", "build", "--compile", `--target=${target}`, "src/cli/entry.ts", `--outfile=${outfile}`],
+  writeFileSync(compileEntry, buildCompileEntrySource(nativePackageName));
+  const buildExitCode = await runProcess(
+    ["bun", "build", "--compile", `--target=${target}`, compileEntry, `--outfile=${outfile}`],
     `Failed to build ${target}`,
     { env: { ...process.env, GLOOMBERB_API_URL: "https://api.gloom.sh" } },
+    true,
   );
+  rmSync(compileEntry, { force: true });
+  if (buildExitCode !== 0) {
+    console.error(`Failed to build ${target}`);
+    process.exit(1);
+  }
 
   if (os === "darwin") {
     await signDarwinBinary(outfile);
