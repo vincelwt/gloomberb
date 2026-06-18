@@ -3,7 +3,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { pathToFileURL } from "url";
 import type { AppConfig } from "../types/config";
-import type { TickerFinancials } from "../types/financials";
+import type { OptionsChain, TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
 import type { PaneRuntimeState } from "../core/state/app/state";
 import {
@@ -20,6 +20,7 @@ export interface DesktopPaneShotPayload {
   heightPx: number;
   tickers: TickerRecord[];
   financials: Array<[string, TickerFinancials]>;
+  optionsChains: Array<[string, OptionsChain]>;
   paneState: Record<string, PaneRuntimeState>;
 }
 

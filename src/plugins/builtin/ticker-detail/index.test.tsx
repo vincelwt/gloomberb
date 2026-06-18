@@ -305,6 +305,25 @@ async function clickFrameText(text: string) {
   await flushFrame();
 }
 
+async function emitKeypress(event: { name?: string; sequence?: string }) {
+  await act(async () => {
+    (testSetup!.renderer as any).keyInput.emit("keypress", {
+      ctrl: false,
+      meta: false,
+      option: false,
+      shift: false,
+      eventType: "press",
+      repeated: false,
+      preventDefault: () => {},
+      stopPropagation: () => {},
+      ...event,
+    });
+    await Promise.resolve();
+    await testSetup!.renderOnce();
+  });
+  await flushFrame();
+}
+
 function spanLineText(line: { spans: Array<{ text: string }> }): string {
   return line.spans.map((span) => span.text).join("");
 }
@@ -529,6 +548,130 @@ describe("TickerResearchPane", () => {
 
     await settleTickerTabCommit();
     expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("financials");
+  });
+
+  test("shows metric tabs for fundamental graph charts and defaults them to quarterly data", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    setOptionsProvider(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("AAPL")}
+        ticker={makeTicker("AAPL")}
+        financials={makeFinancials({
+          annualStatements: [{ date: "2024-12-31", totalRevenue: 1_000 }],
+          quarterlyStatements: [
+            { date: "2025-03-31", totalRevenue: 200 },
+            { date: "2025-06-30", totalRevenue: 250 },
+          ],
+        })}
+        activeTabId="fundamental-graphs"
+        height={28}
+      />,
+      { width: 90, height: 28 },
+    );
+
+    await flushFrame();
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Revenue");
+    expect(frame).toContain("Gross Profit");
+    expect(frame).not.toContain("Revenue (quarterly)");
+    expect(frame).not.toContain("[g]roup");
+    expect(frame).toContain("2025-03-31");
+    expect(frame).toContain("2025-06-30");
+    expect(frame.indexOf("2025-06-30")).toBeLessThan(frame.indexOf("2025-03-31"));
+  });
+
+  test("captures arrows for graph metric tabs between enter and escape", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    setOptionsProvider(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("AAPL")}
+        ticker={makeTicker("AAPL")}
+        financials={makeFinancials({
+          annualStatements: [{ date: "2024-12-31", totalRevenue: 1_000, grossProfit: 400 }],
+          quarterlyStatements: [
+            { date: "2025-03-31", totalRevenue: 200, grossProfit: 80 },
+            { date: "2025-06-30", totalRevenue: 250, grossProfit: 120 },
+          ],
+        })}
+        activeTabId="fundamental-graphs"
+        height={28}
+      />,
+      { width: 90, height: 28 },
+    );
+
+    await flushFrame();
+    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("fundamental-graphs");
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("right");
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.pluginState?.["ticker-detail"]?.detailMetric).toBe("grossProfit");
+    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("fundamental-graphs");
+
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+    expect(detailHarnessState?.inputCaptured).toBe(false);
+
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("right");
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    await settleTickerTabCommit();
+    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("chart");
+  });
+
+  test("clicking graph content focuses metric tabs for arrow navigation", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    setOptionsProvider(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("AAPL")}
+        ticker={makeTicker("AAPL")}
+        financials={makeFinancials({
+          annualStatements: [{ date: "2024-12-31", totalRevenue: 1_000, grossProfit: 400 }],
+          quarterlyStatements: [
+            { date: "2025-03-31", totalRevenue: 200, grossProfit: 80 },
+            { date: "2025-06-30", totalRevenue: 250, grossProfit: 120 },
+          ],
+        })}
+        activeTabId="fundamental-graphs"
+        height={28}
+      />,
+      { width: 90, height: 28 },
+    );
+
+    await flushFrame();
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(24, 6);
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+    expect(detailHarnessState?.inputCaptured).toBe(true);
+
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("right");
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.pluginState?.["ticker-detail"]?.detailMetric).toBe("grossProfit");
+    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("fundamental-graphs");
   });
 
   test("shows Trade when an IBKR gateway profile exists", async () => {

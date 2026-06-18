@@ -76,6 +76,31 @@ describe("stock chart pointer helpers", () => {
     });
   });
 
+  test("uses absolute renderable coordinates for desktop mouse hit testing", () => {
+    const pointer = getLocalPlotPointer({
+      x: 49,
+      y: 10,
+      preciseX: 49.5,
+      preciseY: 10.25,
+      modifiers: { shift: false, alt: false, ctrl: false },
+    }, {
+      x: 0,
+      y: 0,
+      absoluteX: 10,
+      absoluteY: 5,
+      width: 40,
+      height: 12,
+    }, renderer);
+
+    expect(pointer).toMatchObject({
+      hasPixelPrecision: false,
+      pixelX: null,
+      pixelY: null,
+    });
+    expect(pointer!.cellX).toBeCloseTo(39.5, 2);
+    expect(pointer!.cellY).toBeCloseTo(5.25, 2);
+  });
+
   test("can derive local pixels from cell coordinates for non-pixel fallbacks", () => {
     const pixels = projectCellCursorToLocalPixels(14, 5, renderable, renderer);
 

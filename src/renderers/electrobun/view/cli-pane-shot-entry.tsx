@@ -20,7 +20,7 @@ import { resolvePaneBodyFrame } from "../../../components/layout/pane/sizing";
 import { getPaneDisplayTitle } from "../../../components/layout/pane/title";
 import type { AppConfig } from "../../../types/config";
 import type { CachedFinancialsTarget, DataProvider, QuoteSubscriptionTarget } from "../../../types/data-provider";
-import type { TickerFinancials } from "../../../types/financials";
+import type { OptionsChain, TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import type { AppState, PaneRuntimeState } from "../../../core/state/app/state";
 import type { PaneDef } from "../../../types/plugin";
@@ -32,6 +32,7 @@ interface CliPaneShotPayload {
   heightCells: number;
   tickers: TickerRecord[];
   financials: Array<[string, TickerFinancials]>;
+  optionsChains: Array<[string, OptionsChain]>;
   paneState: Record<string, PaneRuntimeState>;
 }
 
@@ -56,6 +57,7 @@ const TRACKED_RESPONSE_METHODS = new Set<PropertyKey>([
 
 let pendingShotWork = 0;
 let didInstallShotFetchTracker = false;
+let shotDataProvider: DataProvider | null = null;
 
 const rendererHost: RendererHost = {
   requestExit() {},
@@ -152,6 +154,7 @@ function waitForShotReadiness(): () => void {
 
 function createShotDataProvider(payload: CliPaneShotPayload): DataProvider {
   const financials = new Map(payload.financials.map(([symbol, data]) => [normalizeSymbol(symbol), data]));
+  const optionsChains = new Map((payload.optionsChains ?? []).map(([symbol, data]) => [normalizeSymbol(symbol), data]));
 
   const getFinancials = (symbol: string) => {
     const data = financials.get(normalizeSymbol(symbol));
@@ -187,6 +190,13 @@ function createShotDataProvider(payload: CliPaneShotPayload): DataProvider {
     getExchangeRate() {
       return resolveShotWork(1);
     },
+    getOptionsChain(ticker) {
+      return trackShotWork(Promise.resolve().then(() => {
+        const chain = optionsChains.get(normalizeSymbol(ticker));
+        if (!chain) throw new Error(`No screenshot options data available for ${ticker}.`);
+        return chain;
+      }));
+    },
     search(query) {
       const normalized = normalizeSymbol(query);
       return resolveShotWork(payload.tickers
@@ -217,6 +227,7 @@ function createShotDataProvider(payload: CliPaneShotPayload): DataProvider {
 
 function installShotMarketData(payload: CliPaneShotPayload): void {
   const provider = createShotDataProvider(payload);
+  shotDataProvider = provider;
   const coordinator = new MarketDataCoordinator(provider);
   coordinator.primeCachedFinancials(payload.tickers.flatMap((ticker) => {
     const financials = payload.financials.find(([symbol]) => normalizeSymbol(symbol) === normalizeSymbol(ticker.metadata.ticker))?.[1];
@@ -236,7 +247,7 @@ function createRuntime(payload: CliPaneShotPayload): PluginRuntimeAccess {
     return (payload.config.pluginConfig[pluginId]?.[key] as T | undefined) ?? null;
   }
   return {
-    getMarketData: () => null,
+    getMarketData: () => shotDataProvider,
     getCapability: () => null,
     getBrokerAdapter: () => null,
     connectBrokerInstance: async () => {},

@@ -1,4 +1,5 @@
 import type { SecFilingDocument, SecFilingItem } from "../types/data-provider";
+import type { FinancialStatement } from "../types/financials";
 import { truncateWithEllipsis } from "../utils/text-wrap";
 import {
   PDF_FALLBACK_MESSAGE,
@@ -10,6 +11,7 @@ export { extractFilingContent } from "./sec-edgar/content";
 
 const LOOKUP_URL = "https://www.sec.gov/files/company_tickers_exchange.json";
 const SUBMISSIONS_URL = "https://data.sec.gov/submissions";
+const COMPANY_FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts";
 const FETCH_TIMEOUT_MS = 15_000;
 
 function sanitizeIdentityPart(value: string, fallback: string): string {
@@ -51,6 +53,69 @@ type LookupEntry = {
   exchange?: string;
   name?: string;
 };
+
+type CompanyFactsEntry = {
+  start?: string;
+  end?: string;
+  val?: number;
+  fy?: number | null;
+  fp?: string | null;
+  form?: string;
+  filed?: string;
+  frame?: string;
+};
+
+type CompanyFactsStatementField = {
+  field: keyof FinancialStatement;
+  tags: string[];
+  units: string[];
+  periodType: "duration" | "instant";
+  transform?: (value: number) => number;
+};
+
+export type SecCompanyFactsStatements = {
+  annualStatements: FinancialStatement[];
+  quarterlyStatements: FinancialStatement[];
+};
+
+const COMPANY_FACTS_STATEMENT_FIELDS: CompanyFactsStatementField[] = [
+  {
+    field: "totalRevenue",
+    tags: ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet"],
+    units: ["USD"],
+    periodType: "duration",
+  },
+  { field: "grossProfit", tags: ["GrossProfit"], units: ["USD"], periodType: "duration" },
+  { field: "operatingIncome", tags: ["OperatingIncomeLoss"], units: ["USD"], periodType: "duration" },
+  { field: "netIncome", tags: ["NetIncomeLoss", "ProfitLoss"], units: ["USD"], periodType: "duration" },
+  {
+    field: "operatingCashFlow",
+    tags: [
+      "NetCashProvidedByUsedInOperatingActivities",
+      "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
+    ],
+    units: ["USD"],
+    periodType: "duration",
+  },
+  {
+    field: "capitalExpenditure",
+    tags: ["PaymentsToAcquirePropertyPlantAndEquipment"],
+    units: ["USD"],
+    periodType: "duration",
+    transform: (value) => -Math.abs(value),
+  },
+  { field: "totalAssets", tags: ["Assets"], units: ["USD"], periodType: "instant" },
+  {
+    field: "totalEquity",
+    tags: [
+      "StockholdersEquity",
+      "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+    ],
+    units: ["USD"],
+    periodType: "instant",
+  },
+  { field: "eps", tags: ["EarningsPerShareDiluted"], units: ["USD/shares"], periodType: "duration" },
+];
 
 function normalize(value?: string): string {
   return (value ?? "").trim().toUpperCase();
@@ -297,6 +362,160 @@ export function parseFilingDocuments(indexHtml: string, filing: SecFilingItem): 
   return documents;
 }
 
+function companyFactsRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function companyFactsEntries(payload: unknown, tag: string, units: string[]): CompanyFactsEntry[] {
+  const facts = companyFactsRecord(companyFactsRecord(companyFactsRecord(payload)?.facts)?.["us-gaap"]);
+  const fact = companyFactsRecord(facts?.[tag]);
+  const unitRecord = companyFactsRecord(fact?.units);
+  if (!unitRecord) return [];
+
+  for (const unit of units) {
+    const entries = unitRecord[unit];
+    if (!Array.isArray(entries)) continue;
+    return entries
+      .map((entry) => companyFactsRecord(entry))
+      .filter((entry): entry is Record<string, unknown> => !!entry)
+      .map((entry) => ({
+        start: typeof entry.start === "string" ? entry.start : undefined,
+        end: typeof entry.end === "string" ? entry.end : undefined,
+        val: typeof entry.val === "number" ? entry.val : undefined,
+        fy: typeof entry.fy === "number" ? entry.fy : null,
+        fp: typeof entry.fp === "string" ? entry.fp : null,
+        form: typeof entry.form === "string" ? entry.form : undefined,
+        filed: typeof entry.filed === "string" ? entry.filed : undefined,
+        frame: typeof entry.frame === "string" ? entry.frame : undefined,
+      }))
+      .filter((entry) => (
+        typeof entry.val === "number"
+        && Number.isFinite(entry.val)
+        && typeof entry.end === "string"
+        && /^\d{4}-\d{2}-\d{2}$/.test(entry.end)
+      ));
+  }
+
+  return [];
+}
+
+function secFormRank(form: string | undefined): number {
+  const normalized = normalize(form);
+  if (normalized === "10-K/A") return 4;
+  if (normalized === "10-K") return 3;
+  if (normalized === "10-Q/A") return 2;
+  if (normalized === "10-Q") return 1;
+  return 0;
+}
+
+function companyFactsFiledRank(value: string | undefined): number {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return 0;
+  return Date.parse(`${value}T00:00:00Z`) || 0;
+}
+
+function compareCompanyFactsEntries(left: CompanyFactsEntry, right: CompanyFactsEntry | undefined): number {
+  if (!right) return 1;
+  const filedDiff = companyFactsFiledRank(left.filed) - companyFactsFiledRank(right.filed);
+  if (filedDiff !== 0) return filedDiff;
+  const formDiff = secFormRank(left.form) - secFormRank(right.form);
+  if (formDiff !== 0) return formDiff;
+  return String(left.frame ?? "").localeCompare(String(right.frame ?? ""));
+}
+
+function isAnnualCompanyFact(entry: CompanyFactsEntry): boolean {
+  const form = normalize(entry.form);
+  return (form === "10-K" || form === "10-K/A") && normalize(entry.fp ?? undefined) === "FY";
+}
+
+function isQuarterlyCompanyFact(entry: CompanyFactsEntry, periodType: "duration" | "instant"): boolean {
+  if (periodType === "instant") {
+    return /^CY\d{4}Q[1-4]I$/.test(entry.frame ?? "")
+      || (
+        (normalize(entry.form) === "10-Q" || normalize(entry.form) === "10-Q/A")
+        && /^Q[1-3]$/.test(normalize(entry.fp ?? undefined))
+      );
+  }
+  return /^CY\d{4}Q[1-4]$/.test(entry.frame ?? "");
+}
+
+function setCompanyFactValue(
+  rows: Map<string, FinancialStatement>,
+  selectedFacts: Map<string, CompanyFactsEntry>,
+  date: string,
+  field: keyof FinancialStatement,
+  value: number,
+  entry: CompanyFactsEntry,
+): void {
+  const selectionKey = `${date}:${String(field)}`;
+  if (compareCompanyFactsEntries(entry, selectedFacts.get(selectionKey)) < 0) return;
+  const row = rows.get(date) ?? { date };
+  (row as Record<string, unknown>)[field] = value;
+  rows.set(date, row);
+  selectedFacts.set(selectionKey, entry);
+}
+
+function fillCompanyFactsStatementRows(
+  rows: Map<string, FinancialStatement>,
+  selectedFacts: Map<string, CompanyFactsEntry>,
+  entries: CompanyFactsEntry[],
+  field: CompanyFactsStatementField,
+  period: "annual" | "quarterly",
+): void {
+  for (const entry of entries) {
+    if (!entry.end || typeof entry.val !== "number") continue;
+    const matchesPeriod = period === "annual"
+      ? isAnnualCompanyFact(entry)
+      : isQuarterlyCompanyFact(entry, field.periodType);
+    if (!matchesPeriod) continue;
+    setCompanyFactValue(
+      rows,
+      selectedFacts,
+      entry.end,
+      field.field,
+      field.transform ? field.transform(entry.val) : entry.val,
+      entry,
+    );
+  }
+}
+
+function finalizeCompanyFactsStatements(rows: Map<string, FinancialStatement>): FinancialStatement[] {
+  const statements = Array.from(rows.values()).sort((left, right) => left.date.localeCompare(right.date));
+  for (const statement of statements) {
+    if (
+      typeof statement.freeCashFlow !== "number"
+      && typeof statement.operatingCashFlow === "number"
+      && typeof statement.capitalExpenditure === "number"
+    ) {
+      statement.freeCashFlow = statement.operatingCashFlow + statement.capitalExpenditure;
+    }
+  }
+  return statements;
+}
+
+export function parseCompanyFactsFinancialStatements(payload: unknown): SecCompanyFactsStatements {
+  const annualRows = new Map<string, FinancialStatement>();
+  const quarterlyRows = new Map<string, FinancialStatement>();
+  const annualSelectedFacts = new Map<string, CompanyFactsEntry>();
+  const quarterlySelectedFacts = new Map<string, CompanyFactsEntry>();
+
+  for (const field of COMPANY_FACTS_STATEMENT_FIELDS) {
+    for (const tag of field.tags) {
+      const entries = companyFactsEntries(payload, tag, field.units);
+      if (entries.length === 0) continue;
+      fillCompanyFactsStatementRows(annualRows, annualSelectedFacts, entries, field, "annual");
+      fillCompanyFactsStatementRows(quarterlyRows, quarterlySelectedFacts, entries, field, "quarterly");
+      break;
+    }
+  }
+
+  return {
+    annualStatements: finalizeCompanyFactsStatements(annualRows),
+    quarterlyStatements: finalizeCompanyFactsStatements(quarterlyRows),
+  };
+}
+
 export class SecEdgarClient {
   private lookupPromise: Promise<Map<string, LookupEntry>> | null = null;
 
@@ -405,6 +624,18 @@ export class SecEdgarClient {
 
     const payload = await this.fetchJson<unknown>(`${SUBMISSIONS_URL}/CIK${entry.cik}.json`);
     return parseRecentFilings(payload, count);
+  }
+
+  async getFinancialStatements(ticker: string): Promise<SecCompanyFactsStatements | null> {
+    const normalizedTicker = normalize(ticker);
+    if (!normalizedTicker) return null;
+
+    const lookup = await this.loadLookup();
+    const entry = lookup.get(normalizedTicker);
+    if (!entry) return null;
+
+    const payload = await this.fetchJson<unknown>(`${COMPANY_FACTS_URL}/CIK${entry.cik}.json`);
+    return parseCompanyFactsFinancialStatements(payload);
   }
 
   async getFilingDocuments(filing: SecFilingItem): Promise<SecFilingDocument[]> {

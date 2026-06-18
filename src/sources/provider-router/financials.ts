@@ -1,6 +1,7 @@
 import type { CachedResourceRecord } from "../../data/resource-store";
 import type { AnalystResearchData, CorporateActionsData, FinancialStatement, Quote, TickerFinancials } from "../../types/financials";
 import { hasLikelyQuoteUnitMismatch } from "../../utils/currency-units";
+import { mergeFinancialStatementRows } from "../../utils/financial-statements";
 import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../../utils/price-history";
 import { isQuoteStaleForCurrentSession } from "../../market-data/quotes/freshness";
 import {
@@ -122,33 +123,20 @@ export function hasDetailedStatementRows(data: TickerFinancials | null | undefin
   return rows.some((row) => DETAILED_STATEMENT_KEYS.some((key) => typeof row[key] === "number"));
 }
 
-function mergeStatementRows(
-  primaryRows: FinancialStatement[],
-  fallbackRows: FinancialStatement[],
-): FinancialStatement[] {
-  if (primaryRows.length === 0) return fallbackRows;
-  if (fallbackRows.length === 0) return primaryRows;
+export function hasDeepStatementHistory(data: TickerFinancials | null | undefined): boolean {
+  if (!data) return false;
+  return data.annualStatements.length >= 5 || data.quarterlyStatements.length >= 8;
+}
 
-  const fallbackByDate = new Map(fallbackRows.map((row) => [row.date, row]));
-  const primaryDates = new Set(primaryRows.map((row) => row.date));
-  const mergedRows = primaryRows.map((row) => ({
-    ...fallbackByDate.get(row.date),
-    ...row,
-    date: row.date,
-  }));
-
-  for (const row of fallbackRows) {
-    if (!primaryDates.has(row.date)) mergedRows.push(row);
-  }
-
-  return mergedRows.sort((left, right) => left.date.localeCompare(right.date));
+export function hasShallowStatementHistory(data: TickerFinancials | null | undefined): boolean {
+  return hasStatementRows(data) && !hasDeepStatementHistory(data);
 }
 
 export function mergeMissingStatementArrays(primary: TickerFinancials, fallback: TickerFinancials): TickerFinancials {
   return {
     ...primary,
-    annualStatements: mergeStatementRows(primary.annualStatements, fallback.annualStatements),
-    quarterlyStatements: mergeStatementRows(primary.quarterlyStatements, fallback.quarterlyStatements),
+    annualStatements: mergeFinancialStatementRows(primary.annualStatements, fallback.annualStatements),
+    quarterlyStatements: mergeFinancialStatementRows(primary.quarterlyStatements, fallback.quarterlyStatements),
   };
 }
 
@@ -216,8 +204,8 @@ export function mergeFinancials(primary: TickerFinancials | null, fallback: Tick
     profile: mergeDefinedObject(primary.profile, fallback.profile),
     fundamentals: mergeDefinedObject(primary.fundamentals, fallback.fundamentals),
     priceHistory: normalizePriceHistory(dominant.priceHistory.length > 0 ? dominant.priceHistory : secondary.priceHistory),
-    annualStatements: mergeStatementRows(primary.annualStatements, fallback.annualStatements),
-    quarterlyStatements: mergeStatementRows(primary.quarterlyStatements, fallback.quarterlyStatements),
+    annualStatements: mergeFinancialStatementRows(primary.annualStatements, fallback.annualStatements),
+    quarterlyStatements: mergeFinancialStatementRows(primary.quarterlyStatements, fallback.quarterlyStatements),
   });
 }
 

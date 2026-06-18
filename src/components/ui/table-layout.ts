@@ -10,19 +10,29 @@ export interface TableWidthColumn {
 const TRAILING_COLUMN_GUTTER_WIDTH = 1;
 const WEB_CELL_UNIT = "var(--cell-w)";
 
-export function getTableWidth(columns: readonly TableWidthColumn[]): number {
-  return columns.reduce((sum, column) => sum + column.width + 1, 2);
+export function getTableWidth(
+  columns: readonly TableWidthColumn[],
+  columnGap = 1,
+  horizontalPadding = 1,
+): number {
+  return columns.reduce((sum, column) => sum + column.width + columnGap, horizontalPadding * 2);
 }
 
-export function hasMeaningfulTableHorizontalOverflow(tableWidth: number, viewportWidth: number): boolean {
-  return viewportWidth > 0 && tableWidth - viewportWidth > TRAILING_COLUMN_GUTTER_WIDTH;
+export function hasMeaningfulTableHorizontalOverflow(
+  tableWidth: number,
+  viewportWidth: number,
+  columnGap = TRAILING_COLUMN_GUTTER_WIDTH,
+): boolean {
+  return viewportWidth > 0 && tableWidth - viewportWidth > columnGap;
 }
 
 export function expandTableColumns<C extends TableWidthColumn>(
   columns: readonly C[],
   targetWidth: number,
+  columnGap = 1,
+  horizontalPadding = 1,
 ): C[] {
-  const currentWidth = getTableWidth(columns);
+  const currentWidth = getTableWidth(columns, columnGap, horizontalPadding);
   const extraWidth = Math.floor(targetWidth) - currentWidth;
   if (extraWidth <= 0) return [...columns];
 
@@ -62,12 +72,18 @@ function cellWidthCss(width: number): string {
   return `calc(${width} * ${WEB_CELL_UNIT})`;
 }
 
-export function buildTableGridTemplateColumns(columns: readonly TableWidthColumn[]): string {
+export function buildTableGridTemplateColumns(
+  columns: readonly TableWidthColumn[],
+  fillAvailableWidth = true,
+): string {
   const hasFlexColumn = columns.some((column) => (column.flexGrow ?? 0) > 0);
   return columns
     .map((column) => {
       const width = normalizedColumnWidth(column);
       const minWidth = cellWidthCss(columnMinCh(column));
+      if (!fillAvailableWidth) {
+        return `minmax(${minWidth}, ${cellWidthCss(width)})`;
+      }
       if (!hasFlexColumn || (column.flexGrow ?? 0) > 0) {
         return `minmax(${minWidth}, ${columnFlexWeight(column)}fr)`;
       }

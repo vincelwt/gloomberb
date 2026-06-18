@@ -11,11 +11,16 @@ interface RenderableSizeLike {
 interface PlotRenderableLike extends RenderableSizeLike {
   x?: number;
   y?: number;
+  absoluteX?: number;
+  absoluteY?: number;
+  absoluteBounds?: { x: number; y: number; width: number; height: number };
 }
 
 export interface ChartMouseEvent {
   x: number;
   y: number;
+  preciseX?: number;
+  preciseY?: number;
   pixelX?: number;
   pixelY?: number;
   stopPropagation?: () => void;
@@ -95,14 +100,33 @@ function getRendererCellMetrics(renderer: RendererMetricsHost) {
 }
 
 function getRenderableSize(renderable: RenderableSizeLike | null): { width: number; height: number } | null {
-  if (!renderable || typeof renderable.width !== "number" || typeof renderable.height !== "number") return null;
-  return { width: renderable.width, height: renderable.height };
+  if (!renderable) return null;
+  if (typeof renderable.width === "number" && typeof renderable.height === "number") {
+    return { width: renderable.width, height: renderable.height };
+  }
+  const absoluteBounds = (renderable as PlotRenderableLike).absoluteBounds;
+  if (absoluteBounds && typeof absoluteBounds.width === "number" && typeof absoluteBounds.height === "number") {
+    return { width: absoluteBounds.width, height: absoluteBounds.height };
+  }
+  return null;
 }
 
 function getPlotBounds(renderable: PlotRenderableLike | null): { x: number; y: number; width: number; height: number } | null {
-  if (!renderable || typeof renderable.x !== "number" || typeof renderable.y !== "number") return null;
+  if (!renderable) return null;
   const size = getRenderableSize(renderable);
-  return size ? { x: renderable.x, y: renderable.y, width: size.width, height: size.height } : null;
+  if (!size) return null;
+  const x = typeof renderable.absoluteX === "number"
+    ? renderable.absoluteX
+    : typeof renderable.absoluteBounds?.x === "number"
+      ? renderable.absoluteBounds.x
+      : renderable.x;
+  const y = typeof renderable.absoluteY === "number"
+    ? renderable.absoluteY
+    : typeof renderable.absoluteBounds?.y === "number"
+      ? renderable.absoluteBounds.y
+      : renderable.y;
+  if (typeof x !== "number" || typeof y !== "number") return null;
+  return { x, y, width: size.width, height: size.height };
 }
 
 export function getRenderablePixelSize(
@@ -216,8 +240,10 @@ export function getLocalPlotPointer(
   const bounds = getPlotBounds(renderable);
   if (!bounds) return null;
 
-  const localCellX = event.x - bounds.x;
-  const localCellY = event.y - bounds.y;
+  const rawCellX = typeof event.preciseX === "number" ? event.preciseX : event.x;
+  const rawCellY = typeof event.preciseY === "number" ? event.preciseY : event.y;
+  const localCellX = rawCellX - bounds.x;
+  const localCellY = rawCellY - bounds.y;
   if (localCellX < 0 || localCellX >= bounds.width || localCellY < 0 || localCellY >= bounds.height) {
     return null;
   }

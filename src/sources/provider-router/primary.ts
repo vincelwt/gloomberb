@@ -6,6 +6,7 @@ import { resolveTickerFinancialsQuoteState } from "../../market-data/quotes/reso
 import { shouldLogProviderError } from "../provider-errors";
 import {
   hasDetailedStatementRows,
+  hasDeepStatementHistory,
   hasStatementRows,
   mergeMissingStatementArrays,
 } from "./financials";
@@ -80,7 +81,7 @@ export class ProviderRouterPrimaryRoutes {
         );
         if (!primaryResult) {
           primaryResult = { sourceKey, value };
-          if (hasDetailedStatementRows(value)) return primaryResult;
+          if (hasDetailedStatementRows(value) && hasDeepStatementHistory(value)) return primaryResult;
           continue;
         }
         if (hasStatementRows(value)) {
@@ -88,7 +89,7 @@ export class ProviderRouterPrimaryRoutes {
             sourceKey: primaryResult.sourceKey,
             value: mergeMissingStatementArrays(primaryResult.value, value),
           };
-          if (hasDetailedStatementRows(primaryResult.value)) return primaryResult;
+          if (hasDetailedStatementRows(primaryResult.value) && hasDeepStatementHistory(primaryResult.value)) return primaryResult;
         }
       } catch (error) {
         if (shouldLogProviderError(error)) {

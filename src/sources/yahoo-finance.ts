@@ -8,6 +8,7 @@ import {
 import type { InstrumentSearchResult } from "../types/instrument";
 import { parseOptionSymbol } from "../utils/options";
 import { SecEdgarClient } from "./sec-edgar";
+import { mergeFinancialStatementRows } from "../utils/financial-statements";
 import { YahooHttpClient } from "./yahoo-finance/http";
 import {
   normalizeSubUnitCurrency,
@@ -42,6 +43,21 @@ import {
   loadYahooTickerFinancials,
 } from "./yahoo-finance/snapshots";
 
+const SEC_STATEMENT_SUPPLEMENT_EXCHANGES = new Set([
+  "",
+  "AMEX",
+  "ARCA",
+  "BATS",
+  "BYX",
+  "IEX",
+  "NASDAQ",
+  "NMS",
+  "NYSE",
+  "NYSEARCA",
+  "OTC",
+  "PINK",
+]);
+
 export class YahooFinanceClient implements DataProvider {
   readonly id = "yahoo";
   readonly name = "Yahoo Finance";
@@ -49,6 +65,38 @@ export class YahooFinanceClient implements DataProvider {
   private readonly secClient = new SecEdgarClient();
 
   constructor(private readonly http = new YahooHttpClient()) {}
+
+  private shouldSupplementSecStatements(ticker: string, exchange: string, financials: TickerFinancials): boolean {
+    if (!/^[A-Z0-9.-]+$/i.test(ticker.trim())) return false;
+    if (ticker.includes(".")) return false;
+    const normalizedExchange = exchange.trim().toUpperCase();
+    return SEC_STATEMENT_SUPPLEMENT_EXCHANGES.has(normalizedExchange)
+      && (financials.quote?.currency ?? "USD").toUpperCase() === "USD";
+  }
+
+  private async supplementSecStatements(
+    ticker: string,
+    exchange: string,
+    financials: TickerFinancials,
+  ): Promise<TickerFinancials> {
+    if (!this.shouldSupplementSecStatements(ticker, exchange, financials)) return financials;
+    try {
+      const secStatements = await this.secClient.getFinancialStatements(ticker);
+      if (
+        !secStatements
+        || (secStatements.annualStatements.length === 0 && secStatements.quarterlyStatements.length === 0)
+      ) {
+        return financials;
+      }
+      return {
+        ...financials,
+        annualStatements: mergeFinancialStatementRows(financials.annualStatements, secStatements.annualStatements),
+        quarterlyStatements: mergeFinancialStatementRows(financials.quarterlyStatements, secStatements.quarterlyStatements),
+      };
+    } catch {
+      return financials;
+    }
+  }
 
   private async fetchChart(symbol: string, range: string, interval = "1d", includePrePost = false) {
     return fetchYahooChart(this.http, symbol, range, interval, includePrePost);
@@ -90,7 +138,7 @@ export class YahooFinanceClient implements DataProvider {
           fetchTimeseries: (targetSymbol, types, period1) => this.fetchTimeseries(targetSymbol, types, period1),
           providerId: this.id,
         });
-        return result;
+        return await this.supplementSecStatements(ticker, exchange, result);
       } catch (err) {
         lastError = err;
       }

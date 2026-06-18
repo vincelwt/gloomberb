@@ -19,6 +19,7 @@ import { withBrokerTimeout } from "./brokers";
 import {
   deriveMarketCapFromShares,
   hasMeaningfulProfile,
+  hasShallowStatementHistory,
   mergeCachedFinancialRecords,
   mergeFinancials,
   quoteWithFreshnessExchange,
@@ -85,6 +86,10 @@ export class ProviderRouterFinancialRoutes {
     if (cached.value && !forceRefresh) {
       if (isOptionTicker && !cached.value.quote) {
         return quoteOnlyFinancials(cached.value);
+      }
+      if (!cached.stale && hasMeaningfulProfile(cached.value) && hasShallowStatementHistory(cached.value)) {
+        const providerResult = await this.deps.primaryRoutes.fetchProviderFinancials(ticker, exchange, context);
+        return mergeFinancials(cached.value, providerResult?.value ?? null) ?? cached.value;
       }
       if (!cached.stale && hasMeaningfulProfile(cached.value)) {
         return cached.value;

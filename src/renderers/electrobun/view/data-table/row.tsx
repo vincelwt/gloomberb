@@ -44,16 +44,30 @@ function contentJustifyForAlign(align: string | undefined): CSSProperties["justi
   return "flex-start";
 }
 
+function columnGapCss(columnGap: number): CSSProperties["columnGap"] {
+  return columnGap === 0 ? 0 : `calc(${columnGap} * var(--cell-w))`;
+}
+
+function inlinePaddingPx(horizontalPadding: number): number {
+  return TABLE_INLINE_PADDING_PX * horizontalPadding;
+}
+
 export function WebDataTableHeader<C extends DataTableColumn>({
   columns,
+  columnGap,
+  horizontalPadding,
   focusPane,
+  onTableMouseDown,
   gridTemplateColumns,
   onHeaderClick,
   sortColumnId,
   sortDirection,
 }: {
   columns: C[];
+  columnGap: number;
+  horizontalPadding: number;
   focusPane: () => void;
+  onTableMouseDown?: (event: any) => void;
   gridTemplateColumns: string;
   onHeaderClick: (columnId: string) => void;
   sortColumnId: string | null;
@@ -69,13 +83,13 @@ export function WebDataTableHeader<C extends DataTableColumn>({
         zIndex: 2,
         display: "grid",
         gridTemplateColumns,
-        columnGap: "var(--cell-w)",
+        columnGap: columnGapCss(columnGap),
         alignItems: "center",
         width: "100%",
         minWidth: 0,
         height: WEB_CELL_HEIGHT,
-        paddingLeft: TABLE_INLINE_PADDING_PX,
-        paddingRight: TABLE_INLINE_PADDING_PX,
+        paddingLeft: inlinePaddingPx(horizontalPadding),
+        paddingRight: inlinePaddingPx(horizontalPadding),
         boxSizing: "border-box",
         backgroundColor: CSS_PANEL,
       }}
@@ -99,6 +113,7 @@ export function WebDataTableHeader<C extends DataTableColumn>({
             }}
             onMouseDown={(event) => {
               focusPane();
+              onTableMouseDown?.(event);
               event.preventDefault();
               onHeaderClick(column.id);
             }}
@@ -128,7 +143,10 @@ function WebDataTableRowInner<
   C extends DataTableColumn,
 >({
   columns,
+  columnGap,
+  horizontalPadding,
   focusPane,
+  onTableMouseDown,
   onActivateRow,
   onRowContextMenu,
   onRowMouseDown,
@@ -148,7 +166,10 @@ function WebDataTableRowInner<
   setHoveredIdx,
 }: {
   columns: C[];
+  columnGap: number;
+  horizontalPadding: number;
   focusPane: () => void;
+  onTableMouseDown?: (event: any) => void;
   onActivateRow?: (item: T, index: number) => void;
   onRowContextMenu?: DataTableProps<T, C>["onRowContextMenu"];
   onRowMouseDown?: DataTableProps<T, C>["onRowMouseDown"];
@@ -177,13 +198,13 @@ function WebDataTableRowInner<
     transform: `translateY(${rowStart}px)`,
     display: "grid",
     gridTemplateColumns,
-    columnGap: "var(--cell-w)",
+    columnGap: columnGapCss(columnGap),
     alignItems: "center",
     width: "100%",
     minWidth: 0,
     height: rowSize,
-    paddingLeft: TABLE_INLINE_PADDING_PX,
-    paddingRight: TABLE_INLINE_PADDING_PX,
+    paddingLeft: inlinePaddingPx(horizontalPadding),
+    paddingRight: inlinePaddingPx(horizontalPadding),
     boxSizing: "border-box",
     lineHeight: "var(--cell-h)",
   };
@@ -199,6 +220,7 @@ function WebDataTableRowInner<
         }}
         onMouseDown={(event) => {
           focusPane();
+          onTableMouseDown?.(event);
           event.preventDefault();
         }}
       >
@@ -243,6 +265,7 @@ function WebDataTableRowInner<
       }}
       onMouseDown={(event) => {
         focusPane();
+        onTableMouseDown?.(event);
         if (onRowMouseDown?.(item, index, eventWithCellCoordinates(event)) === true) {
           return;
         }
@@ -274,6 +297,7 @@ function WebDataTableRowInner<
             }}
             onMouseDown={(event) => {
               focusPane();
+              onTableMouseDown?.(event);
               if (cell.onMouseDown) {
                 cell.onMouseDown(eventWithCellCoordinates(event));
                 return;

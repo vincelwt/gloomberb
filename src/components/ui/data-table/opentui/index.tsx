@@ -48,6 +48,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   isSelected,
   onSelect,
   onActivate,
+  onTableMouseDown,
   onRowMouseDown,
   onRowContextMenu,
   rowContextMenuSurface = false,
@@ -60,6 +61,9 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   emptyStateHint,
   virtualize = true,
   overscan = 3,
+  columnGap = 1,
+  horizontalPadding = 1,
+  fillAvailableWidth = true,
   showHorizontalScrollbar = true,
   scrollToIndex,
   scrollToIndexAlign = "nearest",
@@ -105,17 +109,21 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
     ],
   );
   const { endIndex, startIndex, viewportHeight, visibleItems } = tableWindow;
-  const tableWidth = useMemo(() => getTableWidth(columns), [columns]);
+  const tableWidth = useMemo(
+    () => getTableWidth(columns, columnGap, horizontalPadding),
+    [columnGap, columns, horizontalPadding],
+  );
   const {
     contentWidth: measuredContentWidth,
     viewportWidth: measuredViewportWidth,
     measureContentWidth,
   } = useMeasuredTableContentWidth(tableWidth, headerScrollRef, scrollRef);
   const horizontalScrollbarVisible = showHorizontalScrollbar
-    && hasMeaningfulTableHorizontalOverflow(tableWidth, measuredViewportWidth);
+    && hasMeaningfulTableHorizontalOverflow(tableWidth, measuredViewportWidth, columnGap);
+  const contentWidth = fillAvailableWidth ? measuredContentWidth : tableWidth;
   const displayColumns = useMemo(
-    () => expandTableColumns(columns, measuredContentWidth),
-    [columns, measuredContentWidth],
+    () => expandTableColumns(columns, contentWidth, columnGap, horizontalPadding),
+    [columnGap, columns, contentWidth, horizontalPadding],
   );
   const handleRowMouseDown =
     useDoubleClickActivation<DataTableRowPointerTarget<T>>({
@@ -264,8 +272,8 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
         <Box
           flexDirection="row"
           height={1}
-          {...tableContentWidthProps(measuredContentWidth)}
-          paddingX={1}
+          {...tableContentWidthProps(contentWidth)}
+          paddingX={horizontalPadding}
           backgroundColor={colors.panel}
         >
           {displayColumns.map((column) => {
@@ -283,10 +291,11 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
             return (
               <Box
                 key={column.id}
-                width={column.width + 1}
+                width={column.width + columnGap}
                 backgroundColor={column.headerBackgroundColor ?? colors.panel}
                 onMouseDown={(event: any) => {
                   focusPane();
+                  onTableMouseDown?.(event);
                   event.preventDefault();
                   onHeaderClick(column.id);
                 }}
@@ -315,6 +324,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
         focusable={false}
         onMouseDown={() => {
           focusPane();
+          onTableMouseDown?.({});
         }}
         onSizeChange={measureContentWidth}
       >
@@ -339,11 +349,12 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
                       key={getItemKey(item, index)}
                       flexDirection="row"
                       height={1}
-                      {...tableContentWidthProps(measuredContentWidth)}
-                      paddingX={1}
+                      {...tableContentWidthProps(contentWidth)}
+                      paddingX={horizontalPadding}
                       backgroundColor={sectionHeader.backgroundColor ?? colors.bg}
                       onMouseDown={(event: any) => {
                         focusPane();
+                        onTableMouseDown?.(event);
                         event.preventDefault();
                       }}
                     >
@@ -376,8 +387,8 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
                     key={getItemKey(item, index)}
                     flexDirection="row"
                     height={1}
-                    {...tableContentWidthProps(measuredContentWidth)}
-                    paddingX={1}
+                    {...tableContentWidthProps(contentWidth)}
+                    paddingX={horizontalPadding}
                     backgroundColor={rowBg}
                     data-gloom-context-menu-surface={rowContextMenuSurface ? "true" : undefined}
                     onMouseMove={() => {
@@ -385,6 +396,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
                     }}
                     onMouseDown={(event: any) => {
                       focusPane();
+                      onTableMouseDown?.(event);
                       if (onRowMouseDown?.(item, index, event) === true) {
                         return;
                       }
@@ -404,10 +416,11 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
                       return (
                         <Box
                           key={column.id}
-                          width={column.width + 1}
+                          width={column.width + columnGap}
                           backgroundColor={cell.backgroundColor ?? rowBg}
                           onMouseDown={(event: any) => {
                             focusPane();
+                            onTableMouseDown?.(event);
                             if (cell.onMouseDown) {
                               cell.onMouseDown(event);
                               return;

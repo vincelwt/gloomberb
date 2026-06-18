@@ -11,7 +11,12 @@ import { normalizeTickerFinancialsPriceHistory } from "../../utils/price-history
 import { isQuoteStaleForCurrentSession } from "../../market-data/quotes/freshness";
 import { resolveTickerFinancialsQuoteState } from "../../market-data/quotes/resolution";
 import { selectCachedResource } from "./cache";
-import { quoteWithFreshnessExchange, type CachedFinancialsSelection } from "./financials";
+import {
+  hasDeepStatementHistory,
+  hasDetailedStatementRows,
+  quoteWithFreshnessExchange,
+  type CachedFinancialsSelection,
+} from "./financials";
 import type { ProviderRouterCoreDeps } from "./route-types";
 
 export interface ProviderRouterBatchDeps extends ProviderRouterCoreDeps {
@@ -30,6 +35,10 @@ export interface ProviderRouterBatchDeps extends ProviderRouterCoreDeps {
 
 export class ProviderRouterBatchRoutes {
   constructor(private readonly deps: ProviderRouterBatchDeps) {}
+
+  private needsSingleFinancialsRoute(value: TickerFinancials): boolean {
+    return !(hasDetailedStatementRows(value) && hasDeepStatementHistory(value));
+  }
 
   async getQuotesBatch(
     targets: QuoteSubscriptionTarget[],
@@ -105,6 +114,7 @@ export class ProviderRouterBatchRoutes {
   ): Promise<TickerFinancialsBatchResult[]> {
     const forceRefresh = options.forceRefresh === true;
     const results = new Array<TickerFinancialsBatchResult | null>(targets.length).fill(null);
+    const batchFallbacks = new Array<TickerFinancials | null>(targets.length).fill(null);
     const misses: Array<{ index: number; target: CachedFinancialsTarget }> = [];
 
     targets.forEach((target, index) => {
@@ -139,6 +149,8 @@ export class ProviderRouterBatchRoutes {
           const entityKey = this.deps.getEntityKey(entry.target.symbol, entry.target.instrument ?? undefined);
           const variantKey = this.deps.getTickerVariantCandidates(entry.target.exchange)[0] ?? "";
           this.deps.cacheResource("financials", entityKey, variantKey, sourceKey, value, this.deps.resolveProviderPolicy("financials", batchProvider));
+          batchFallbacks[entry.index] = value;
+          if (this.needsSingleFinancialsRoute(value)) continue;
           results[entry.index] = { target: entry.target, financials: value };
         }
       }
@@ -153,7 +165,9 @@ export class ProviderRouterBatchRoutes {
         });
         results[index] = { target, financials };
       } catch (error) {
-        results[index] = { target, financials: null, error };
+        results[index] = batchFallbacks[index]
+          ? { target, financials: batchFallbacks[index] }
+          : { target, financials: null, error };
       }
     }));
 
