@@ -6,7 +6,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { Box, type ScrollBoxRenderable } from "../ui";
+import { Box, useUiCapabilities, type ScrollBoxRenderable } from "../ui";
 import { isPlainKeyboardEvent } from "../utils/keyboard";
 
 function listenToScrollBarChange(
@@ -56,15 +56,23 @@ export function TableViewFrame({
   after,
   children,
 }: TableViewFrameProps) {
+  const { nativePaneChrome } = useUiCapabilities();
+  const nativeFlexibleFrame = nativePaneChrome === true;
+
   return (
     <Box
       flexDirection="column"
-      flexGrow={height == null ? 1 : undefined}
-      flexShrink={height == null ? undefined : 0}
+      flexGrow={nativeFlexibleFrame || height == null ? 1 : undefined}
+      flexShrink={nativeFlexibleFrame ? 1 : height == null ? undefined : 0}
+      flexBasis={nativeFlexibleFrame ? 0 : undefined}
       width={width}
-      height={height}
+      height={nativeFlexibleFrame ? undefined : height}
+      minWidth={nativeFlexibleFrame ? 0 : undefined}
+      minHeight={nativeFlexibleFrame ? 0 : undefined}
+      maxHeight={nativeFlexibleFrame ? "100%" : undefined}
       backgroundColor={backgroundColor}
       overflow="hidden"
+      data-gloom-role="table-view-frame"
     >
       {before}
       {children}

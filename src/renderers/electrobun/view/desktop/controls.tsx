@@ -353,14 +353,14 @@ export function WebPageStackView({
 
   if (!detailOpen) {
     return (
-      <Box flexDirection="column" flexGrow={1} overflow="hidden">
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} flexBasis={0} minWidth={0} minHeight={0} overflow="hidden">
         {rootContent}
       </Box>
     );
   }
 
   return (
-    <Box flexDirection="column" flexGrow={1} overflow="hidden">
+    <Box flexDirection="column" flexGrow={1} flexShrink={1} flexBasis={0} minWidth={0} minHeight={0} overflow="hidden">
       <Box
         flexDirection="row"
         alignItems="flex-start"
@@ -419,7 +419,7 @@ export function WebPageStackView({
           </Text>
         ) : null}
       </Box>
-      <Box flexDirection="column" flexGrow={1} overflow="hidden">
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} flexBasis={0} minWidth={0} minHeight={0} overflow="hidden">
         {detailContent}
       </Box>
     </Box>

@@ -72,12 +72,14 @@ export function PredictionMarketChart({
   history,
   width,
   height,
+  loading = false,
   range,
   onRangeSelect,
 }: {
   history: PredictionHistoryPoint[];
   width: number;
   height: number;
+  loading?: boolean;
   range: PredictionHistoryRange;
   onRangeSelect: (range: PredictionHistoryRange) => void;
 }) {
@@ -93,10 +95,14 @@ export function PredictionMarketChart({
           />
         </Box>
         <Box flexGrow={1} justifyContent="center">
-          <EmptyState
-            title="No chart history."
-            hint="This venue did not return price history for the selected market."
-          />
+          {loading ? (
+            <Text fg={colors.textDim}>Loading chart...</Text>
+          ) : (
+            <EmptyState
+              title="No chart history."
+              hint="This venue did not return price history for the selected market."
+            />
+          )}
         </Box>
       </Box>
     );

@@ -3,6 +3,7 @@ import { PaneInstanceProvider } from "../../../state/app/context";
 import { PaneKeyboardScrollController } from "../../../state/pane-scroll-registry";
 import { useThemeColors } from "../../../theme/theme-context";
 import type { PaneDef } from "../../../types/plugin";
+import { Box } from "../../../ui";
 
 interface PaneContentProps {
   component: PaneDef["component"];
@@ -31,14 +32,25 @@ export const PaneContent = memo(function PaneContent({
   return (
     <PaneInstanceProvider paneId={paneId}>
       <PaneKeyboardScrollController paneId={paneId} focused={focused} />
-      <Component
-        paneId={paneId}
-        paneType={paneType}
-        focused={focused}
-        width={width}
-        height={height}
-        close={onClose ? close : undefined}
-      />
+      <Box
+        flexDirection="column"
+        flexGrow={1}
+        flexShrink={1}
+        flexBasis={0}
+        minWidth={0}
+        minHeight={0}
+        overflow="hidden"
+        data-gloom-role="pane-content"
+      >
+        <Component
+          paneId={paneId}
+          paneType={paneType}
+          focused={focused}
+          width={width}
+          height={height}
+          close={onClose ? close : undefined}
+        />
+      </Box>
     </PaneInstanceProvider>
   );
 });

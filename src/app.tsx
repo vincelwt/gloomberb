@@ -60,7 +60,16 @@ interface AppInnerProps {
 function ThemedAppRoot({ children }: { children: ReactNode }) {
   const themeColors = useThemeColors();
   return (
-    <Box flexDirection="column" flexGrow={1} backgroundColor={themeColors.bg}>
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      flexShrink={1}
+      flexBasis={0}
+      minWidth={0}
+      minHeight={0}
+      overflow="hidden"
+      backgroundColor={themeColors.bg}
+    >
       {children}
     </Box>
   );

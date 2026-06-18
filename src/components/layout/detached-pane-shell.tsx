@@ -10,7 +10,7 @@ import { useThemeColors } from "../../theme/theme-context";
 import { hasPaneFooterContent, PaneFooterBar, PaneFooterProvider } from "./pane/footer";
 import { PaneBodyFrame, getPaneWindowAttributes } from "./pane/frame";
 import { PaneContent } from "./pane/content";
-import { resolvePaneBodyFrame } from "./pane/sizing";
+import { resolvePaneBodyFrame, shouldReservePaneFooter } from "./pane/sizing";
 import { getPaneDisplayTitle } from "./pane/title";
 import { TITLEBAR_OVERLAY_HEIGHT_PX, getTitlebarLeadingInset } from "./titlebar-overlay";
 import { WindowControls, WINDOWS_CONTROL_GROUP_WIDTH_PX } from "./window-controls";
@@ -130,6 +130,8 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
     <PaneFooterProvider>
       {(footer) => {
         const showFooter = hasPaneFooterContent(footer);
+        const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
+        const renderFooter = reserveFooter || showFooter;
         const headerHeightRows = titleBarOverlay ? TITLEBAR_OVERLAY_HEIGHT_PX / cellHeightPx : 1;
         const background = floatingPaneBg(focused);
         const titleBackground = floatingPaneTitleBg(focused);
@@ -137,7 +139,8 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
           width,
           height,
           nativePaneChrome,
-          reserveFooter: showFooter,
+          footerVisible: renderFooter,
+          reserveFooter,
           headerRows: headerHeightRows,
         });
         const bodyWidth = bodyFrame.width ?? 1;
@@ -208,7 +211,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
                 height={bodyHeight}
               />
             </PaneBodyFrame>
-            {showFooter && <PaneFooterBar footer={footer} focused={focused} width={width} />}
+            {renderFooter && <PaneFooterBar footer={footer} focused={focused} width={width} />}
           </Box>
         );
       }}

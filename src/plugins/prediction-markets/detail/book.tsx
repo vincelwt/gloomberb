@@ -1,7 +1,7 @@
-import { Box, Text } from "../../../ui";
-import { TextAttributes } from "../../../ui";
+import { useEffect, useMemo, useState } from "react";
+import { DataTableView, type DataTableColumn } from "../../../components";
 import { colors } from "../../../theme/colors";
-import { formatNumber, padTo } from "../../../utils/format";
+import { formatNumber } from "../../../utils/format";
 import { formatPredictionProbability } from "../metrics";
 import type {
   PredictionBookLevel,
@@ -9,111 +9,156 @@ import type {
   PredictionOrderPreviewIntent,
 } from "../types";
 
-function BookTable({
-  title,
+type BookColumnId = "outcome" | "side" | "price" | "size";
+type BookColumn = DataTableColumn & { id: BookColumnId };
+
+interface BookRow {
+  id: string;
+  outcome: "yes" | "no";
+  side: "buy" | "sell";
+  level: PredictionBookLevel;
+  intent: PredictionOrderPreviewIntent;
+}
+
+const BOOK_COLUMNS: BookColumn[] = [
+  { id: "outcome", label: "OUT", width: 5 },
+  { id: "side", label: "SIDE", width: 6 },
+  { id: "price", label: "PRICE", width: 8, align: "right" },
+  { id: "size", label: "SIZE", width: 10, align: "right" },
+];
+
+function bookRowsForLevels({
   levels,
-  onSelect,
+  marketKey,
+  outcome,
+  side,
 }: {
-  title: string;
   levels: PredictionBookLevel[];
-  onSelect: (level: PredictionBookLevel) => void;
-}) {
-  return (
-    <Box flexDirection="column" flexGrow={1}>
-      <Box height={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-          {title}
-        </Text>
-      </Box>
-      <Box height={1}>
-        <Text fg={colors.textDim}>
-          {padTo("PRICE", 8)} {padTo("SIZE", 10)}
-        </Text>
-      </Box>
-      {levels.slice(0, 10).map((level) => (
-        <Box
-          key={`${title}:${level.price}:${level.size}`}
-          height={1}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            onSelect(level);
-          }}
-        >
-          <Text fg={colors.text}>
-            {`${padTo(formatPredictionProbability(level.price), 8)} ${padTo(formatNumber(level.size, 0), 10, "right")}`}
-          </Text>
-        </Box>
-      ))}
-      {levels.length === 0 && <Text fg={colors.textDim}>No levels.</Text>}
-    </Box>
-  );
+  marketKey: string;
+  outcome: "yes" | "no";
+  side: "buy" | "sell";
+}): BookRow[] {
+  return levels.slice(0, 10).map((level, index) => ({
+    id: `${outcome}:${side}:${index}:${level.price}:${level.size}`,
+    outcome,
+    side,
+    level,
+    intent: {
+      marketKey,
+      outcome,
+      side,
+      price: level.price,
+      size: level.size,
+    },
+  }));
+}
+
+function buildBookRows(detail: PredictionMarketDetail): BookRow[] {
+  const marketKey = detail.summary.key;
+  return [
+    ...bookRowsForLevels({
+      levels: detail.book.yesBids,
+      marketKey,
+      outcome: "yes",
+      side: "buy",
+    }),
+    ...bookRowsForLevels({
+      levels: detail.book.yesAsks,
+      marketKey,
+      outcome: "yes",
+      side: "sell",
+    }),
+    ...bookRowsForLevels({
+      levels: detail.book.noBids,
+      marketKey,
+      outcome: "no",
+      side: "buy",
+    }),
+    ...bookRowsForLevels({
+      levels: detail.book.noAsks,
+      marketKey,
+      outcome: "no",
+      side: "sell",
+    }),
+  ];
 }
 
 export function PredictionMarketBookView({
   detail,
+  focused,
   onPreviewOrder,
+  width,
 }: {
   detail: PredictionMarketDetail;
+  focused: boolean;
   onPreviewOrder: (intent: PredictionOrderPreviewIntent) => void;
+  width: number;
 }) {
+  const rows = useMemo(() => buildBookRows(detail), [detail]);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(() =>
+    rows.length > 0 ? 0 : null,
+  );
+
+  useEffect(() => {
+    setSelectedIndex((current) => {
+      if (rows.length === 0) return null;
+      if (current == null || current >= rows.length) return 0;
+      return current;
+    });
+  }, [rows.length]);
+
   return (
-    <Box flexDirection="column" gap={1}>
-      <Box flexDirection="row" gap={2}>
-        <BookTable
-          title="YES Bids"
-          levels={detail.book.yesBids}
-          onSelect={(level) =>
-            onPreviewOrder({
-              marketKey: detail.summary.key,
-              outcome: "yes",
-              side: "buy",
-              price: level.price,
-              size: level.size,
-            })
-          }
-        />
-        <BookTable
-          title="YES Asks"
-          levels={detail.book.yesAsks}
-          onSelect={(level) =>
-            onPreviewOrder({
-              marketKey: detail.summary.key,
-              outcome: "yes",
-              side: "sell",
-              price: level.price,
-              size: level.size,
-            })
-          }
-        />
-      </Box>
-      <Box flexDirection="row" gap={2}>
-        <BookTable
-          title="NO Bids"
-          levels={detail.book.noBids}
-          onSelect={(level) =>
-            onPreviewOrder({
-              marketKey: detail.summary.key,
-              outcome: "no",
-              side: "buy",
-              price: level.price,
-              size: level.size,
-            })
-          }
-        />
-        <BookTable
-          title="NO Asks"
-          levels={detail.book.noAsks}
-          onSelect={(level) =>
-            onPreviewOrder({
-              marketKey: detail.summary.key,
-              outcome: "no",
-              side: "sell",
-              price: level.price,
-              size: level.size,
-            })
-          }
-        />
-      </Box>
-    </Box>
+    <DataTableView<BookRow, BookColumn>
+      focused={focused}
+      keyboardNavigation={focused}
+      rootWidth={width}
+      rootBackgroundColor={colors.panel}
+      selection={{
+        kind: "index",
+        selectedIndex,
+        onChange: (index) => setSelectedIndex(index),
+      }}
+      columns={BOOK_COLUMNS}
+      items={rows}
+      sortColumnId={null}
+      sortDirection="asc"
+      onHeaderClick={() => {}}
+      getItemKey={(row) => row.id}
+      onActivate={(row) => onPreviewOrder(row.intent)}
+      onRowMouseDown={(row, index, event) => {
+        event.preventDefault();
+        setSelectedIndex(index);
+        onPreviewOrder(row.intent);
+        return true;
+      }}
+      renderCell={(row, column, _index, rowState) => {
+        const color = (fallback: string) =>
+          rowState.selected ? undefined : fallback;
+        switch (column.id) {
+          case "outcome":
+            return {
+              text: row.outcome.toUpperCase(),
+              color: color(colors.textBright),
+            };
+          case "side":
+            return {
+              text: row.side === "buy" ? "BID" : "ASK",
+              color: color(row.side === "buy" ? colors.positive : colors.negative),
+            };
+          case "price":
+            return {
+              text: formatPredictionProbability(row.level.price),
+              color: color(colors.text),
+            };
+          case "size":
+            return {
+              text: formatNumber(row.level.size, 0),
+              color: color(colors.textDim),
+            };
+        }
+      }}
+      emptyStateTitle="No book levels."
+      emptyStateHint="This venue did not return current order book depth."
+    />
   );
 }

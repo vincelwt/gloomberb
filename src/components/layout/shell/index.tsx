@@ -518,6 +518,10 @@ export function Shell({
       ref={shellRef}
       flexDirection="row"
       flexGrow={1}
+      flexShrink={1}
+      flexBasis={0}
+      minWidth={0}
+      minHeight={0}
       height={nativePaneChrome ? undefined : contentHeight}
       position={nativePaneChrome ? "relative" : undefined}
       overflow="hidden"

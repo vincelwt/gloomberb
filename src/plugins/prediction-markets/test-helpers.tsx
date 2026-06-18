@@ -24,6 +24,7 @@ import {
   attachPredictionMarketsPersistence,
 } from "./services/fetch";
 import { normalizeKalshiMarket } from "./services/kalshi/adapter";
+import type { PredictionDetailTab } from "./types";
 
 export const TEST_PANE_ID = "prediction-markets:main";
 const originalFetch = globalThis.fetch;
@@ -408,7 +409,13 @@ export function ChartHarness({
   );
 }
 
-export function GroupedDetailHarness() {
+export function GroupedDetailHarness({
+  detailTab = "overview",
+  loading = false,
+}: {
+  detailTab?: PredictionDetailTab;
+  loading?: boolean;
+} = {}) {
   const [state, dispatch] = useReducer(
     appReducer,
     (() => {
@@ -475,29 +482,40 @@ export function GroupedDetailHarness() {
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
         <PredictionMarketDetailPane
-          detail={{
-            summary,
-            siblings: selectedRow!.markets.map((market) => ({
-              key: market.key,
-              marketId: market.marketId,
-              label: market.marketLabel,
-              yesPrice: market.yesPrice,
-              volume24h: market.volume24h,
-            })),
-            rules: [],
-            history: [],
-            book: {
-              yesBids: [],
-              yesAsks: [],
-              noBids: [],
-              noAsks: [],
-              lastTradePrice: null,
-            },
-            trades: [],
-          }}
+          detail={
+            loading
+              ? null
+              : {
+                  summary,
+                  siblings: selectedRow!.markets.map((market) => ({
+                    key: market.key,
+                    marketId: market.marketId,
+                    label: market.marketLabel,
+                    yesPrice: market.yesPrice,
+                    volume24h: market.volume24h,
+                  })),
+                  rules: [],
+                  history: [],
+                  book: {
+                    yesBids: [{ price: 0.47, size: 120 }],
+                    yesAsks: [{ price: 0.49, size: 95 }],
+                    noBids: [{ price: 0.51, size: 80 }],
+                    noAsks: [{ price: 0.53, size: 105 }],
+                    lastTradePrice: null,
+                  },
+                  trades: [{
+                    id: "trade-1",
+                    timestamp: Date.parse("2026-04-01T12:34:56Z"),
+                    side: "buy",
+                    outcome: "yes",
+                    price: 0.48,
+                    size: 50,
+                  }],
+                }
+          }
           detailError={null}
-          detailLoadCount={0}
-          detailTab="overview"
+          detailLoadCount={loading ? 1 : 0}
+          detailTab={detailTab}
           detailWidth={58}
           focused
           height={24}

@@ -111,11 +111,14 @@ export function ShellPaneLayers({
           >
             <PaneFooterProvider>
               {(footer) => {
-                const reserveFooter = shouldReservePaneFooter(nativePaneChrome, hasPaneFooterContent(footer));
+                const showFooter = hasPaneFooterContent(footer);
+                const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
+                const renderFooter = reserveFooter || showFooter;
                 const bodyFrame = resolvePaneBodyFrame({
                   width: rect.width,
                   height: rect.height,
                   nativePaneChrome,
+                  footerVisible: renderFooter,
                   reserveFooter,
                 });
                 return (
@@ -165,11 +168,14 @@ export function ShellPaneLayers({
         return (
           <PaneFooterProvider key={`float:${pane.instance.instanceId}`}>
             {(footer) => {
-              const reserveFooter = shouldReservePaneFooter(nativePaneChrome, hasPaneFooterContent(footer));
+              const showFooter = hasPaneFooterContent(footer);
+              const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
+              const renderFooter = reserveFooter || showFooter;
               const bodyFrame = resolvePaneBodyFrame({
                 width: preview.width,
                 height: preview.height,
                 nativePaneChrome,
+                footerVisible: renderFooter,
                 reserveFooter,
               });
               return (

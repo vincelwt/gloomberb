@@ -48,7 +48,7 @@ export function PaneBodyFrame({
   children: ReactNode;
 }) {
   return (
-    <Box {...layoutProps} overflow="hidden" backgroundColor={backgroundColor}>
+    <Box {...layoutProps} overflow="hidden" backgroundColor={backgroundColor} data-gloom-role="pane-body">
       {children}
     </Box>
   );

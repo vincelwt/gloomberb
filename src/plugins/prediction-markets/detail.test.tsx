@@ -48,4 +48,54 @@ describe("prediction markets detail views", () => {
     expect(frame).not.toContain("Kalshi");
     expect(frame).not.toContain("targets");
   });
+
+  test("keeps grouped outcomes in place while selected detail is loading", async () => {
+    testSetup = await testRender(<GroupedDetailHarness loading />, {
+      width: 64,
+      height: 24,
+    });
+    await flushFrames(testSetup);
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Outcomes");
+    expect(frame).toContain("Above 4.25%");
+    expect(frame).toContain("Loading chart...");
+    expect(frame).not.toContain("No chart history.");
+    expect(frame).not.toContain("Loading market detail...");
+  });
+
+  test("renders book levels in the shared data table", async () => {
+    testSetup = await testRender(<GroupedDetailHarness detailTab="book" />, {
+      width: 64,
+      height: 24,
+    });
+    await flushFrames(testSetup);
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("OUT");
+    expect(frame).toContain("SIDE");
+    expect(frame).toContain("PRICE");
+    expect(frame).toContain("SIZE");
+    expect(frame).toContain("YES");
+    expect(frame).toContain("BID");
+    expect(frame).toContain("47c");
+  });
+
+  test("renders recent trades in the shared data table", async () => {
+    testSetup = await testRender(<GroupedDetailHarness detailTab="trades" />, {
+      width: 64,
+      height: 24,
+    });
+    await flushFrames(testSetup);
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("TIME");
+    expect(frame).toContain("SIDE");
+    expect(frame).toContain("OUT");
+    expect(frame).toContain("PRICE");
+    expect(frame).toContain("SIZE");
+    expect(frame).toContain("BUY");
+    expect(frame).toContain("YES");
+    expect(frame).toContain("48c");
+  });
 });

@@ -130,6 +130,32 @@ describe("prediction markets pane interactions", () => {
     expect(frame).not.toContain("Was there a typo in the url or port?");
   });
 
+  test("shows loading instead of an empty state while empty catalogs are pending", async () => {
+    attachPredictionMarketsPersistence(new MemoryPersistence());
+
+    const releaseFetches: Array<() => void> = [];
+    globalThis.fetch = (async (input: Request | string | URL) => {
+      await new Promise<void>((resolve) => {
+        releaseFetches.push(resolve);
+      });
+      const url = String(input);
+      if (url.includes("/trade-api/v2/events?")) {
+        return new Response(JSON.stringify({ events: [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    testSetup = await testRender(<Harness />, { width: 120, height: 34 });
+    await flushFrames(testSetup);
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Loading markets...");
+    expect(frame).not.toContain("No markets matched.");
+
+    for (const release of releaseFetches) release();
+    await flushFrames(testSetup);
+  });
+
   test("selects a market on single click and opens detail on double click", async () => {
     installPredictionMarketMocks();
 
@@ -172,6 +198,23 @@ describe("prediction markets pane interactions", () => {
 
     frame = testSetup.captureCharFrame();
     expect(frame).toContain("Kalshi primary rule");
+    expect(frame).toContain("\u2190 Back Will the Fed cut rates?");
+    expect(frame.match(/Will the Fed cut rates\?/g) ?? []).toHaveLength(1);
+    expect(frame).not.toContain("[/]search");
+    expect(frame).not.toContain("[w]atch");
+    expect(frame).not.toContain("[1-4]browse");
+
+    const metricsHeader = frame
+      .split("\n")
+      .find((line) =>
+        line.includes("YES") &&
+        line.includes("NO") &&
+        line.includes("24H VOL"),
+      );
+    expect(metricsHeader).toContain("TOTAL VOL");
+    expect(metricsHeader).toContain("OI");
+    expect(metricsHeader).toContain("SPREAD");
+    expect(metricsHeader).toContain("LAST");
   });
 
   test("focuses the pane when a market row is clicked", async () => {

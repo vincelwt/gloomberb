@@ -17,6 +17,7 @@ export function PredictionMarketOverviewView({
   detailWidth,
   height,
   historyRange,
+  loading,
   onHistoryRangeChange,
   onSelectMarket,
   selectedRow,
@@ -26,6 +27,7 @@ export function PredictionMarketOverviewView({
   detailWidth: number;
   height: number;
   historyRange: PredictionHistoryRange;
+  loading: boolean;
   onHistoryRangeChange: (range: PredictionHistoryRange) => void;
   onSelectMarket: (marketKey: string) => void;
   selectedRow: PredictionListRow | null;
@@ -47,6 +49,7 @@ export function PredictionMarketOverviewView({
         history={detail?.history ?? []}
         width={detailWidth}
         height={Math.max(Math.floor(height * 0.36), 10)}
+        loading={loading}
         range={historyRange}
         onRangeSelect={onHistoryRangeChange}
       />

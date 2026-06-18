@@ -80,7 +80,8 @@ export function FloatingPaneWrapper({
   const bg = floatingPaneBg(focused);
   const showFooter = hasPaneFooterContent(footer);
   const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
-  const bodyFrame = resolvePaneBodyFrame({ height, nativePaneChrome, reserveFooter });
+  const renderFooter = reserveFooter || showFooter;
+  const bodyFrame = resolvePaneBodyFrame({ height, nativePaneChrome, footerVisible: renderFooter, reserveFooter });
 
   return (
     <Box
@@ -124,7 +125,7 @@ export function FloatingPaneWrapper({
         {children}
       </PaneBodyFrame>
 
-      {reserveFooter && (
+      {renderFooter && (
         <PaneFooterBar
           footer={footer}
           focused={focused}

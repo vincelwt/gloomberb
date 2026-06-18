@@ -2,6 +2,7 @@ import { Box, Input, Text } from "../../ui";
 import { useCallback, useMemo, useRef } from "react";
 import {
   DataTableStackView,
+  Spinner,
   Tabs,
   usePaneFooter,
   type DataTableKeyEvent,
@@ -13,6 +14,7 @@ import { colors } from "../../theme/colors";
 import { PREDICTION_CATEGORY_OPTIONS } from "./categories";
 import { usePredictionMarketsController } from "./controller";
 import { PredictionMarketDetailPane } from "./detail/pane";
+import { resolvePredictionDetailTitle } from "./detail/shared";
 import { getPredictionColumnValue } from "./metrics";
 import { BROWSE_TABS, VENUE_TABS } from "./navigation";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../utils/search-focus-navigation";
@@ -73,33 +75,45 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     controller.catalogStatus?.tone === "danger"
       ? colors.negative
       : colors.borderFocused;
-  usePaneFooter("prediction-markets", () => ({
-    info: [
-      ...(controller.searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${controller.searchQuery.trim()}`, tone: "value" as const }] }] : []),
-      ...(controller.searchLoading ? [{ id: "search-loading", parts: [{ text: "searching", tone: "muted" as const }] }] : []),
-      ...(controller.catalogStatus ? [{
-        id: "catalog",
-        parts: [{ text: controller.catalogStatus.message, tone: controller.catalogStatus.tone === "danger" ? "warning" as const : "muted" as const, color: catalogStatusColor }],
-      }] : []),
-    ],
-    hints: [
-      { id: "search", key: "/", label: "search", onPress: controller.actions.focusSearch },
-      { id: "watch", key: "w", label: "atch", onPress: controller.selectedRow ? () => controller.actions.toggleWatchlist(controller.selectedRow!) : undefined, disabled: !controller.selectedRow },
-      {
-        id: "browse",
-        key: "1-4",
-        label: "browse",
-        onPress: () => {
-          const index = BROWSE_TABS.findIndex((tab) => tab.value === controller.browseTab);
-          controller.actions.selectBrowseTab(BROWSE_TABS[(index + 1) % BROWSE_TABS.length]!.value as PredictionBrowseTab);
+  const rowsLoading =
+    controller.visibleRows.length === 0 &&
+    (controller.catalogLoadCount > 0 || controller.searchLoading);
+  const detailTitle = resolvePredictionDetailTitle({
+    detail: controller.detail,
+    selectedRow: controller.selectedRow,
+    selectedSummary: controller.selectedSummary,
+  });
+  usePaneFooter("prediction-markets", () => {
+    if (controller.detailOpen) return null;
+    return {
+      info: [
+        ...(controller.searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${controller.searchQuery.trim()}`, tone: "value" as const }] }] : []),
+        ...(controller.searchLoading ? [{ id: "search-loading", parts: [{ text: "searching", tone: "muted" as const }] }] : []),
+        ...(controller.catalogStatus ? [{
+          id: "catalog",
+          parts: [{ text: controller.catalogStatus.message, tone: controller.catalogStatus.tone === "danger" ? "warning" as const : "muted" as const, color: catalogStatusColor }],
+        }] : []),
+      ],
+      hints: [
+        { id: "search", key: "/", label: "search", onPress: controller.actions.focusSearch },
+        { id: "watch", key: "w", label: "atch", onPress: controller.selectedRow ? () => controller.actions.toggleWatchlist(controller.selectedRow!) : undefined, disabled: !controller.selectedRow },
+        {
+          id: "browse",
+          key: "1-4",
+          label: "browse",
+          onPress: () => {
+            const index = BROWSE_TABS.findIndex((tab) => tab.value === controller.browseTab);
+            controller.actions.selectBrowseTab(BROWSE_TABS[(index + 1) % BROWSE_TABS.length]!.value as PredictionBrowseTab);
+          },
         },
-      },
-    ],
-  }), [
+      ],
+    };
+  }, [
     catalogStatusColor,
     controller.browseTab,
     controller.catalogStatus?.message,
     controller.catalogStatus?.tone,
+    controller.detailOpen,
     controller.searchLoading,
     controller.searchQuery,
     controller.selectedRow,
@@ -275,6 +289,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       detailOpen={controller.detailOpen && !!controller.selectedSummary}
       onBack={controller.actions.closeDetail}
       detailContent={detailContent}
+      detailTitle={detailTitle}
       rootBefore={browseControls}
       rootWidth={width}
       rootHeight={height}
@@ -301,6 +316,19 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       getItemKey={(row) => row.key}
       virtualize
       renderCell={renderCell}
+      emptyContent={
+        rowsLoading ? (
+          <Box width="100%" paddingX={1} paddingY={1}>
+            <Spinner
+              label={
+                controller.searchQuery.trim().length > 0
+                  ? "Searching markets..."
+                  : "Loading markets..."
+              }
+            />
+          </Box>
+        ) : undefined
+      }
       emptyStateTitle="No markets matched."
       emptyStateHint="Change the venue, browse tab, or search query."
     />

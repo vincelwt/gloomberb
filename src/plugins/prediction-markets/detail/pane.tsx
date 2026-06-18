@@ -1,7 +1,7 @@
 import { Box, ScrollBox, Text } from "../../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import type { RefObject } from "react";
-import { Spinner, Tabs } from "../../../components";
+import { Tabs } from "../../../components";
 import { EmptyState } from "../../../components/ui/status";
 import { colors } from "../../../theme/colors";
 import { padTo } from "../../../utils/format";
@@ -37,8 +37,11 @@ interface MetricCell {
 function MetricLabelRow({ metrics }: { metrics: MetricCell[] }) {
   return (
     <Box flexDirection="row" height={1}>
-      {metrics.map((metric) => (
-        <Box key={metric.label} width={metric.width + 1}>
+      {metrics.map((metric, index) => (
+        <Box
+          key={metric.label}
+          width={metric.width + (index === metrics.length - 1 ? 0 : 1)}
+        >
           <Text fg={colors.textDim}>{padTo(metric.label, metric.width)}</Text>
         </Box>
       ))}
@@ -49,8 +52,11 @@ function MetricLabelRow({ metrics }: { metrics: MetricCell[] }) {
 function MetricValueRow({ metrics }: { metrics: MetricCell[] }) {
   return (
     <Box flexDirection="row" height={1}>
-      {metrics.map((metric) => (
-        <Box key={metric.label} width={metric.width + 1}>
+      {metrics.map((metric, index) => (
+        <Box
+          key={metric.label}
+          width={metric.width + (index === metrics.length - 1 ? 0 : 1)}
+        >
           <Text
             fg={metric.color ?? colors.textBright}
             attributes={TextAttributes.BOLD}
@@ -108,8 +114,6 @@ export function PredictionMarketDetailPane({
   }
 
   const summaryMetrics = detail?.summary ?? selectedSummary;
-  const detailTitle =
-    selectedRow?.kind === "group" ? selectedRow.title : summaryMetrics.title;
   const detailSubtitleParts: string[] = [];
   if (selectedRow?.kind === "group") {
     if (summaryMetrics.category) detailSubtitleParts.push(summaryMetrics.category);
@@ -126,18 +130,18 @@ export function PredictionMarketDetailPane({
   );
   if (endsLabel !== "—") detailSubtitleParts.push(endsLabel);
   const detailSubtitle = detailSubtitleParts.join(" · ");
-  const primaryMetrics: MetricCell[] = [
+  const metrics: MetricCell[] = [
     {
       label: "YES",
       value: formatPredictionProbability(summaryMetrics.yesPrice),
       color: getPredictionProbabilityColor(summaryMetrics.yesPrice),
-      width: 12,
+      width: 6,
     },
     {
       label: "NO",
       value: formatPredictionProbability(summaryMetrics.noPrice),
       color: getPredictionProbabilityColor(summaryMetrics.noPrice),
-      width: 12,
+      width: 6,
     },
     {
       label: "24H VOL",
@@ -145,7 +149,7 @@ export function PredictionMarketDetailPane({
         summaryMetrics.volume24h,
         summaryMetrics.volume24hUnit ?? "usd",
       ),
-      width: 16,
+      width: 8,
     },
     {
       label: "TOTAL VOL",
@@ -153,28 +157,26 @@ export function PredictionMarketDetailPane({
         summaryMetrics.totalVolume,
         summaryMetrics.totalVolumeUnit ?? "usd",
       ),
-      width: 16,
+      width: 9,
     },
-  ];
-  const secondaryMetrics: MetricCell[] = [
     {
       label: "OI",
       value: formatPredictionMetric(
         summaryMetrics.openInterest,
         summaryMetrics.openInterestUnit ?? "usd",
       ),
-      width: 16,
+      width: 7,
     },
     {
       label: "SPREAD",
       value: formatPredictionSpread(summaryMetrics.spread),
-      width: 16,
+      width: 7,
     },
     {
       label: "LAST",
       value: formatPredictionProbability(summaryMetrics.lastTradePrice),
       color: colors.textBright,
-      width: 16,
+      width: 7,
     },
   ];
   const relatedSiblings =
@@ -186,33 +188,25 @@ export function PredictionMarketDetailPane({
             0,
             Math.max(Math.min(Math.floor((detailWidth - 10) / 18), 3), 0),
           ) ?? []);
-  const headerHeight = detailSubtitle.length > 0 ? 3 : 2;
+  const headerHeight = detailSubtitle.length > 0 ? 2 : 0;
   const detailLoading = detailLoadCount > 0 && !detail;
-  const titleColor = focused ? colors.textBright : colors.text;
   const detailTextWidth = Math.max(detailWidth, 12);
 
   return (
     <>
-      <Box flexDirection="column" height={headerHeight} paddingBottom={1}>
-        <Box flexDirection="row" height={1}>
-          <Text fg={titleColor} attributes={TextAttributes.BOLD}>
-            {truncatePredictionText(detailTitle, detailTextWidth)}
-          </Text>
-        </Box>
-        {detailSubtitle.length > 0 && (
+      {headerHeight > 0 && (
+        <Box flexDirection="column" height={headerHeight} paddingBottom={1}>
           <Box flexDirection="row" height={1}>
             <Text fg={colors.textDim}>
               {truncatePredictionText(detailSubtitle, detailTextWidth)}
             </Text>
           </Box>
-        )}
-      </Box>
+        </Box>
+      )}
 
-      <Box flexDirection="column" height={4} paddingBottom={1}>
-        <MetricLabelRow metrics={primaryMetrics} />
-        <MetricValueRow metrics={primaryMetrics} />
-        <MetricLabelRow metrics={secondaryMetrics} />
-        <MetricValueRow metrics={secondaryMetrics} />
+      <Box flexDirection="column" height={3} paddingBottom={1}>
+        <MetricLabelRow metrics={metrics} />
+        <MetricValueRow metrics={metrics} />
       </Box>
 
       {relatedSiblings.length > 0 && (
@@ -260,43 +254,56 @@ export function PredictionMarketDetailPane({
         </Box>
       )}
 
-      <ScrollBox ref={scrollRef} flexGrow={1} scrollY>
-        {detailLoading && (
-          <Box height={1} paddingBottom={1}>
-            <Spinner label="Loading market detail..." />
-          </Box>
-        )}
-        {detailTab === "overview" && (
-          <PredictionMarketOverviewView
-            detail={detail}
-            detailWidth={detailWidth}
-            height={height}
-            historyRange={historyRange}
-            onHistoryRangeChange={onHistoryRangeChange}
-            onSelectMarket={onSelectMarket}
-            selectedRow={selectedRow}
-            summary={summaryMetrics}
-          />
-        )}
+      {detailTab === "overview" || detailTab === "rules" ? (
+        <ScrollBox ref={scrollRef} flexGrow={1} scrollY>
+          {detailTab === "overview" && (
+            <PredictionMarketOverviewView
+              detail={detail}
+              detailWidth={detailWidth}
+              height={height}
+              historyRange={historyRange}
+              loading={detailLoading}
+              onHistoryRangeChange={onHistoryRangeChange}
+              onSelectMarket={onSelectMarket}
+              selectedRow={selectedRow}
+              summary={summaryMetrics}
+            />
+          )}
 
-        {detailTab === "book" && detail && (
+          {detailTab === "rules" && (
+            <PredictionMarketRulesView
+              detailWidth={detailTextWidth}
+              rules={detail?.rules ?? []}
+            />
+          )}
+        </ScrollBox>
+      ) : null}
+
+      {detailTab === "book" && (
+        detail ? (
           <PredictionMarketBookView
             detail={detail}
+            focused={focused}
             onPreviewOrder={onPreviewOrder}
+            width={detailWidth}
           />
-        )}
+        ) : (
+          <Box flexGrow={1} justifyContent="center">
+            <EmptyState
+              title={detailLoading ? "Loading order book." : "No order book."}
+              hint="This venue did not return current order book depth."
+            />
+          </Box>
+        )
+      )}
 
-        {detailTab === "trades" && (
-          <PredictionMarketTradesView trades={detail?.trades ?? []} />
-        )}
-
-        {detailTab === "rules" && (
-          <PredictionMarketRulesView
-            detailWidth={detailTextWidth}
-            rules={detail?.rules ?? []}
-          />
-        )}
-      </ScrollBox>
+      {detailTab === "trades" && (
+        <PredictionMarketTradesView
+          focused={focused}
+          trades={detail?.trades ?? []}
+          width={detailWidth}
+        />
+      )}
     </>
   );
 }

@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -16,6 +17,9 @@ import {
   type PaneFooterRegistration,
   type PaneHint,
 } from "./model";
+
+const usePaneFooterRegistrationEffect =
+  typeof document === "undefined" ? useEffect : useLayoutEffect;
 
 interface PaneFooterContextValue {
   register(registrationId: string, registration: PaneFooterRegistration | null): void;
@@ -85,14 +89,14 @@ export function usePaneFooter(
   const context = useContext(PaneFooterContext);
   const previousRegistrationRef = useRef<PaneFooterRegistration | null>(null);
 
-  useEffect(() => {
+  usePaneFooterRegistrationEffect(() => {
     return () => {
       previousRegistrationRef.current = null;
       context?.unregister(registrationId);
     };
   }, [context, registrationId]);
 
-  useEffect(() => {
+  usePaneFooterRegistrationEffect(() => {
     if (!context) return;
     const nextRegistration = factory() ?? null;
     if (samePaneFooterRegistration(previousRegistrationRef.current, nextRegistration)) return;

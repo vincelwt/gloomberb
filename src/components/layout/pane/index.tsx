@@ -49,9 +49,11 @@ export function PaneWrapper({
   const bg = paneBg(focused);
   const showFooter = hasPaneFooterContent(footer);
   const reserveFooter = !!title && shouldReservePaneFooter(nativePaneChrome, showFooter);
+  const renderFooter = !!title && (reserveFooter || showFooter);
   const bodyFrame = resolvePaneBodyFrame({
     height: typeof height === "number" ? height : undefined,
     nativePaneChrome,
+    footerVisible: renderFooter,
     reserveFooter,
     headerRows: title ? 1 : 0,
   });
@@ -93,7 +95,7 @@ export function PaneWrapper({
       <PaneBodyFrame layoutProps={bodyFrame.layoutProps} backgroundColor={bg}>
         {children}
       </PaneBodyFrame>
-      {title && reserveFooter && (
+      {renderFooter && (
         <PaneFooterBar
           footer={footer}
           focused={focused}

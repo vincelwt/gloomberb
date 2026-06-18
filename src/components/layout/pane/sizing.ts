@@ -4,28 +4,35 @@ const PANE_FOOTER_ROWS = 1;
 
 const NATIVE_PANE_BODY_LAYOUT_PROPS = {
   flexGrow: 1,
+  flexShrink: 1,
   flexBasis: 0,
+  minWidth: 0,
   minHeight: 0,
 } as const;
 
-export function shouldReservePaneFooter(nativePaneChrome: boolean | undefined, showFooter: boolean): boolean {
-  return !nativePaneChrome || showFooter;
+export function shouldReservePaneFooter(nativePaneChrome: boolean | undefined, _showFooter: boolean): boolean {
+  return !nativePaneChrome;
 }
 
 function resolvePaneBodyHeight({
   height,
   nativePaneChrome,
+  footerVisible,
   reserveFooter = true,
   headerRows = PANE_HEADER_ROWS,
 }: {
   height: number;
   nativePaneChrome?: boolean;
+  footerVisible?: boolean;
   reserveFooter?: boolean;
   headerRows?: number;
 }): number {
   const finiteHeight = Number.isFinite(height) ? height : 1;
   const normalizedHeight = nativePaneChrome ? finiteHeight : Math.max(1, Math.floor(finiteHeight));
-  return Math.max(1, normalizedHeight - headerRows - (reserveFooter ? PANE_FOOTER_ROWS : 0));
+  const footerRows = nativePaneChrome
+    ? footerVisible ? PANE_FOOTER_ROWS : 0
+    : reserveFooter ? PANE_FOOTER_ROWS : 0;
+  return Math.max(1, normalizedHeight - headerRows - footerRows);
 }
 
 function getPaneBodyLayoutProps(nativePaneChrome: boolean | undefined, bodyHeight: number | undefined) {
@@ -41,17 +48,19 @@ export function resolvePaneBodyFrame({
   width,
   height,
   nativePaneChrome,
+  footerVisible,
   reserveFooter = true,
   headerRows = PANE_HEADER_ROWS,
 }: {
   width?: number;
   height?: number;
   nativePaneChrome?: boolean;
+  footerVisible?: boolean;
   reserveFooter?: boolean;
   headerRows?: number;
 }) {
   const bodyHeight = typeof height === "number"
-    ? resolvePaneBodyHeight({ height, nativePaneChrome, reserveFooter, headerRows })
+    ? resolvePaneBodyHeight({ height, nativePaneChrome, footerVisible, reserveFooter, headerRows })
     : undefined;
   return {
     width: typeof width === "number" ? resolvePaneBodyWidth(width, nativePaneChrome) : undefined,
