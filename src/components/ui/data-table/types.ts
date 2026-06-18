@@ -50,6 +50,7 @@ export interface DataTableProps<
   isSelected: (item: T, index: number) => boolean;
   onSelect: (item: T, index: number) => void;
   onActivate?: (item: T, index: number) => void;
+  onTableMouseDown?: (event: any) => void;
   onRowMouseDown?: (item: T, index: number, event: any) => boolean | void;
   onRowContextMenu?: (item: T, index: number, event: any) => void;
   rowContextMenuSurface?: boolean;
@@ -74,6 +75,9 @@ export interface DataTableProps<
   emptyStateHint?: string;
   virtualize?: boolean;
   overscan?: number;
+  columnGap?: number;
+  horizontalPadding?: number;
+  fillAvailableWidth?: boolean;
   showHorizontalScrollbar?: boolean;
   scrollToIndex?: number | null;
   scrollToIndexAlign?: DataTableScrollAlign;

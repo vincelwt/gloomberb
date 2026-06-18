@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { PaneProps, PaneTemplateDef } from "../../../../types/plugin";
+import type { PaneProps, PaneTemplateDef, TickerResearchTabProps } from "../../../../types/plugin";
 import { formatTickerListInput } from "../../../../tickers/list";
 import { usePaneInstance, usePaneTicker } from "../../../../state/app/context";
 import { usePluginPaneState } from "../../../runtime";
@@ -26,7 +26,7 @@ export function FundamentalGraphPane({ focused, width, height }: PaneProps) {
   const { symbol, exchange } = useBoundTicker();
   const symbols = useMemo(() => symbolsFromPaneSettings(pane?.settings, symbol), [pane?.settings, symbol]);
   const configuredKind = graphKindFromSettings(pane?.settings, "fundamental");
-  const [period, setPeriod] = usePluginPaneState<FundamentalPeriod>("period", "annual");
+  const [period, setPeriod] = usePluginPaneState<FundamentalPeriod>("period", "quarterly");
   const [chartKind, setChartKind] = usePluginPaneState<GraphKind>("chartKind", configuredKind);
   const [metric, setMetric] = usePluginPaneState<GraphMetricKey>("metric", defaultMetric(configuredKind));
   const resolvedMetric = isMetricForKind(chartKind, metric) ? metric : defaultMetric(chartKind);
@@ -54,9 +54,9 @@ export function FundamentalGraphPane({ focused, width, height }: PaneProps) {
   );
 }
 
-export function FundamentalGraphsResearchTab({ focused, width, height }: { focused: boolean; width: number; height: number }) {
+export function FundamentalGraphsResearchTab({ focused, width, height, onCapture }: TickerResearchTabProps) {
   const { symbol, financials } = usePaneTicker();
-  const [period, setPeriod] = usePluginPaneState<FundamentalPeriod>("detailPeriod", "annual");
+  const [period, setPeriod] = usePluginPaneState<FundamentalPeriod>("detailPeriod", "quarterly");
   const [chartKind, setChartKind] = usePluginPaneState<GraphKind>("detailChartKind", "fundamental");
   const [metric, setMetric] = usePluginPaneState<GraphMetricKey>("detailMetric", "totalRevenue");
   const resolvedMetric = isMetricForKind(chartKind, metric) ? metric : defaultMetric(chartKind);
@@ -79,6 +79,7 @@ export function FundamentalGraphsResearchTab({ focused, width, height }: { focus
       setMetric={setMetric}
       chartKind={chartKind}
       setChartKind={setChartKind}
+      onCapture={onCapture}
     />
   );
 }

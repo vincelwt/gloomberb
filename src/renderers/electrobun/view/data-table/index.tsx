@@ -59,6 +59,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   isSelected,
   onSelect,
   onActivate,
+  onTableMouseDown,
   onRowMouseDown,
   onRowContextMenu,
   rowContextMenuSurface = false,
@@ -71,6 +72,9 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   emptyStateHint,
   virtualize = true,
   overscan = 3,
+  columnGap = 1,
+  horizontalPadding = 1,
+  fillAvailableWidth = true,
   showHorizontalScrollbar = true,
   scrollToIndex,
   scrollToIndexAlign = "nearest",
@@ -85,10 +89,13 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   const bodyVertical = useScrollbarState(true);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [scrollbarActive, markScrollbarActive] = useScrollbarActivity();
-  const tableWidth = useMemo(() => getTableWidth(columns), [columns]);
+  const tableWidth = useMemo(
+    () => getTableWidth(columns, columnGap, horizontalPadding),
+    [columnGap, columns, horizontalPadding],
+  );
   const gridTemplateColumns = useMemo(
-    () => buildTableGridTemplateColumns(columns),
-    [columns],
+    () => buildTableGridTemplateColumns(columns, fillAvailableWidth),
+    [columns, fillAvailableWidth],
   );
   const selectRow = useCallback((item: T, index: number) => {
     onSelect(item, index);
@@ -136,8 +143,9 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     : WEB_CELL_HEIGHT + items.length * WEB_CELL_HEIGHT;
   const bodyAfterHeight = bodyAfter ? WEB_CELL_HEIGHT * 6 : 0;
   const horizontalScrollEnabled = showHorizontalScrollbar
-    && hasMeaningfulTableHorizontalOverflow(tableWidth, viewportWidth);
+    && hasMeaningfulTableHorizontalOverflow(tableWidth, viewportWidth, columnGap);
   const scrollContentWidth = horizontalScrollEnabled
+    || !fillAvailableWidth
     ? Math.max(1, tableWidth * WEB_CELL_WIDTH)
     : "100%";
   const measureViewportWidth = useCallback(() => {
@@ -247,6 +255,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
         style={bodyScrollerStyle}
         onMouseDown={() => {
           focusPane();
+          onTableMouseDown?.({});
         }}
         onMouseLeave={() => {
           if (hoveredIdx !== null) setHoveredIdx(null);
@@ -270,7 +279,10 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
         >
           <WebDataTableHeader
             columns={columns}
+            columnGap={columnGap}
+            horizontalPadding={horizontalPadding}
             focusPane={focusPane}
+            onTableMouseDown={onTableMouseDown}
             gridTemplateColumns={gridTemplateColumns}
             onHeaderClick={onHeaderClick}
             sortColumnId={sortColumnId}
@@ -314,7 +326,10 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                     item={item}
                     itemKey={itemKey}
                     columns={columns}
+                    columnGap={columnGap}
+                    horizontalPadding={horizontalPadding}
                     focusPane={focusPane}
+                    onTableMouseDown={onTableMouseDown}
                     gridTemplateColumns={gridTemplateColumns}
                     onActivateRow={onActivate ? activateRow : undefined}
                     onRowContextMenu={onRowContextMenu}

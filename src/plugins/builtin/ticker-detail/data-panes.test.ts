@@ -49,6 +49,22 @@ describe("ticker data panes", () => {
     ]);
   });
 
+  test("collapses duplicate quarterly statement dates into one displayed period", () => {
+    const rows = buildFundamentalGraphRows([
+      { date: "2025-03-29", eps: 0.44 },
+      { date: "2025-03-31", eps: 0.44 },
+      { date: "2025-06-28", eps: 0.54 },
+      { date: "2025-06-30", eps: 0.54 },
+      { date: "2025-09-27", eps: 0.75 },
+    ] satisfies FinancialStatement[], "eps", "AMD", "quarterly");
+
+    expect(rows.map((row) => [row.date, row.category, row.value])).toEqual([
+      ["2025-03-31", "2025 Q1", 0.44],
+      ["2025-06-30", "2025 Q2", 0.54],
+      ["2025-09-27", "2025 Q3", 0.75],
+    ]);
+  });
+
   test("builds valuation graph rows from available multiples", () => {
     const rows = buildValuationGraphRows({
       quote: { symbol: "AMD", price: 100, currency: "USD", change: 0, changePercent: 0, lastUpdated: 1, marketCap: 1_000 },

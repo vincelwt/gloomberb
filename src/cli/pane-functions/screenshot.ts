@@ -1,7 +1,7 @@
 import { dirname, resolve } from "path";
 import { mkdir } from "fs/promises";
 import type { PaneRuntimeState } from "../../core/state/app/state";
-import type { TickerFinancials } from "../../types/financials";
+import type { OptionsChain, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { slugifyName } from "../../utils/slugify";
 import { renderDesktopPaneScreenshot, type DesktopPaneShotPayload } from "../desktop-pane-shot";
@@ -18,6 +18,7 @@ import {
 
 const DESKTOP_CELL_WIDTH_PX = 8;
 const DESKTOP_CELL_HEIGHT_PX = 18;
+const OPTIONS_PANE_ID = "options";
 
 export function defaultScreenshotPath(resolved: ResolvedPaneFunction, rawArg: string): string {
   const suffix = slugifyName([resolved.token, rawArg].filter(Boolean).join("-"), "pane");
@@ -70,11 +71,21 @@ async function buildDesktopShotPayload(
 
   const tickers: TickerRecord[] = [];
   const financials: Array<[string, TickerFinancials]> = [];
+  const optionsChains: Array<[string, OptionsChain]> = [];
+  const includeOptionsChains = resolved.pane.id === OPTIONS_PANE_ID || resolved.template?.paneId === OPTIONS_PANE_ID;
   for (const symbol of collectShotSymbols(resolved, rawArg)) {
     const entry = await fetchTickerFinancials(context, symbol);
     const data = await withShotPriceHistory(context, symbol, entry.tickerFile, entry.financials);
     tickers.push(entry.tickerFile ?? createFallbackTicker(symbol, data, context));
     financials.push([symbol, data]);
+    if (includeOptionsChains && context.dataProvider.getOptionsChain) {
+      const exchange = entry.tickerFile?.metadata.exchange
+        ?? data.quote?.listingExchangeName
+        ?? data.quote?.exchangeName
+        ?? "";
+      const chain = await context.dataProvider.getOptionsChain(symbol, exchange);
+      optionsChains.push([symbol, chain]);
+    }
   }
 
   return {
@@ -86,6 +97,7 @@ async function buildDesktopShotPayload(
     heightPx,
     tickers,
     financials,
+    optionsChains,
     paneState,
   };
 }

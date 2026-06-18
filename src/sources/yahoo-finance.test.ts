@@ -17,6 +17,7 @@ describe("YahooFinanceClient exchange aliases", () => {
     provider.fetchAssetProfile = async () => undefined;
     provider.fetchQuoteSupplement = async () => ({});
     provider.fetchExtendedHoursData = async () => ({});
+    provider.secClient.getFinancialStatements = async () => null;
     provider.fetchTimeseries = async () => [
       point("annualAccountsReceivable", 7_450_000_000),
       point("annualInventory", 4_880_000_000),
@@ -50,6 +51,56 @@ describe("YahooFinanceClient exchange aliases", () => {
       cashFlowFromContinuingFinancingActivities: -328_000_000,
       endCashPosition: 5_540_000_000,
     });
+  });
+
+  test("supplements US Yahoo financials with deeper SEC statement history", async () => {
+    const provider = new YahooFinanceClient() as any;
+    const point = (type: string, date: string, value: number) => ({
+      meta: { type: [type] },
+      [type]: [{ asOfDate: date, reportedValue: { raw: value } }],
+    });
+
+    provider.fetchChart = async () => ({
+      meta: { currency: "USD", regularMarketPrice: 100, shortName: "AMD" },
+      history: [{ date: new Date("2025-12-31T00:00:00Z"), close: 100 }],
+    });
+    provider.fetchAssetProfile = async () => undefined;
+    provider.fetchQuoteSupplement = async () => ({});
+    provider.fetchExtendedHoursData = async () => ({});
+    provider.fetchTimeseries = async () => [
+      point("annualTotalRevenue", "2025-12-31", 200),
+      point("quarterlyTotalRevenue", "2025-12-31", 60),
+    ];
+    provider.secClient.getFinancialStatements = async (ticker: string) => {
+      expect(ticker).toBe("AMD");
+      return {
+        annualStatements: [
+          { date: "2023-12-31", totalRevenue: 100 },
+          { date: "2024-12-31", totalRevenue: 150 },
+          { date: "2025-12-31", totalRevenue: 190, netIncome: 40 },
+        ],
+        quarterlyStatements: [
+          { date: "2025-03-31", totalRevenue: 45 },
+          { date: "2025-06-30", totalRevenue: 50 },
+          { date: "2025-09-30", totalRevenue: 55 },
+          { date: "2025-12-31", totalRevenue: 58, netIncome: 12 },
+        ],
+      };
+    };
+
+    const financials = await provider.getTickerFinancials("AMD", "NASDAQ");
+
+    expect(financials.annualStatements.map((row: any) => [row.date, row.totalRevenue, row.netIncome])).toEqual([
+      ["2023-12-31", 100, undefined],
+      ["2024-12-31", 150, undefined],
+      ["2025-12-31", 200, 40],
+    ]);
+    expect(financials.quarterlyStatements.map((row: any) => [row.date, row.totalRevenue, row.netIncome])).toEqual([
+      ["2025-03-31", 45, undefined],
+      ["2025-06-30", 50, undefined],
+      ["2025-09-30", 55, undefined],
+      ["2025-12-31", 60, 12],
+    ]);
   });
 
   test("tries the Taipei Exchange suffix for TPEX tickers", () => {

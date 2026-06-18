@@ -21,6 +21,7 @@ export function WebTabs({
   closeMode = "always",
   addLabel = "+",
   onAdd,
+  focused = false,
   palette,
 }: HostTabsProps) {
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
@@ -112,16 +113,20 @@ export function WebTabs({
           paddingBlock: 0,
           paddingBottom: showUnderline ? 2 : 0,
           margin: 0,
-          border: 0,
+          border: "1px solid transparent",
           borderRadius: variant === "underline" ? 5 : 6,
           background: resolveTabBackground(active, hovered),
+          boxSizing: "border-box",
           font: "inherit",
           fontSize: tabFontSize,
           fontWeight: active ? 700 : 500,
           lineHeight: 1,
           textAlign: "center",
           whiteSpace: "nowrap",
-          transition: "background-color 110ms ease, color 110ms ease, box-shadow 110ms ease",
+          borderColor: active && focused && variant !== "pill"
+            ? `color-mix(in srgb, ${palette.activeUnderline} 35%, transparent)`
+            : "transparent",
+          transition: "background-color 110ms ease, border-color 110ms ease, color 110ms ease",
           cursor: disabled ? "default" : "pointer",
         } satisfies CssVars;
 

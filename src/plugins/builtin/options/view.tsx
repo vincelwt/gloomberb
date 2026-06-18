@@ -6,6 +6,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { formatExpDate, resolveOptionsTarget } from "../../../utils/options";
 import { useOptionsQuery, useResolvedEntryValue } from "../../../market-data/hooks";
 import { DataTableView, Spinner, Tabs, usePaneFooter, type DataTableKeyEvent } from "../../../components";
+import { useShortcut } from "../../../react/input";
 import {
   OPTION_COLUMNS,
   buildStrikeList,
@@ -26,6 +27,7 @@ export function OptionsView({ width, focused, onCapture = () => {} }: OptionsVie
   const [scrollToIndexAlign, setScrollToIndexAlign] = useState<"nearest" | "center">("nearest");
   const [interactive, setInteractive] = useState(false);
   const userSelectedStrikeRef = useRef(false);
+  const onCaptureRef = useRef(onCapture);
   const target = resolveOptionsTarget(ticker);
   const isOpt = target?.isOptionTicker ?? false;
   const parsed = target?.parsedOption ?? null;
@@ -53,6 +55,7 @@ export function OptionsView({ width, focused, onCapture = () => {} }: OptionsVie
   );
   const expirationChain = useResolvedEntryValue(expirationChainEntry);
   const chain = expirationChain ?? initialChain;
+  const expirationCount = chain?.expirationDates.length ?? 0;
   const loading = (initialChainEntry?.phase === "loading" || initialChainEntry?.phase === "refreshing") && !chain
     || (expirationChainEntry?.phase === "loading" || expirationChainEntry?.phase === "refreshing");
   const error = initialChainEntry?.phase === "error"
@@ -61,24 +64,34 @@ export function OptionsView({ width, focused, onCapture = () => {} }: OptionsVie
       ? expirationChainEntry.error?.message ?? "Failed to load options"
       : null;
 
-  const enterInteractive = () => {
+  useEffect(() => {
+    onCaptureRef.current = onCapture;
+  }, [onCapture]);
+
+  const enterInteractive = useCallback(() => {
     if (!interactive) {
       setInteractive(true);
-      onCapture(true);
+      onCaptureRef.current(true);
     }
-  };
+  }, [interactive]);
 
-  const exitInteractive = () => {
+  const exitInteractive = useCallback(() => {
     if (interactive) {
       setInteractive(false);
-      onCapture(false);
+      onCaptureRef.current(false);
     }
-  };
+  }, [interactive]);
+
+  const selectAdjacentExpiration = useCallback((offset: -1 | 1) => {
+    if (expirationCount === 0) return;
+    setExpIdx((index) => Math.max(0, Math.min(index + offset, expirationCount - 1)));
+  }, [expirationCount]);
 
   useEffect(() => {
     userSelectedStrikeRef.current = false;
     setScrollToIndexAlign("nearest");
-    exitInteractive();
+    setInteractive(false);
+    onCaptureRef.current(false);
     setExpIdx(0);
     setStrikeIdx(0);
   }, [effectiveTicker]);
@@ -154,6 +167,37 @@ export function OptionsView({ width, focused, onCapture = () => {} }: OptionsVie
     setAutoScrollVersion((version) => version + 1);
   }, [expIdx, financials?.quote?.price, parsed?.strike, strikes]);
 
+  useShortcut((event) => {
+    if (event.defaultPrevented || event.propagationStopped || event.targetEditable) return;
+    if (event.ctrl || event.meta || event.alt || event.shift) return;
+
+    const isEnter = event.name === "enter" || event.name === "return";
+    const isEscape = event.name === "escape" || event.name === "esc";
+    if (isEnter && !interactive) {
+      event.preventDefault();
+      event.stopPropagation();
+      enterInteractive();
+      return;
+    }
+    if (isEscape && interactive) {
+      event.preventDefault();
+      event.stopPropagation();
+      exitInteractive();
+      return;
+    }
+    if (interactive && isPlainKey(event, "h", "left")) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectAdjacentExpiration(-1);
+      return;
+    }
+    if (interactive && isPlainKey(event, "l", "right")) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectAdjacentExpiration(1);
+    }
+  }, { enabled: focused, phase: "before" });
+
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
     const isEnter = event.name === "enter" || event.name === "return";
 
@@ -167,6 +211,18 @@ export function OptionsView({ width, focused, onCapture = () => {} }: OptionsVie
       event.preventDefault?.();
       event.stopPropagation?.();
       exitInteractive();
+      return true;
+    }
+    if (interactive && isPlainKey(event, "h", "left")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      selectAdjacentExpiration(-1);
+      return true;
+    }
+    if (interactive && isPlainKey(event, "l", "right")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      selectAdjacentExpiration(1);
       return true;
     }
 
@@ -190,30 +246,27 @@ export function OptionsView({ width, focused, onCapture = () => {} }: OptionsVie
     }
 
     return false;
-  }, [enterInteractive, exitInteractive, interactive, strikes.length]);
+  }, [enterInteractive, exitInteractive, interactive, selectAdjacentExpiration, strikes.length]);
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view options.</Text>;
   if (loading && !chain) return <Spinner label="Loading options chain..." />;
   if (error) return <Text fg={colors.textDim}>{error}</Text>;
   if (!chain || chain.expirationDates.length === 0) return <Text fg={colors.textDim}>No options available for {effectiveTicker}.</Text>;
 
-  const innerWidth = Math.max(width - 4, 60);
   const posShares = isOpt && parsed
     ? ticker.metadata.positions.reduce((sum, p) => sum + p.shares, 0)
     : 0;
-  const maxExpVisible = Math.max(Math.floor((innerWidth - 14) / 13), 3);
-  const expStart = Math.max(0, Math.min(expIdx - Math.floor(maxExpVisible / 2), chain.expirationDates.length - maxExpVisible));
-  const visibleExps = chain.expirationDates.slice(expStart, expStart + maxExpVisible);
+  const expirationTabsWidth = Math.max(width - 7 - (loading ? 2 : 0), 8);
 
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1} onMouseDown={() => { if (!interactive) enterInteractive(); }}>
       <Box flexDirection="row" height={1} gap={1}>
         <Text fg={colors.textDim}>Exp:</Text>
-        <Box flexGrow={1} height={1}>
+        <Box width={expirationTabsWidth} height={1} overflow="hidden">
           <Tabs
-            tabs={visibleExps.map((ts, i) => ({
+            tabs={chain.expirationDates.map((ts, i) => ({
               label: formatExpDate(ts),
-              value: String(expStart + i),
+              value: String(i),
             }))}
             activeValue={String(expIdx)}
             onSelect={(value) => {
@@ -223,6 +276,8 @@ export function OptionsView({ width, focused, onCapture = () => {} }: OptionsVie
             compact
             variant="bare"
             focused={focused && interactive}
+            keyboardNavigation={false}
+            scrollId="options-expiration-tabs-scroll"
           />
         </Box>
         {loading && <Spinner />}
@@ -255,14 +310,20 @@ export function OptionsView({ width, focused, onCapture = () => {} }: OptionsVie
           setStrikeIdx(index);
         }}
         onRootKeyDown={handleTableKeyDown}
+        headerScrollId="options-table-header-scroll"
+        bodyScrollId="options-table-body-scroll"
         columns={optionColumns}
         items={rows}
         sortColumnId={null}
         sortDirection="asc"
         onHeaderClick={() => {}}
+        onTableMouseDown={enterInteractive}
         getItemKey={(row) => String(row.strike)}
         renderCell={renderOptionCell}
         emptyStateTitle="No strikes available."
+        columnGap={0}
+        horizontalPadding={0}
+        fillAvailableWidth={false}
         scrollToIndex={strikeIdx}
         scrollToIndexAlign={scrollToIndexAlign}
         scrollToIndexVersion={autoScrollVersion}

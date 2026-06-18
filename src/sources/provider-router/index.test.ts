@@ -1069,6 +1069,195 @@ describe("AssetDataRouter", () => {
     expect(yahooCalls).toBe(1);
   });
 
+  test("supplements shallow preferred provider statement history", async () => {
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async getTickerFinancials() {
+        return makeFinancials({
+          profile: { sector: "Technology" },
+          quote: makeQuote({ symbol: "LINK", price: 25 }),
+          quarterlyStatements: [
+            { date: "2025-03-31", operatingCashFlow: -271_000 },
+            { date: "2025-06-30", operatingCashFlow: -138_000 },
+            { date: "2025-09-30", operatingCashFlow: 653_000 },
+            { date: "2025-12-31", operatingCashFlow: -356_000 },
+            { date: "2026-03-31", operatingCashFlow: -543_000 },
+          ],
+        });
+      },
+    };
+    let yahooCalls = 0;
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getTickerFinancials() {
+        yahooCalls += 1;
+        return makeFinancials({
+          quarterlyStatements: [
+            { date: "2024-03-31", operatingCashFlow: -601_000 },
+            { date: "2024-06-30", operatingCashFlow: -488_000 },
+            { date: "2024-09-30", operatingCashFlow: -204_000 },
+            { date: "2024-12-31", operatingCashFlow: 122_000 },
+          ],
+        });
+      },
+    };
+
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
+    const merged = await router.getTickerFinancials("LINK", "NASDAQ");
+
+    expect(yahooCalls).toBe(1);
+    expect(merged.profile?.sector).toBe("Technology");
+    expect(merged.quote?.price).toBe(25);
+    expect(merged.quarterlyStatements.map((row) => row.date)).toEqual([
+      "2024-03-31",
+      "2024-06-30",
+      "2024-09-30",
+      "2024-12-31",
+      "2025-03-31",
+      "2025-06-30",
+      "2025-09-30",
+      "2025-12-31",
+      "2026-03-31",
+    ]);
+  });
+
+  test("enriches shallow batch provider statement history through the single financial route", async () => {
+    const shallowCloudRows = [
+      { date: "2025-03-31", eps: 0.44 },
+      { date: "2025-06-30", eps: 0.54 },
+      { date: "2025-09-30", eps: 0.75 },
+      { date: "2025-12-31", eps: 0.92 },
+      { date: "2026-03-31", eps: 0.84 },
+    ];
+    let cloudBatchCalls = 0;
+    let cloudSingleCalls = 0;
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async getTickerFinancials() {
+        cloudSingleCalls += 1;
+        return makeFinancials({
+          profile: { sector: "Technology" },
+          quote: makeQuote({ symbol: "AMD", price: 125 }),
+          quarterlyStatements: shallowCloudRows,
+        });
+      },
+      async getTickerFinancialsBatch(targets) {
+        cloudBatchCalls += 1;
+        return targets.map((target) => ({
+          target,
+          financials: makeFinancials({
+            profile: { sector: "Technology" },
+            quote: makeQuote({ symbol: target.symbol, price: 125 }),
+            quarterlyStatements: shallowCloudRows,
+          }),
+        }));
+      },
+    };
+    let yahooCalls = 0;
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getTickerFinancials() {
+        yahooCalls += 1;
+        return makeFinancials({
+          quarterlyStatements: [
+            { date: "2024-03-31", eps: 0.07 },
+            { date: "2024-06-30", eps: 0.16 },
+            { date: "2024-09-30", eps: 0.47 },
+            { date: "2024-12-31", eps: 0.29 },
+          ],
+        });
+      },
+    };
+
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
+    const results = await router.getTickerFinancialsBatch([{ symbol: "AMD", exchange: "NASDAQ" }], { forceRefresh: true });
+    const financials = results[0]?.financials;
+
+    expect(cloudBatchCalls).toBe(1);
+    expect(cloudSingleCalls).toBe(1);
+    expect(yahooCalls).toBe(1);
+    expect(financials?.profile?.sector).toBe("Technology");
+    expect(financials?.quote?.symbol).toBe("AMD");
+    expect(financials?.quarterlyStatements.map((row) => row.date)).toEqual([
+      "2024-03-31",
+      "2024-06-30",
+      "2024-09-30",
+      "2024-12-31",
+      "2025-03-31",
+      "2025-06-30",
+      "2025-09-30",
+      "2025-12-31",
+      "2026-03-31",
+    ]);
+  });
+
+  test("refreshes shallow cached provider statement history", async () => {
+    const dbPath = createTempDbPath("cached-shallow-statement-history");
+    const persistence = new AppPersistence(dbPath);
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async getTickerFinancials() {
+        return makeFinancials({
+          profile: { sector: "Technology" },
+          quote: makeQuote({ symbol: "LINK", price: 25 }),
+          quarterlyStatements: [
+            { date: "2025-03-31", operatingCashFlow: -271_000 },
+            { date: "2025-06-30", operatingCashFlow: -138_000 },
+            { date: "2025-09-30", operatingCashFlow: 653_000 },
+            { date: "2025-12-31", operatingCashFlow: -356_000 },
+            { date: "2026-03-31", operatingCashFlow: -543_000 },
+          ],
+        });
+      },
+    };
+    let yahooCalls = 0;
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getTickerFinancials() {
+        yahooCalls += 1;
+        return makeFinancials({
+          quarterlyStatements: [
+            { date: "2024-03-31", operatingCashFlow: -601_000 },
+            { date: "2024-06-30", operatingCashFlow: -488_000 },
+            { date: "2024-09-30", operatingCashFlow: -204_000 },
+            { date: "2024-12-31", operatingCashFlow: 122_000 },
+          ],
+        });
+      },
+    };
+
+    try {
+      const seedRouter = new AssetDataRouter(null, [cloudProvider], persistence.resources);
+      await seedRouter.getTickerFinancials("LINK", "NASDAQ");
+
+      const cachedRouter = new AssetDataRouter(yahooProvider, [cloudProvider], persistence.resources);
+      const merged = await cachedRouter.getTickerFinancials("LINK", "NASDAQ");
+
+      expect(yahooCalls).toBe(1);
+      expect(merged.quarterlyStatements).toHaveLength(9);
+    } finally {
+      persistence.close();
+    }
+  });
+
   test("fills missing preferred statement fields from richer fallback rows", async () => {
     const cloudProvider: DataProvider = {
       ...fallbackProvider,

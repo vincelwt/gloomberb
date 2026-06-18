@@ -31,6 +31,7 @@ export interface TabsProps {
   focused?: boolean;
   keyboardNavigation?: boolean;
   scrollable?: boolean;
+  scrollId?: string;
 }
 
 const WHEEL_DELTA_PER_CELL = 8;
@@ -47,6 +48,7 @@ export function Tabs({
   focused = false,
   keyboardNavigation = true,
   scrollable = true,
+  scrollId,
 }: TabsProps) {
   const ui = useUiHost();
   const NativeTabs = ui.Tabs;
@@ -57,11 +59,11 @@ export function Tabs({
     navigationValueRef.current = activeValue;
   }
   const palette = {
-    activeFg: variant === "bare" ? colors.textBright : colors.text,
+    activeFg: focused || variant === "bare" ? colors.textBright : colors.text,
     inactiveFg: colors.textDim,
     disabledFg: colors.textMuted,
     hoverFg: colors.text,
-    activeUnderline: colors.borderFocused,
+    activeUnderline: focused ? colors.textBright : colors.borderFocused,
     inactiveUnderline: colors.bg,
     hoverUnderline: colors.border,
     hoverBg: hoverBg(),
@@ -118,6 +120,7 @@ export function Tabs({
         closeMode={closeMode}
         addLabel={addLabel}
         onAdd={onAdd}
+        focused={focused}
         palette={palette}
       />
     );
@@ -133,7 +136,9 @@ export function Tabs({
       closeMode={closeMode}
       addLabel={addLabel}
       onAdd={onAdd}
+      focused={focused}
       scrollable={scrollable}
+      scrollId={scrollId}
       palette={palette}
     />
   );
@@ -157,7 +162,9 @@ function OpenTuiTabs({
   closeMode = "always",
   addLabel = "+",
   onAdd,
+  focused = false,
   scrollable = true,
+  scrollId,
   palette,
 }: TabsProps & {
   palette: {
@@ -187,7 +194,7 @@ function OpenTuiTabs({
   useEffect(() => {
     const scrollBox = scrollRef.current;
     const activeIndex = tabs.findIndex((tab) => tab.value === activeValue);
-    const viewportWidth = scrollBox?.viewport?.width ?? 0;
+    const viewportWidth = scrollBox?.viewport?.width || scrollBox?.width || 0;
     if (!scrollBox || activeIndex < 0 || viewportWidth <= 0) return;
 
     const activeLeft = tabWidths.slice(0, activeIndex).reduce((sum, width) => sum + width, 0);
@@ -195,14 +202,15 @@ function OpenTuiTabs({
     const currentLeft = scrollBox.scrollLeft ?? 0;
     const currentRight = currentLeft + viewportWidth;
     const maxScrollLeft = Math.max(0, totalWidth - viewportWidth);
+    const scrollToLeft = (left: number) => {
+      scrollBox.scrollLeft = left;
+      scrollBox.scrollTo({ x: left, y: scrollBox.scrollTop });
+    };
 
     if (activeLeft < currentLeft) {
-      scrollBox.scrollTo({ x: activeLeft, y: scrollBox.scrollTop });
+      scrollToLeft(activeLeft);
     } else if (activeRight > currentRight) {
-      scrollBox.scrollTo({
-        x: Math.min(activeRight - viewportWidth, maxScrollLeft),
-        y: scrollBox.scrollTop,
-      });
+      scrollToLeft(Math.min(activeRight - viewportWidth, maxScrollLeft));
     }
   }, [activeValue, tabWidths, tabs, totalWidth]);
 
@@ -214,7 +222,7 @@ function OpenTuiTabs({
     const direction = event?.scroll?.direction;
     if (!direction) return;
     const scrollBox = scrollRef.current;
-    const viewportWidth = scrollBox?.viewport?.width ?? 0;
+    const viewportWidth = scrollBox?.viewport?.width || scrollBox?.width || 0;
     if (!scrollBox || viewportWidth <= 0 || totalWidth <= viewportWidth) return;
 
     event.preventDefault?.();
@@ -228,6 +236,7 @@ function OpenTuiTabs({
       0,
       Math.min(maxScrollLeft, (scrollBox.scrollLeft ?? 0) + directionSign * deltaCells),
     );
+    scrollBox.scrollLeft = nextLeft;
     scrollBox.scrollTo({ x: nextLeft, y: scrollBox.scrollTop });
   };
 
@@ -236,10 +245,16 @@ function OpenTuiTabs({
       {tabs.map((tab, index) => {
         const active = tab.value === activeValue;
         const hovered = hoveredValue === tab.value && !tab.disabled;
+        const focusedActive = focused && active;
         const tabWidth = tabWidths[index] ?? tab.label.length + 2;
         const showClose = !!tab.onClose && (closeMode === "always" || active);
         const attributes = (active ? TextAttributes.BOLD : 0)
-          | (variant === "underline" && !compact && (active || hovered) ? TextAttributes.UNDERLINE : 0);
+          | (
+            (variant === "underline" && !compact && (active || hovered))
+              || (variant === "bare" && focusedActive)
+              ? TextAttributes.UNDERLINE
+              : 0
+          );
         const startHover = tab.disabled
           ? undefined
           : () => {
@@ -323,6 +338,7 @@ function OpenTuiTabs({
 
   return (
     <ScrollBox
+      id={scrollId}
       ref={scrollRef}
       width="100%"
       height={1}

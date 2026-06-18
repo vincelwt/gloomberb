@@ -18,6 +18,22 @@ describe("table layout", () => {
     expect(hasMeaningfulTableHorizontalOverflow(tableWidth, tableWidth - 2)).toBe(true);
   });
 
+  test("supports tables without inter-column gaps", () => {
+    const tableWidth = getTableWidth([
+      { width: 12 },
+      { width: 8 },
+    ], 0);
+    const noPaddingWidth = getTableWidth([
+      { width: 12 },
+      { width: 8 },
+    ], 0, 0);
+
+    expect(tableWidth).toBe(22);
+    expect(noPaddingWidth).toBe(20);
+    expect(hasMeaningfulTableHorizontalOverflow(tableWidth, tableWidth, 0)).toBe(false);
+    expect(hasMeaningfulTableHorizontalOverflow(tableWidth, tableWidth - 1, 0)).toBe(true);
+  });
+
   test("keeps non-flex web table columns fixed", () => {
     const template = buildTableGridTemplateColumns([
       { width: 4, align: "right" },
@@ -38,5 +54,14 @@ describe("table layout", () => {
     ]);
 
     expect(template).toBe("minmax(calc(8 * var(--cell-w)), 12fr) minmax(calc(8 * var(--cell-w)), 8fr)");
+  });
+
+  test("keeps fixed web table columns when fill width is disabled", () => {
+    const template = buildTableGridTemplateColumns([
+      { width: 12 },
+      { width: 8, align: "right" },
+    ], false);
+
+    expect(template).toBe("minmax(calc(8 * var(--cell-w)), calc(12 * var(--cell-w))) minmax(calc(8 * var(--cell-w)), calc(8 * var(--cell-w)))");
   });
 });

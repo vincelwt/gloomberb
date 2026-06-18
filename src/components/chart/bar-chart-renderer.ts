@@ -1,5 +1,6 @@
 import type { NativeChartBitmap } from "./native/chart-rasterizer";
 import { fillRect, parseHex } from "./native/raster/primitives";
+import { formatCompact } from "../../utils/format";
 
 interface BarChartPoint {
   category: string;
@@ -17,6 +18,8 @@ export interface BarChartColors {
   bgColor: string;
   gridColor: string;
   axisColor: string;
+  negativeColor?: string;
+  hoverColor?: string;
 }
 
 export interface BarChartSceneOptions {
@@ -25,8 +28,9 @@ export interface BarChartSceneOptions {
   colors: BarChartColors;
 }
 
-interface BarChartBar {
+export interface BarChartBar {
   seriesId: string;
+  seriesLabel: string;
   category: string;
   value: number;
   color: string;
@@ -47,7 +51,34 @@ export interface BarChartScene {
   colors: BarChartColors;
 }
 
+export interface BarChartHover {
+  seriesId: string;
+  seriesLabel: string;
+  category: string;
+  value: number;
+  color: string;
+  x: number;
+  width: number;
+  row: number;
+}
+
+export interface NativeBarChartPixelBounds {
+  left: number;
+  rightExclusive: number;
+}
+
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+function categorySlotBounds(width: number, categoryCount: number, index: number): { left: number; width: number } {
+  const left = Math.floor((index * width) / categoryCount);
+  const right = index === categoryCount - 1
+    ? width
+    : Math.floor(((index + 1) * width) / categoryCount);
+  return {
+    left,
+    width: Math.max(1, right - left),
+  };
+}
 
 function collectCategories(series: BarChartSeries[]): string[] {
   const categories: string[] = [];
@@ -64,19 +95,30 @@ function collectCategories(series: BarChartSeries[]): string[] {
 
 function normalizeRange(values: number[]): { min: number; max: number } {
   if (values.length === 0) return { min: 0, max: 1 };
-  const rawMin = Math.min(0, ...values);
-  const rawMax = Math.max(0, ...values);
-  if (rawMin === rawMax) {
-    const delta = Math.max(Math.abs(rawMin) * 0.1, 1);
-    return { min: rawMin - delta, max: rawMax + delta };
+  const dataMin = Math.min(...values);
+  const dataMax = Math.max(...values);
+  if (dataMin === dataMax) {
+    if (dataMin === 0) return { min: -1, max: 1 };
+    const delta = Math.max(Math.abs(dataMin) * 0.1, 1);
+    return dataMin > 0
+      ? { min: 0, max: dataMax + delta }
+      : { min: dataMin - delta, max: 0 };
   }
-  const padding = (rawMax - rawMin) * 0.08;
-  return { min: rawMin - padding, max: rawMax + padding };
+  const padding = (dataMax - dataMin) * 0.08;
+  if (dataMin >= 0) return { min: 0, max: dataMax + padding };
+  if (dataMax <= 0) return { min: dataMin - padding, max: 0 };
+  return { min: dataMin - padding, max: dataMax + padding };
 }
 
 function valueToRow(value: number, min: number, max: number, height: number): number {
   const t = (value - min) / (max - min || 1);
   return clamp(Math.round((1 - t) * (height - 1)), 0, height - 1);
+}
+
+function rowToValue(row: number, scene: Pick<BarChartScene, "height" | "min" | "max">): number {
+  if (scene.height <= 1) return scene.max;
+  const t = 1 - row / Math.max(scene.height - 1, 1);
+  return scene.min + t * (scene.max - scene.min);
 }
 
 export function buildBarChartScene(series: BarChartSeries[], options: BarChartSceneOptions): BarChartScene | null {
@@ -91,23 +133,32 @@ export function buildBarChartScene(series: BarChartSeries[], options: BarChartSc
 
   const { min, max } = normalizeRange(values);
   const zeroRow = valueToRow(0, min, max, height);
-  const groupWidth = Math.max(1, Math.floor(width / categories.length));
   const seriesCount = Math.max(series.length, 1);
-  const barWidth = Math.max(1, Math.floor(Math.max(groupWidth - 1, 1) / seriesCount));
+  const categorySlots = categories.map((_, index) => categorySlotBounds(width, categories.length, index));
+  const minSlotWidth = Math.max(1, Math.min(...categorySlots.map((slot) => slot.width)));
+  const groupedInnerWidth = Math.max(seriesCount, minSlotWidth - (minSlotWidth > seriesCount * 2 ? 1 : 0));
+  const groupedBarWidth = Math.max(1, Math.floor(groupedInnerWidth / seriesCount));
   const bars: BarChartBar[] = [];
 
   categories.forEach((category, categoryIndex) => {
-    const groupLeft = categoryIndex * groupWidth;
+    const group = categorySlots[categoryIndex]!;
+    const barWidth = seriesCount === 1 ? group.width : groupedBarWidth;
+    const barGroupWidth = barWidth * seriesCount;
+    const groupOffset = Math.max(0, Math.floor((group.width - barGroupWidth) / 2));
     series.forEach((item, seriesIndex) => {
       const value = item.points.find((point) => point.category === category)?.value;
       if (typeof value !== "number" || !Number.isFinite(value)) return;
+      const color = value < 0 && options.colors.negativeColor
+        ? options.colors.negativeColor
+        : item.color;
       bars.push({
         seriesId: item.id,
+        seriesLabel: item.label,
         category,
         value,
-        color: item.color,
-        x: clamp(groupLeft + seriesIndex * barWidth, 0, width - 1),
-        width: Math.min(barWidth, Math.max(width - groupLeft, 1)),
+        color,
+        x: clamp(group.left + groupOffset + seriesIndex * barWidth, 0, width - 1),
+        width: Math.min(barWidth, Math.max(width - (group.left + groupOffset + seriesIndex * barWidth), 1)),
         row: valueToRow(value, min, max, height),
       });
     });
@@ -126,18 +177,81 @@ export function buildBarChartScene(series: BarChartSeries[], options: BarChartSc
   };
 }
 
-export function renderBarChart(scene: BarChartScene): string[] {
+function labelAtRow(labels: Array<{ row: number; value: number }>, row: number): number | null {
+  const match = labels.find((label) => label.row === row);
+  return match ? match.value : null;
+}
+
+export function barChartYAxisTicks(scene: BarChartScene): Array<{ row: number; value: number }> {
+  const ticksByRow = new Map<number, number>();
+  const addTick = (row: number, value: number) => {
+    ticksByRow.set(clamp(row, 0, scene.height - 1), value);
+  };
+
+  addTick(0, scene.max);
+  for (let i = 1; i <= 3; i++) {
+    const row = Math.round((scene.height - 1) * (i / 4));
+    addTick(row, rowToValue(row, scene));
+  }
+  addTick(scene.zeroRow, 0);
+  addTick(scene.height - 1, scene.min);
+
+  return [...ticksByRow.entries()]
+    .map(([row, value]) => ({ row, value }))
+    .sort((left, right) => left.row - right.row);
+}
+
+export function renderBarChartYAxis(
+  scene: BarChartScene,
+  width: number,
+  formatValue: (value: number) => string = formatCompact,
+): string[] {
+  const axisWidth = Math.max(0, Math.floor(width));
+  if (axisWidth === 0) return Array.from({ length: scene.height }, () => "");
+
+  const ticks = barChartYAxisTicks(scene);
+  return Array.from({ length: scene.height }, (_unused, row) => {
+    const value = labelAtRow(ticks, row);
+    const label = value === null ? "" : formatValue(value);
+    return `${label.slice(0, Math.max(axisWidth - 1, 0)).padStart(Math.max(axisWidth - 1, 0))} `;
+  });
+}
+
+export function resolveBarChartHover(scene: BarChartScene, cellX: number): BarChartHover | null {
+  if (!Number.isFinite(cellX) || scene.bars.length === 0) return null;
+  const x = clamp(Math.floor(cellX), 0, scene.width - 1);
+  const direct = scene.bars.find((bar) => x >= bar.x && x < bar.x + bar.width);
+  const bar = direct ?? scene.bars.reduce((closest, current) => {
+    const closestCenter = closest.x + closest.width / 2;
+    const currentCenter = current.x + current.width / 2;
+    return Math.abs(currentCenter - x) < Math.abs(closestCenter - x) ? current : closest;
+  }, scene.bars[0]!);
+
+  return {
+    seriesId: bar.seriesId,
+    seriesLabel: bar.seriesLabel,
+    category: bar.category,
+    value: bar.value,
+    color: bar.color,
+    x: bar.x,
+    width: bar.width,
+    row: bar.row,
+  };
+}
+
+export function renderBarChart(scene: BarChartScene, hover: BarChartHover | null = null): string[] {
   const rows = Array.from({ length: scene.height }, () => Array(scene.width).fill(" "));
   for (let x = 0; x < scene.width; x++) {
     rows[scene.zeroRow]![x] = "─";
   }
 
   for (const bar of scene.bars) {
+    const fill = hover && hover.seriesId === bar.seriesId && hover.category === bar.category ? "▓" : "█";
     const top = Math.min(bar.row, scene.zeroRow);
     const bottom = Math.max(bar.row, scene.zeroRow);
     for (let y = top; y <= bottom; y++) {
       for (let x = bar.x; x < Math.min(bar.x + bar.width, scene.width); x++) {
-        rows[y]![x] = "█";
+        rows[y]![x] = fill;
       }
     }
   }
@@ -145,26 +259,101 @@ export function renderBarChart(scene: BarChartScene): string[] {
   return rows.map((row) => row.join(""));
 }
 
-export function renderBarChartAxis(scene: BarChartScene): string {
-  const axis = Array(scene.width).fill(" ");
-  const groupWidth = Math.max(1, Math.floor(scene.width / scene.categories.length));
-  scene.categories.forEach((category, index) => {
-    const label = category.slice(0, Math.max(1, groupWidth - 1));
-    const start = index * groupWidth;
-    for (let i = 0; i < label.length && start + i < scene.width; i++) {
-      axis[start + i] = label[i]!;
-    }
-  });
-  return axis.join("");
+function centeredLabelStart(center: number, label: string, width: number, rightInset = 0): number {
+  return clamp(Math.round(center - label.length / 2), 0, Math.max(0, width - label.length - rightInset));
 }
 
-export function renderNativeBarChart(scene: BarChartScene, pixelWidth: number, pixelHeight: number): NativeChartBitmap {
+function compactCategoryLabel(category: string, previous: string | undefined, categoryCount: number): string {
+  const quarterMatch = category.match(/^(\d{4}) Q([1-4])$/);
+  if (!quarterMatch) return category;
+  const year = quarterMatch[1]!;
+  const previousYear = previous?.match(/^(\d{4}) Q[1-4]$/)?.[1];
+  if (categoryCount > 10) return previousYear === year ? "" : year;
+  return category;
+}
+
+function canPlaceLabel(row: string[], start: number, label: string, minGap: number): boolean {
+  const left = Math.max(0, start - minGap);
+  const right = Math.min(row.length - 1, start + label.length + minGap - 1);
+  for (let index = left; index <= right; index++) {
+    if (row[index] !== " ") return false;
+  }
+  return true;
+}
+
+export function renderBarChartAxis(scene: BarChartScene, rowCount = 1): string[] {
+  const rows = Array.from({ length: Math.max(1, Math.floor(rowCount)) }, () => Array(scene.width).fill(" "));
+  const minGap = scene.categories.length > 10 ? 3 : 1;
+  const rightInset = scene.categories.length > 10 ? 2 : 0;
+  scene.categories.forEach((category, index) => {
+    const label = compactCategoryLabel(category, scene.categories[index - 1], scene.categories.length);
+    if (!label) return;
+    const group = categorySlotBounds(scene.width, scene.categories.length, index);
+    const start = centeredLabelStart(group.left + group.width / 2, label, scene.width, rightInset);
+    const row = rows.find((candidate) => canPlaceLabel(candidate, start, label, minGap));
+    if (!row) return;
+    for (let i = 0; i < label.length && start + i < scene.width; i++) {
+      row[start + i] = label[i]!;
+    }
+  });
+  return rows.map((row) => row.join(""));
+}
+
+export function resolveNativeBarPixelBounds(
+  scene: BarChartScene,
+  bar: BarChartBar,
+  pixelWidth: number,
+): NativeBarChartPixelBounds {
+  const width = Math.max(1, Math.floor(pixelWidth));
+
+  if (scene.series.length === 1) {
+    const categoryIndex = scene.categories.indexOf(bar.category);
+    if (categoryIndex >= 0) {
+      const separatorWidth = scene.categories.length > 1 && width >= scene.categories.length * 3 ? 1 : 0;
+      const usableWidth = Math.max(
+        scene.categories.length,
+        width - separatorWidth * (scene.categories.length - 1),
+      );
+      const left = Math.floor((categoryIndex * usableWidth) / scene.categories.length)
+        + categoryIndex * separatorWidth;
+      const rightExclusive = categoryIndex === scene.categories.length - 1
+        ? width
+        : Math.floor(((categoryIndex + 1) * usableWidth) / scene.categories.length)
+          + categoryIndex * separatorWidth;
+      return {
+        left,
+        rightExclusive: Math.max(left + 1, rightExclusive),
+      };
+    }
+  }
+
+  const horizontalInset = 1;
+  const left = clamp(
+    Math.floor((bar.x / scene.width) * width + horizontalInset),
+    0,
+    width - 1,
+  );
+  const rightExclusive = clamp(
+    Math.ceil(((bar.x + bar.width) / scene.width) * width - horizontalInset),
+    left + 1,
+    width,
+  );
+  return { left, rightExclusive };
+}
+
+export function renderNativeBarChart(
+  scene: BarChartScene,
+  pixelWidth: number,
+  pixelHeight: number,
+  hover: BarChartHover | null = null,
+): NativeChartBitmap {
   const width = Math.max(1, Math.floor(pixelWidth));
   const height = Math.max(1, Math.floor(pixelHeight));
   const data = new Uint8Array(width * height * 4);
   const bg = parseHex(scene.colors.bgColor, 1);
   const grid = parseHex(scene.colors.gridColor, 0.45);
   const axis = parseHex(scene.colors.axisColor, 0.75);
+  const hoverColor = parseHex(scene.colors.hoverColor ?? scene.colors.axisColor, 1);
 
   fillRect(data, width, height, 0, 0, width - 1, height - 1, bg, 1);
 
@@ -177,13 +366,23 @@ export function renderNativeBarChart(scene: BarChartScene, pixelWidth: number, p
   fillRect(data, width, height, 0, zeroY, width - 1, zeroY + 1.1, axis, 0.8);
 
   for (const bar of scene.bars) {
+    const isHovered = !!hover
+      && hover.seriesId === bar.seriesId
+      && hover.category === bar.category;
     const color = parseHex(bar.color, 0.96);
-    const left = (bar.x / scene.width) * width + 1;
-    const right = ((bar.x + bar.width) / scene.width) * width - 1;
+    const bounds = resolveNativeBarPixelBounds(scene, bar, width);
+    const left = bounds.left;
+    const right = bounds.rightExclusive - 1;
     const valueY = clamp((bar.row / Math.max(scene.height - 1, 1)) * (height - 1), 0, height - 1);
     const top = Math.min(valueY, zeroY);
     const bottom = Math.max(valueY, zeroY);
-    fillRect(data, width, height, left, top, Math.max(left, right), Math.max(top + 1, bottom), color, 1);
+    fillRect(data, width, height, left, top, right, Math.max(top + 1, bottom), color, 1);
+    if (isHovered) {
+      fillRect(data, width, height, left, top, right, top + 1.3, hoverColor, 1);
+      fillRect(data, width, height, left, bottom - 1.3, right, bottom, hoverColor, 1);
+      fillRect(data, width, height, left, top, left + 1.3, bottom, hoverColor, 1);
+      fillRect(data, width, height, right - 1.3, top, right, bottom, hoverColor, 1);
+    }
   }
 
   return { width, height, pixels: data };

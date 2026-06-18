@@ -259,6 +259,7 @@ export interface HostTabsProps {
   closeMode?: "active" | "always";
   addLabel?: string;
   onAdd?: () => void;
+  focused?: boolean;
   palette: HostTabsPalette;
 }
 

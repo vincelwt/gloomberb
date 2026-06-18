@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   SecEdgarClient,
   extractFilingContent,
+  parseCompanyFactsFinancialStatements,
   parseFilingDocuments,
   parseRecentFilings,
   parseTickerLookup,
@@ -114,6 +115,88 @@ describe("parseFilingDocuments", () => {
         description: "Results of Operations and Financial Condition",
         document: "aapl-ex991.htm",
         isPrimary: false,
+      },
+    ]);
+  });
+});
+
+describe("parseCompanyFactsFinancialStatements", () => {
+  test("maps SEC company facts into deeper annual and quarterly statement rows", () => {
+    const fact = (tag: string, unit: string, rows: unknown[]) => ({
+      [tag]: {
+        units: {
+          [unit]: rows,
+        },
+      },
+    });
+    const duration = (end: string, val: number, overrides: Record<string, unknown> = {}) => ({
+      start: `${end.slice(0, 4)}-01-01`,
+      end,
+      val,
+      filed: end,
+      form: "10-K",
+      fp: "FY",
+      ...overrides,
+    });
+    const instant = (end: string, val: number, overrides: Record<string, unknown> = {}) => ({
+      end,
+      val,
+      filed: end,
+      form: "10-K",
+      fp: "FY",
+      ...overrides,
+    });
+
+    const statements = parseCompanyFactsFinancialStatements({
+      facts: {
+        "us-gaap": {
+          ...fact("RevenueFromContractWithCustomerExcludingAssessedTax", "USD", [
+            duration("2020-12-31", 100),
+            duration("2021-03-31", 30, { form: "10-Q", fp: "Q1", frame: "CY2021Q1" }),
+            duration("2021-06-30", 40, { form: "10-Q", fp: "Q2", frame: "CY2021Q2" }),
+          ]),
+          ...fact("NetCashProvidedByUsedInOperatingActivities", "USD", [
+            duration("2020-12-31", 25),
+            duration("2021-03-31", 8, { form: "10-Q", fp: "Q1", frame: "CY2021Q1" }),
+          ]),
+          ...fact("PaymentsToAcquirePropertyPlantAndEquipment", "USD", [
+            duration("2020-12-31", 5),
+            duration("2021-03-31", 3, { form: "10-Q", fp: "Q1", frame: "CY2021Q1" }),
+          ]),
+          ...fact("Assets", "USD", [
+            instant("2020-12-31", 500),
+            instant("2021-03-31", 520, { form: "10-Q", fp: "Q1", frame: "CY2021Q1I" }),
+          ]),
+          ...fact("EarningsPerShareDiluted", "USD/shares", [
+            duration("2020-12-31", 1.25),
+            duration("2021-03-31", 0.35, { form: "10-Q", fp: "Q1", frame: "CY2021Q1" }),
+          ]),
+        },
+      },
+    });
+
+    expect(statements.annualStatements).toEqual([{
+      date: "2020-12-31",
+      totalRevenue: 100,
+      operatingCashFlow: 25,
+      capitalExpenditure: -5,
+      freeCashFlow: 20,
+      totalAssets: 500,
+      eps: 1.25,
+    }]);
+    expect(statements.quarterlyStatements).toEqual([
+      {
+        date: "2021-03-31",
+        totalRevenue: 30,
+        operatingCashFlow: 8,
+        capitalExpenditure: -3,
+        freeCashFlow: 5,
+        totalAssets: 520,
+        eps: 0.35,
+      },
+      {
+        date: "2021-06-30",
+        totalRevenue: 40,
       },
     ]);
   });

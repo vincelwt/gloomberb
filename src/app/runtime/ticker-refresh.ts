@@ -164,7 +164,10 @@ export function useTickerRefreshRuntime({
           dispatch({ type: "SET_REFRESHING", symbol, refreshing: true });
         }
         try {
-          const entries = await marketData.loadSnapshotsBatch(instrumentEntries.map((entry) => entry.instrument));
+          const entries = await marketData.loadSnapshotsBatch(
+            instrumentEntries.map((entry) => entry.instrument),
+            { forceRefresh: true },
+          );
           entries.forEach((entry, index) => {
             const ticker = instrumentEntries[index]?.ticker;
             const data = entry.data ?? entry.lastGoodData;

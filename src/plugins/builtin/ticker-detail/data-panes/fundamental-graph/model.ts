@@ -71,9 +71,19 @@ export function buildFundamentalGraphRows(
   symbol = "",
   period: FundamentalPeriod = "annual",
 ): FundamentalGraphRow[] {
-  const sorted = [...statements]
+  const sortedStatements = [...statements]
     .filter((statement) => typeof statement[metric] === "number")
     .sort((left, right) => left.date.localeCompare(right.date));
+  const byCategory = new Map<string, FinancialStatement>();
+  for (const statement of sortedStatements) {
+    const category = periodCategory(statement.date, period);
+    const key = `${symbol}\u0000${category}`;
+    const previous = byCategory.get(key);
+    if (!previous || statement.date.localeCompare(previous.date) >= 0) {
+      byCategory.set(key, statement);
+    }
+  }
+  const sorted = [...byCategory.values()].sort((left, right) => left.date.localeCompare(right.date));
   const maxAbs = Math.max(1, ...sorted.map((statement) => Math.abs(statement[metric] as number)));
   return sorted.map((statement, index) => {
     const value = statement[metric] as number;
@@ -159,8 +169,21 @@ export function buildValuationGraphRows(
   });
 }
 
-function metricDefs(kind: GraphKind): ReadonlyArray<MetricDefinition> {
+export function metricDefs(kind: GraphKind): ReadonlyArray<MetricDefinition> {
   return kind === "valuation" ? VALUATION_METRICS : FUNDAMENTAL_METRICS;
+}
+
+export function allMetricDefs(): ReadonlyArray<{ kind: GraphKind; definition: MetricDefinition }> {
+  return [
+    ...FUNDAMENTAL_METRICS.map((definition) => ({ kind: "fundamental" as const, definition })),
+    ...VALUATION_METRICS.map((definition) => ({ kind: "valuation" as const, definition })),
+  ];
+}
+
+export function metricKind(metric: GraphMetricKey): GraphKind | null {
+  if (FUNDAMENTAL_METRICS.some((definition) => definition.key === metric)) return "fundamental";
+  if (VALUATION_METRICS.some((definition) => definition.key === metric)) return "valuation";
+  return null;
 }
 
 export function defaultMetric(kind: GraphKind): GraphMetricKey {
