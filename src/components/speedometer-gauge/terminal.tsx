@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Box, ChartSurface, Span, Text, TextAttributes, useNativeRenderer, useUiCapabilities } from "../../ui";
-import { computeBitmapSize, type NativeChartBitmap } from "../chart/native/chart-rasterizer";
+import type { NativeChartBitmap } from "../chart/native/chart-rasterizer";
+import { resolveNativeBitmapSize, shouldRenderNativeBitmap } from "../chart/native/bitmap-support";
 import { drawCircle, drawLine, parseHex } from "../chart/native/raster/primitives";
 import { colors } from "../../theme/colors";
 import {
@@ -203,29 +204,29 @@ export function TerminalSpeedometerGauge({
   const labelRow = useMemo(() => renderLabelRow(gaugeWidth, min, max, segments), [gaugeWidth, max, min, segments]);
   const tickRow = useMemo(() => renderTickRow(gaugeWidth, min, max), [gaugeWidth, max, min]);
   const arcRows = useMemo(() => renderArcRows(value, min, max, gaugeWidth, segments), [gaugeWidth, max, min, segments, value]);
+  const rendererCapabilities = nativeRenderer.capabilities;
   const rendererResolution = nativeRenderer.resolution;
   const rendererTerminalWidth = nativeRenderer.terminalWidth;
   const rendererTerminalHeight = nativeRenderer.terminalHeight;
   const bitmap = useMemo<NativeChartBitmap | null>(() => {
-    if (!nativeCharts) return null;
-    const bitmapSize = rendererResolution && rendererTerminalWidth > 0 && rendererTerminalHeight > 0
-      ? computeBitmapSize(
-        { x: 0, y: 0, width: gaugeWidth, height: arcRows.length },
-        rendererResolution,
-        rendererTerminalWidth,
-        rendererTerminalHeight,
-      )
-      : null;
-    const scale = Math.max(1, pixelRatio);
-    const pixelWidth = bitmapSize?.pixelWidth ?? Math.max(1, Math.round(gaugeWidth * cellWidthPx * scale));
-    const pixelHeight = bitmapSize?.pixelHeight ?? Math.max(1, Math.round(arcRows.length * cellHeightPx * scale));
+    if (!shouldRenderNativeBitmap(nativeRenderer, nativeCharts === true)) return null;
+    const bitmapSize = resolveNativeBitmapSize({
+      width: gaugeWidth,
+      height: arcRows.length,
+      resolution: rendererResolution,
+      terminalWidth: rendererTerminalWidth,
+      terminalHeight: rendererTerminalHeight,
+      cellWidthPx,
+      cellHeightPx,
+      pixelRatio,
+    });
     return renderGaugeBitmap(
       value,
       min,
       max,
       segments,
-      pixelWidth,
-      pixelHeight,
+      bitmapSize.pixelWidth,
+      bitmapSize.pixelHeight,
     );
   }, [
     arcRows.length,
@@ -235,7 +236,9 @@ export function TerminalSpeedometerGauge({
     max,
     min,
     nativeCharts,
+    nativeRenderer,
     pixelRatio,
+    rendererCapabilities,
     rendererResolution,
     rendererTerminalHeight,
     rendererTerminalWidth,

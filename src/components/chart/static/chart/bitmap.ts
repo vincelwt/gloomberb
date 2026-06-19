@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useNativeRenderer, useUiCapabilities } from "../../../../ui";
-import { computeBitmapSize } from "../../native/chart-rasterizer";
+import { resolveNativeBitmapSize, shouldRenderNativeBitmap } from "../../native/bitmap-support";
 
 export interface StaticChartBitmapSize {
   pixelWidth: number;
@@ -16,20 +16,25 @@ export function useStaticChartBitmapSize(width: number, height: number): StaticC
     pixelRatio = 1,
   } = useUiCapabilities();
   const nativeRenderer = useNativeRenderer();
+  const rendererCapabilities = nativeRenderer.capabilities;
   const rendererResolution = nativeRenderer.resolution;
   const rendererTerminalWidth = nativeRenderer.terminalWidth;
   const rendererTerminalHeight = nativeRenderer.terminalHeight;
 
   return useMemo(() => {
-    if (nativeCharts && rendererResolution && rendererTerminalWidth > 0 && rendererTerminalHeight > 0) {
-      return computeBitmapSize(
-        { x: 0, y: 0, width, height },
-        rendererResolution,
-        rendererTerminalWidth,
-        rendererTerminalHeight,
-      );
+    if (shouldRenderNativeBitmap(nativeRenderer, nativeCharts === true)) {
+      return resolveNativeBitmapSize({
+        width,
+        height,
+        resolution: rendererResolution,
+        terminalWidth: rendererTerminalWidth,
+        terminalHeight: rendererTerminalHeight,
+        cellWidthPx,
+        cellHeightPx,
+        pixelRatio,
+      });
     }
-    if (!canvasCharts && !nativeCharts) return null;
+    if (!canvasCharts) return null;
     const scale = Math.max(1, pixelRatio);
     return {
       pixelWidth: Math.max(1, Math.round(width * cellWidthPx * scale)),
@@ -41,7 +46,9 @@ export function useStaticChartBitmapSize(width: number, height: number): StaticC
     cellWidthPx,
     height,
     nativeCharts,
+    nativeRenderer,
     pixelRatio,
+    rendererCapabilities,
     rendererResolution,
     rendererTerminalHeight,
     rendererTerminalWidth,

@@ -10,7 +10,7 @@ import {
 import { colors } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
 import type { PricePoint } from "../../types/financials";
-import { computeBitmapSize } from "../chart/native/chart-rasterizer";
+import { resolveNativeBitmapSize, shouldRenderNativeBitmap } from "../chart/native/bitmap-support";
 import { renderSparklineBitmap } from "./bitmap";
 import {
   buildSamples,
@@ -90,22 +90,21 @@ function TerminalPriceSparkline({
   const { nativeCharts, cellWidthPx = 8, cellHeightPx = 18, pixelRatio = 1 } = useUiCapabilities();
   const nativeRenderer = useNativeRenderer();
   const rendererResolution = nativeRenderer.resolution;
+  const rendererCapabilities = nativeRenderer.capabilities;
   const rendererTerminalWidth = nativeRenderer.terminalWidth;
   const rendererTerminalHeight = nativeRenderer.terminalHeight;
   const bitmap = useMemo(() => {
-    if (!nativeCharts || values.length < 2) return null;
-    const scale = Math.max(1, pixelRatio);
-    const bitmapSize = rendererResolution && rendererTerminalWidth > 0 && rendererTerminalHeight > 0
-      ? computeBitmapSize(
-        { x: 0, y: 0, width, height },
-        rendererResolution,
-        rendererTerminalWidth,
-        rendererTerminalHeight,
-      )
-      : {
-          pixelWidth: Math.max(1, Math.round(width * cellWidthPx * scale)),
-          pixelHeight: Math.max(1, Math.round(height * cellHeightPx * scale)),
-        };
+    if (values.length < 2 || !shouldRenderNativeBitmap(nativeRenderer, nativeCharts === true)) return null;
+    const bitmapSize = resolveNativeBitmapSize({
+      width,
+      height,
+      resolution: rendererResolution,
+      terminalWidth: rendererTerminalWidth,
+      terminalHeight: rendererTerminalHeight,
+      cellWidthPx,
+      cellHeightPx,
+      pixelRatio,
+    });
     return renderSparklineBitmap(values, bitmapSize.pixelWidth, bitmapSize.pixelHeight, color, { area, compact: height <= 1 });
   }, [
     area,
@@ -114,7 +113,9 @@ function TerminalPriceSparkline({
     color,
     height,
     nativeCharts,
+    nativeRenderer,
     pixelRatio,
+    rendererCapabilities,
     rendererResolution,
     rendererTerminalHeight,
     rendererTerminalWidth,
