@@ -239,7 +239,7 @@ export function ChannelSidebar({
               flexDirection="row"
               backgroundColor={bg}
               onMouseDown={selectChannel}
-              onMouseMove={() => setHoveredChannelId((current) => (current === channel.id ? current : channel.id))}
+              onMouseOver={() => setHoveredChannelId((current) => (current === channel.id ? current : channel.id))}
               onMouseOut={() => setHoveredChannelId((current) => (current === channel.id ? null : current))}
               style={{ cursor: "pointer" }}
             >

@@ -33,6 +33,9 @@ export const WebBox = forwardRef<HTMLDivElement, Record<string, unknown> & { chi
     const pendingDragRef = useRef<CellMouseEvent | null>(null);
     const propsRef = useRef(props);
     propsRef.current = props;
+    const hoverBackgroundColor = typeof props.hoverBackgroundColor === "string"
+      ? props.hoverBackgroundColor
+      : undefined;
 
     useImperativeHandle(ref, () => cellBoundsForElement(() => elementRef.current, () => propsRef.current) as unknown as HTMLDivElement, []);
 
@@ -140,6 +143,7 @@ export const WebBox = forwardRef<HTMLDivElement, Record<string, unknown> & { chi
     return (
       <div
         {...cleanDomProps(props)}
+        data-gloom-hover-bg={hoverBackgroundColor ? "true" : undefined}
         data-gloom-interactive={hasDirectMouseHandler(props) ? "true" : undefined}
         ref={elementRef}
         onMouseDown={handleMouseDown}
@@ -149,9 +153,10 @@ export const WebBox = forwardRef<HTMLDivElement, Record<string, unknown> & { chi
         onWheel={typeof props.onMouseScroll === "function" ? handleWheel : undefined}
         style={{
           ...commonStyle(props),
+          "--gloom-box-hover-bg": hoverBackgroundColor,
           ...(props.style as CSSProperties | undefined),
           ...(props.visible === false ? { display: "none" } : undefined),
-        }}
+        } as CSSProperties}
       >
         {children as ReactNode}
       </div>

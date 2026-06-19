@@ -130,9 +130,9 @@ function optionMoneynessBackground(
   row: OptionTableRow,
   contract: OptionContract | undefined,
   columnId: OptionColumnId,
-  rowState: { selected: boolean; hovered: boolean },
+  rowState: { selected: boolean },
 ): string | undefined {
-  if (rowState.selected || rowState.hovered) return undefined;
+  if (rowState.selected) return undefined;
   const inTheMoney = inferColumnMoneyness(row, contract, columnId);
   const sideColor = columnId.startsWith("call") ? colors.positive : colors.negative;
   return inTheMoney
@@ -180,13 +180,13 @@ export function renderOptionCell(
   row: OptionTableRow,
   column: OptionColumn,
   _index: number,
-  rowState: { selected: boolean; hovered: boolean },
+  rowState: { selected: boolean },
 ): DataTableCell {
   const selectedColor = rowState.selected ? colors.selectedText : undefined;
-  const rowSurface = rowState.selected ? colors.selected : rowState.hovered ? hoverBg() : colors.bg;
+  const rowSurface = rowState.selected ? colors.selected : colors.bg;
 
   if (column.id === "strike") {
-    const backgroundColor = rowState.selected || rowState.hovered
+    const backgroundColor = rowState.selected
       ? undefined
       : blendHex(colors.bg, row.isPositionStrike ? colors.borderFocused : colors.header, row.isPositionStrike ? 0.18 : 0.1);
     const surface = backgroundColor ?? rowSurface;

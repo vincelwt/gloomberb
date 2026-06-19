@@ -53,8 +53,6 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   scrollRef,
   syncHeaderScroll: _syncHeaderScroll,
   onBodyScrollActivity,
-  hoveredIdx,
-  setHoveredIdx,
   getItemKey,
   isSelected,
   onSelect,
@@ -257,9 +255,6 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
           focusPane();
           onTableMouseDown?.({});
         }}
-        onMouseLeave={() => {
-          if (hoveredIdx !== null) setHoveredIdx(null);
-        }}
         onScroll={() => {
           markScrollbarActive();
           scheduleBodyScrollActivity();
@@ -315,7 +310,6 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                 const item = items[row.index];
                 if (!item) return null;
                 const selected = isSelected(item, row.index);
-                const hovered = hoveredIdx === row.index && !selected;
                 const itemKey = getItemKey(item, row.index);
                 return (
                   <WebDataTableRow<T, C>
@@ -335,13 +329,11 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                     onRowContextMenu={onRowContextMenu}
                     onRowMouseDown={onRowMouseDown}
                     onSelectRow={selectRow}
-                    hovered={hovered}
                     getRowBackgroundColor={getRowBackgroundColor}
                     renderCell={renderCell}
                     renderSectionHeader={renderSectionHeader}
                     rowContextMenuSurface={rowContextMenuSurface}
                     selected={selected}
-                    setHoveredIdx={setHoveredIdx}
                   />
                 );
               }),

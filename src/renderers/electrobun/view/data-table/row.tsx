@@ -12,7 +12,6 @@ import type {
 import { WEB_CELL_HEIGHT } from "../input-host";
 import {
   CSS_BG,
-  CSS_HOVER_BG,
   CSS_PANEL,
   CSS_SELECTED,
   CSS_SELECTED_TEXT,
@@ -151,7 +150,6 @@ function WebDataTableRowInner<
   onRowContextMenu,
   onRowMouseDown,
   onSelectRow,
-  hovered,
   index,
   item,
   itemKey,
@@ -163,7 +161,6 @@ function WebDataTableRowInner<
   rowStart,
   rowContextMenuSurface,
   selected,
-  setHoveredIdx,
 }: {
   columns: C[];
   columnGap: number;
@@ -174,7 +171,6 @@ function WebDataTableRowInner<
   onRowContextMenu?: DataTableProps<T, C>["onRowContextMenu"];
   onRowMouseDown?: DataTableProps<T, C>["onRowMouseDown"];
   onSelectRow: (item: T, index: number) => void;
-  hovered: boolean;
   index: number;
   item: T;
   itemKey: string;
@@ -186,7 +182,6 @@ function WebDataTableRowInner<
   rowStart: number;
   rowContextMenuSurface: boolean;
   selected: boolean;
-  setHoveredIdx: (index: number | null) => void;
 }) {
   useThemeColors();
   const sectionHeader: DataTableSectionHeader | null =
@@ -242,13 +237,11 @@ function WebDataTableRowInner<
     );
   }
 
-  const rowState = { selected, hovered };
+  const rowState = { selected };
   const rowBackgroundColor = getRowBackgroundColor?.(item, index, rowState);
   const rowBg = selected
     ? CSS_SELECTED
-    : hovered
-      ? CSS_HOVER_BG
-      : rowBackgroundColor ?? CSS_BG;
+    : rowBackgroundColor ?? CSS_BG;
 
   return (
     <div
@@ -259,9 +252,6 @@ function WebDataTableRowInner<
       style={{
         ...baseRowStyle,
         backgroundColor: rowBg,
-      }}
-      onMouseMove={() => {
-        if (!hovered) setHoveredIdx(index);
       }}
       onMouseDown={(event) => {
         focusPane();

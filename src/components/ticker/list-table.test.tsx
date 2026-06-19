@@ -32,8 +32,6 @@ const manyTickers: TickerRecord[] = Array.from({ length: 1000 }, (_, index) => (
   },
 }));
 
-function noop(_index: number | null): void {}
-
 function resolveCell(_column: ColumnConfig, ticker: TickerRecord, _financials: TickerFinancials | undefined): TickerTableCell {
   resolveCellCallCount += 1;
   return { text: ticker.metadata.ticker };
@@ -69,8 +67,6 @@ function LargeTickerListTableHarness() {
         columns={columns}
         tickers={manyTickers}
         cursorSymbol={cursorSymbol}
-        hoveredIdx={null}
-        setHoveredIdx={noop}
         setCursorSymbol={setCursorSymbol}
         resolveCell={resolveCell}
         financialsMap={financialsMap}

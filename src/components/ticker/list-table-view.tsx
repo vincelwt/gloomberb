@@ -56,8 +56,6 @@ export interface TickerListTableViewProps {
   scrollRef?: RefObject<ScrollBoxRenderable | null>;
   syncHeaderScroll?: () => void;
   onBodyScrollActivity?: () => void;
-  hoveredIdx?: number | null;
-  setHoveredIdx?: (index: number | null) => void;
   keyboardNavigation?: boolean;
   onRootKeyDown?: (event: DataTableKeyEvent) => boolean | void;
   onVisibleRangeChange?: (range: TickerListVisibleRange) => void;
@@ -119,8 +117,6 @@ export function TickerListTableView({
   scrollRef,
   syncHeaderScroll,
   onBodyScrollActivity,
-  hoveredIdx,
-  setHoveredIdx,
   keyboardNavigation = true,
   onRootKeyDown,
   onVisibleRangeChange,
@@ -187,7 +183,7 @@ export function TickerListTableView({
     ticker: TickerRecord,
     column: ColumnConfig,
     _index: number,
-    rowState: { selected: boolean; hovered: boolean },
+    rowState: { selected: boolean },
   ) => {
     const financials = financialsMap.get(ticker.metadata.ticker);
     if (column.id === PRICE_SPARKLINE_COLUMN_ID) {
@@ -279,8 +275,6 @@ export function TickerListTableView({
       scrollRef={effectiveScrollRef}
       syncHeaderScroll={syncHeaderScroll}
       onBodyScrollActivity={handleBodyScrollActivity}
-      hoveredIdx={hoveredIdx}
-      setHoveredIdx={setHoveredIdx}
       keyboardNavigation={keyboardNavigation}
       onRootKeyDown={onRootKeyDown}
       resetScrollKey={resetScrollKey}

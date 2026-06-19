@@ -85,7 +85,7 @@ export function PickerRow({
   return (
     <Box
       flexDirection="column"
-      onMouseMove={onFocus}
+      onMouseOver={onFocus}
       onMouseDown={(event?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
         event?.stopPropagation?.();
         event?.preventDefault?.();
@@ -135,7 +135,7 @@ export function CheckboxRow({
     <Box
       flexDirection="column"
       backgroundColor={hovered ? hoverBg() : undefined}
-      onMouseMove={() => {
+      onMouseOver={() => {
         setHovered(true);
         onFocus();
       }}

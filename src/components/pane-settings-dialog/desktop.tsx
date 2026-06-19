@@ -183,7 +183,7 @@ function DesktopSettingsRow({
       flexDirection="column"
       minHeight={field.description ? undefined : 2}
       backgroundColor={hovered || selected ? desktopHoverSurface() : "transparent"}
-      onMouseMove={onHover}
+      onMouseOver={onHover}
       onMouseDown={field.type === "select" ? undefined : (event: any) => {
         event.stopPropagation?.();
         event.preventDefault?.();

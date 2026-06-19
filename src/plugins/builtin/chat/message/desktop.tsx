@@ -97,7 +97,7 @@ export const DesktopChatMessage = memo(function DesktopChatMessage({
           <Text
             fg={state.authorColor}
             attributes={state.authorAttributes}
-            onMouseMove={() => onUserHover(msg.user)}
+            onMouseOver={() => onUserHover(msg.user)}
             onMouseOut={onUserHoverEnd}
             style={{ cursor: "default" }}
           >

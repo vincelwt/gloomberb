@@ -165,7 +165,7 @@ function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currenc
         onSelect();
       }}
       onDoubleClick={onActivate}
-      onMouseMove={() => onHover(true)}
+      onMouseOver={() => onHover(true)}
       onMouseOut={() => onHover(false)}
     >
       {canShowLabel && (

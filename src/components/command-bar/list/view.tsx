@@ -165,7 +165,7 @@ const CommandBarListItemRow = memo(function CommandBarListItemRow({
         : isHovered
           ? paletteHoverBg
           : (nativePaneChrome ? panelBg : paletteBg)}
-      onMouseMove={() => onHoverIndex(globalIdx)}
+      onMouseOver={() => onHoverIndex(globalIdx)}
       onMouseOut={() => onHoverIndex(null)}
       {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}
       onMouseDown={(event: any) => onRowMouseDown(event, item, globalIdx)}

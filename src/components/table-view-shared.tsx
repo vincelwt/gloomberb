@@ -2,7 +2,6 @@ import {
   useCallback,
   useEffect,
   useRef,
-  useState,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -114,23 +113,16 @@ export function useTableViewState({
   headerScrollRef,
   scrollRef,
   syncHeaderScroll,
-  hoveredIdx,
-  setHoveredIdx,
 }: {
   headerScrollRef?: RefObject<ScrollBoxRenderable | null>;
   scrollRef?: RefObject<ScrollBoxRenderable | null>;
   syncHeaderScroll?: () => void;
-  hoveredIdx?: number | null;
-  setHoveredIdx?: (index: number | null) => void;
 }) {
   const internalHeaderScrollRef = useRef<ScrollBoxRenderable>(null);
   const internalScrollRef = useRef<ScrollBoxRenderable>(null);
-  const [internalHoveredIdx, setInternalHoveredIdx] = useState<number | null>(null);
 
   const effectiveHeaderScrollRef = headerScrollRef ?? internalHeaderScrollRef;
   const effectiveScrollRef = scrollRef ?? internalScrollRef;
-  const effectiveHoveredIdx = hoveredIdx !== undefined ? hoveredIdx : internalHoveredIdx;
-  const effectiveSetHoveredIdx = setHoveredIdx ?? setInternalHoveredIdx;
 
   const defaultSyncHeaderScroll = useCallback(() => {
     const body = effectiveScrollRef.current;
@@ -144,8 +136,6 @@ export function useTableViewState({
   return {
     effectiveHeaderScrollRef,
     effectiveScrollRef,
-    effectiveHoveredIdx,
-    effectiveSetHoveredIdx,
     effectiveSyncHeaderScroll: syncHeaderScroll ?? defaultSyncHeaderScroll,
   };
 }

@@ -51,7 +51,6 @@ function DataTableActivationHarness() {
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
   return (
     <DataTable
@@ -64,8 +63,6 @@ function DataTableActivationHarness() {
       scrollRef={scrollRef}
       syncHeaderScroll={() => {}}
       onBodyScrollActivity={() => {}}
-      hoveredIdx={hoveredIdx}
-      setHoveredIdx={setHoveredIdx}
       getItemKey={(row) => row.id}
       isSelected={(row) => selectedId === row.id}
       onSelect={(row) => {
@@ -89,7 +86,6 @@ function DataTableSectionHarness() {
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const rows: SectionTableRow[] = [
     { kind: "header", id: "macro", label: "Macro Releases" },
     { kind: "row", id: "cpi", name: "CPI" },
@@ -106,8 +102,6 @@ function DataTableSectionHarness() {
       scrollRef={scrollRef}
       syncHeaderScroll={() => {}}
       onBodyScrollActivity={() => {}}
-      hoveredIdx={hoveredIdx}
-      setHoveredIdx={setHoveredIdx}
       getItemKey={(row) => row.id}
       isSelected={(row) => row.kind === "row" && row.id === selectedId}
       onSelect={(row) => {
@@ -211,7 +205,6 @@ function DataTableColumnGapHarness() {
 function DataTableVirtualizationHarness() {
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const rows = Array.from({ length: 100 }, (_, index) => ({
     id: `row-${index}`,
     name: `Row ${index}`,
@@ -237,8 +230,6 @@ function DataTableVirtualizationHarness() {
       scrollRef={scrollRef}
       syncHeaderScroll={() => {}}
       onBodyScrollActivity={() => {}}
-      hoveredIdx={hoveredIdx}
-      setHoveredIdx={setHoveredIdx}
       getItemKey={(row) => row.id}
       isSelected={() => false}
       onSelect={() => {}}

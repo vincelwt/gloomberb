@@ -157,7 +157,7 @@ export function PriceReturnTable({
             height={1}
             width={width}
             backgroundColor={row.selected ? blendHex(colors.panel, colors.borderFocused, 0.18) : colors.panel}
-            onMouseMove={() => onSelectSymbol(row.symbol)}
+            onMouseOver={() => onSelectSymbol(row.symbol)}
             onMouseDown={(event: any) => {
               onFocusInteraction?.(event);
               onSelectSymbol(row.symbol);

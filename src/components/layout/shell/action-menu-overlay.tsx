@@ -52,7 +52,7 @@ export function ShellActionMenuOverlay({
             height={1}
             width={innerWidth}
             backgroundColor={hovered ? colors.selected : colors.panel}
-            onMouseMove={() => onHoverItem(item.id)}
+            onMouseOver={() => onHoverItem(item.id)}
             onMouseDown={(mouseEvent: any) => {
               mouseEvent.stopPropagation();
               mouseEvent.preventDefault();

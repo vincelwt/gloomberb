@@ -73,8 +73,6 @@ export interface DataTableViewProps<
     | "scrollRef"
     | "syncHeaderScroll"
     | "onBodyScrollActivity"
-    | "hoveredIdx"
-    | "setHoveredIdx"
     | "isSelected"
     | "onSelect"
     | "onActivate"
@@ -97,8 +95,6 @@ export interface DataTableViewProps<
   scrollRef?: RefObject<ScrollBoxRenderable | null>;
   syncHeaderScroll?: () => void;
   onBodyScrollActivity?: () => void;
-  hoveredIdx?: number | null;
-  setHoveredIdx?: (index: number | null) => void;
   keyboardNavigation?: boolean;
   onRootKeyDown?: (
     event: DataTableKeyEvent,
@@ -125,8 +121,6 @@ export function DataTableView<
   scrollRef,
   syncHeaderScroll,
   onBodyScrollActivity,
-  hoveredIdx,
-  setHoveredIdx,
   keyboardNavigation = true,
   onRootKeyDown,
   resetScrollKey,
@@ -137,15 +131,11 @@ export function DataTableView<
   const {
     effectiveHeaderScrollRef,
     effectiveScrollRef,
-    effectiveHoveredIdx,
-    effectiveSetHoveredIdx,
     effectiveSyncHeaderScroll,
   } = useTableViewState({
     headerScrollRef,
     scrollRef,
     syncHeaderScroll,
-    hoveredIdx,
-    setHoveredIdx,
   });
   const [cursorIndex, setCursorIndex] = useState<number | null>(null);
   const pendingCommitRef = useRef(false);
@@ -532,8 +522,6 @@ export function DataTableView<
         scrollRef={effectiveScrollRef}
         syncHeaderScroll={effectiveSyncHeaderScroll}
         onBodyScrollActivity={handleBodyScrollActivity}
-        hoveredIdx={effectiveHoveredIdx}
-        setHoveredIdx={effectiveSetHoveredIdx}
         scrollToIndex={effectiveScrollToIndex}
         scrollToIndexVersion={scrollToIndexVersion + selectionScrollVersion}
         isSelected={isItemSelected}

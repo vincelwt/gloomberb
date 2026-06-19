@@ -1,5 +1,5 @@
 diff --git a/index-218h9p3f.js b/index-218h9p3f.js
-index b9445d2cca9477dfe06026da451b6d19268fcbdd..3efd05fa41eb713ac6e539764b15c346939bb068 100644
+index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac12f5329e7 100644
 --- a/index-218h9p3f.js
 +++ b/index-218h9p3f.js
 @@ -6487,17 +6487,27 @@ class MouseParser {
@@ -210,7 +210,101 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..3efd05fa41eb713ac6e539764b15c346
    }
    throw new Error(`opentui is not supported on the current platform: ${process.platform}-${process.arch}`);
  }
-@@ -22288,6 +22323,8 @@ class MouseEvent {
+@@ -17996,5 +18031,7 @@ function isGapType(value) {
+ class BoxRenderable extends Renderable {
+   _backgroundColor;
++  _hoverBackgroundColor;
++  _isHovered = false;
+   _border;
+   _borderStyle;
+   _borderColor;
+@@ -18023,6 +18060,7 @@ class BoxRenderable extends Renderable {
+       this._focusable = true;
+     }
+     this._backgroundColor = parseColor(options.backgroundColor || this._defaultOptions.backgroundColor);
++    this._hoverBackgroundColor = options.hoverBackgroundColor === undefined ? undefined : parseColor(options.hoverBackgroundColor);
+     this._border = options.border ?? this._defaultOptions.border;
+     if (!options.border && (options.borderStyle || options.borderColor || options.focusedBorderColor || options.customBorderChars)) {
+       this._border = true;
+@@ -18064,11 +18102,26 @@ class BoxRenderable extends Renderable {
+   }
+   set backgroundColor(value) {
+     const newColor = parseColor(value ?? this._defaultOptions.backgroundColor);
+-    if (this._backgroundColor !== newColor) {
++    if (!this._backgroundColor.equals(newColor)) {
+       this._backgroundColor = newColor;
+       this.requestRender();
+     }
+   }
++  get hoverBackgroundColor() {
++    return this._hoverBackgroundColor;
++  }
++  set hoverBackgroundColor(value) {
++    const newColor = value === undefined || value === null ? undefined : parseColor(value);
++    const changed = newColor === undefined
++      ? this._hoverBackgroundColor !== undefined
++      : !this._hoverBackgroundColor?.equals(newColor);
++    if (changed) {
++      this._hoverBackgroundColor = newColor;
++      if (this._isHovered) {
++        this.requestRender();
++      }
++    }
++  }
+   get border() {
+     return this._border;
+   }
+@@ -18152,9 +18205,39 @@ class BoxRenderable extends Renderable {
+       this.requestRender();
+     }
+   }
++  onMouseEvent(event) {
++    if (!this._hoverBackgroundColor) {
++      if (this._isHovered) {
++        this._isHovered = false;
++        this.requestRender();
++      }
++      return;
++    }
++    if (event.type === "over" && !this._isHovered) {
++      this._isHovered = true;
++      this.requestRender();
++    } else if (event.type === "out" && this._isHovered) {
++      this._isHovered = false;
++      this.requestRender();
++    }
++  }
++  getActiveHoverBackgroundColor() {
++    if (this._isHovered && this._hoverBackgroundColor) {
++      return this._hoverBackgroundColor;
++    }
++    let parent = this.parent;
++    while (parent) {
++      if (parent instanceof BoxRenderable && parent._isHovered && parent._hoverBackgroundColor) {
++        return parent._hoverBackgroundColor;
++      }
++      parent = parent.parent;
++    }
++    return undefined;
++  }
+   renderSelf(buffer) {
+     const hasBorder = this.borderSides.top || this.borderSides.right || this.borderSides.bottom || this.borderSides.left;
+-    const hasVisibleFill = this.shouldFill && this._backgroundColor.a > 0;
++    const backgroundColor = this.getActiveHoverBackgroundColor() ?? this._backgroundColor;
++    const hasVisibleFill = this.shouldFill && backgroundColor.a > 0;
+     if (!hasBorder && !hasVisibleFill) {
+       return;
+     }
+@@ -18171,7 +18254,7 @@ class BoxRenderable extends Renderable {
+       customBorderChars: this._customBorderChars,
+       border: this._border,
+       borderColor: currentBorderColor,
+-      backgroundColor: this._backgroundColor,
++      backgroundColor,
+       shouldFill: this.shouldFill,
+       title: this._title,
+       titleAlignment: this._titleAlignment,
+@@ -22288,6 +22371,8 @@ class MouseEvent {
    button;
    x;
    y;
@@ -219,7 +313,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..3efd05fa41eb713ac6e539764b15c346
    source;
    modifiers;
    scroll;
-@@ -22307,6 +22344,8 @@ class MouseEvent {
+@@ -22307,6 +22392,8 @@ class MouseEvent {
      this.button = attributes.button;
      this.x = attributes.x;
      this.y = attributes.y;
@@ -228,16 +322,18 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..3efd05fa41eb713ac6e539764b15c346
      this.modifiers = attributes.modifiers;
      this.scroll = attributes.scroll;
      this.source = attributes.source;
-@@ -22457,6 +22496,8 @@ class CliRenderer extends EventEmitter9 {
+@@ -22457,6 +22544,10 @@ class CliRenderer extends EventEmitter9 {
    resizeDebounceDelay = 100;
    enableMouseMovement = false;
    _useMouse = true;
 +  _mouseProtocolSignature = "disabled";
 +  _pixelMouseEnabled = false;
++  _pendingMouseMoveEvent = null;
++  _pendingMouseMoveTimer = null;
    autoFocus = true;
    _screenMode = "alternate-screen";
    _footerHeight = DEFAULT_FOOTER_HEIGHT;
-@@ -22491,7 +22532,7 @@ class CliRenderer extends EventEmitter9 {
+@@ -22491,7 +22582,7 @@ class CliRenderer extends EventEmitter9 {
      this.handleResize(width, height);
    }).bind(this);
    _capabilities = null;
@@ -246,7 +342,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..3efd05fa41eb713ac6e539764b15c346
    _hasPointer = false;
    _lastPointerModifiers = {
      shift: false,
-@@ -22738,7 +22779,13 @@ Captured external output:
+@@ -22738,7 +22829,13 @@ Captured external output:
          privateCapabilityRepliesActive: false,
          pixelResolutionQueryActive: false,
          explicitWidthCprActive: false,
@@ -261,7 +357,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..3efd05fa41eb713ac6e539764b15c346
        },
        clock: this.clock
      });
-@@ -24021,12 +24068,14 @@ Captured external output:
+@@ -24021,12 +24118,14 @@ Captured external output:
    enableMouse() {
      this._useMouse = true;
      this.lib.enableMouse(this.rendererPtr, this.enableMouseMovement);
@@ -276,7 +372,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..3efd05fa41eb713ac6e539764b15c346
    }
    enableKittyKeyboard(flags = 3) {
      this.lib.enableKittyKeyboard(this.rendererPtr, flags);
-@@ -24036,6 +24085,52 @@ Captured external output:
+@@ -24036,6 +24135,52 @@ Captured external output:
      this.lib.disableKittyKeyboard(this.rendererPtr);
      this.updateStdinParserProtocolContext({ kittyKeyboardEnabled: false }, true);
    }
@@ -329,7 +425,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..3efd05fa41eb713ac6e539764b15c346
    set useThread(useThread) {
      this._useThread = useThread;
      this.lib.setUseThread(this.rendererPtr, useThread);
-@@ -24141,6 +24236,7 @@ Captured external output:
+@@ -24141,6 +24286,7 @@ Captured external output:
      }
      this.lib.processCapabilityResponse(this.rendererPtr, sequence);
      this._capabilities = this.lib.getTerminalCapabilities(this.rendererPtr);
@@ -337,7 +433,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..3efd05fa41eb713ac6e539764b15c346
      if (this._capabilities?.terminal?.from_xtversion) {
        this.resolveXtVersionWaiters();
      }
-@@ -24170,6 +24266,7 @@ Captured external output:
+@@ -24170,6 +24316,7 @@ Captured external output:
      if (sequence === "\x1B[I") {
        if (this.shouldRestoreModesOnNextFocus) {
          this.lib.restoreTerminalModes(this.rendererPtr);
@@ -345,7 +441,16 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..3efd05fa41eb713ac6e539764b15c346
          this.shouldRestoreModesOnNextFocus = false;
        }
        if (this._terminalFocusState !== true) {
-@@ -24264,6 +24361,7 @@ Captured external output:
+@@ -24218,7 +24365,7 @@ Captured external output:
+         this._keyHandler.processParsedKey(event.key);
+         return;
+       case "mouse":
+-        if (this._useMouse && this.processSingleMouseEvent(event.event)) {
++        if (this._useMouse && this.processMouseEvent(event.event)) {
+           return;
+         }
+         this.dispatchSequenceHandlers(event.raw);
+@@ -24264,6 +24411,7 @@ Captured external output:
          }
          this.waitingForPixelResolution = false;
          this.updateStdinParserProtocolContext({ pixelResolutionQueryActive: false }, true);
@@ -353,7 +458,54 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..3efd05fa41eb713ac6e539764b15c346
          return true;
        }
        return false;
-@@ -24298,9 +24396,15 @@ Captured external output:
+@@ -24292,15 +24440,62 @@ Captured external output:
+     }
+     return event;
+   }
++  cloneMouseEventAttributes(mouseEvent) {
++    return {
++      ...mouseEvent,
++      modifiers: { ...mouseEvent.modifiers }
++    };
++  }
++  processMouseEvent(mouseEvent) {
++    if (mouseEvent.type !== "move") {
++      this.flushPendingMouseMove();
++      return this.processSingleMouseEvent(mouseEvent);
++    }
++    if (this._pendingMouseMoveTimer === null) {
++      const handled = this.processSingleMouseEvent(mouseEvent);
++      this.schedulePendingMouseMove();
++      return handled;
++    }
++    this._pendingMouseMoveEvent = this.cloneMouseEventAttributes(mouseEvent);
++    return true;
++  }
++  schedulePendingMouseMove() {
++    if (this._pendingMouseMoveTimer !== null || this._isDestroyed) {
++      return;
++    }
++    const delay = Math.max(100, Math.floor(this.targetFrameTime));
++    this._pendingMouseMoveTimer = this.clock.setTimeout(() => {
++      this._pendingMouseMoveTimer = null;
++      this.flushPendingMouseMove();
++    }, delay);
++  }
++  flushPendingMouseMove() {
++    if (this._pendingMouseMoveTimer !== null) {
++      this.clock.clearTimeout(this._pendingMouseMoveTimer);
++      this._pendingMouseMoveTimer = null;
++    }
++    const pending = this._pendingMouseMoveEvent;
++    this._pendingMouseMoveEvent = null;
++    if (!pending || this._isDestroyed) {
++      return false;
++    }
++    return this.processSingleMouseEvent(pending);
++  }
+   processSingleMouseEvent(mouseEvent) {
+     if (this._splitHeight > 0) {
+       if (mouseEvent.y < this.renderOffset) {
          return false;
        }
        mouseEvent.y -= this.renderOffset;
@@ -369,31 +521,43 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..3efd05fa41eb713ac6e539764b15c346
      this._hasPointer = true;
      this._lastPointerModifiers = mouseEvent.modifiers;
      if (this._console.visible) {
-@@ -24441,6 +24545,8 @@ Captured external output:
-       button: 0,
-       x: this._latestPointer.x,
-       y: this._latestPointer.y,
+@@ -24437,6 +24632,8 @@ Captured external output:
+       return;
+     }
+     const baseEvent = {
 +      pixelX: this._latestPointer.pixelX,
 +      pixelY: this._latestPointer.pixelY,
-       modifiers: this._lastPointerModifiers
-     };
-     if (lastOver && !lastOver.isDestroyed) {
-@@ -24531,6 +24637,7 @@ Captured external output:
+       type: "move",
+       button: 0,
+       x: this._latestPointer.x,
+@@ -24527,6 +24724,7 @@ Captured external output:
+     const pendingSplitFooterTransition = this.pendingSplitFooterTransition;
+     const previousGeometry = calculateRenderGeometry(this._screenMode, this._terminalWidth, this._terminalHeight, this._footerHeight);
+     const prevWidth = this._terminalWidth;
++    this.syncPixelMouseMode();
+     const previousTerminalHeight = this._terminalHeight;
      const visiblePreviousSplitHeight = pendingSplitFooterTransition?.sourceHeight ?? previousGeometry.effectiveFooterHeight;
      this._terminalWidth = width;
-     this._terminalHeight = height;
-+    this.syncPixelMouseMode();
-     this.queryPixelResolution();
-     this.setCapturedRenderable(undefined);
-     this.stdinParser?.resetMouseState();
-@@ -24848,6 +24955,7 @@ Captured external output:
+@@ -24832,6 +25030,11 @@ Captured external output:
+       this.clock.clearTimeout(this.resizeTimeoutId);
+       this.resizeTimeoutId = null;
+     }
++    if (this._pendingMouseMoveTimer !== null) {
++      this.clock.clearTimeout(this._pendingMouseMoveTimer);
++      this._pendingMouseMoveTimer = null;
++    }
++    this._pendingMouseMoveEvent = null;
+     if (this.capabilityTimeoutId !== null) {
+       this.clock.clearTimeout(this.capabilityTimeoutId);
+       this.capabilityTimeoutId = null;
+@@ -24847,6 +25050,7 @@ Captured external output:
+       this.renderTimeout = null;
+     }
      this.themeModeState.cancelRefresh();
++    this.disablePixelMouseMode();
      this._isRunning = false;
      this.waitingForPixelResolution = false;
-+    this.disablePixelMouseMode();
      this.updateStdinParserProtocolContext({
-       privateCapabilityRepliesActive: false,
-       pixelResolutionQueryActive: false,
 diff --git a/lib/parse.mouse.d.ts b/lib/parse.mouse.d.ts
 index c29f953fde0b78f09d2ec7a830e5a72452c1fe7e..04613b921bd9b4a9a7a1a4fbd0234d4012df67a1 100644
 --- a/lib/parse.mouse.d.ts
@@ -450,6 +614,44 @@ index 6b733d534d8e9b77c5c2773f93c7a22063c18d84..a5c318d591e9f3775e276e555c15052c
  }
  export interface StdinParserOptions {
      timeoutMs?: number;
+diff --git a/renderables/Box.d.ts b/renderables/Box.d.ts
+index 7ecb70d38ca41d1afdc078780985827e8f10e3a7..0845141e20ebd71a163dba67880d494a05b27d9a 100644
+--- a/renderables/Box.d.ts
++++ b/renderables/Box.d.ts
+@@ -5,6 +5,7 @@ import { type ColorInput, RGBA } from "../lib/RGBA.js";
+ import type { RenderContext } from "../types.js";
+ export interface BoxOptions<TRenderable extends Renderable = BoxRenderable> extends RenderableOptions<TRenderable> {
+     backgroundColor?: string | RGBA;
++    hoverBackgroundColor?: string | RGBA;
+     borderStyle?: BorderStyle;
+     border?: boolean | BorderSides[];
+     borderColor?: string | RGBA;
+@@ -22,6 +23,8 @@ export interface BoxOptions<TRenderable extends Renderable = BoxRenderable> exte
+ }
+ export declare class BoxRenderable extends Renderable {
+     protected _backgroundColor: RGBA;
++    protected _hoverBackgroundColor?: RGBA;
++    protected _isHovered: boolean;
+     protected _border: boolean | BorderSides[];
+     protected _borderStyle: BorderStyle;
+     protected _borderColor: RGBA;
+@@ -50,6 +53,8 @@ export declare class BoxRenderable extends Renderable {
+     set customBorderChars(value: BorderCharacters | undefined);
+     get backgroundColor(): RGBA;
+     set backgroundColor(value: RGBA | string | undefined);
++    get hoverBackgroundColor(): RGBA | undefined;
++    set hoverBackgroundColor(value: RGBA | string | undefined);
+     get border(): boolean | BorderSides[];
+     set border(value: boolean | BorderSides[]);
+     get borderStyle(): BorderStyle;
+@@ -66,6 +71,7 @@ export declare class BoxRenderable extends Renderable {
+     set bottomTitle(value: string | undefined);
+     get bottomTitleAlignment(): "left" | "center" | "right";
+     set bottomTitleAlignment(value: "left" | "center" | "right");
++    protected getActiveHoverBackgroundColor(): RGBA | undefined;
+     protected renderSelf(buffer: OptimizedBuffer): void;
+     protected getScissorRect(): {
+         x: number;
 diff --git a/renderer.d.ts b/renderer.d.ts
 index 96189246f423809fc52d2ad182d57ed2e80ac098..7dd0baf1697041cf8ad556b115cd13ad2e18bc65 100644
 --- a/renderer.d.ts

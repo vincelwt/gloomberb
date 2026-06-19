@@ -72,7 +72,7 @@ function TradeFieldPill({
       backgroundColor={backgroundColor}
       paddingX={1}
       marginRight={1}
-      onMouseMove={() => {
+      onMouseOver={() => {
         if (!disabled) setHoveredField((current) => (current === id ? current : id));
       }}
       onMouseDown={disabled ? undefined : () => {

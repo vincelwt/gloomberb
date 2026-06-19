@@ -20,6 +20,13 @@ body {
 input, textarea, button { font: inherit; }
 input, textarea { cursor: text; user-select: text; }
 button, [data-gloom-interactive="true"] { cursor: pointer; }
+[data-gloom-hover-bg="true"]:hover {
+  background-color: var(--gloom-box-hover-bg) !important;
+}
+[data-gloom-role="data-table-row"]:not([data-selected="true"]):hover,
+[data-gloom-role="data-table-row"]:not([data-selected="true"]):hover > [data-gloom-role="data-table-cell"] {
+  background-color: var(--gloom-hover-bg) !important;
+}
 [data-gloom-role="pane-window"] {
   background-clip: padding-box;
   isolation: isolate;

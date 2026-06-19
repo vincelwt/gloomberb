@@ -287,7 +287,6 @@ function OpenTuiTabs({
             flexDirection="row"
             backgroundColor={active && variant === "pill" ? palette.activeBg : hovered ? palette.hoverBg : undefined}
             onMouseOver={startHover}
-            onMouseMove={startHover}
             onMouseOut={endHover}
             onMouseDown={selectTab}
             onDoubleClick={tab.disabled || !tab.onDoubleClick ? undefined : () => tab.onDoubleClick?.(tab.value)}
@@ -319,7 +318,7 @@ function OpenTuiTabs({
           width={addWidth}
           height={1}
           backgroundColor={hoveredValue === "__add__" ? palette.hoverBg : undefined}
-          onMouseMove={() => setHoveredValue((current) => (current === "__add__" ? current : "__add__"))}
+          onMouseOver={() => setHoveredValue((current) => (current === "__add__" ? current : "__add__"))}
           onMouseOut={() => setHoveredValue((current) => (current === "__add__" ? null : current))}
           onMouseDown={(event: TabPointerEvent) => {
             event.preventDefault();

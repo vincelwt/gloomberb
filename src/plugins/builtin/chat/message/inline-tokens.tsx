@@ -58,7 +58,7 @@ export function ResponsiveTickerBadgeText({
         height={1}
         flexDirection="row"
         backgroundColor={blendHex(colors.panel, colors.positive, 0.24)}
-        onMouseMove={() => {
+        onMouseOver={() => {
           if (user) onUserHover?.(user);
         }}
         onMouseOut={() => {

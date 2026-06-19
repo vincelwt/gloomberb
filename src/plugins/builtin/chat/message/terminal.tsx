@@ -44,7 +44,7 @@ export function TerminalChatMessage({
   const messageRowProps = {
     width: contentWidth,
     backgroundColor: state.bgColor,
-    onMouseMove: setHovered,
+    onMouseOver: setHovered,
     onMouseOut: clearHovered,
   };
 
@@ -80,7 +80,7 @@ export function TerminalChatMessage({
           <Text
             fg={state.authorColor}
             attributes={state.authorAttributes}
-            onMouseMove={() => onUserHover(msg.user)}
+            onMouseOver={() => onUserHover(msg.user)}
             onMouseOut={onUserHoverEnd}
           >
             {msg.user.username ?? "anon"}

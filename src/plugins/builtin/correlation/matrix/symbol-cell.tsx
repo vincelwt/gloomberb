@@ -41,7 +41,7 @@ export function SymbolLabelCell({
       overflow="hidden"
       backgroundColor={hovered ? hoverBg() : undefined}
       style={{ cursor: "pointer" }}
-      onMouseMove={() => onHover(symbol)}
+      onMouseOver={() => onHover(symbol)}
       onMouseOut={() => onLeave(symbol)}
       onMouseDown={(event: any) => handleSymbolMouseDown(event, openSymbol)}
     >

@@ -14,6 +14,7 @@ interface PaneHeaderProps {
   windowModeSelected?: boolean;
   floating?: boolean;
   showActions?: boolean;
+  onHeaderMouseMove?: (event: any) => void;
   onHeaderMouseDown?: (event: any) => void;
   onHeaderMouseDrag?: (event: any) => void;
   onHeaderMouseDragEnd?: (event: any) => void;
@@ -111,6 +112,7 @@ export function PaneHeader({
   windowModeSelected = false,
   floating = false,
   showActions = false,
+  onHeaderMouseMove,
   onHeaderMouseDown,
   onHeaderMouseDrag,
   onHeaderMouseDragEnd,
@@ -143,6 +145,7 @@ export function PaneHeader({
         data-focused={focused ? "true" : "false"}
         data-window-mode-selected={windowModeSelected ? "true" : "false"}
         onMouseDown={onHeaderMouseDown}
+        onMouseMove={onHeaderMouseMove}
         onMouseDrag={onHeaderMouseDrag}
         onMouseDragEnd={onHeaderMouseDragEnd}
         onContextMenu={onHeaderContextMenu}
@@ -226,6 +229,7 @@ export function PaneHeader({
         backgroundColor={backgroundColor}
         flexDirection="row"
         onMouseDown={handleTerminalHeaderMouseDown}
+        onMouseMove={onHeaderMouseMove}
         onMouseDrag={onHeaderMouseDrag}
         onMouseDragEnd={onHeaderMouseDragEnd}
       >
@@ -263,6 +267,7 @@ export function PaneHeader({
       backgroundColor={backgroundColor}
       flexDirection="row"
       onMouseDown={handleTerminalHeaderMouseDown}
+      onMouseMove={onHeaderMouseMove}
       onMouseDrag={onHeaderMouseDrag}
       onMouseDragEnd={onHeaderMouseDragEnd}
     >

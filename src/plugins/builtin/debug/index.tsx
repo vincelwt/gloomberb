@@ -64,7 +64,6 @@ function DebugPane({ focused, width, height }: PaneProps) {
   const [filterSource, setFilterSource] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [selectedIdx, setSelectedIdx] = useState(-1);
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const sourcesRef = useRef<string[]>(debugLog.getSources());
 
@@ -261,8 +260,8 @@ function DebugPane({ focused, width, height }: PaneProps) {
         {visibleEntries.map((entry, i) => {
           const globalIdx = viewStart + i;
           const isSelected = globalIdx === selectedIdx;
-          const isHovered = globalIdx === hoveredIdx && !isSelected;
-          const bgColor = isSelected ? colors.selected : isHovered ? hoverBg() : undefined;
+          const bgColor = isSelected ? colors.selected : undefined;
+          const rowHoverBg = isSelected ? undefined : hoverBg();
           const ts = formatTimestamp(entry.timestamp);
           const lvl = LEVEL_LABELS[entry.level];
           const sourceTag = entry.source;
@@ -278,7 +277,7 @@ function DebugPane({ focused, width, height }: PaneProps) {
               width={contentWidth}
               flexDirection="row"
               backgroundColor={bgColor}
-              onMouseMove={() => setHoveredIdx((current) => (current === globalIdx ? current : globalIdx))}
+              hoverBackgroundColor={rowHoverBg}
               onMouseDown={() => { setSelectedIdx(globalIdx); setAutoScroll(false); }}
             >
               <Text fg={colors.textMuted}> {ts} </Text>

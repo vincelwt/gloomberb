@@ -98,7 +98,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
         <Box
           flexDirection="row"
           backgroundColor={hovered ? hoverBg() : undefined}
-          onMouseMove={() => setHovered((current) => (current ? current : true))}
+          onMouseOver={() => setHovered((current) => (current ? current : true))}
           onMouseOut={() => setHovered((current) => (current ? false : current))}
           onMouseDown={openChat}
         >

@@ -29,6 +29,10 @@ export interface DataTableSectionHeader {
 
 export type DataTableScrollAlign = "nearest" | "center";
 
+export interface DataTableRowState {
+  selected: boolean;
+}
+
 export interface DataTableProps<
   T,
   C extends DataTableColumn = DataTableColumn,
@@ -42,8 +46,6 @@ export interface DataTableProps<
   scrollRef: RefObject<ScrollBoxRenderable | null>;
   syncHeaderScroll: () => void;
   onBodyScrollActivity: () => void;
-  hoveredIdx: number | null;
-  setHoveredIdx: (index: number | null) => void;
   headerScrollId?: string;
   bodyScrollId?: string;
   getItemKey: (item: T, index: number) => string;
@@ -58,7 +60,7 @@ export interface DataTableProps<
     item: T,
     column: C,
     index: number,
-    rowState: { selected: boolean; hovered: boolean },
+    rowState: DataTableRowState,
   ) => DataTableCell;
   renderSectionHeader?: (
     item: T,
@@ -67,7 +69,7 @@ export interface DataTableProps<
   getRowBackgroundColor?: (
     item: T,
     index: number,
-    rowState: { selected: boolean; hovered: boolean },
+    rowState: DataTableRowState,
   ) => string | undefined;
   emptyContent?: ReactNode;
   bodyAfter?: ReactNode;

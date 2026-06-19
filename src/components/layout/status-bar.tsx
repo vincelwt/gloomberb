@@ -364,7 +364,7 @@ function CommandBarHint({
     <Text
       fg={hovered ? colors.text : colors.textDim}
       {...(!nativePaneChrome ? { bg: hovered ? hoverBg() : undefined } : {})}
-      onMouseMove={() => setHoveredControl((current) => (current === "command-bar" ? current : "command-bar"))}
+      onMouseOver={() => setHoveredControl((current) => (current === "command-bar" ? current : "command-bar"))}
       onMouseDown={openCommandBar}
       {...(nativePaneChrome ? { "data-gloom-interactive": "true" } : {})}
     >
@@ -385,7 +385,7 @@ function NativeGridlockTip({
       <Text
         fg={hoveredControl === "gridlock-tip" ? colors.textBright : colors.borderFocused}
         attributes={TextAttributes.BOLD}
-        onMouseMove={() => setHoveredControl((current) => (current === "gridlock-tip" ? current : "gridlock-tip"))}
+        onMouseOver={() => setHoveredControl((current) => (current === "gridlock-tip" ? current : "gridlock-tip"))}
         onMouseDown={handleGridlockTip}
         data-gloom-interactive="true"
       >
@@ -393,7 +393,7 @@ function NativeGridlockTip({
       </Text>
       <Text
         fg={hoveredControl === "gridlock-tip-dismiss" ? colors.text : colors.textDim}
-        onMouseMove={() => setHoveredControl((current) => (current === "gridlock-tip-dismiss" ? current : "gridlock-tip-dismiss"))}
+        onMouseOver={() => setHoveredControl((current) => (current === "gridlock-tip-dismiss" ? current : "gridlock-tip-dismiss"))}
         onMouseDown={dismissGridlockTip}
         data-gloom-interactive="true"
       >
@@ -415,14 +415,14 @@ function TerminalGridlockTip({
       <Box width={1} />
       <Box
         backgroundColor={hoveredControl === "gridlock-tip" ? hoverBg() : colors.header}
-        onMouseMove={() => setHoveredControl((current) => (current === "gridlock-tip" ? current : "gridlock-tip"))}
+        onMouseOver={() => setHoveredControl((current) => (current === "gridlock-tip" ? current : "gridlock-tip"))}
         onMouseDown={handleGridlockTip}
       >
         <Text fg={colors.headerText}> Gridlock All </Text>
       </Box>
       <Text
         fg={hoveredControl === "gridlock-tip-dismiss" ? colors.text : colors.textDim}
-        onMouseMove={() => setHoveredControl((current) => (current === "gridlock-tip-dismiss" ? current : "gridlock-tip-dismiss"))}
+        onMouseOver={() => setHoveredControl((current) => (current === "gridlock-tip-dismiss" ? current : "gridlock-tip-dismiss"))}
         onMouseDown={dismissGridlockTip}
       >
         {" x"}

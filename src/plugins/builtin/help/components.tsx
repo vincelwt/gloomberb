@@ -63,7 +63,7 @@ export function ActionButton({
   return (
     <Box
       backgroundColor={hovered ? hoverBg() : colors.panel}
-      onMouseMove={() => onHover(id)}
+      onMouseOver={() => onHover(id)}
       onMouseOut={() => onHover(null)}
       onMouseDown={(event: any) => {
         event.stopPropagation?.();

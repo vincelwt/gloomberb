@@ -16,7 +16,7 @@ interface PaneWrapperProps {
   flexGrow?: number;
   showActions?: boolean;
   onMouseDown?: (event: any) => void;
-  onMouseMove?: (event: any) => void;
+  onHeaderMouseMove?: (event: any) => void;
   onHeaderMouseDown?: (event: any) => void;
   onHeaderMouseDrag?: (event: any) => void;
   onHeaderMouseDragEnd?: (event: any) => void;
@@ -36,7 +36,7 @@ export function PaneWrapper({
   flexGrow,
   showActions = false,
   onMouseDown,
-  onMouseMove,
+  onHeaderMouseMove,
   onHeaderMouseDown,
   onHeaderMouseDrag,
   onHeaderMouseDragEnd,
@@ -76,7 +76,6 @@ export function PaneWrapper({
         showBorderColor: true,
       })}
       onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
     >
       {title && (
         <PaneHeader
@@ -85,6 +84,7 @@ export function PaneWrapper({
           focused={focused}
           windowModeSelected={windowModeSelected}
           showActions={showActions}
+          onHeaderMouseMove={onHeaderMouseMove}
           onHeaderMouseDown={onHeaderMouseDown}
           onHeaderMouseDrag={onHeaderMouseDrag}
           onHeaderMouseDragEnd={onHeaderMouseDragEnd}

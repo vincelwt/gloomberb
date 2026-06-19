@@ -22,7 +22,7 @@ export function InlineAuthActions({ showSignup = true }: { showSignup?: boolean 
     <Box flexDirection="row">
       <Box
         backgroundColor={hoveredAction === "login" ? hoverBg() : undefined}
-        onMouseMove={() => setHoveredAction((current) => (current === "login" ? current : "login"))}
+        onMouseOver={() => setHoveredAction((current) => (current === "login" ? current : "login"))}
         onMouseOut={() => setHoveredAction((current) => (current === "login" ? null : current))}
         onMouseDown={(event: any) => openAuthCommand(openCommandBar, "Log In", event)}
       >
@@ -33,7 +33,7 @@ export function InlineAuthActions({ showSignup = true }: { showSignup?: boolean 
           <Text fg={colors.textDim}>/</Text>
           <Box
             backgroundColor={hoveredAction === "signup" ? hoverBg() : undefined}
-            onMouseMove={() => setHoveredAction((current) => (current === "signup" ? current : "signup"))}
+            onMouseOver={() => setHoveredAction((current) => (current === "signup" ? current : "signup"))}
             onMouseOut={() => setHoveredAction((current) => (current === "signup" ? null : current))}
             onMouseDown={(event: any) => openAuthCommand(openCommandBar, "Sign Up", event)}
           >

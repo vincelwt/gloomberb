@@ -214,7 +214,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     alert: AlertRule,
     column: AlertColumn,
     _index: number,
-    rowState: { selected: boolean; hovered: boolean },
+    rowState: { selected: boolean },
   ): DataTableCell => {
     const selectedColor = rowState.selected ? colors.selectedText : undefined;
     const actionMouseDown = (handler: () => void) => (

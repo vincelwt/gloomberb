@@ -219,7 +219,7 @@ export const ThemePicker = memo(forwardRef<ThemePickerHandle, ThemePickerProps>(
               : hovered
                 ? paletteHoverBg
                 : (nativePaneChrome ? panelBg : paletteBg)}
-            onMouseMove={() => setHoveredIndex(index)}
+            onMouseOver={() => setHoveredIndex(index)}
             onMouseOut={() => setHoveredIndex(null)}
             onMouseDown={(event: any) => {
               event.stopPropagation?.();

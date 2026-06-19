@@ -314,7 +314,7 @@ export function BuildoutPane({ focused, width, height }: PaneProps) {
     row: BuildoutRow,
     column: BuildoutColumn,
     _index: number,
-    rowState: { selected: boolean; hovered: boolean },
+    rowState: { selected: boolean },
   ) => renderBuildoutCell(row, column, rowState, {
     favoriteBusyKey,
     toggleFavorite,

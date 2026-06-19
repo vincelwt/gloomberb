@@ -525,7 +525,14 @@ export function Shell({
       height={nativePaneChrome ? undefined : contentHeight}
       position={nativePaneChrome ? "relative" : undefined}
       overflow="hidden"
-      {...(!nativePaneChrome ? { onMouse: handleMouse } : {})}
+      {...(!nativePaneChrome
+        ? {
+          onMouseDown: handleMouse,
+          onMouseDrag: handleMouse,
+          onMouseDragEnd: handleMouse,
+          onMouseUp: handleMouse,
+        }
+        : {})}
     >
       <Box
         position="absolute"

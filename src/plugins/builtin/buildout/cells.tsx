@@ -26,7 +26,7 @@ interface BuildoutCellContext {
 export function renderBuildoutCell(
   row: BuildoutRow,
   column: BuildoutColumn,
-  rowState: { selected: boolean; hovered: boolean },
+  rowState: { selected: boolean },
   context: BuildoutCellContext,
 ): DataTableCell {
   const selectedColor = rowState.selected ? colors.selectedText : undefined;

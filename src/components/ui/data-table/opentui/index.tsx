@@ -40,8 +40,6 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   scrollRef,
   syncHeaderScroll,
   onBodyScrollActivity,
-  hoveredIdx,
-  setHoveredIdx,
   headerScrollId,
   bodyScrollId,
   getItemKey,
@@ -369,8 +367,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
                 }
 
                 const selected = isSelected(item, index);
-                const hovered = hoveredIdx === index && !selected;
-                const rowState = { selected, hovered };
+                const rowState = { selected };
                 const rowBackgroundColor = getRowBackgroundColor?.(
                   item,
                   index,
@@ -378,9 +375,8 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
                 );
                 const rowBg = selected
                   ? colors.selected
-                  : hovered
-                    ? hoverBg()
-                    : rowBackgroundColor ?? colors.bg;
+                  : rowBackgroundColor ?? colors.bg;
+                const rowHoverBg = selected ? undefined : hoverBg();
 
                 return (
                   <Box
@@ -390,10 +386,8 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
                     {...tableContentWidthProps(contentWidth)}
                     paddingX={horizontalPadding}
                     backgroundColor={rowBg}
+                    hoverBackgroundColor={rowHoverBg}
                     data-gloom-context-menu-surface={rowContextMenuSurface ? "true" : undefined}
-                    onMouseMove={() => {
-                      if (hoveredIdx !== index) setHoveredIdx(index);
-                    }}
                     onMouseDown={(event: any) => {
                       focusPane();
                       onTableMouseDown?.(event);

@@ -166,7 +166,7 @@ export function ListView({
         key={item.id}
         height={1}
         backgroundColor={rowBg}
-        onMouseMove={() => {
+        onMouseOver={() => {
           if (!disabled) {
             setHoveredIndex((current) => (current === index ? current : index));
             if (selectOnHover) onSelect?.(index);
