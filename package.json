@@ -63,6 +63,7 @@
   },
   "patchedDependencies": {
     "@opentui/core@0.3.2": "patches/@opentui%2Fcore@0.3.2.patch",
-    "electrobun@1.18.1": "patches/electrobun@1.18.1.patch"
+    "electrobun@1.18.1": "patches/electrobun@1.18.1.patch",
+    "react-reconciler@0.33.0": "patches/react-reconciler@0.33.0.patch"
   }
 }

@@ -143,6 +143,53 @@ describe("resolveNativeSurfaceVisibleRect", () => {
 
     expect(resolveNativeSurfaceVisibleRect(child, 100, 30)).toBeNull();
   });
+
+  test("stops at repeated ancestors in cyclic native renderable trees", () => {
+    const root: NativeSurfaceRenderableNode = {
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 30,
+      parent: null,
+    };
+    const child: NativeSurfaceRenderableNode = {
+      x: 2,
+      y: 3,
+      width: 20,
+      height: 8,
+      parent: root,
+    };
+    root.parent = child;
+
+    expect(resolveNativeSurfaceVisibleRect(child, 100, 30)).toEqual({
+      x: 2,
+      y: 3,
+      width: 20,
+      height: 8,
+    });
+  });
+
+  test("fails closed when native renderable ancestors exceed a sane depth", () => {
+    let node: NativeSurfaceRenderableNode = {
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 30,
+      parent: null,
+    };
+
+    for (let index = 0; index < 300; index += 1) {
+      node = {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 30,
+        parent: node,
+      };
+    }
+
+    expect(resolveNativeSurfaceVisibleRect(node, 100, 30)).toBeNull();
+  });
 });
 
 describe("renderNativeChartBase", () => {

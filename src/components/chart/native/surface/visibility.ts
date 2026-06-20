@@ -9,6 +9,8 @@ export interface NativeSurfaceRenderableNode {
   parent: NativeSurfaceRenderableNode | null;
 }
 
+const MAX_RENDERABLE_ANCESTOR_DEPTH = 256;
+
 export function getRenderableCellRect(
   renderable: Pick<NativeSurfaceRenderableNode, "x" | "y" | "width" | "height">,
 ): CellRect {
@@ -34,8 +36,13 @@ export function resolveNativeSurfaceVisibleRect(
     height: terminalHeight,
   };
   let current: NativeSurfaceRenderableNode | null = renderable;
+  const seen = new Set<NativeSurfaceRenderableNode>();
+  let depth = 0;
 
-  while (current) {
+  while (current && !seen.has(current)) {
+    if (depth >= MAX_RENDERABLE_ANCESTOR_DEPTH) return null;
+    seen.add(current);
+    depth += 1;
     if (current.visible === false) return null;
 
     const nextVisible = intersectCellRects(visible, getRenderableCellRect(current));
