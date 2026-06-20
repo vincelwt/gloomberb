@@ -23,6 +23,8 @@ interface ResolveShellCursorOcclusionRectsOptions {
   width: number;
 }
 
+const MAX_RENDERABLE_ANCESTOR_DEPTH = 256;
+
 export function resolveShellCursorOcclusionRects({
   contentHeight,
   dragFloatingRect,
@@ -102,7 +104,13 @@ function readRenderableBounds(renderable: unknown): LayoutBounds | null {
 
 function readRenderablePaneId(renderable: unknown): string | null {
   let current = renderable;
-  while (current && typeof current === "object") {
+  const seen = new Set<object>();
+  let depth = 0;
+
+  while (current && typeof current === "object" && !seen.has(current)) {
+    if (depth >= MAX_RENDERABLE_ANCESTOR_DEPTH) return null;
+    seen.add(current);
+    depth += 1;
     const record = current as Record<string, unknown>;
     const paneId = record["data-gloom-pane-id"];
     if (typeof paneId === "string") return paneId;

@@ -1,0 +1,10 @@
+diff --git a/cjs/react-reconciler.development.js b/cjs/react-reconciler.development.js
+--- a/cjs/react-reconciler.development.js
++++ b/cjs/react-reconciler.development.js
+@@ -17213,5 +17213,6 @@
+       hasOwnProperty = Object.prototype.hasOwnProperty,
+       supportsUserTiming =
++        "undefined" !== typeof window &&
+         "undefined" !== typeof console &&
+         "function" === typeof console.timeStamp &&
+         "undefined" !== typeof performance &&
