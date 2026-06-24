@@ -108,7 +108,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, recentTickers: nextRecentTickers(state.recentTickers, action.symbol) };
 
     case "SET_ACTIVE_PANEL": {
-      const firstPane = getPanelFocusTarget(state.config.layout, action.panel);
+      const firstPane = action.preserveFocus
+        ? state.focusedPaneId
+        : getPanelFocusTarget(state.config.layout, action.panel);
       return withFocusedPane(state, state.config, {
         activePanel: action.panel,
         focusedPaneId: firstPane ?? state.focusedPaneId,

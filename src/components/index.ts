@@ -1,6 +1,13 @@
 
 export { PriceSelectorDialog } from "./price-selector-dialog";
 export { StaticChartSurface } from "./chart/static/chart/surface";
+export {
+  buildMetricTreemapNavigationTiles,
+  findMetricTreemapNeighbor,
+  MetricTreemapSurface,
+  type MetricTreemapDirection,
+  type MetricTreemapItem,
+} from "./metric-treemap";
 export { SpeedometerGauge } from "./speedometer-gauge";
 export type { SpeedometerSegment } from "./speedometer-gauge";
 export { TickerListTableView } from "./ticker/list-table-view";

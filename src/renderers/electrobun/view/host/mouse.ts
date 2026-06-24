@@ -73,6 +73,7 @@ export function mouseHandlers(props: Record<string, unknown>) {
   );
   return {
     onMouseDown: wrap(props.onMouseDown),
+    onMouseOver: wrap(props.onMouseOver),
     onMouseMove: wrap(props.onMouseMove),
     onMouseUp: wrap(props.onMouseUp),
     onMouseOut: wrap(props.onMouseOut),
@@ -91,6 +92,7 @@ export function callCellMouseHandler(handler: unknown, event: CellMouseEvent): v
 
 export function hasDirectMouseHandler(props: Record<string, unknown>): boolean {
   return typeof props.onMouseDown === "function"
+    || typeof props.onMouseOver === "function"
     || typeof props.onMouseUp === "function"
     || typeof props.onMouseMove === "function"
     || typeof props.onMouseOut === "function"

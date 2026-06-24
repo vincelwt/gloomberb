@@ -77,7 +77,7 @@ export type AppAction =
   | { type: "MERGE_QUOTE"; symbol: string; quote: Quote }
   | { type: "HYDRATE_FINANCIALS"; financials: Map<string, TickerFinancials> }
   | { type: "TRACK_TICKER"; symbol: string | null }
-  | { type: "SET_ACTIVE_PANEL"; panel: "left" | "right" }
+  | { type: "SET_ACTIVE_PANEL"; panel: "left" | "right"; preserveFocus?: boolean }
   | { type: "TOGGLE_COMMAND_BAR" }
   | {
       type: "SET_COMMAND_BAR";

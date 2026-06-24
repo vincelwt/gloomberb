@@ -58,6 +58,7 @@ Open command mode with `Ctrl+P`, then type a command. Press `` ` `` to open tick
 | `DES AAPL` | Security details |
 | `GP NVDA` | Price chart |
 | `TOP` | Ranked market stories |
+| `HM` | Market heatmap |
 | `MOST` | Market movers |
 | `PF` | Portfolios and watchlists |
 | `KELLY AAPL` | Position sizing |
@@ -177,6 +178,7 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | Shortcut | Function |
 |----------|----------|
 | `TOP` | Ranked market stories |
+| `HM` | Market heatmap for large US stocks and ETFs |
 | `MOST` | Top gainers, losers, most active, and trending tickers |
 | `PM <query>` | Polymarket and Kalshi prediction data |
 | `N` | News feed |

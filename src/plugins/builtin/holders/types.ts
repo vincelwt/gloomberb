@@ -15,37 +15,3 @@ export interface SortPreference {
 export interface HolderRow extends HolderRecord {
   id: string;
 }
-
-export interface TileLayout {
-  row: HolderRow;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-export interface WeightedTreemapItem {
-  row: HolderRow;
-  weight: number;
-  area: number;
-}
-
-export interface TreemapGroup {
-  items: WeightedTreemapItem[];
-  weight: number;
-}
-
-export interface FloatRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-export interface FloatTileLayout {
-  row: HolderRow;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}

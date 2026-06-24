@@ -194,6 +194,33 @@ describe("appReducer command bar state", () => {
     expect(next.config.layouts[next.config.activeLayoutIndex]?.focusedPaneId).toBe("portfolio-list:main");
   });
 
+  test("preserves the restore source while activating a pane in another panel", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test-focus-activation");
+    let state = {
+      ...createInitialState(config),
+      focusedPaneId: "portfolio-list:main",
+      previousFocusedPaneId: null,
+      activePanel: "left" as const,
+    };
+
+    state = appReducer(state, { type: "SET_ACTIVE_PANEL", panel: "right", preserveFocus: true });
+    expect(state.activePanel).toBe("right");
+    expect(state.focusedPaneId).toBe("portfolio-list:main");
+    expect(state.previousFocusedPaneId).toBeNull();
+
+    state = appReducer(state, { type: "FOCUS_PANE", paneId: "ticker-detail:main" });
+    expect(state.focusedPaneId).toBe("ticker-detail:main");
+    expect(state.previousFocusedPaneId).toBe("portfolio-list:main");
+
+    const restored = appReducer(state, {
+      type: "UPDATE_LAYOUT",
+      layout: removePane(state.config.layout, "ticker-detail:main"),
+      focusedPaneId: state.previousFocusedPaneId,
+    });
+
+    expect(restored.focusedPaneId).toBe("portfolio-list:main");
+  });
+
   test("tracks manual update-check feedback", () => {
     const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
     const checking = appReducer(initial, { type: "SET_UPDATE_CHECK_IN_PROGRESS", checking: true });

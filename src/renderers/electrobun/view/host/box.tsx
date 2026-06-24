@@ -135,6 +135,10 @@ export const WebBox = forwardRef<HTMLDivElement, Record<string, unknown> & { chi
       callMouseHandler(propsRef.current.onMouseScroll, event, "scroll");
     };
 
+    const handleMouseOver = (event: MouseEvent) => {
+      callMouseHandler(propsRef.current.onMouseOver, event, "over");
+    };
+
     const handleMouseOut = (event: MouseEvent) => {
       pendingMoveRef.current = null;
       callMouseHandler(propsRef.current.onMouseOut, event, "out");
@@ -147,6 +151,7 @@ export const WebBox = forwardRef<HTMLDivElement, Record<string, unknown> & { chi
         data-gloom-interactive={hasDirectMouseHandler(props) ? "true" : undefined}
         ref={elementRef}
         onMouseDown={handleMouseDown}
+        onMouseOver={handleMouseOver}
         onMouseMove={(event) => scheduleFrameMouseHandler(event, "move")}
         onMouseUp={(event) => callMouseHandler(propsRef.current.onMouseUp, event, "up")}
         onMouseOut={handleMouseOut}

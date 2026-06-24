@@ -7,6 +7,7 @@ import { fxMatrixPlugin } from "./fx-matrix";
 import { fearGreedPlugin } from "./fear-greed";
 import { holdersPlugin } from "./holders";
 import { insiderPlugin } from "./insider";
+import { marketHeatmapPlugin } from "./market-heatmap";
 import { marketMoversPlugin } from "./market-movers";
 import { optionsPlugin } from "./options";
 import { researchPlugin } from "./research";
@@ -91,6 +92,7 @@ export const marketOverviewPlugin = createPluginGroup({
     comparisonChartPlugin,
     correlationPlugin,
     worldIndicesPlugin,
+    marketHeatmapPlugin,
     marketMoversPlugin,
     fearGreedPlugin,
     sectorsPlugin,

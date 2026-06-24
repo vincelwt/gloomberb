@@ -1,3 +1,5 @@
+import { httpFetch } from "../../utils/http-transport";
+
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 1500;
 const FETCH_TIMEOUT_MS = 20_000;
@@ -21,7 +23,7 @@ export class YahooHttpClient {
 
   async fetchJson<T>(url: string): Promise<T> {
     return this.withRetry(async () => {
-      const resp = await fetch(url, {
+      const resp = await httpFetch(url, {
         headers: this.defaultHeaders(),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
@@ -35,8 +37,33 @@ export class YahooHttpClient {
       await this.ensureCrumb();
       const separator = url.includes("?") ? "&" : "?";
       const fullUrl = `${url}${separator}crumb=${encodeURIComponent(this.crumb!)}`;
-      const resp = await fetch(fullUrl, {
+      const resp = await httpFetch(fullUrl, {
         headers: { ...this.defaultHeaders(), Cookie: this.cookie! },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (resp.status === 401) {
+        this.crumb = null;
+        this.cookie = null;
+        throw new Error("[401] Invalid Crumb");
+      }
+      if (!resp.ok) throw new Error(`[${resp.status}] ${(await resp.text()).slice(0, 200)}`);
+      return resp.json() as Promise<T>;
+    });
+  }
+
+  async postJsonWithCrumb<T>(url: string, body: unknown): Promise<T> {
+    return this.withRetry(async () => {
+      await this.ensureCrumb();
+      const separator = url.includes("?") ? "&" : "?";
+      const fullUrl = `${url}${separator}crumb=${encodeURIComponent(this.crumb!)}`;
+      const resp = await httpFetch(fullUrl, {
+        method: "POST",
+        headers: {
+          ...this.defaultHeaders(),
+          "Content-Type": "application/json",
+          Cookie: this.cookie!,
+        },
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (resp.status === 401) {
@@ -54,7 +81,7 @@ export class YahooHttpClient {
     if (this.crumbPromise) return this.crumbPromise;
     this.crumbPromise = (async () => {
       try {
-        const cookieResp = await fetch("https://fc.yahoo.com/", {
+        const cookieResp = await httpFetch("https://fc.yahoo.com/", {
           headers: this.defaultHeaders(),
           signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
           redirect: "manual",
@@ -63,7 +90,7 @@ export class YahooHttpClient {
         if (!setCookie) throw new Error("Failed to get Yahoo cookie");
         this.cookie = setCookie.split(",").map((cookie) => cookie.split(";")[0]!.trim()).join("; ");
 
-        const crumbResp = await fetch("https://query2.finance.yahoo.com/v1/test/getcrumb", {
+        const crumbResp = await httpFetch("https://query2.finance.yahoo.com/v1/test/getcrumb", {
           headers: { ...this.defaultHeaders(), Cookie: this.cookie },
           signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         });

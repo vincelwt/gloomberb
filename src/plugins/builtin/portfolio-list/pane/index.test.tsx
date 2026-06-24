@@ -687,6 +687,47 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(frame).toContain("25.00%");
   });
 
+  test("renders portfolio grid from portfolio table values and opens the selected ticker", async () => {
+    const portfolioId = "broker:ibkr-flex:DU12345";
+    const config = createPortfolioConfig(portfolioId, [createBrokerInstance("flex")]);
+    const pinned: Array<{ symbol: string; options: { floating?: boolean; paneType?: string } | undefined }> = [];
+    const runtime = createTestPluginRuntime({
+      pinTicker: (symbol, options) => {
+        pinned.push({ symbol, options });
+      },
+    });
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId={portfolioId}
+        runtime={runtime}
+        stateMutator={(state) => {
+          state.paneState[TEST_PANE_ID] = {
+            ...state.paneState[TEST_PANE_ID],
+            viewMode: "grid",
+          };
+        }}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Grid");
+    expect(frame).toContain("AAPL");
+    expect(frame).toContain("1.3k");
+    expect(frame).toContain("+4.17%");
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    expect(pinned).toEqual([{ symbol: "AAPL", options: { floating: true, paneType: TICKER_RESEARCH_PANE_ID } }]);
+  });
+
   test("keeps option avg cost on premium scale and multiplies quoted value by contract size", async () => {
     const portfolioId = "broker:ibkr-flex:DU12345";
     const optionTicker = "SPY  260619C00500000";

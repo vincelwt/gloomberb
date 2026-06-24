@@ -1,0 +1,320 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box, useUiCapabilities } from "../../../ui";
+import {
+  buildMetricTreemapNavigationTiles,
+  findMetricTreemapNeighbor,
+  MetricTreemapSurface,
+  Tabs,
+  usePaneFooter,
+  type MetricTreemapDirection,
+  type MetricTreemapItem,
+} from "../../../components";
+import { useShortcut } from "../../../react/input";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
+import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import { priceColor } from "../../../theme/colors";
+import { formatCompact, formatCurrency, formatPercentRaw } from "../../../utils/format";
+import { isPlainKey } from "../../../utils/keyboard";
+import { usePluginPaneState, usePluginTickerActions } from "../../runtime";
+import {
+  MARKET_HEATMAP_UNIVERSES,
+  fetchMarketHeatmap,
+  resetMarketHeatmapCache,
+  type MarketHeatmapAsset,
+  type MarketHeatmapUniverseId,
+} from "./data";
+
+function formatMoneyCompact(value: number | null | undefined, currency: string): string {
+  if (value == null) return "—";
+  if (currency.toUpperCase() === "USD") return `$${formatCompact(value)}`;
+  return `${formatCompact(value)} ${currency}`;
+}
+
+function sizeLabel(asset: MarketHeatmapAsset): string {
+  const label = asset.sizeKind === "net-assets" ? "Assets" : "Mkt";
+  return `${label} ${formatMoneyCompact(asset.size, asset.currency)}`;
+}
+
+function updatedLabel(timestamp: number | null): string | null {
+  if (!timestamp) return null;
+  return new Date(timestamp).toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function buildItems(assets: MarketHeatmapAsset[]): Array<MetricTreemapItem<MarketHeatmapAsset>> {
+  return assets.map((asset) => ({
+    id: asset.symbol,
+    label: asset.symbol,
+    weight: asset.size ?? 0,
+    colorValue: asset.changePercent,
+    primaryText: formatPercentRaw(asset.changePercent),
+    secondaryText: sizeLabel(asset),
+    tertiaryText: asset.volume != null ? `Vol ${formatCompact(asset.volume)}` : asset.exchange || null,
+    data: asset,
+  }));
+}
+
+function MarketHeatmapPane({ focused, width, height }: PaneProps) {
+  const { pinTicker } = usePluginTickerActions();
+  const { cellWidthPx = 8, cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
+  const [activeUniverse, setActiveUniverse] = usePluginPaneState<MarketHeatmapUniverseId>("universe", "us-equity");
+  const [assets, setAssets] = useState<MarketHeatmapAsset[]>([]);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+  const fetchGenRef = useRef(0);
+
+  const chartHeight = Math.max(1, height - 1);
+  const chartWidth = Math.max(1, width - 2);
+  const cellAspect = Math.max(0.5, Math.min(4, cellHeightPx / Math.max(1, cellWidthPx)));
+  const items = useMemo(() => buildItems(assets), [assets]);
+  const navigationTiles = useMemo(
+    () => buildMetricTreemapNavigationTiles(items, chartWidth, chartHeight, cellAspect, nativePaneChrome ? "float" : "integer"),
+    [cellAspect, chartHeight, chartWidth, items, nativePaneChrome],
+  );
+  const selectedIdx = selectedSymbol
+    ? assets.findIndex((asset) => asset.symbol === selectedSymbol)
+    : -1;
+  const activeIdx = selectedIdx >= 0 ? selectedIdx : (assets.length > 0 ? 0 : -1);
+  const selectedAsset = activeIdx >= 0 ? assets[activeIdx] ?? null : null;
+
+  const loadUniverse = useCallback(async (universe: MarketHeatmapUniverseId, options?: { forceRefresh?: boolean }) => {
+    fetchGenRef.current += 1;
+    const gen = fetchGenRef.current;
+    setLoading(true);
+    setLoadError(null);
+
+    try {
+      const result = await fetchMarketHeatmap(universe, {
+        count: 96,
+        forceRefresh: options?.forceRefresh,
+      });
+      if (fetchGenRef.current !== gen) return;
+      setAssets(result.assets);
+      setLastUpdated(result.fetchedAt);
+      setSelectedSymbol(result.assets[0]?.symbol ?? null);
+    } catch (error) {
+      if (fetchGenRef.current !== gen) return;
+      setAssets([]);
+      setLastUpdated(null);
+      setSelectedSymbol(null);
+      setLoadError(error instanceof Error ? error.message : "Market heatmap unavailable");
+    } finally {
+      if (fetchGenRef.current === gen) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadUniverse(activeUniverse);
+  }, [activeUniverse, loadUniverse]);
+
+  useEffect(() => {
+    if (selectedSymbol && assets.some((asset) => asset.symbol === selectedSymbol)) return;
+    setSelectedSymbol(assets[0]?.symbol ?? null);
+  }, [assets, selectedSymbol]);
+
+  const refresh = useCallback(() => {
+    void loadUniverse(activeUniverse, { forceRefresh: true });
+  }, [activeUniverse, loadUniverse]);
+
+  const selectAdjacentUniverse = useCallback((direction: -1 | 1) => {
+    const index = MARKET_HEATMAP_UNIVERSES.findIndex((universe) => universe.id === activeUniverse);
+    const nextUniverse = MARKET_HEATMAP_UNIVERSES[Math.max(0, Math.min(MARKET_HEATMAP_UNIVERSES.length - 1, index + direction))];
+    if (nextUniverse && nextUniverse.id !== activeUniverse) {
+      setActiveUniverse(nextUniverse.id);
+      setSelectedSymbol(null);
+    }
+  }, [activeUniverse, setActiveUniverse]);
+
+  const selectUniverseAt = useCallback((index: number) => {
+    const universe = MARKET_HEATMAP_UNIVERSES[index];
+    if (!universe || universe.id === activeUniverse) return;
+    setActiveUniverse(universe.id);
+    setSelectedSymbol(null);
+  }, [activeUniverse, setActiveUniverse]);
+
+  const openSymbol = useCallback((symbol: string) => {
+    pinTicker(symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
+  }, [pinTicker]);
+
+  const selectIndex = useCallback((index: number) => {
+    const asset = assets[index];
+    if (asset) setSelectedSymbol(asset.symbol);
+  }, [assets]);
+
+  const selectNeighbor = useCallback((direction: MetricTreemapDirection) => {
+    const target = findMetricTreemapNeighbor(navigationTiles, selectedSymbol, direction);
+    if (target) setSelectedSymbol(target.item.data.symbol);
+  }, [navigationTiles, selectedSymbol]);
+
+  useShortcut((event) => {
+    if (!focused) return;
+    if (isPlainKey(event, "r")) {
+      event.preventDefault();
+      event.stopPropagation();
+      refresh();
+      return;
+    }
+    if (isPlainKey(event, "1")) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectUniverseAt(0);
+      return;
+    }
+    if (isPlainKey(event, "2")) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectUniverseAt(1);
+      return;
+    }
+    if (isPlainKey(event, "[")) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectAdjacentUniverse(-1);
+      return;
+    }
+    if (isPlainKey(event, "]")) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectAdjacentUniverse(1);
+      return;
+    }
+    if (isPlainKey(event, "j")) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectIndex(Math.min((activeIdx >= 0 ? activeIdx : 0) + 1, assets.length - 1));
+      return;
+    }
+    if (isPlainKey(event, "k")) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectIndex(Math.max((activeIdx >= 0 ? activeIdx : 0) - 1, 0));
+      return;
+    }
+    if (isPlainKey(event, "left", "h")) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectNeighbor("left");
+      return;
+    }
+    if (isPlainKey(event, "right", "l")) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectNeighbor("right");
+      return;
+    }
+    if (isPlainKey(event, "up")) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectNeighbor("up");
+      return;
+    }
+    if (isPlainKey(event, "down")) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectNeighbor("down");
+      return;
+    }
+    if (isPlainKey(event, "enter", "return") && selectedAsset) {
+      event.preventDefault();
+      event.stopPropagation();
+      openSymbol(selectedAsset.symbol);
+    }
+  });
+
+  usePaneFooter("market-heatmap", () => {
+    const updated = updatedLabel(lastUpdated);
+    return {
+      info: [
+        ...(selectedAsset ? [{
+          id: "selected",
+          parts: [
+            { text: selectedAsset.symbol, tone: "label" as const },
+            { text: formatCurrency(selectedAsset.price, selectedAsset.currency), tone: "value" as const },
+            { text: formatPercentRaw(selectedAsset.changePercent), tone: "value" as const, color: priceColor(selectedAsset.changePercent), bold: true },
+          ],
+        }] : []),
+        ...(updated ? [{
+          id: "updated",
+          parts: [
+            { text: "updated", tone: "label" as const },
+            { text: updated, tone: "value" as const },
+          ],
+        }] : []),
+        ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+        ...(loadError ? [{ id: "error", parts: [{ text: "error", tone: "muted" as const }] }] : []),
+      ],
+    };
+  }, [lastUpdated, loadError, loading, selectedAsset]);
+
+  const emptyStateTitle = loading
+    ? "Loading market heatmap..."
+    : loadError ?? "No market heatmap data";
+
+  return (
+    <Box flexDirection="column" width={width} height={height}>
+      <Box height={1} paddingX={1}>
+        <Tabs
+          tabs={MARKET_HEATMAP_UNIVERSES.map((universe) => ({ label: universe.label, value: universe.id }))}
+          activeValue={activeUniverse}
+          onSelect={(value) => {
+            setActiveUniverse(value as MarketHeatmapUniverseId);
+            setSelectedSymbol(null);
+          }}
+          compact
+          variant="bare"
+          focused={focused}
+          keyboardNavigation={false}
+        />
+      </Box>
+
+      <MetricTreemapSurface
+        items={items}
+        width={width}
+        height={chartHeight}
+        selectedId={selectedSymbol}
+        onSelect={(item) => setSelectedSymbol(item.data.symbol)}
+        onActivate={(item) => openSymbol(item.data.symbol)}
+        emptyStateTitle={emptyStateTitle}
+      />
+    </Box>
+  );
+}
+
+export const marketHeatmapPlugin: GloomPlugin = {
+  id: "market-heatmap",
+  name: "Market Heatmap",
+  version: "1.0.0",
+  description: "Public market heatmap for the largest US stocks and ETFs.",
+  toggleable: true,
+
+  dispose() {
+    resetMarketHeatmapCache();
+  },
+
+  panes: [
+    {
+      id: "market-heatmap",
+      name: "Market Heatmap",
+      icon: "H",
+      component: MarketHeatmapPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 110, height: 36 },
+    },
+  ],
+
+  paneTemplates: [
+    {
+      id: "market-heatmap-pane",
+      paneId: "market-heatmap",
+      label: "Market Heatmap",
+      description: "Largest US stocks and ETFs, sized by market cap or assets and colored by daily move.",
+      keywords: ["heatmap", "market", "largest", "top", "stocks", "etf", "screener"],
+      shortcut: { prefix: "HM" },
+    },
+  ],
+};

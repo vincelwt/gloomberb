@@ -36,6 +36,7 @@ import {
 } from "../settings";
 import { useQuoteFlashMap } from "../../../../components/quote-flash";
 import { PortfolioTickerTable } from "../table";
+import { PortfolioGrid } from "../grid";
 import { useThrottledCursorSymbol } from "../use-throttled-cursor-symbol";
 import { isManualPortfolio } from "../mutations";
 import { QuickAddTickerInput, type QuickAddCollectionKind } from "../quick-add";
@@ -48,6 +49,8 @@ import {
 } from "./data";
 import { usePortfolioPaneStreaming } from "./streaming";
 import { usePortfolioSupplementalData } from "./supplemental";
+
+type PortfolioViewMode = "table" | "grid";
 
 export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
@@ -65,6 +68,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const [committedCursorSymbol, setCommittedCursorSymbol] = usePaneStateValue<string | null>("cursorSymbol", null);
   const [collectionSorts, setCollectionSorts] = usePaneStateValue<Record<string, CollectionSortPreference>>("collectionSorts", {});
   const [cashDrawerExpanded, setCashDrawerExpanded] = usePaneStateValue<boolean>("cashDrawerExpanded", false);
+  const [viewMode, setViewMode] = usePaneStateValue<PortfolioViewMode>("viewMode", "table");
 
   const [now, setNow] = useState(Date.now());
   const [streamWindow, setStreamWindow] = useState({ start: 0, end: 24 });
@@ -174,7 +178,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     ? (cashDrawerExpanded ? Math.min(6, Math.max(3, 2 + accountState.visibleCashBalances.length)) : 1)
     : 0;
   const showCollectionTabs = visibleCollections.length > 1;
-  const headerHeight = showCollectionTabs ? 1 : 0;
+  const viewTabsHeight = 1;
+  const headerHeight = viewTabsHeight + (showCollectionTabs ? 1 : 0);
   const drawerHeight = showCashDrawer
     ? Math.min(requestedDrawerHeight, Math.max(1, height - (headerHeight + 2)))
     : 0;
@@ -214,6 +219,10 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     pinTicker(symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
   }, [pinTicker]);
 
+  const toggleViewMode = useCallback(() => {
+    setViewMode((current) => current === "table" ? "grid" : "table");
+  }, [setViewMode]);
+
   const handleRowActivate = useCallback((ticker: TickerRecord) => {
     flushCursorSymbol(ticker.metadata.ticker);
     openTickerFloating(ticker.metadata.ticker);
@@ -245,6 +254,13 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       return true;
     }
 
+    if (key === "s") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      toggleViewMode();
+      return true;
+    }
+
     return false;
   }, [
     cashDrawerExpanded,
@@ -254,6 +270,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     setCashDrawerExpanded,
     showCashDrawer,
     sortedTickers,
+    toggleViewMode,
   ]);
 
   useEffect(() => {
@@ -281,12 +298,18 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     }
   }, [cursorSymbol, setCursorSymbol, sortedTickers]);
 
+  const effectiveStreamWindow = useMemo(() => (
+    viewMode === "grid"
+      ? { start: 0, end: Math.min(sortedTickers.length, 96) }
+      : streamWindow
+  ), [sortedTickers.length, streamWindow, viewMode]);
+
   usePortfolioPaneStreaming({
     appActive,
     focused,
     sortedTickers,
     cursorSymbol,
-    streamWindow,
+    streamWindow: effectiveStreamWindow,
     isPortfolioTab,
     financialsMap,
     visibleWarmupRequirements,
@@ -341,7 +364,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   }, [activeCollectionId, config, currentPortfolio]);
   const showQuickAdd = !!(activeCollectionId && activeCollectionEntry && quickAddCollectionKind);
   const quickAddHeight = showQuickAdd ? 1 : 0;
-  const tableHeight = Math.max(1, height - headerHeight - drawerHeight - quickAddHeight);
+  const contentHeight = Math.max(1, height - headerHeight - drawerHeight - quickAddHeight);
   const quickAddRow = activeCollectionId && activeCollectionEntry && quickAddCollectionKind ? (
     <QuickAddTickerInput
       collectionId={activeCollectionId}
@@ -357,6 +380,23 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   return (
     <Box flexDirection="column" width={width} height={height}>
       <Box flexDirection="column" height={headerHeight}>
+        <Box flexDirection="row" height={1}>
+          <Box flexShrink={1} overflow="hidden">
+            <Tabs
+              tabs={[
+                { label: "Table", value: "table" },
+                { label: "Grid", value: "grid" },
+              ]}
+              activeValue={viewMode}
+              onSelect={(value) => setViewMode(value as PortfolioViewMode)}
+              compact
+              variant="bare"
+              focused={focused && !quickAddFocused}
+              keyboardNavigation={false}
+            />
+          </Box>
+        </Box>
+
         {showCollectionTabs && (
           <Box flexDirection="row" height={1}>
             <Box flexShrink={1} overflow="hidden">
@@ -372,25 +412,41 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
         )}
       </Box>
 
-      <PortfolioTickerTable
-        columns={columns}
-        focused={focused && !quickAddFocused}
-        sortColumnId={activeSort.columnId}
-        sortDirection={activeSort.direction}
-        onHeaderClick={handleHeaderClick}
-        sortedTickers={sortedTickers}
-        cursorSymbol={cursorSymbol}
-        setCursorSymbol={setCursorSymbol}
-        financialsMap={financialsMap}
-        columnContext={columnContext}
-        flashSymbols={flashSymbols}
-        onRootKeyDown={handleTableKeyDown}
-        onVisibleRangeChange={handleVisibleRangeChange}
-        visibleRangeBuffer={3}
-        resetScrollKey={activeCollectionId}
-        onRowActivate={handleRowActivate}
-        rootHeight={tableHeight}
-      />
+      {viewMode === "table" ? (
+        <PortfolioTickerTable
+          columns={columns}
+          focused={focused && !quickAddFocused}
+          sortColumnId={activeSort.columnId}
+          sortDirection={activeSort.direction}
+          onHeaderClick={handleHeaderClick}
+          sortedTickers={sortedTickers}
+          cursorSymbol={cursorSymbol}
+          setCursorSymbol={setCursorSymbol}
+          financialsMap={financialsMap}
+          columnContext={columnContext}
+          flashSymbols={flashSymbols}
+          onRootKeyDown={handleTableKeyDown}
+          onVisibleRangeChange={handleVisibleRangeChange}
+          visibleRangeBuffer={3}
+          resetScrollKey={activeCollectionId}
+          onRowActivate={handleRowActivate}
+          rootHeight={contentHeight}
+        />
+      ) : (
+        <PortfolioGrid
+          sortedTickers={sortedTickers}
+          financialsMap={financialsMap}
+          columnContext={columnContext}
+          isPortfolioTab={isPortfolioTab}
+          cursorSymbol={cursorSymbol}
+          setCursorSymbol={(symbol) => setCursorSymbol(symbol)}
+          onRowActivate={handleRowActivate}
+          onToggleViewMode={toggleViewMode}
+          focused={focused && !quickAddFocused}
+          width={width}
+          height={contentHeight}
+        />
+      )}
 
       {quickAddRow}
 

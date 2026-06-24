@@ -92,7 +92,11 @@ export function useAppPaneRuntime({
   }, [dispatch, stateRef]);
 
   const activatePane = useCallback((paneId: string, layout: LayoutConfig = state.config.layout) => {
-    dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane({ layout, paneId, pluginRegistry }) });
+    dispatch({
+      type: "SET_ACTIVE_PANEL",
+      panel: resolvePanelForPane({ layout, paneId, pluginRegistry }),
+      preserveFocus: true,
+    });
     dispatch({ type: "FOCUS_PANE", paneId });
   }, [dispatch, pluginRegistry, state.config.layout]);
 
