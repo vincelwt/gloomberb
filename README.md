@@ -4,11 +4,13 @@
 
 # Gloomberb
 
-**Open-source finance terminal. Fast, keyboard-driven and extensible.**
+**Open-source finance terminal. Fast, keyboard-driven, and extensible.**
 
-Available as a desktop app or TUI.
+Desktop app for macOS and Windows. Terminal UI for macOS, Linux, and Windows.
 
-<a href="https://gloomberb.com/download/desktop"><strong>Download desktop for Mac</strong></a>
+<a href="https://gloomberb.com/download/desktop"><strong>Download desktop</strong></a>
+&nbsp;&middot;&nbsp;
+<a href="#install"><strong>Install the TUI</strong></a>
 
 <br />
 <br />
@@ -17,9 +19,22 @@ Available as a desktop app or TUI.
 
 </div>
 
+## Desktop App or TUI?
+
+Gloomberb has two ways in:
+
+| Surface | Best for | How it runs |
+|---------|----------|-------------|
+| Desktop app | A polished app window, pop-out panes, OS shortcuts, and built-in updates | Published for macOS and Windows. It also installs a `gloomberb` terminal command for the TUI. |
+| Terminal UI | Fast keyboard workflows inside your terminal, SSH/dev boxes, Linux machines, and script-friendly setups | Runs with `gloomberb` on macOS, Linux, and Windows. |
+
+Both share the same command language, plugin system, market data surfaces, portfolios, watchlists, alerts, notes, and AI tools.
+
 ## Install
 
-macOS desktop app + terminal command:
+### macOS
+
+Install the desktop app and the `gloomberb` terminal command:
 
 ```bash
 brew install --cask vincelwt/tap/gloomberb
@@ -27,13 +42,37 @@ brew install --cask vincelwt/tap/gloomberb
 curl -fsSL gloomberb.com/install | bash
 ```
 
-Both install `Gloomberb.app` and a `gloomberb` terminal command that runs the TUI through the app bundle, so the Bun runtime is stored once.
+Both install `Gloomberb.app` and a `gloomberb` command that runs the TUI through the app bundle, so the bundled runtime is stored once.
 
-Desktop-only download:
+Prefer a direct download?
 
 - [Download Gloomberb for Mac](https://gloomberb.com/download/desktop)
 
-Terminal-only install:
+### Linux
+
+Install the standalone TUI binary:
+
+```bash
+curl -fsSL gloomberb.com/install | bash
+```
+
+This installs `gloomberb` to `~/.local/bin` by default. A Linux desktop package is not published yet.
+
+### Windows
+
+Install the desktop app:
+
+- [Download GloomberbSetup.exe for Windows x64](https://github.com/vincelwt/gloomberb/releases/latest/download/stable-win-x64-GloomberbSetup.exe)
+
+The installer adds the app and a `gloomberb` terminal command. For a terminal-only setup, install Bun and use the package:
+
+```powershell
+bun install -g gloomberb
+```
+
+### Terminal Package
+
+Already have Bun installed on any supported OS?
 
 ```bash
 bun install -g gloomberb
@@ -45,7 +84,7 @@ Then run:
 gloomberb
 ```
 
-On macOS, app updates replace the app bundle in place and keep the terminal command pointing at the updated bundle. Homebrew users can also update through `brew upgrade --cask gloomberb`.
+On macOS and Windows, desktop updates replace the installed app in place and keep the terminal command pointing at the updated runtime. Homebrew users can also update through `brew upgrade --cask gloomberb`.
 
 For the best terminal experience, use a [Kitty](https://sw.kovidgoyal.net/kitty/)-compatible terminal such as Ghostty, Kitty, or WezTerm.
 
