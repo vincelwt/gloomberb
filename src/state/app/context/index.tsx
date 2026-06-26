@@ -157,6 +157,39 @@ export function useAppSelector<T>(selector: (state: AppState) => T): T {
   return snapshot.selection;
 }
 
+export function useOptionalAppSelector<T>(selector: (state: AppState) => T, fallback: T): T {
+  const context = useContext(AppContext);
+  const selectorRef = useRef(selector);
+  selectorRef.current = selector;
+  const lastSnapshotRef = useRef<{ selection: T } | undefined>(undefined);
+
+  const readSelection = useCallback(() => {
+    if (!context) return fallback;
+    const state = isAppStoreContextValue(context) ? context.getState() : context.state;
+    return selectorRef.current(state);
+  }, [context, fallback]);
+
+  const snapshot = useSyncExternalStore(
+    useCallback((listener) => {
+      if (!context || !isAppStoreContextValue(context)) return () => {};
+      return context.subscribe(listener);
+    }, [context]),
+    () => {
+      const selection = readSelection();
+      const previous = lastSnapshotRef.current;
+      if (previous && Object.is(previous.selection, selection)) {
+        return previous;
+      }
+      const nextSnapshot = { selection };
+      lastSnapshotRef.current = nextSnapshot;
+      return nextSnapshot;
+    },
+    () => ({ selection: fallback }),
+  );
+
+  return snapshot.selection;
+}
+
 export function PaneInstanceProvider({ paneId, children }: { paneId: string; children: ReactNode }) {
   return <PaneContext.Provider value={paneId}>{children}</PaneContext.Provider>;
 }

@@ -23,6 +23,7 @@ const COMMON_ALIAS_RULES: AliasRule[] = [
   ["./kitty/support", "components/chart/native/renderer-selection.ts", "native-stubs/chart/kitty-support.ts"],
   ["native/surface/manager", "native-stubs/chart/surface-manager.ts"],
   ["native/surface/sync", "native-stubs/chart/surface-sync.ts"],
+  ["./native-loader", "plugins/ibkr/gateway/service/index.ts", "native-stubs/ibkr-native-loader.ts"],
 ];
 
 export function electrobunViewPath(...parts: string[]): string {
