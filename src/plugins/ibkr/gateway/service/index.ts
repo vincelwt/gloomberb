@@ -17,18 +17,18 @@ import type {
   IbkrSnapshot,
   ResolvedIbkrGatewayConnection,
 } from "../types";
+import {
+  loadNativeGatewayModule as loadDefaultNativeGatewayModule,
+  type NativeGatewayModule,
+} from "./native-loader";
 
 export type {
   IbkrGatewayConfig,
   ResolvedIbkrGatewayConnection,
 } from "../types";
 
-type NativeGatewayService = any;
 type NativeGatewayManager = any;
-type NativeGatewayModule = {
-  ibkrGatewayManager: NativeGatewayManager;
-  setResolvedIbkrGatewayListener(listener: ResolvedGatewayListener | null): void;
-};
+type NativeGatewayService = any;
 type Listener = () => void;
 type ResolvedGatewayListener = (
   instanceId: string | undefined,
@@ -47,9 +47,6 @@ let loadedNativeGatewayModule: NativeGatewayModule | null = null;
 let nativeGatewayModulePromise: Promise<NativeGatewayModule> | null = null;
 let nativeGatewayManager: NativeGatewayManager | null = null;
 let nativeGatewayModuleLoader: () => Promise<NativeGatewayModule>;
-const importNativeGatewayModule = new Function("specifier", "return import(specifier)") as (
-  specifier: string,
-) => Promise<NativeGatewayModule>;
 
 const snapshots = new Map<string, IbkrSnapshot>();
 const listeners = new Map<string, Set<Listener>>();
@@ -60,7 +57,7 @@ function getSnapshotEntry(instanceId?: string): IbkrSnapshot {
 }
 
 function defaultNativeGatewayModuleLoader(): Promise<NativeGatewayModule> {
-  return importNativeGatewayModule("./native");
+  return loadDefaultNativeGatewayModule();
 }
 
 nativeGatewayModuleLoader = defaultNativeGatewayModuleLoader;

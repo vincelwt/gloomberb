@@ -5,14 +5,15 @@ import {
   type CellRect,
   type NativeChartBitmap,
 } from "../../components/chart/native/chart-rasterizer";
-import { getCachedKittySupport, ensureKittySupport } from "../../components/chart/native/kitty/support";
+import type { ChartRendererPreference } from "../../components/chart/core/types";
+import { useResolvedChartRendererState } from "../../components/chart/native/renderer-selection";
 import { getNativeSurfaceManager } from "../../components/chart/native/surface/manager";
 import {
   getRenderableCellRect,
   resolveNativeSurfaceVisibleRect,
   type NativeSurfaceRenderableNode,
 } from "../../components/chart/native/surface/visibility";
-import { useOptionalPaneInstanceId } from "../../state/app/context";
+import { useOptionalAppSelector, useOptionalPaneInstanceId } from "../../state/app/context";
 import { useNativeRenderer, type BoxRenderable, type ChartSurfaceProps } from "../../ui";
 
 interface NativeRenderableNode extends BoxRenderable, NativeSurfaceRenderableNode {
@@ -73,15 +74,20 @@ function bitmapKey(bitmap: NativeChartBitmap): string {
 }
 
 export const OpenTuiChartSurface = forwardRef<unknown, ChartSurfaceProps>(function OpenTuiChartSurface(
-  { children, bitmap, bitmaps, crosshair: _crosshair, ...props },
+  { children, bitmap, bitmaps, crosshair: _crosshair, nativeBitmapsEnabled = true, ...props },
   forwardedRef,
 ) {
   const renderer = useNativeRenderer();
   const paneId = useOptionalPaneInstanceId();
+  const preferredRenderer = useOptionalAppSelector<ChartRendererPreference>(
+    (state) => state.config.chartPreferences.renderer,
+    "braille",
+  );
+  const rendererState = useResolvedChartRendererState(preferredRenderer, renderer);
+  const nativeSurfacesEnabled = nativeBitmapsEnabled && rendererState.renderer === "kitty";
   const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);
   const surfaceId = useRef(`opentui-chart:${nextChartSurfaceId++}`).current;
   const renderableRef = useRef<NativeRenderableNode | null>(null);
-  const [kittySupport, setKittySupport] = useState<boolean | null>(() => getCachedKittySupport(renderer));
   const [target, setTarget] = useState<SurfaceTarget | null>(null);
   const nativeBitmap = (bitmaps?.[0] ?? bitmap ?? null) as NativeChartBitmap | null;
   const nativeBitmapKey = useMemo(() => (nativeBitmap ? bitmapKey(nativeBitmap) : null), [nativeBitmap]);
@@ -92,19 +98,8 @@ export const OpenTuiChartSurface = forwardRef<unknown, ChartSurfaceProps>(functi
   }, [forwardedRef]);
 
   useEffect(() => {
-    let cancelled = false;
-    setKittySupport(getCachedKittySupport(renderer));
-    ensureKittySupport(renderer).then((supported) => {
-      if (!cancelled) setKittySupport(supported);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [renderer]);
-
-  useEffect(() => {
     const renderable = renderableRef.current;
-    if (!renderable || !nativeBitmap || !nativeBitmapKey || kittySupport !== true) {
+    if (!renderable || !nativeBitmap || !nativeBitmapKey || !nativeSurfacesEnabled) {
       setTarget(null);
       return;
     }
@@ -148,7 +143,7 @@ export const OpenTuiChartSurface = forwardRef<unknown, ChartSurfaceProps>(functi
       }
       renderer.unregisterLifecyclePass(renderable);
     };
-  }, [kittySupport, nativeBitmap, nativeBitmapKey, renderer]);
+  }, [nativeBitmap, nativeBitmapKey, nativeSurfacesEnabled, renderer]);
 
   useEffect(() => {
     return () => {
@@ -157,7 +152,7 @@ export const OpenTuiChartSurface = forwardRef<unknown, ChartSurfaceProps>(functi
   }, [nativeSurfaceManager, surfaceId]);
 
   useEffect(() => {
-    if (kittySupport !== true || !target?.visibleRect || !nativeBitmap) {
+    if (!nativeSurfacesEnabled || !target?.visibleRect || !nativeBitmap) {
       nativeSurfaceManager.removeSurface(surfaceId);
       return;
     }
@@ -171,8 +166,8 @@ export const OpenTuiChartSurface = forwardRef<unknown, ChartSurfaceProps>(functi
       bitmapKey: target.bitmapKey,
     });
     renderer.requestRender();
-  }, [kittySupport, nativeBitmap, nativeSurfaceManager, paneId, renderer, surfaceId, target]);
+  }, [nativeBitmap, nativeSurfaceManager, nativeSurfacesEnabled, paneId, renderer, surfaceId, target]);
 
-  const showFallback = kittySupport !== true || !target || !nativeBitmap;
+  const showFallback = !nativeSurfacesEnabled || !target || !nativeBitmap;
   return createElement("box" as any, { ...props, ref: setRenderableRef }, showFallback ? children as ReactNode : null);
 });

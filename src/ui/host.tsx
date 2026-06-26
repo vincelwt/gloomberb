@@ -206,6 +206,7 @@ export interface ChartSurfaceProps extends BoxProps {
   bitmap?: BitmapSurface | null;
   bitmaps?: readonly BitmapSurface[] | null;
   crosshair?: ChartCrosshairOverlay | null;
+  nativeBitmapsEnabled?: boolean;
 }
 export interface ImageSurfaceProps extends BoxProps {
   src?: string;

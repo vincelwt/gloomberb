@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { BarSizeSetting, ConnectionState, SecType, type ContractDetails } from "@stoqey/ib";
 import { Subject, of } from "rxjs";
 import {
@@ -243,6 +246,25 @@ test("remote gateway snapshots are side-effect-free", async () => {
     setBrokerRemoteClient(null);
     setNativeIbkrGatewayModuleLoader(null);
     await ibkrGatewayManager.removeInstance(instanceId);
+  }
+});
+
+test("native gateway loader bundles without a runtime ./native specifier", async () => {
+  const outdir = mkdtempSync(join(tmpdir(), "gloomberb-ibkr-service-"));
+  try {
+    const result = await Bun.build({
+      entrypoints: [join(import.meta.dir, "index.ts")],
+      outdir,
+      target: "bun",
+    });
+
+    expect(result.success).toBe(true);
+    const entry = readFileSync(join(outdir, "index.js"), "utf8");
+    expect(entry).toContain("src/plugins/ibkr/gateway/service/native.ts");
+    expect(entry).not.toContain('"./native"');
+    expect(entry).not.toContain("'./native'");
+  } finally {
+    rmSync(outdir, { recursive: true, force: true });
   }
 });
 
