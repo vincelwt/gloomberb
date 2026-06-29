@@ -690,6 +690,13 @@ describe("PortfolioListPane cash and margin UI", () => {
   test("renders portfolio grid from portfolio table values and opens the selected ticker", async () => {
     const portfolioId = "broker:ibkr-flex:DU12345";
     const config = createPortfolioConfig(portfolioId, [createBrokerInstance("flex")]);
+    const instance = config.layout.instances.find((entry) => entry.instanceId === TEST_PANE_ID);
+    if (instance) {
+      instance.settings = {
+        ...(instance.settings ?? {}),
+        viewMode: "grid",
+      };
+    }
     const pinned: Array<{ symbol: string; options: { floating?: boolean; paneType?: string } | undefined }> = [];
     const runtime = createTestPluginRuntime({
       pinTicker: (symbol, options) => {
@@ -702,12 +709,6 @@ describe("PortfolioListPane cash and margin UI", () => {
         config={config}
         collectionId={portfolioId}
         runtime={runtime}
-        stateMutator={(state) => {
-          state.paneState[TEST_PANE_ID] = {
-            ...state.paneState[TEST_PANE_ID],
-            viewMode: "grid",
-          };
-        }}
       />,
       { width: 100, height: 12 },
     );
@@ -715,7 +716,6 @@ describe("PortfolioListPane cash and margin UI", () => {
     await flushFrame();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Grid");
     expect(frame).toContain("AAPL");
     expect(frame).toContain("1.3k");
     expect(frame).toContain("+4.17%");
@@ -726,6 +726,32 @@ describe("PortfolioListPane cash and margin UI", () => {
     });
 
     expect(pinned).toEqual([{ symbol: "AAPL", options: { floating: true, paneType: TICKER_RESEARCH_PANE_ID } }]);
+  });
+
+  test("keeps watchlists in table view when grid is saved on the pane", async () => {
+    const config = createManualCollectionConfig("watchlist");
+    const instance = config.layout.instances.find((entry) => entry.instanceId === TEST_PANE_ID);
+    if (instance) {
+      instance.settings = {
+        ...(instance.settings ?? {}),
+        viewMode: "grid",
+      };
+    }
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId="watchlist"
+        ticker={makeTicker({ portfolios: [], watchlists: ["watchlist"], positions: [] })}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("TICKER");
+    expect(frame).toContain("AAPL");
   });
 
   test("keeps option avg cost on premium scale and multiplies quoted value by contract size", async () => {
@@ -963,6 +989,88 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(frame).toContain("2B");
     expect(frame).toContain("25.0");
     expect(frame).toContain("22.0");
+  });
+
+  test("force-refreshes stale quote data for visible rows", async () => {
+    const config = createPortfolioConfigWithColumns(
+      "broker:ibkr-flex:DU12345",
+      ["ticker", "price", "day_pnl"],
+      [createBrokerInstance("flex")],
+    );
+    const staleQuote = makeQuote({
+      price: 120,
+      change: 0,
+      changePercent: 0,
+      marketState: "PRE",
+      lastUpdated: Date.now() - 24 * 60 * 60 * 1000,
+    });
+    const batchOptions: Array<{ forceRefresh?: boolean } | undefined> = [];
+    const provider: DataProvider = {
+      id: "test-provider",
+      name: "Test Provider",
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+          quote: staleQuote,
+        };
+      },
+      async getQuotesBatch(targets, options) {
+        batchOptions.push(options);
+        return targets.map((target) => ({
+          target,
+          quote: makeQuote({
+            symbol: target.symbol,
+            price: 126,
+            change: 6,
+            changePercent: 5,
+            marketState: "PRE",
+            preMarketPrice: 126,
+            preMarketChange: 6,
+            preMarketChangePercent: 5,
+          }),
+        }));
+      },
+      async getQuote(symbol) {
+        return makeQuote({ symbol, price: 126 });
+      },
+      async getExchangeRate() {
+        return 1;
+      },
+      async search() {
+        return [];
+      },
+      async getArticleSummary() {
+        return null;
+      },
+      async getPriceHistory() {
+        return [];
+      },
+      subscribeQuotes() {
+        return () => {};
+      },
+    };
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId="broker:ibkr-flex:DU12345"
+        quote={staleQuote}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 380));
+    });
+    await flushFrame();
+
+    expect(batchOptions.some((options) => options?.forceRefresh === true)).toBe(true);
+    expect(testSetup.captureCharFrame()).toContain("126");
   });
 
   test("shows cached market cap on reopen for broker-linked rows", async () => {

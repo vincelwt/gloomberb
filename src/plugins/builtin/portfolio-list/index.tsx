@@ -48,6 +48,7 @@ export const portfolioListPlugin: GloomPlugin = {
       settings: (context) => buildPortfolioPaneSettingsDef(
         context.config,
         getPortfolioPaneSettings(context.settings),
+        context.activeCollectionId,
       ),
     },
   ],

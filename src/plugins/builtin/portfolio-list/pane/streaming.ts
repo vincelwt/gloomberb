@@ -5,10 +5,13 @@ import { useQuoteStreaming } from "../../../../state/hooks/quote-streaming";
 import type { TickerFinancials } from "../../../../types/financials";
 import type { TickerRecord } from "../../../../types/ticker";
 import {
-  VISIBLE_FINANCIAL_REFRESH_COOLDOWN_MS,
   VISIBLE_FINANCIAL_WARMUP_DELAY_MS,
+  VISIBLE_QUOTE_REFRESH_COOLDOWN_MS,
+  VISIBLE_QUOTE_STREAM_WATCHDOG_MS,
   VISIBLE_SNAPSHOT_WARMUP_BATCH_LIMIT,
+  VISIBLE_SNAPSHOT_REFRESH_COOLDOWN_MS,
   needsVisibleQuoteWarmup,
+  needsVisibleQuoteWatchdogRefresh,
   needsVisibleSnapshotWarmup,
   selectStreamTickers,
   visibleWarmupKey,
@@ -90,7 +93,7 @@ export function usePortfolioPaneStreaming({
       if (
         needsVisibleQuoteWarmup(financials, nowTimestamp)
         && !warmupInFlightRef.current.has(quoteKey)
-        && nowTimestamp - (warmupAttemptRef.current.get(quoteKey) ?? 0) >= VISIBLE_FINANCIAL_REFRESH_COOLDOWN_MS
+        && nowTimestamp - (warmupAttemptRef.current.get(quoteKey) ?? 0) >= VISIBLE_QUOTE_REFRESH_COOLDOWN_MS
       ) {
         quoteQueue.push(ticker);
         continue;
@@ -100,7 +103,7 @@ export function usePortfolioPaneStreaming({
       if (
         needsVisibleSnapshotWarmup(ticker, financials, visibleWarmupRequirements)
         && !warmupInFlightRef.current.has(snapshotKey)
-        && nowTimestamp - (warmupAttemptRef.current.get(snapshotKey) ?? 0) >= VISIBLE_FINANCIAL_REFRESH_COOLDOWN_MS
+        && nowTimestamp - (warmupAttemptRef.current.get(snapshotKey) ?? 0) >= VISIBLE_SNAPSHOT_REFRESH_COOLDOWN_MS
       ) {
         snapshotQueue.push(ticker);
       }
@@ -130,7 +133,7 @@ export function usePortfolioPaneStreaming({
       try {
         await Promise.allSettled([
           quoteEntries.length > 0
-            ? sharedCoordinator.loadQuotesBatch(quoteEntries.map((entry) => entry.instrument))
+            ? sharedCoordinator.loadQuotesBatch(quoteEntries.map((entry) => entry.instrument), { forceRefresh: true })
             : Promise.resolve(),
           snapshotEntries.length > 0
             ? sharedCoordinator.loadSnapshotsBatch(snapshotEntries.map((entry) => entry.instrument))
@@ -154,6 +157,53 @@ export function usePortfolioPaneStreaming({
       clearTimeout(timeoutId);
     };
   }, [appActive, financialsMap, focused, sharedCoordinator, visibleFinancialTickers, visibleWarmupRequirements]);
+
+  useEffect(() => {
+    if (!appActive) return;
+    if (!focused) return;
+    if (!sharedCoordinator) return;
+
+    let cancelled = false;
+    const runWatchdog = async (): Promise<void> => {
+      const nowTimestamp = Date.now();
+      const quoteEntries = visibleFinancialTickers.flatMap((ticker) => {
+        const financials = financialsMap.get(ticker.metadata.ticker);
+        const key = visibleWarmupKey("quote", ticker);
+        if (
+          !needsVisibleQuoteWatchdogRefresh(financials, nowTimestamp)
+          || warmupInFlightRef.current.has(key)
+          || nowTimestamp - (warmupAttemptRef.current.get(key) ?? 0) < VISIBLE_QUOTE_REFRESH_COOLDOWN_MS
+        ) {
+          return [];
+        }
+        const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
+        if (!instrument) return [];
+        warmupInFlightRef.current.add(key);
+        warmupAttemptRef.current.set(key, nowTimestamp);
+        return [{ key, instrument }];
+      });
+      if (quoteEntries.length === 0) return;
+
+      try {
+        await sharedCoordinator.loadQuotesBatch(quoteEntries.map((entry) => entry.instrument), { forceRefresh: true });
+      } catch {
+        // Best-effort watchdog for visible rows only.
+      } finally {
+        for (const entry of quoteEntries) {
+          warmupInFlightRef.current.delete(entry.key);
+        }
+      }
+    };
+
+    const intervalId = setInterval(() => {
+      if (!cancelled && mountedRef.current) void runWatchdog();
+    }, VISIBLE_QUOTE_STREAM_WATCHDOG_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [appActive, financialsMap, focused, sharedCoordinator, visibleFinancialTickers]);
 
   useQuoteStreaming(streamTargets);
 }

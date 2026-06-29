@@ -13,6 +13,7 @@ import {
   useAppSelector,
   usePaneCollection,
   usePaneInstance,
+  usePaneSettingValue,
   usePaneStateValue,
   type CollectionSortPreference,
 } from "../../../../state/app/context";
@@ -33,6 +34,7 @@ import {
   resolveActiveCollectionId,
   resolveScopedCollectionEntries,
   resolveVisibleColumns,
+  type PortfolioViewMode,
 } from "../settings";
 import { useQuoteFlashMap } from "../../../../components/quote-flash";
 import { PortfolioTickerTable } from "../table";
@@ -50,8 +52,6 @@ import {
 import { usePortfolioPaneStreaming } from "./streaming";
 import { usePortfolioSupplementalData } from "./supplemental";
 
-type PortfolioViewMode = "table" | "grid";
-
 export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
   const paneInstance = usePaneInstance();
@@ -68,7 +68,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const [committedCursorSymbol, setCommittedCursorSymbol] = usePaneStateValue<string | null>("cursorSymbol", null);
   const [collectionSorts, setCollectionSorts] = usePaneStateValue<Record<string, CollectionSortPreference>>("collectionSorts", {});
   const [cashDrawerExpanded, setCashDrawerExpanded] = usePaneStateValue<boolean>("cashDrawerExpanded", false);
-  const [viewMode, setViewMode] = usePaneStateValue<PortfolioViewMode>("viewMode", "table");
+  const [, setViewMode] = usePaneSettingValue<PortfolioViewMode>("viewMode", "table");
 
   const [now, setNow] = useState(Date.now());
   const [streamWindow, setStreamWindow] = useState({ start: 0, end: 24 });
@@ -101,6 +101,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       ? config.portfolios.find((portfolio) => portfolio.id === activeCollectionId) ?? null
       : null
   ), [activeCollectionId, config.portfolios, isPortfolioTab]);
+  const viewMode: PortfolioViewMode = isPortfolioTab ? paneSettings.viewMode : "table";
 
   const tickers = useMemo(
     () => getCollectionTickersFromConfig(config, tickersBySymbol, activeCollectionId),
@@ -178,8 +179,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     ? (cashDrawerExpanded ? Math.min(6, Math.max(3, 2 + accountState.visibleCashBalances.length)) : 1)
     : 0;
   const showCollectionTabs = visibleCollections.length > 1;
-  const viewTabsHeight = 1;
-  const headerHeight = viewTabsHeight + (showCollectionTabs ? 1 : 0);
+  const headerHeight = showCollectionTabs ? 1 : 0;
   const drawerHeight = showCashDrawer
     ? Math.min(requestedDrawerHeight, Math.max(1, height - (headerHeight + 2)))
     : 0;
@@ -220,8 +220,9 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   }, [pinTicker]);
 
   const toggleViewMode = useCallback(() => {
+    if (!isPortfolioTab) return;
     setViewMode((current) => current === "table" ? "grid" : "table");
-  }, [setViewMode]);
+  }, [isPortfolioTab, setViewMode]);
 
   const handleRowActivate = useCallback((ticker: TickerRecord) => {
     flushCursorSymbol(ticker.metadata.ticker);
@@ -254,7 +255,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       return true;
     }
 
-    if (key === "s") {
+    if (key === "s" && isPortfolioTab) {
       event.preventDefault?.();
       event.stopPropagation?.();
       toggleViewMode();
@@ -265,6 +266,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   }, [
     cashDrawerExpanded,
     focused,
+    isPortfolioTab,
     openTickerFloating,
     safeSelectedIdx,
     setCashDrawerExpanded,
@@ -379,25 +381,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box flexDirection="column" height={headerHeight}>
-        <Box flexDirection="row" height={1}>
-          <Box flexShrink={1} overflow="hidden">
-            <Tabs
-              tabs={[
-                { label: "Table", value: "table" },
-                { label: "Grid", value: "grid" },
-              ]}
-              activeValue={viewMode}
-              onSelect={(value) => setViewMode(value as PortfolioViewMode)}
-              compact
-              variant="bare"
-              focused={focused && !quickAddFocused}
-              keyboardNavigation={false}
-            />
-          </Box>
-        </Box>
-
-        {showCollectionTabs && (
+      {showCollectionTabs && (
+        <Box flexDirection="column" height={headerHeight}>
           <Box flexDirection="row" height={1}>
             <Box flexShrink={1} overflow="hidden">
               <Tabs
@@ -409,8 +394,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
               />
             </Box>
           </Box>
-        )}
-      </Box>
+        </Box>
+      )}
 
       {viewMode === "table" ? (
         <PortfolioTickerTable

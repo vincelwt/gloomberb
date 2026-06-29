@@ -5,11 +5,15 @@ import type { TickerFinancials } from "../../../../types/financials";
 import type { TickerRecord } from "../../../../types/ticker";
 import type { CollectionSortPreference } from "../../../../state/app/context";
 import { isQuoteStaleForCurrentSession } from "../../../../market-data/quotes/freshness";
+import { resolveQuoteAgeTimestamp } from "../../../../market-data/quotes/time";
 import { compareSortValues } from "../../../../utils/sort-values";
 import { getSortValue, type ColumnContext } from "../metrics";
 import type { ResolvedPortfolioAccountState } from "../summary";
 
-export const VISIBLE_FINANCIAL_REFRESH_COOLDOWN_MS = 5 * 60_000;
+export const VISIBLE_QUOTE_REFRESH_COOLDOWN_MS = 60_000;
+export const VISIBLE_QUOTE_STREAM_MAX_AGE_MS = 60_000;
+export const VISIBLE_QUOTE_STREAM_WATCHDOG_MS = 30_000;
+export const VISIBLE_SNAPSHOT_REFRESH_COOLDOWN_MS = 5 * 60_000;
 export const VISIBLE_FINANCIAL_WARMUP_DELAY_MS = 350;
 export const VISIBLE_SNAPSHOT_WARMUP_BATCH_LIMIT = 3;
 
@@ -38,6 +42,16 @@ export function visibleWarmupKey(kind: "quote" | "snapshot", ticker: TickerRecor
 
 export function needsVisibleQuoteWarmup(financials: TickerFinancials | undefined, now = Date.now()): boolean {
   return !financials?.quote || isQuoteStaleForCurrentSession(financials.quote, now);
+}
+
+export function needsVisibleQuoteWatchdogRefresh(
+  financials: TickerFinancials | undefined,
+  now = Date.now(),
+  maxAgeMs = VISIBLE_QUOTE_STREAM_MAX_AGE_MS,
+): boolean {
+  if (needsVisibleQuoteWarmup(financials, now)) return true;
+  const quoteTimestamp = resolveQuoteAgeTimestamp(financials?.quote, now);
+  return quoteTimestamp == null || now - quoteTimestamp >= maxAgeMs;
 }
 
 export function needsVisibleSnapshotWarmup(

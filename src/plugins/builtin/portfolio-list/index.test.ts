@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { createDefaultConfig } from "../../../types/config";
+import type { Quote, TickerFinancials } from "../../../types/financials";
 import type { BrokerAccount } from "../../../types/trading";
 import type { TickerRecord } from "../../../types/ticker";
 import type { PortfolioSummaryTotals } from "./metrics";
 import { buildPortfolioSummarySegments } from "./summary";
 import { portfolioListPlugin, shouldToggleCashMarginDrawer } from ".";
-import { selectStreamTickers } from "./pane/data";
+import { needsVisibleQuoteWatchdogRefresh, selectStreamTickers } from "./pane/data";
+import { buildPortfolioPaneSettingsDef, getPortfolioPaneSettings } from "./settings";
 
 function ticker(symbol: string): TickerRecord {
   return {
@@ -132,6 +134,43 @@ describe("selectStreamTickers", () => {
   });
 });
 
+describe("visible quote refresh predicates", () => {
+  function quote(overrides: Partial<Quote> = {}): Quote {
+    return {
+      symbol: "AAPL",
+      price: 125,
+      currency: "USD",
+      change: 5,
+      changePercent: 4.17,
+      lastUpdated: 1_700_000_000_000,
+      ...overrides,
+    };
+  }
+
+  function financials(quoteValue: Quote | undefined): TickerFinancials {
+    return {
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: [],
+      quote: quoteValue,
+    };
+  }
+
+  test("refreshes visible quotes when the local stream timestamp is too old", () => {
+    const now = 1_700_000_120_000;
+    expect(needsVisibleQuoteWatchdogRefresh(
+      financials(quote({ lastUpdated: now, receivedAt: now - 61_000 })),
+      now,
+      60_000,
+    )).toBe(true);
+    expect(needsVisibleQuoteWatchdogRefresh(
+      financials(quote({ lastUpdated: now, receivedAt: now - 10_000 })),
+      now,
+      60_000,
+    )).toBe(false);
+  });
+});
+
 describe("portfolio list pane templates", () => {
   test("create panes with default all-collection settings", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-portfolio-list-template");
@@ -152,5 +191,17 @@ describe("portfolio list pane templates", () => {
     const portfolioTemplate = portfolioListPlugin.paneTemplates?.find((entry) => entry.id === "new-portfolio-pane");
     const portfolioInstance = await portfolioTemplate?.createInstance?.(context);
     expect(portfolioInstance).toEqual({ params: { collectionId: "main" } });
+  });
+});
+
+describe("portfolio list pane settings", () => {
+  test("exposes view mode only for portfolio collections", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-portfolio-list-settings");
+    const settings = getPortfolioPaneSettings({ viewMode: "grid" });
+    const portfolioFields = buildPortfolioPaneSettingsDef(config, settings, "main").fields.map((field) => field.key);
+    const watchlistFields = buildPortfolioPaneSettingsDef(config, settings, "watchlist").fields.map((field) => field.key);
+
+    expect(portfolioFields).toContain("viewMode");
+    expect(watchlistFields).not.toContain("viewMode");
   });
 });

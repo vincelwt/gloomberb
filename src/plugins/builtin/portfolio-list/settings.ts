@@ -3,11 +3,13 @@ import { DEFAULT_COLUMNS, DEFAULT_PORTFOLIO_COLUMN_IDS, type AppConfig, type Col
 import { PRICE_SPARKLINE_COLUMN_ID, PRICE_SPARKLINE_PERIOD_LABEL } from "../../../components/price-sparkline/view";
 
 type CollectionScope = "all" | "portfolios" | "watchlists" | "custom";
+export type PortfolioViewMode = "table" | "grid";
 
 export interface PortfolioPaneSettings {
   columnIds: string[];
   collectionScope: CollectionScope;
   visibleCollectionIds: string[];
+  viewMode: PortfolioViewMode;
   hideHeader: boolean;
   hideCash: boolean;
 }
@@ -95,9 +97,25 @@ const COLLECTION_SCOPE_OPTIONS: PaneSettingOption[] = [
     description: "Choose exactly which collections this pane should show.",
   },
 ];
+const VIEW_MODE_OPTIONS: PaneSettingOption[] = [
+  {
+    value: "table",
+    label: "Table",
+    description: "Show positions in the portfolio table.",
+  },
+  {
+    value: "grid",
+    label: "Grid",
+    description: "Show positions in the portfolio grid.",
+  },
+];
 
 function isCollectionScope(value: unknown): value is CollectionScope {
   return value === "all" || value === "portfolios" || value === "watchlists" || value === "custom";
+}
+
+function isPortfolioViewMode(value: unknown): value is PortfolioViewMode {
+  return value === "table" || value === "grid";
 }
 
 function filterCollectionEntries(entries: CollectionEntry[], settings: PortfolioPaneSettings): CollectionEntry[] {
@@ -142,6 +160,7 @@ export function getPortfolioPaneSettings(settings: Record<string, unknown> | und
     columnIds: columnIds.length > 0 ? columnIds : DEFAULT_PORTFOLIO_COLUMN_IDS,
     collectionScope: isCollectionScope(settings?.collectionScope) ? settings.collectionScope : "all",
     visibleCollectionIds,
+    viewMode: isPortfolioViewMode(settings?.viewMode) ? settings.viewMode : "table",
     hideHeader: settings?.hideHeader === true,
     hideCash: settings?.hideCash === true,
   };
@@ -218,9 +237,15 @@ export function resolveVisibleColumns(columnIds: string[], isPortfolioTab: boole
     .filter((column) => isPortfolioTab || !PORTFOLIO_ONLY_COLUMN_IDS.has(column.id));
 }
 
-export function buildPortfolioPaneSettingsDef(config: AppConfig, settings: PortfolioPaneSettings): PaneSettingsDef {
+export function buildPortfolioPaneSettingsDef(
+  config: AppConfig,
+  settings: PortfolioPaneSettings,
+  activeCollectionId?: string | null,
+): PaneSettingsDef {
   const collectionEntries = getCollectionEntries(config);
   const allCollectionOptions = resolveCollectionOptions(collectionEntries);
+  const activeCollectionIsPortfolio = !!activeCollectionId
+    && config.portfolios.some((portfolio) => portfolio.id === activeCollectionId);
 
   const fields: PaneSettingsDef["fields"] = [
     {
@@ -240,6 +265,15 @@ export function buildPortfolioPaneSettingsDef(config: AppConfig, settings: Portf
       options: COLLECTION_SCOPE_OPTIONS,
     },
   ];
+
+  if (activeCollectionIsPortfolio) {
+    fields.push({
+      key: "viewMode",
+      label: "View",
+      type: "select",
+      options: VIEW_MODE_OPTIONS,
+    });
+  }
 
   if (settings.collectionScope === "custom") {
     fields.push({
@@ -266,6 +300,7 @@ export function buildPortfolioPaneSettingsDef(config: AppConfig, settings: Portf
       ...settings,
       columnIds: [...settings.columnIds],
       visibleCollectionIds: [...settings.visibleCollectionIds],
+      viewMode: settings.viewMode,
     },
     fields,
   };

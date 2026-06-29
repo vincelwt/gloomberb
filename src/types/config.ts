@@ -216,6 +216,7 @@ const DEFAULT_HOME_LAYOUT: LayoutConfig = {
         columnIds: [...DEFAULT_PORTFOLIO_COLUMN_IDS],
         collectionScope: "all",
         visibleCollectionIds: [],
+        viewMode: "table",
       },
       binding: { kind: "none" },
     },
