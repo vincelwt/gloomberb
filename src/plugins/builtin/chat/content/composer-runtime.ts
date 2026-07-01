@@ -7,29 +7,10 @@ import {
 } from "../layout";
 import { parseChatComposerCommand } from "../composer-commands";
 import type { ChatContentController } from "./types";
+import { getComposerCursorOffset, moveComposerCursorToOffset } from "./composer-cursor";
 
 interface MutableRef<T> {
   current: T;
-}
-
-function moveComposerCursorToEnd(textarea: TextareaRenderable, draft: string) {
-  const offset = draft.length;
-  const editBuffer = textarea.editBuffer as typeof textarea.editBuffer & {
-    setCursorByOffset?: (offset: number) => void;
-  };
-  if (typeof editBuffer.setCursorByOffset === "function") {
-    editBuffer.setCursorByOffset(offset);
-    return;
-  }
-  if (typeof textarea.setCursorOffset === "function") {
-    textarea.setCursorOffset(offset);
-    return;
-  }
-  try {
-    textarea.cursorOffset = offset;
-  } catch {
-    // Some host renderers expose cursorOffset as read-only.
-  }
 }
 
 export function useChatComposerRuntime({
@@ -46,6 +27,7 @@ export function useChatComposerRuntime({
   inputRef,
   inputValueRef,
   messages,
+  onComposerStateChange,
   onChannelChange,
   editingMessage,
   latestEditableMessageId,
@@ -71,6 +53,7 @@ export function useChatComposerRuntime({
   inputRef: MutableRef<TextareaRenderable | null>;
   inputValueRef: MutableRef<string>;
   messages: ChatMessage[];
+  onComposerStateChange?: (draft: string, cursorOffset: number) => void;
   onChannelChange?: (channelId: string) => void;
   editingMessage: ChatMessage | null;
   latestEditableMessageId: string | null;
@@ -112,7 +95,7 @@ export function useChatComposerRuntime({
     }
   }, [channelId, controller, useDefaultControllerChannel]);
 
-  const replaceLocalComposer = useCallback((draft: string) => {
+  const replaceLocalComposer = useCallback((draft: string, cursorOffset = draft.length) => {
     inputValueRef.current = draft;
     updateComposerRows(draft);
     const textarea = inputRef.current;
@@ -120,14 +103,20 @@ export function useChatComposerRuntime({
       applyingExternalDraftRef.current = true;
       try {
         textarea.setText(draft);
-        moveComposerCursorToEnd(textarea, draft);
+        moveComposerCursorToOffset(textarea, draft, cursorOffset);
       } finally {
         applyingExternalDraftRef.current = false;
       }
     } else if (textarea) {
-      moveComposerCursorToEnd(textarea, draft);
+      moveComposerCursorToOffset(textarea, draft, cursorOffset);
     }
-  }, [applyingExternalDraftRef, inputRef, inputValueRef, updateComposerRows]);
+    onComposerStateChange?.(draft, cursorOffset);
+  }, [applyingExternalDraftRef, inputRef, inputValueRef, onComposerStateChange, updateComposerRows]);
+
+  const replaceComposerDraft = useCallback((draft: string, cursorOffset = draft.length) => {
+    replaceLocalComposer(draft, cursorOffset);
+    persistDraft(draft);
+  }, [persistDraft, replaceLocalComposer]);
 
   const beginReplyTo = useCallback((index: number, options?: { deferFocus?: boolean }) => {
     if (!canSend || index < 0 || index >= messages.length) return;
@@ -295,14 +284,22 @@ export function useChatComposerRuntime({
 
   const commitLocalDraft = useCallback((draft: string) => {
     if (applyingExternalDraftRef.current) return;
+    const previousDraft = inputValueRef.current;
     inputValueRef.current = draft;
     updateComposerRows(draft);
     persistDraft(draft);
+    const rawCursorOffset = getComposerCursorOffset(inputRef.current, draft);
+    const cursorOffset = rawCursorOffset === 0 && draft.length > previousDraft.length && draft.startsWith(previousDraft)
+      ? draft.length
+      : rawCursorOffset;
+    onComposerStateChange?.(draft, cursorOffset);
   }, [
     applyingExternalDraftRef,
     channelId,
     controller,
+    inputRef,
     inputValueRef,
+    onComposerStateChange,
     persistDraft,
     updateComposerRows,
     useDefaultControllerChannel,
@@ -376,6 +373,7 @@ export function useChatComposerRuntime({
     focusComposer,
     inputPlaceholder,
     replyPreview,
+    replaceComposerDraft,
     returnToComposer,
     sendMessage,
   };

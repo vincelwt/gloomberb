@@ -5,6 +5,7 @@ import type { ChatMessage } from "../../../../api-client";
 import { InlineAuthActions } from "../../cloud/auth-actions";
 import { ChatActionChip } from "../message/action-chip";
 import { COMPOSER_ACTION_WIDTH } from "../layout";
+import type { ChatMentionSuggestion } from "./mentions";
 
 const DESKTOP_CHAT_INPUT_TOP_MARGIN_PX = 6;
 
@@ -33,7 +34,71 @@ interface ChatComposerAreaProps {
   replyPreview: string;
   replyTo: ChatMessage | null;
   sendMessage: () => void;
+  mentionSuggestions: ChatMentionSuggestion[];
+  mentionSelectedIndex: number;
+  onMentionCursorChange: () => void;
+  onMentionSelect: (index?: number) => boolean;
   user: { id: string; username: string; emailVerified: boolean } | null;
+}
+
+function ChatMentionSuggestions({
+  contentWidth,
+  nativePaneChrome,
+  onSelect,
+  selectedIndex,
+  suggestions,
+}: {
+  contentWidth: number;
+  nativePaneChrome: boolean | undefined;
+  onSelect: (index?: number) => boolean;
+  selectedIndex: number;
+  suggestions: ChatMentionSuggestion[];
+}) {
+  if (suggestions.length === 0) return null;
+  const width = Math.max(18, Math.min(contentWidth, 44));
+  const menuStyle = nativePaneChrome
+    ? {
+      marginBottom: 4,
+      border: `1px solid ${colors.border}`,
+      borderRadius: 6,
+      overflow: "hidden",
+    }
+    : undefined;
+
+  return (
+    <Box
+      width={width}
+      height={suggestions.length}
+      flexDirection="column"
+      backgroundColor={nativePaneChrome ? colors.panel : colors.bg}
+      style={menuStyle}
+    >
+      {suggestions.map((suggestion, index) => {
+        const selected = index === selectedIndex;
+        return (
+          <Box
+            key={suggestion.username}
+            height={1}
+            width={width}
+            flexDirection="row"
+            backgroundColor={selected ? colors.selected : "transparent"}
+            onMouseDown={() => { onSelect(index); }}
+            style={{
+              cursor: "pointer",
+              paddingInline: nativePaneChrome ? 8 : undefined,
+            }}
+          >
+            <Text
+              fg={selected ? colors.selectedText : colors.positive}
+              attributes={selected ? TextAttributes.BOLD : 0}
+            >
+              {`@${suggestion.username}`}
+            </Text>
+          </Box>
+        );
+      })}
+    </Box>
+  );
 }
 
 export function ChatComposerArea({
@@ -57,6 +122,10 @@ export function ChatComposerArea({
   replyPreview,
   replyTo,
   sendMessage,
+  mentionSuggestions,
+  mentionSelectedIndex,
+  onMentionCursorChange,
+  onMentionSelect,
   user,
 }: ChatComposerAreaProps) {
   if (!canSend) {
@@ -122,6 +191,14 @@ export function ChatComposerArea({
         </Box>
       )}
 
+      <ChatMentionSuggestions
+        contentWidth={contentWidth}
+        nativePaneChrome={nativePaneChrome}
+        onSelect={onMentionSelect}
+        selectedIndex={mentionSelectedIndex}
+        suggestions={mentionSuggestions}
+      />
+
       <MessageComposer
         inputRef={inputRef}
         initialValue={inputValueRef.current}
@@ -132,6 +209,7 @@ export function ChatComposerArea({
         height={composerHeight}
         onFocusRequest={focusComposer}
         onInput={commitLocalDraft}
+        onCursorChange={onMentionCursorChange}
         keyBindings={[
           { name: "return", action: "submit" },
           { name: "linefeed", action: "submit" },
@@ -141,6 +219,7 @@ export function ChatComposerArea({
           { name: "linefeed", meta: true, action: "submit" },
         ]}
         onSubmit={() => {
+          if (onMentionSelect()) return;
           if (inputValueRef.current.trim()) {
             sendMessage();
           }
@@ -157,13 +236,17 @@ export function getChatComposerAreaHeight({
   editingMessage,
   nativePaneChrome,
   replyTo,
+  mentionSuggestionCount,
 }: {
   canSend: boolean;
   composerHeight: number;
   editingMessage: ChatMessage | null;
   nativePaneChrome: boolean | undefined;
   replyTo: ChatMessage | null;
+  mentionSuggestionCount?: number;
 }) {
   if (!canSend) return 2;
-  return getMessageComposerBlockHeight({ height: composerHeight, nativePaneChrome }) + (editingMessage || replyTo ? 1 : 0);
+  return getMessageComposerBlockHeight({ height: composerHeight, nativePaneChrome })
+    + (editingMessage || replyTo ? 1 : 0)
+    + Math.max(0, mentionSuggestionCount ?? 0);
 }

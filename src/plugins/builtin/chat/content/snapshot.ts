@@ -17,6 +17,7 @@ interface ChatSnapshotStateArgs {
   initialSnapshot: ChatSnapshot;
   inputRef: MutableRef<TextareaRenderable | null>;
   inputValueRef: MutableRef<string>;
+  onComposerStateChange?: (draft: string, cursorOffset: number) => void;
   prependAnchorRef: MutableRef<ChatPrependAnchor | null>;
   setFollowMessages: Dispatch<SetStateAction<boolean>>;
   setSelectedIdx: Dispatch<SetStateAction<number>>;
@@ -28,18 +29,21 @@ function syncDraftFromSnapshot({
   applyingExternalDraftRef,
   inputRef,
   inputValueRef,
+  onComposerStateChange,
   snapshot,
   updateComposerRows,
 }: {
   applyingExternalDraftRef: MutableRef<boolean>;
   inputRef: MutableRef<TextareaRenderable | null>;
   inputValueRef: MutableRef<string>;
+  onComposerStateChange?: (draft: string, cursorOffset: number) => void;
   snapshot: ChatSnapshot;
   updateComposerRows: (draft: string) => void;
 }) {
   if (inputValueRef.current !== snapshot.draft) {
     inputValueRef.current = snapshot.draft;
     updateComposerRows(snapshot.draft);
+    onComposerStateChange?.(snapshot.draft, snapshot.draft.length);
   }
   const textarea = inputRef.current;
   if (textarea && textarea.editBuffer.getText() !== snapshot.draft) {
@@ -62,6 +66,7 @@ export function useChatSnapshotState({
   initialSnapshot,
   inputRef,
   inputValueRef,
+  onComposerStateChange,
   prependAnchorRef,
   setFollowMessages,
   setSelectedIdx,
@@ -110,6 +115,7 @@ export function useChatSnapshotState({
         applyingExternalDraftRef,
         inputRef,
         inputValueRef,
+        onComposerStateChange,
         snapshot,
         updateComposerRows,
       });
@@ -130,6 +136,7 @@ export function useChatSnapshotState({
     controller,
     inputRef,
     inputValueRef,
+    onComposerStateChange,
     prependAnchorRef,
     setFollowMessages,
     setSelectedIdx,

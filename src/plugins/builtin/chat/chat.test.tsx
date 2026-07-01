@@ -45,6 +45,55 @@ function makeOwnMessage(content = "typo", createdAt = recentChatTimestamp()): Ch
   };
 }
 
+const makeNamedMessage = (index: number, username: string): ChatMessage => ({
+  id: `named-${index}`,
+  channelId: "everyone",
+  content: `message from ${username}`,
+  replyToId: null,
+  createdAt: `2026-03-30T00:01:${String(index).padStart(2, "0")}.000Z`,
+  user: { id: `u-${username}`, username, displayName: username },
+});
+
+async function renderFocusedComposerWithDraft(
+  controller: ReturnType<typeof createController>,
+  draft: string,
+  options: Parameters<typeof createHarness>[1] = {},
+) {
+  const harnessOptions = {
+    width: 72,
+    height: 14,
+    ...options,
+  };
+  await act(async () => {
+    testSetup = await testRender(createHarness(controller, harnessOptions), {
+      width: harnessOptions.width ?? 72,
+      height: harnessOptions.height ?? 14,
+    });
+  });
+
+  await flushFrame();
+
+  const frameBeforeClick = setup().captureCharFrame().split("\n");
+  const inputRow = frameBeforeClick.findIndex((line) => line.includes("Type a message..."));
+  const inputCol = frameBeforeClick[inputRow]?.indexOf("Type a message...") ?? -1;
+
+  expect(inputRow).toBeGreaterThanOrEqual(0);
+  expect(inputCol).toBeGreaterThanOrEqual(0);
+
+  await act(async () => {
+    await setup().mockMouse.click(inputCol + 1, inputRow);
+    await setup().renderOnce();
+    await setup().renderOnce();
+  });
+
+  await act(async () => {
+    await setup().mockInput.typeText(draft);
+    await setup().renderOnce();
+    await setup().renderOnce();
+  });
+  await flushFrame();
+}
+
 beforeEach(() => {
   installChatApiTestDefaults();
 });
@@ -175,6 +224,82 @@ describe("ChatContent", () => {
     const frameAfterType = setup().captureCharFrame();
     expect(frameAfterType).toContain("> alphabeta");
     expect(frameAfterType).not.toContain("> betaalpha");
+  });
+
+  test("autocompletes recent user mentions from the focused composer", async () => {
+    const controller = createController({
+      messages: [
+        makeNamedMessage(1, "alpha"),
+        makeNamedMessage(2, "bravo"),
+        makeNamedMessage(3, "charlie"),
+      ],
+    });
+
+    await renderFocusedComposerWithDraft(controller, "@");
+
+    let frame = setup().captureCharFrame();
+    expect(frame).toContain("@charlie");
+    expect(frame).toContain("@bravo");
+
+    await emitKeypress({ name: "down", sequence: "\u001b[B" });
+
+    await act(async () => {
+      setup().mockInput.pressEnter();
+      await setup().renderOnce();
+      await setup().renderOnce();
+    });
+    await flushFrame();
+
+    frame = setup().captureCharFrame();
+    expect(frame).toContain("> @bravo");
+    expect(frame).not.toContain("@charlie");
+  });
+
+  test("tab accepts the current mention suggestion without pane cycling", async () => {
+    const controller = createController({
+      messages: [
+        makeNamedMessage(1, "alpha"),
+        makeNamedMessage(2, "bravo"),
+        makeNamedMessage(3, "charlie"),
+      ],
+    });
+
+    await renderFocusedComposerWithDraft(controller, "@");
+
+    const event = await emitKeypress({ name: "tab", sequence: "\t" });
+    await flushFrame();
+
+    const frame = setup().captureCharFrame();
+    expect(frame).toContain("> @charlie");
+    expect(frame).not.toContain("@bravo");
+    expect(event.defaultPrevented).toBe(true);
+    expect(event.propagationStopped).toBe(true);
+  });
+
+  test("leaves tab for the command bar when mention suggestions are open behind it", async () => {
+    const controller = createController({
+      messages: [
+        makeNamedMessage(1, "alpha"),
+        makeNamedMessage(2, "bravo"),
+        makeNamedMessage(3, "charlie"),
+      ],
+    });
+
+    await renderFocusedComposerWithDraft(controller, "@", {
+      configureState: (state) => {
+        state.commandBarOpen = true;
+      },
+    });
+
+    const event = await emitKeypress({ name: "tab", sequence: "\t" });
+    await flushFrame();
+
+    const frame = setup().captureCharFrame();
+    expect(frame).toContain("@charlie");
+    expect(frame).toContain("> @");
+    expect(frame).not.toContain("> @charlie");
+    expect(event.defaultPrevented).toBe(false);
+    expect(event.propagationStopped).toBe(false);
   });
 
   test("up arrow selects the newest message first when nothing is selected", async () => {

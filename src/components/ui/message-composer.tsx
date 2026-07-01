@@ -17,6 +17,7 @@ export interface MessageComposerProps {
   terminalBottomInset?: number;
   onFocusRequest?: () => void;
   onInput?: (value: string) => void;
+  onCursorChange?: () => void;
   onSubmit?: () => void;
   keyBindings?: Array<Record<string, unknown>>;
   wrapText?: boolean;
@@ -52,6 +53,7 @@ export function MessageComposer({
   terminalBottomInset = 0,
   onFocusRequest,
   onInput,
+  onCursorChange,
   onSubmit,
   keyBindings,
   wrapText = false,
@@ -91,6 +93,7 @@ export function MessageComposer({
         terminalBottomInset={terminalBottomInset}
         onFocusRequest={onFocusRequest}
         onInput={onInput}
+        onCursorChange={onCursorChange}
         onSubmit={onSubmit}
         keyBindings={keyBindings}
         wrapText={wrapText}
@@ -149,6 +152,7 @@ export function MessageComposer({
             focusedBackgroundColor={colors.bg}
             cursorColor={colors.textBright}
             onInput={handleInput}
+            onCursorChange={onCursorChange}
             keyBindings={keyBindings}
             onSubmit={onSubmit}
             wrapText={wrapText}

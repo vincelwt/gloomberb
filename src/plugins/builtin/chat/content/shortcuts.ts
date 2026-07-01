@@ -11,6 +11,7 @@ export function useChatContentShortcuts({
   blurInput,
   canSend,
   cancelEditMessage,
+  commandBarOpen,
   clearReplyTarget,
   cycleChannel,
   focusChannelSidebar,
@@ -22,6 +23,10 @@ export function useChatContentShortcuts({
   inputValueRef,
   loadingOlderMessages,
   messages,
+  mentionMenuOpen,
+  moveMentionSelection,
+  dismissMentionSuggestions,
+  commitMentionSelection,
   moveMessageSelection,
   moveSidebarChannelSelection,
   nativePaneChrome,
@@ -43,6 +48,7 @@ export function useChatContentShortcuts({
   blurInput: () => void;
   canSend: boolean;
   cancelEditMessage: () => void;
+  commandBarOpen: boolean;
   clearReplyTarget: () => void;
   cycleChannel: (direction: 1 | -1) => boolean;
   focusChannelSidebar: () => boolean;
@@ -54,6 +60,10 @@ export function useChatContentShortcuts({
   inputValueRef: MutableRefObject<string>;
   loadingOlderMessages: boolean;
   messages: ChatMessage[];
+  mentionMenuOpen: boolean;
+  moveMentionSelection: (direction: "up" | "down") => boolean;
+  dismissMentionSuggestions: () => boolean;
+  commitMentionSelection: () => boolean;
   moveMessageSelection: (direction: "up" | "down") => boolean;
   moveSidebarChannelSelection: (direction: "up" | "down") => boolean;
   nativePaneChrome?: boolean;
@@ -71,7 +81,25 @@ export function useChatContentShortcuts({
   sidebarFocusedRef: MutableRefObject<boolean>;
 }) {
   useShortcut((event) => {
-    if (!focused) return;
+    if (!focused || commandBarOpen || !inputFocused || !mentionMenuOpen) return;
+    if (
+      event.name !== "tab"
+      || event.ctrl
+      || event.meta
+      || event.super
+      || event.alt
+      || event.option
+    ) {
+      return;
+    }
+
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    commitMentionSelection();
+  }, { allowEditable: true, phase: "before" });
+
+  useShortcut((event) => {
+    if (!focused || commandBarOpen) return;
     const isEnterKey = event.name === "return" || event.name === "enter";
 
     if (sidebarFocusedRef.current && showChannelSidebar) {
@@ -117,6 +145,24 @@ export function useChatContentShortcuts({
     }
 
     if (inputFocused) {
+      if (mentionMenuOpen) {
+        if (event.name === "escape") {
+          event.preventDefault?.();
+          event.stopPropagation?.();
+          dismissMentionSuggestions();
+          return;
+        }
+
+        if (isPlainKey(event, "up", "down")) {
+          event.preventDefault?.();
+          event.stopPropagation?.();
+          if (event.name === "up" || event.name === "down") {
+            moveMentionSelection(event.name);
+          }
+          return;
+        }
+      }
+
       if (event.name === "escape") {
         event.preventDefault?.();
         event.stopPropagation?.();
