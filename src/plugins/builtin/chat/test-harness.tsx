@@ -178,23 +178,33 @@ export function createChatTestControls(getSetup: () => ChatTestSetup) {
       sequence?: string;
       ctrl?: boolean;
       meta?: boolean;
+      super?: boolean;
+      alt?: boolean;
       shift?: boolean;
       option?: boolean;
     }) {
+      const keyEvent = {
+        ctrl: false,
+        meta: false,
+        option: false,
+        shift: false,
+        eventType: "press",
+        repeated: false,
+        defaultPrevented: false,
+        propagationStopped: false,
+        preventDefault() {
+          keyEvent.defaultPrevented = true;
+        },
+        stopPropagation() {
+          keyEvent.propagationStopped = true;
+        },
+        ...event,
+      };
       await act(async () => {
-        getSetup().renderer.keyInput.emit("keypress", {
-          ctrl: false,
-          meta: false,
-          option: false,
-          shift: false,
-          eventType: "press",
-          repeated: false,
-          stopPropagation: () => {},
-          preventDefault: () => {},
-          ...event,
-        } as any);
+        getSetup().renderer.keyInput.emit("keypress", keyEvent as any);
         await getSetup().renderOnce();
       });
+      return keyEvent;
     },
   };
 }

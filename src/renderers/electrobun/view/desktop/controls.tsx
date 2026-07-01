@@ -184,6 +184,7 @@ export function WebMessageComposer({
   height = 2,
   onFocusRequest,
   onInput,
+  onCursorChange,
   onSubmit,
   keyBindings,
   wrapText = false,
@@ -234,6 +235,7 @@ export function WebMessageComposer({
         onMouseDown={requestFocus}
         onFocus={requestFocus}
         onInput={handleInput}
+        onCursorChange={onCursorChange}
         keyBindings={keyBindings}
         onSubmit={onSubmit}
         wrapText={wrapText}

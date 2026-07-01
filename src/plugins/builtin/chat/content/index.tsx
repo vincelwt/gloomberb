@@ -1,7 +1,7 @@
 import { Box, Text, useUiCapabilities } from "../../../../ui";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { type ScrollBoxRenderable, type TextareaRenderable } from "../../../../ui";
-import { useAppDispatch } from "../../../../state/app/context";
+import { useAppDispatch, useAppSelector } from "../../../../state/app/context";
 import { useInlineTickers } from "../../../../state/hooks/inline-tickers";
 import { blendHex, colors } from "../../../../theme/colors";
 import { chatController } from "../controller";
@@ -36,6 +36,13 @@ import {
   CHAT_MESSAGE_EDIT_WINDOW_MS,
   findLatestEditableChatMessage,
 } from "../edit-window";
+import {
+  applyMentionSuggestion,
+  buildRecentMentionSuggestions,
+  detectChatMentionTrigger,
+  filterMentionSuggestions,
+} from "./mentions";
+import { getComposerCursorOffset } from "./composer-cursor";
 
 interface ChatContentProps {
   width: number;
@@ -57,6 +64,7 @@ export function ChatContent({
   controller = chatController,
 }: ChatContentProps) {
   const dispatch = useAppDispatch();
+  const commandBarOpen = useAppSelector((state) => state.commandBarOpen);
   const channelId = normalizeChannelId(rawChannelId);
   const channelIdRef = useRef(channelId);
   channelIdRef.current = channelId;
@@ -82,6 +90,18 @@ export function ChatContent({
   });
   const composerTextWidthRef = useRef(initialWidthMetrics.composerTextWidth);
   const inputValueRef = useRef(initialSnapshot.draft);
+  const [composerDraft, setComposerDraft] = useState(initialSnapshot.draft);
+  const [composerCursorOffset, setComposerCursorOffset] = useState(initialSnapshot.draft.length);
+  const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
+  const [dismissedMentionKey, setDismissedMentionKey] = useState<string | null>(null);
+  const syncComposerState = useCallback((draft: string, cursorOffset = getComposerCursorOffset(inputRef.current, draft)) => {
+    setComposerDraft((current) => (current === draft ? current : draft));
+    setComposerCursorOffset((current) => (current === cursorOffset ? current : cursorOffset));
+  }, []);
+  const syncComposerCursor = useCallback(() => {
+    const draft = inputRef.current?.editBuffer.getText() ?? inputValueRef.current;
+    syncComposerState(draft, getComposerCursorOffset(inputRef.current, draft));
+  }, [syncComposerState]);
   const [composerRows, setComposerRows] = useState(() => estimateComposerHeight(initialSnapshot.draft, initialWidthMetrics.composerTextWidth));
   const updateComposerRows = useCallback((draft: string) => {
     const nextRows = estimateComposerHeight(draft, composerTextWidthRef.current);
@@ -107,6 +127,7 @@ export function ChatContent({
     initialSnapshot,
     inputRef,
     inputValueRef,
+    onComposerStateChange: syncComposerState,
     prependAnchorRef,
     setFollowMessages,
     setSelectedIdx,
@@ -155,18 +176,6 @@ export function ChatContent({
   const latestEditableMessageId = useMemo(() => {
     return findLatestEditableChatMessage(messages, user?.id, editWindowNowMs)?.id ?? null;
   }, [editWindowNowMs, messages, user?.id]);
-  const {
-    composerHeight,
-    messageAreaHeight,
-  } = resolveChatContentHeightMetrics({
-    canSend,
-    composerRows,
-    editingMessage,
-    height,
-    nativePaneChrome,
-    replyTo,
-  });
-
   useEffect(() => {
     updateComposerRows(inputValueRef.current);
   }, [updateComposerRows]);
@@ -176,6 +185,44 @@ export function ChatContent({
   const userByUsername = useMemo(() => buildChatUserByUsername(channels, messages), [channels, messages]);
   const activeChannel = useMemo(() => channels.find((channel) => channel.id === channelId), [channelId, channels]);
   const activeChannelTitle = useMemo(() => formatChatPaneTitle(activeChannel, channelId), [activeChannel, channelId]);
+  const recentMentionSuggestions = useMemo(() => buildRecentMentionSuggestions({
+    activeChannel,
+    currentUserId: user?.id,
+    messages,
+  }), [activeChannel, messages, user?.id]);
+  const mentionDisabled = activeChannel?.kind === "direct" || (!activeChannel && channelId.startsWith("dm:"));
+  const mentionTrigger = useMemo(() => (
+    mentionDisabled ? null : detectChatMentionTrigger(composerDraft, composerCursorOffset)
+  ), [
+    mentionDisabled,
+    composerCursorOffset,
+    composerDraft,
+  ]);
+  const mentionTriggerKey = mentionTrigger
+    ? `${channelId}:${mentionTrigger.start}:${mentionTrigger.end}:${mentionTrigger.query}`
+    : null;
+  const mentionSuggestions = useMemo(() => {
+    if (!mentionTrigger || mentionTriggerKey === dismissedMentionKey) return [];
+    return filterMentionSuggestions(recentMentionSuggestions, mentionTrigger.query);
+  }, [dismissedMentionKey, mentionTrigger, mentionTriggerKey, recentMentionSuggestions]);
+  const mentionSelectedIndexSafe = mentionSuggestions.length > 0
+    ? Math.min(mentionSelectedIndex, mentionSuggestions.length - 1)
+    : 0;
+  useEffect(() => {
+    setMentionSelectedIndex(0);
+  }, [mentionTriggerKey]);
+  const {
+    composerHeight,
+    messageAreaHeight,
+  } = resolveChatContentHeightMetrics({
+    canSend,
+    composerRows,
+    editingMessage,
+    height,
+    mentionSuggestionCount: mentionSuggestions.length,
+    nativePaneChrome,
+    replyTo,
+  });
   const {
     cancelProfilePopoverClose,
     closeProfilePopover,
@@ -257,6 +304,7 @@ export function ChatContent({
     focusComposer,
     inputPlaceholder,
     replyPreview,
+    replaceComposerDraft,
     returnToComposer,
     sendMessage,
   } = useChatComposerRuntime({
@@ -273,6 +321,7 @@ export function ChatContent({
     inputRef,
     inputValueRef,
     messages,
+    onComposerStateChange: syncComposerState,
     onChannelChange,
     editingMessage,
     latestEditableMessageId,
@@ -285,6 +334,44 @@ export function ChatContent({
     updateComposerRows,
     useDefaultControllerChannel,
   });
+
+  const moveMentionSelection = useCallback((direction: "up" | "down") => {
+    if (mentionSuggestions.length === 0) return false;
+    setMentionSelectedIndex((current) => {
+      const safeCurrent = Math.max(0, Math.min(current, mentionSuggestions.length - 1));
+      if (direction === "up") {
+        return safeCurrent <= 0 ? mentionSuggestions.length - 1 : safeCurrent - 1;
+      }
+      return safeCurrent >= mentionSuggestions.length - 1 ? 0 : safeCurrent + 1;
+    });
+    return true;
+  }, [mentionSuggestions.length]);
+
+  const dismissMentionSuggestions = useCallback(() => {
+    if (!mentionTriggerKey || mentionSuggestions.length === 0) return false;
+    setDismissedMentionKey(mentionTriggerKey);
+    return true;
+  }, [mentionSuggestions.length, mentionTriggerKey]);
+
+  const commitMentionSelection = useCallback((index = mentionSelectedIndexSafe) => {
+    if (!mentionTrigger || mentionSuggestions.length === 0) return false;
+    const suggestion = mentionSuggestions[index] ?? mentionSuggestions[0];
+    if (!suggestion) return false;
+    const replacement = applyMentionSuggestion(composerDraft, mentionTrigger, suggestion);
+    replaceComposerDraft(replacement.draft, replacement.cursorOffset);
+    setMentionSelectedIndex(0);
+    setDismissedMentionKey(mentionTriggerKey);
+    queueMicrotask(() => focusInput());
+    return true;
+  }, [
+    composerDraft,
+    focusInput,
+    mentionSelectedIndexSafe,
+    mentionSuggestions,
+    mentionTrigger,
+    mentionTriggerKey,
+    replaceComposerDraft,
+  ]);
 
   const {
     handleTranscriptScrollActivity,
@@ -322,6 +409,7 @@ export function ChatContent({
     blurInput,
     canSend,
     cancelEditMessage,
+    commandBarOpen,
     clearReplyTarget,
     cycleChannel,
     focusChannelSidebar,
@@ -333,6 +421,10 @@ export function ChatContent({
     inputValueRef,
     loadingOlderMessages,
     messages,
+    mentionMenuOpen: mentionSuggestions.length > 0,
+    moveMentionSelection,
+    dismissMentionSuggestions,
+    commitMentionSelection,
     moveMessageSelection,
     moveSidebarChannelSelection,
     nativePaneChrome,
@@ -461,6 +553,10 @@ export function ChatContent({
         replyPreview={replyPreview}
         replyTo={replyTo}
         sendMessage={sendMessage}
+        mentionSuggestions={mentionSuggestions}
+        mentionSelectedIndex={mentionSelectedIndexSafe}
+        onMentionCursorChange={syncComposerCursor}
+        onMentionSelect={commitMentionSelection}
         user={user}
       />
       </Box>

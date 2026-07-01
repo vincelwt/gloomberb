@@ -44,6 +44,7 @@ export function resolveChatContentHeightMetrics({
   composerRows,
   editingMessage,
   height,
+  mentionSuggestionCount,
   nativePaneChrome,
   replyTo,
 }: {
@@ -51,6 +52,7 @@ export function resolveChatContentHeightMetrics({
   composerRows: number;
   editingMessage: ChatMessage | null;
   height: number;
+  mentionSuggestionCount?: number;
   nativePaneChrome: boolean | undefined;
   replyTo: ChatMessage | null;
 }) {
@@ -59,7 +61,14 @@ export function resolveChatContentHeightMetrics({
       ? Math.min(CHAT_COMPOSER_MAX_ROWS + 1, Math.max(2, composerRows + 1))
       : composerRows
     : 0;
-  const inputAreaHeight = getChatComposerAreaHeight({ canSend, composerHeight, editingMessage, nativePaneChrome, replyTo });
+  const inputAreaHeight = getChatComposerAreaHeight({
+    canSend,
+    composerHeight,
+    editingMessage,
+    mentionSuggestionCount,
+    nativePaneChrome,
+    replyTo,
+  });
   const topSeparatorHeight = nativePaneChrome ? 0 : 1;
   const footerSeparatorHeight = !nativePaneChrome && !canSend ? 1 : 0;
   const messageAreaHeight = Math.max(1, height - topSeparatorHeight - footerSeparatorHeight - inputAreaHeight);
