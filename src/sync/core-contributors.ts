@@ -4,6 +4,11 @@ import type { TickerFinancials } from "../types/financials";
 import type { Portfolio, TickerMetadata, TickerPosition, TickerRecord, Watchlist } from "../types/ticker";
 import { hydrateTickerMetadata } from "../tickers/metadata";
 import type { SyncContributor } from "./types";
+import { calculatePortfolioSummaryTotals } from "../plugins/builtin/portfolio-list/metrics";
+import { resolvePortfolioMarketValue } from "../plugins/builtin/portfolio-list/account-metrics";
+import { resolvePortfolioAccountState } from "../plugins/builtin/portfolio-list/summary";
+import type { BrokerAccount } from "../types/trading";
+import { convertCurrency } from "../utils/format";
 
 const SENSITIVE_KEY_PATTERN = /(token|secret|password|credential|private|api[_-]?key|access[_-]?key|refresh[_-]?key|session|cookie|dataDir|path|directory|localPath)/i;
 
@@ -157,39 +162,51 @@ function collectCoreConfigPayload(config: AppConfig) {
   });
 }
 
-function positionValue(position: TickerPosition, financials: TickerFinancials | null | undefined): number | null {
+function positionValueBase(
+  position: TickerPosition,
+  financials: TickerFinancials | null | undefined,
+  baseCurrency: string,
+  exchangeRates: Map<string, number>,
+): number | null {
+  const quoteCurrency = financials?.quote?.currency || position.currency || baseCurrency;
+  const positionCurrency = position.currency || quoteCurrency;
   if (typeof position.marketValue === "number" && Number.isFinite(position.marketValue)) {
-    return Math.abs(position.marketValue);
+    return convertCurrency(Math.abs(position.marketValue), positionCurrency, baseCurrency, exchangeRates);
   }
-  const price = typeof position.markPrice === "number" && Number.isFinite(position.markPrice)
-    ? position.markPrice
-    : financials?.quote?.price ?? position.avgCost;
+  const hasMarkPrice = typeof position.markPrice === "number" && Number.isFinite(position.markPrice);
+  const hasQuotePrice = typeof financials?.quote?.price === "number" && Number.isFinite(financials.quote.price);
+  const price = hasMarkPrice ? position.markPrice : hasQuotePrice ? financials!.quote!.price : position.avgCost;
   if (!Number.isFinite(position.shares) || !Number.isFinite(price)) return null;
-  return Math.abs(position.shares * price * (position.multiplier ?? 1));
+  return convertCurrency(
+    Math.abs(position.shares * price * (position.multiplier ?? 1)),
+    hasQuotePrice && !hasMarkPrice ? quoteCurrency : positionCurrency,
+    baseCurrency,
+    exchangeRates,
+  );
 }
 
 function collectAnalyticsByPortfolio(
   config: AppConfig,
   tickers: Map<string, TickerRecord>,
   financials: Map<string, TickerFinancials>,
+  exchangeRates: Map<string, number>,
+  brokerAccounts: Record<string, BrokerAccount[]>,
 ) {
   const output: Record<string, Record<string, unknown>> = {};
   for (const portfolio of config.portfolios) {
     const symbols = new Set<string>();
-    let marketValue = 0;
-    let hasMarketValue = false;
     let returnWeight = 0;
     let weightedReturn = 0;
+    const portfolioTickers: TickerRecord[] = [];
     for (const ticker of tickers.values()) {
       const tickerFinancials = financials.get(ticker.metadata.ticker);
       const portfolioPositions = ticker.metadata.positions.filter((position) => position.portfolio === portfolio.id);
       if (portfolioPositions.length === 0 && !ticker.metadata.portfolios.includes(portfolio.id)) continue;
       symbols.add(ticker.metadata.ticker);
+      portfolioTickers.push(ticker);
       for (const position of portfolioPositions) {
-        const value = positionValue(position, tickerFinancials);
+        const value = positionValueBase(position, tickerFinancials, config.baseCurrency, exchangeRates);
         if (value != null) {
-          hasMarketValue = true;
-          marketValue += value;
           const return1Y = tickerFinancials?.fundamentals?.return1Y;
           if (typeof return1Y === "number" && Number.isFinite(return1Y)) {
             returnWeight += value;
@@ -198,21 +215,37 @@ function collectAnalyticsByPortfolio(
         }
       }
     }
+    const totals = calculatePortfolioSummaryTotals(
+      portfolioTickers,
+      financials,
+      config.baseCurrency,
+      exchangeRates,
+      true,
+      portfolio.id,
+    );
+    const accountState = resolvePortfolioAccountState(portfolio, { config, brokerAccounts }, { status: null, accounts: [] });
+    const marketValue = resolvePortfolioMarketValue(totals, accountState?.account);
     output[portfolio.id] = {
       portfolioName: portfolio.name,
       holdingsCount: symbols.size,
       oneYearReturn: returnWeight > 0 ? weightedReturn / returnWeight : null,
       spyBeta: null,
-      marketValue: hasMarketValue ? marketValue : null,
+      marketValue: totals.hasPositions || accountState ? marketValue : null,
       currency: portfolio.currency || config.baseCurrency,
-      sourceLabel: "Synced portfolio",
+      sourceLabel: accountState?.sourceLabel ?? "Synced portfolio",
       asOf: new Date().toISOString(),
     };
   }
   return output;
 }
 
-function collectCoreCollectionsPayload(config: AppConfig, tickers: Map<string, TickerRecord>, financials: Map<string, TickerFinancials>) {
+function collectCoreCollectionsPayload(
+  config: AppConfig,
+  tickers: Map<string, TickerRecord>,
+  financials: Map<string, TickerFinancials>,
+  exchangeRates: Map<string, number>,
+  brokerAccounts: Record<string, BrokerAccount[]>,
+) {
   const records = [...tickers.values()]
     .map((ticker) => sanitizeTickerMetadata(ticker.metadata, financials.get(ticker.metadata.ticker)))
     .filter((metadata) => (
@@ -224,7 +257,7 @@ function collectCoreCollectionsPayload(config: AppConfig, tickers: Map<string, T
   return {
     portfolios: config.portfolios.map(sanitizePortfolio),
     watchlists: config.watchlists.map(sanitizeWatchlist),
-    analyticsByPortfolio: collectAnalyticsByPortfolio(config, tickers, financials),
+    analyticsByPortfolio: collectAnalyticsByPortfolio(config, tickers, financials, exchangeRates, brokerAccounts),
     tickers: records,
   };
 }
@@ -288,7 +321,13 @@ export const coreConfigSyncContributor: SyncContributor = {
 export const coreCollectionsSyncContributor: SyncContributor = {
   id: "core.collections",
   schemaVersion: 1,
-  collect: ({ state }) => collectCoreCollectionsPayload(state.config, state.tickers, state.financials),
+  collect: ({ state }) => collectCoreCollectionsPayload(
+    state.config,
+    state.tickers,
+    state.financials,
+    state.exchangeRates,
+    state.brokerAccounts,
+  ),
   apply: async (payload, { state, dispatch, tickerRepository }) => {
     if (!isPlainObject(payload)) return;
     const nextConfig = { ...state.config };

@@ -112,6 +112,84 @@ describe("core sync contributors", () => {
     expect((payload as any).analyticsByPortfolio.main.oneYearReturn).toBe(0.42);
   });
 
+  test("syncs portfolio analytics in base currency and uses broker account market value", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-sync-test");
+    config.baseCurrency = "USD";
+    config.portfolios = [
+      { id: "main", name: "Main", currency: "USD" },
+      {
+        id: "broker:ibkr:U123",
+        name: "U123",
+        currency: "USD",
+        brokerId: "ibkr",
+        brokerInstanceId: "ibkr",
+        brokerAccountId: "U123",
+      },
+    ];
+    config.brokerInstances = [{
+      id: "ibkr",
+      brokerType: "ibkr",
+      label: "IBKR",
+      config: {},
+      enabled: true,
+    }];
+    const ticker = (symbol: string, portfolio: string): TickerRecord => ({
+      metadata: {
+        ticker: symbol,
+        exchange: "TSE",
+        currency: "JPY",
+        name: symbol,
+        portfolios: [portfolio],
+        watchlists: [],
+        positions: [{
+          portfolio,
+          shares: 10,
+          avgCost: 900,
+          broker: "manual",
+          currency: "JPY",
+        }],
+        custom: {},
+        tags: [],
+      },
+    });
+    const state = createInitialState(config);
+    state.exchangeRates = new Map([["USD", 1], ["JPY", 0.0067]]);
+    state.tickers = new Map([
+      ["7203.T", ticker("7203.T", "main")],
+      ["6758.T", ticker("6758.T", "broker:ibkr:U123")],
+    ]);
+    state.financials = new Map([
+      ["7203.T", {
+        quote: { symbol: "7203.T", price: 1000, currency: "JPY", change: 0, changePercent: 0, lastUpdated: 1 },
+        fundamentals: { return1Y: 0.1 },
+        annualStatements: [],
+        quarterlyStatements: [],
+      }],
+      ["6758.T", {
+        quote: { symbol: "6758.T", price: 1000, currency: "JPY", change: 0, changePercent: 0, lastUpdated: 1 },
+        fundamentals: { return1Y: 0.2 },
+        annualStatements: [],
+        quarterlyStatements: [],
+      }],
+    ]);
+    state.brokerAccounts = {
+      ibkr: [{
+        accountId: "U123",
+        name: "U123",
+        currency: "USD",
+        source: "flex",
+        grossPositionValue: 1234,
+      }],
+    };
+
+    const payload = await coreCollectionsSyncContributor.collect({ state }) as any;
+
+    expect(payload.analyticsByPortfolio.main.marketValue).toBeCloseTo(67);
+    expect(payload.analyticsByPortfolio.main.oneYearReturn).toBe(0.1);
+    expect(payload.analyticsByPortfolio["broker:ibkr:U123"].marketValue).toBe(1234);
+    expect(payload.analyticsByPortfolio["broker:ibkr:U123"].sourceLabel).toBe("Flex");
+  });
+
   test("redaction removes nested credential-shaped fields", () => {
     const sanitized = __syncContributorInternalsForTests.sanitizeUnknown({
       nested: {
