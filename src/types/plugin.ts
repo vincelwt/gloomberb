@@ -20,6 +20,7 @@ import type { TickerFinancials } from "./financials";
 import type { CachePolicy, PersistedResourceValue } from "./persistence";
 import type { TickerRecord } from "./ticker";
 import type { InstrumentSearchResult } from "./instrument";
+import type { SyncContributor, SyncTransport } from "../sync/types";
 
 export interface GloomSlots {
   "ticker-research:tab": { ticker: TickerRecord; financials: TickerFinancials | null };
@@ -467,6 +468,8 @@ export interface GloomPluginContext {
   registerShortcut(shortcut: KeyboardShortcut): void;
   registerTickerAction(action: TickerAction): void;
   registerContextMenuProvider(provider: ContextMenuProviderDef): void;
+  registerSyncContributor(contributor: SyncContributor): () => void;
+  registerSyncTransport(transport: SyncTransport): () => void;
   watchNewsQuery?(
     query: import("./news-source").NewsQuery,
     listener: (state: import("./news-source").NewsQueryState) => void,

@@ -14,6 +14,7 @@ import type {
 } from "../../types/plugin";
 import type { PaneRuntimeState } from "../../core/state/app/state";
 import type { NewsQuery, NewsQueryState } from "../../types/news-source";
+import type { SyncContributor, SyncTransport } from "../../sync/types";
 import { debugLog } from "../../utils/debug-log";
 import { createPluginPersistence } from "../plugin-persistence";
 import type { PluginEvents } from "../event-bus";
@@ -35,6 +36,8 @@ export interface RegistryPluginContextOptions {
   updateLayout: (layout: LayoutConfig) => void;
   resolvePaneTarget: (paneId: string) => string | undefined;
   registerCapabilityForPlugin: (pluginId: string, capability: PluginCapability, items: PluginItems) => void;
+  registerSyncContributorForPlugin: (pluginId: string, contributor: SyncContributor) => () => void;
+  registerSyncTransportForPlugin: (pluginId: string, transport: SyncTransport) => () => void;
   watchNewsQuery: (query: NewsQuery, listener: (state: NewsQueryState) => void) => () => void;
   getData: (ticker: string) => TickerFinancials | null;
   getTicker: (symbol: string) => TickerRecord | null;
@@ -82,6 +85,8 @@ export function createRegistryPluginContext({
   updateLayout,
   resolvePaneTarget,
   registerCapabilityForPlugin,
+  registerSyncContributorForPlugin,
+  registerSyncTransportForPlugin,
   watchNewsQuery,
   getData,
   getTicker,
@@ -143,6 +148,16 @@ export function createRegistryPluginContext({
     registerShortcut: (shortcut) => contributions.registerShortcut(pluginId, shortcut, items),
     registerTickerAction: (action) => contributions.registerTickerAction(pluginId, action, items),
     registerContextMenuProvider: (provider) => contributions.registerContextMenuProvider(pluginId, provider, items),
+    registerSyncContributor: (contributor) => {
+      const dispose = registerSyncContributorForPlugin(pluginId, contributor);
+      items.eventDisposers.push(dispose);
+      return dispose;
+    },
+    registerSyncTransport: (transport) => {
+      const dispose = registerSyncTransportForPlugin(pluginId, transport);
+      items.eventDisposers.push(dispose);
+      return dispose;
+    },
     watchNewsQuery: (query, listener) => {
       const dispose = watchNewsQuery(query, listener);
       items.newsQueryWatchDisposers.push(dispose);

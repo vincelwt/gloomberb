@@ -12,6 +12,7 @@ export function useAccountManagementKeyboard({
   openPortfolioDialog,
   saveProfile,
   setDraftValue,
+  turnOffEmailAlerts,
 }: {
   activeField: AccountFieldKey;
   cycleField: (delta: number) => void;
@@ -22,6 +23,7 @@ export function useAccountManagementKeyboard({
   openPortfolioDialog: () => Promise<void>;
   saveProfile: () => Promise<void>;
   setDraftValue: <K extends keyof AccountDraft>(key: K, value: AccountDraft[K]) => void;
+  turnOffEmailAlerts: () => Promise<void>;
 }) {
   useShortcut((event) => {
     if (!focused) return;
@@ -57,6 +59,24 @@ export function useAccountManagementKeyboard({
       setDraftValue("acceptUnknownDms", !draftRef.current.acceptUnknownDms);
       return;
     }
+    if (!event.targetEditable && activeField === "syncEnabled" && isPlainKey(event, "space", "enter", "return")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      setDraftValue("syncEnabled", !draftRef.current.syncEnabled);
+      return;
+    }
+    if (!event.targetEditable && activeField === "weeklyRoundupEnabled" && isPlainKey(event, "space", "enter", "return")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      setDraftValue("weeklyRoundupEnabled", !draftRef.current.weeklyRoundupEnabled);
+      return;
+    }
+    if (!event.targetEditable && activeField === "positionAlertsEnabled" && isPlainKey(event, "space", "enter", "return")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      setDraftValue("positionAlertsEnabled", !draftRef.current.positionAlertsEnabled);
+      return;
+    }
     if (!event.targetEditable && activeField === "sharedPortfolioId" && isPlainKey(event, "left", "h", "[")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -79,6 +99,12 @@ export function useAccountManagementKeyboard({
       event.preventDefault?.();
       event.stopPropagation?.();
       openPasswordDialog();
+      return;
+    }
+    if (!event.targetEditable && activeField === "emailAlertsOffAction" && isPlainKey(event, "space", "enter", "return")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      void turnOffEmailAlerts();
       return;
     }
     if (!event.targetEditable && event.name === "p") {

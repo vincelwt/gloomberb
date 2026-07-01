@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { TextField } from "../../../components";
 import { Box, Text, TextAttributes } from "../../../ui";
 import { colors, hoverBg } from "../../../theme/colors";
-import type { AccountFieldKey } from "./model";
+import type { AccountFieldKey, ProfileAnalyticsPreview } from "./model";
 import { truncate } from "./model";
 
 export function AccountTextField({
@@ -153,6 +153,66 @@ export function CheckboxRow({
           {description}
         </Text>
       ) : null}
+    </Box>
+  );
+}
+
+function metricColor(tone: ProfileAnalyticsPreview["metrics"][number]["tone"]): string {
+  if (tone === "positive") return colors.positive;
+  if (tone === "negative") return colors.negative;
+  if (tone === "muted") return colors.textMuted;
+  return colors.text;
+}
+
+export function AccountAnalyticsPreview({
+  preview,
+  width,
+}: {
+  preview: ProfileAnalyticsPreview;
+  width: number;
+}) {
+  const metricWidth = Math.max(14, Math.min(24, Math.floor((width - 2) / 2)));
+  const subtitleWidth = Math.max(1, width - preview.title.length - 4);
+
+  return (
+    <Box flexDirection="column" width={width} backgroundColor={colors.panel} paddingX={1}>
+      <Box height={1} flexDirection="row">
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+          {truncate(preview.title, Math.max(1, width - 2))}
+        </Text>
+        {preview.subtitle ? (
+          <>
+            <Box flexGrow={1} />
+            <Text fg={colors.textMuted}>{truncate(preview.subtitle, subtitleWidth)}</Text>
+          </>
+        ) : null}
+      </Box>
+      {preview.metrics.length > 0 ? (
+        <Box flexDirection="row" flexWrap="wrap" gap={1}>
+          {preview.metrics.map((metric) => (
+            <Box key={metric.id} width={metricWidth} flexDirection="column">
+              <Text fg={colors.textDim}>{truncate(metric.label, metricWidth)}</Text>
+              <Box height={1} flexDirection="row">
+                <Text fg={metricColor(metric.tone)} attributes={TextAttributes.BOLD}>
+                  {truncate(metric.value, metricWidth)}
+                </Text>
+                {metric.detail ? (
+                  <>
+                    <Text fg={colors.textDim}>{" "}</Text>
+                    <Text fg={colors.textMuted}>
+                      {truncate(metric.detail, Math.max(0, metricWidth - metric.value.length - 1))}
+                    </Text>
+                  </>
+                ) : null}
+              </Box>
+            </Box>
+          ))}
+        </Box>
+      ) : (
+        <Text fg={colors.textMuted} wrapText width={Math.max(1, width - 2)}>
+          {preview.subtitle}
+        </Text>
+      )}
     </Box>
   );
 }

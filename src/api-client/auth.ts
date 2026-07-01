@@ -38,6 +38,11 @@ export class CloudAuthApi {
       username: typeof user.username === "string" ? user.username : null,
       emailVerified: user.emailVerified === true,
       image: typeof user.image === "string" ? user.image : null,
+      syncEnabled: user.syncEnabled === false ? false : true,
+      weeklyRoundupEnabled: user.weeklyRoundupEnabled === false ? false : true,
+      positionAlertsEnabled: user.positionAlertsEnabled === false ? false : true,
+      lastSyncAt: typeof user.lastSyncAt === "string" ? user.lastSyncAt : null,
+      lastRoundupEmailAt: typeof user.lastRoundupEmailAt === "string" ? user.lastRoundupEmailAt : null,
       createdAt: typeof user.createdAt === "string" ? user.createdAt : "",
       updatedAt: typeof user.updatedAt === "string" ? user.updatedAt : "",
     });
@@ -148,6 +153,12 @@ export class CloudAuthApi {
         xAccount: profile.xAccount,
         sharedPortfolioId: profile.sharedPortfolioId,
         acceptUnknownDms: profile.acceptUnknownDms,
+        portfolioAnalytics: profile.portfolioAnalytics,
+        syncEnabled: profile.syncEnabled,
+        weeklyRoundupEnabled: profile.weeklyRoundupEnabled,
+        positionAlertsEnabled: profile.positionAlertsEnabled,
+        lastSyncAt: profile.lastSyncAt,
+        lastRoundupEmailAt: profile.lastRoundupEmailAt,
         updatedAt: profile.updatedAt ?? currentUser.updatedAt,
       }));
     }

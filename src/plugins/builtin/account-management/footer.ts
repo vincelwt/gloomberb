@@ -12,7 +12,7 @@ export function useAccountManagementFooter({
   profile,
   saveProfile,
 }: {
-  busy: "profile" | "password" | null;
+  busy: "profile" | "password" | "sync" | "alerts" | null;
   draft: AccountDraft;
   hasSession: boolean;
   message: { tone: "info" | "success" | "error"; text: string } | null;

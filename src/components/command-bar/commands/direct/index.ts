@@ -80,6 +80,15 @@ export function runDirectCommandAction(options: {
       closeAll({ revertThemePreview: false });
       pluginRegistry.showPane("help");
       return;
+    case "account-profile":
+      if (!pluginRegistry.panes.has("account-management")) {
+        notify("Account management is unavailable.", { type: "error" });
+        closeAll({ revertThemePreview: false });
+        return;
+      }
+      closeAll({ revertThemePreview: false });
+      pluginRegistry.showPane("account-management");
+      return;
     case "pane-settings":
       if (state.focusedPaneId) openPaneSettingsRoute(state.focusedPaneId);
       return;

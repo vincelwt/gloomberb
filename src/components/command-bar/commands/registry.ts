@@ -40,6 +40,13 @@ export const commands: Command[] = [
     description: "Open the help window",
     category: "Navigation",
   },
+  {
+    id: "account-profile",
+    prefix: "",
+    label: "Profile",
+    description: "Open Account Management for your Gloom Cloud profile and portfolio analytics",
+    category: "Config",
+  },
 
   // Watchlist/Portfolio management
   {

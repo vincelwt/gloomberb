@@ -10,6 +10,7 @@ import type {
   Quote,
   TickerFinancials,
 } from "../types/financials";
+import type { SyncSettings, SyncSnapshot } from "../sync/types";
 
 export interface ChatUserSummary {
   id: string;
@@ -20,6 +21,7 @@ export interface ChatUserSummary {
   title?: string | null;
   profilePublic?: boolean;
   acceptUnknownDms?: boolean;
+  portfolioAnalytics?: PublicPortfolioAnalytics | null;
 }
 
 export interface ChatMessage {
@@ -83,6 +85,12 @@ export interface AuthUser {
   xAccount?: string | null;
   sharedPortfolioId?: string | null;
   acceptUnknownDms?: boolean;
+  portfolioAnalytics?: PublicPortfolioAnalytics | null;
+  syncEnabled?: boolean;
+  weeklyRoundupEnabled?: boolean;
+  positionAlertsEnabled?: boolean;
+  lastSyncAt?: string | null;
+  lastRoundupEmailAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -104,7 +112,24 @@ export interface AccountProfile {
   xAccount: string | null;
   sharedPortfolioId: string | null;
   acceptUnknownDms: boolean;
+  portfolioAnalytics?: PublicPortfolioAnalytics | null;
+  syncEnabled: boolean;
+  weeklyRoundupEnabled: boolean;
+  positionAlertsEnabled: boolean;
+  lastSyncAt: string | null;
+  lastRoundupEmailAt: string | null;
   updatedAt: string | null;
+}
+
+export interface PublicPortfolioAnalytics {
+  portfolioName?: string | null;
+  holdingsCount?: number | null;
+  oneYearReturn?: number | null;
+  spyBeta?: number | null;
+  marketValue?: number | null;
+  currency?: string | null;
+  sourceLabel?: string | null;
+  asOf?: string | null;
 }
 
 export interface BuildoutAccountResponse {
@@ -151,7 +176,33 @@ export type AccountProfileUpdate = Partial<{
   xAccount: string | null;
   sharedPortfolioId: string | null;
   acceptUnknownDms: boolean;
+  portfolioAnalytics: PublicPortfolioAnalytics | null;
+  syncEnabled: boolean;
+  weeklyRoundupEnabled: boolean;
+  positionAlertsEnabled: boolean;
 }>;
+
+export interface CloudSyncSnapshotResponse {
+  snapshot: SyncSnapshot | null;
+  revision: number | null;
+  updatedAt: string | null;
+  settings: SyncSettings;
+}
+
+export interface CloudSyncPushResponse {
+  revision: number;
+  updatedAt: string;
+  settings: SyncSettings;
+}
+
+export interface CloudRoundupPreviewResponse {
+  subject: string;
+  text: string;
+  html: string;
+  sender: string;
+  replyTo: string;
+  recipient: string;
+}
 
 export interface CloudQuotePayload extends Quote {
   providerId: "gloomberb-cloud";

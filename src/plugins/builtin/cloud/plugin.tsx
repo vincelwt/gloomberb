@@ -103,6 +103,13 @@ export function createGloomberbCloudPlugin({
       chatController.attachPersistence(ctx.persistence, ctx.resume);
       chatController.setNotifier(ctx.notify);
 
+      ctx.registerSyncTransport({
+        id: "gloomberb-cloud",
+        isAvailable: () => apiClient.isVerified(),
+        pullSnapshot: () => apiClient.getSyncSnapshot(),
+        pushSnapshot: (snapshot, options) => apiClient.putSyncSnapshot(snapshot, options),
+      });
+
       ctx.registerPane({
         id: "chat",
         name: "Chat",

@@ -59,6 +59,8 @@ export function createRootCommandItemBuilder({
         );
       case "set-portfolio-position":
         return manualPortfolios.length > 0;
+      case "account-profile":
+        return !state.config.disabledPlugins.includes("gloomberb-cloud");
       case "disconnect-broker-account":
         return state.config.brokerInstances.length > 0;
       case "delete-watchlist":
@@ -151,6 +153,8 @@ export function createRootCommandItemBuilder({
     switch (command.id) {
       case "set-portfolio-position":
         return "edit position update position modify position manual position portfolio position";
+      case "account-profile":
+        return "profile account management cloud public portfolio analytics password username settings";
       default:
         return "";
     }

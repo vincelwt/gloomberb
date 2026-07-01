@@ -39,6 +39,8 @@ import { bindPluginRegistryRuntimeAccess } from "./app/runtime/plugin-bindings";
 import { useAppStartupRuntime } from "./app/runtime/startup";
 import { useTickerRefreshRuntime } from "./app/runtime/ticker-refresh";
 import { useAppUpdateRuntime } from "./app/runtime/update";
+import { createCoreSyncContributors } from "./sync/core-contributors";
+import { useCloudSyncRuntime } from "./sync/react";
 import { RemoteControlHost, type RemoteControlAdapter } from "./remote/app-host";
 import { RemoteUiRegistryProvider } from "./remote/semantic-tree";
 import {
@@ -173,6 +175,15 @@ function AppInner({
     });
   }, [desktopWindowBridge]);
 
+  useEffect(() => {
+    const disposers = createCoreSyncContributors().map((contributor) => (
+      pluginRegistry.registerSyncContributorForPlugin("core", contributor)
+    ));
+    return () => {
+      for (const dispose of disposers) dispose();
+    };
+  }, [pluginRegistry]);
+
   const {
     primeCachedFinancials,
     refreshQuote,
@@ -241,6 +252,14 @@ function AppInner({
     pluginRegistry,
     state,
     tickerRepository,
+  });
+
+  useCloudSyncRuntime({
+    state,
+    dispatch,
+    tickerRepository,
+    pluginRegistry,
+    initialized: state.initialized && desktopWindowBridge?.kind !== "detached",
   });
 
   useAppPaneRuntime({

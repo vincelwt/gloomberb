@@ -46,8 +46,12 @@ import type {
   CloudMarketBatchTarget,
   CloudMarketBatchPayload,
   CloudVerificationResponse,
+  CloudRoundupPreviewResponse,
+  CloudSyncPushResponse,
+  CloudSyncSnapshotResponse,
   QuoteStreamTarget,
 } from "./types";
+import type { SyncSettings, SyncSnapshot } from "../sync/types";
 
 export type * from "./types";
 export { setCloudApiFetchTransport } from "./request";
@@ -196,6 +200,46 @@ class GloomApiClient {
 
   async updateAccountProfile(update: AccountProfileUpdate): Promise<AccountProfile> {
     return this.auth.updateAccountProfile(update);
+  }
+
+  async getSyncSnapshot(): Promise<CloudSyncSnapshotResponse> {
+    return this.request<CloudSyncSnapshotResponse>("/sync/snapshot", { method: "GET" });
+  }
+
+  async putSyncSnapshot(snapshot: SyncSnapshot, options?: { baseRevision?: number | null }): Promise<CloudSyncPushResponse> {
+    return this.request<CloudSyncPushResponse>("/sync/snapshot", {
+      method: "PUT",
+      body: JSON.stringify({
+        snapshot,
+        baseRevision: options?.baseRevision ?? null,
+      }),
+    });
+  }
+
+  async updateSyncSettings(update: Partial<SyncSettings>): Promise<SyncSettings> {
+    const result = await this.request<{ settings: SyncSettings }>("/sync/settings", {
+      method: "PATCH",
+      body: JSON.stringify(update),
+    });
+    if (this.currentUser) {
+      this.currentUser = {
+        ...this.currentUser,
+        syncEnabled: result.settings.syncEnabled,
+        weeklyRoundupEnabled: result.settings.weeklyRoundupEnabled,
+        positionAlertsEnabled: result.settings.positionAlertsEnabled,
+        lastSyncAt: result.settings.lastSyncAt ?? this.currentUser.lastSyncAt,
+        lastRoundupEmailAt: result.settings.lastRoundupEmailAt ?? this.currentUser.lastRoundupEmailAt,
+      };
+    }
+    return result.settings;
+  }
+
+  async getRoundupPreview(): Promise<CloudRoundupPreviewResponse> {
+    return this.request<CloudRoundupPreviewResponse>("/sync/roundup/preview", { method: "POST", body: JSON.stringify({}) });
+  }
+
+  async sendRoundupTestEmail(): Promise<CloudRoundupPreviewResponse> {
+    return this.request<CloudRoundupPreviewResponse>("/sync/roundup/test-email", { method: "POST", body: JSON.stringify({}) });
   }
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {

@@ -6,6 +6,7 @@ import type { CommandDef, CommandShortcutArgContext, PaneTemplateCreateOptions, 
 import {
   CommandBarHarness,
   createCommandBarTestControls,
+  emitKeypress,
   expectSingleBackControl,
   makeDataProvider,
   makeTicker,
@@ -24,6 +25,10 @@ const { waitForFrameToContain, clickFrameText } = createCommandBarTestControls((
 
 type MutableCommandRegistry = {
   commands: ReadonlyMap<string, CommandDef>;
+};
+
+type MutablePaneRegistry = {
+  panes: ReadonlyMap<string, unknown>;
 };
 
 const DEFAULT_ALERT_OPTIONS = [
@@ -68,6 +73,10 @@ function registerAlertCommand(
     execute: async () => {},
     ...overrides,
   });
+}
+
+function mutablePaneRegistryMap(map: ReadonlyMap<string, unknown>): Map<string, unknown> {
+  return map as Map<string, unknown>;
 }
 
 describe("CommandBar", () => {
@@ -127,6 +136,38 @@ describe("CommandBar", () => {
 
     expect(calls).toHaveLength(1);
     expect(testSetup.captureCharFrame()).not.toContain("Commands");
+  });
+
+  test("opens account management when searching profile", async () => {
+    const openedPanes: string[] = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query="profile"
+      live
+      configurePluginRegistry={(pluginRegistry) => {
+        mutablePaneRegistryMap((pluginRegistry as MutablePaneRegistry).panes).set("account-management", {
+          id: "account-management",
+          name: "Account Management",
+          component: () => null,
+          defaultPosition: "right",
+          defaultMode: "floating",
+        });
+        pluginRegistry.showPane = (paneId) => {
+          openedPanes.push(paneId);
+        };
+      }}
+    />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    const frame = await waitForFrameToContain("Profile");
+    expect(frame.indexOf("Profile")).toBeLessThan(frame.indexOf("Add Broker Account"));
+
+    await emitKeypress(testSetup, { name: "return", sequence: "\r" });
+
+    expect(openedPanes).toEqual(["account-management"]);
   });
 
   test("shows theme picker rows and commits a filtered light theme", async () => {

@@ -27,6 +27,12 @@ import type {
 } from "../../types/plugin";
 import type { ContextMenuContext, ContextMenuItem } from "../../types/context-menu";
 import type { TickerRecord } from "../../types/ticker";
+import type {
+  RegisteredSyncContributor,
+  RegisteredSyncTransport,
+  SyncContributor,
+  SyncTransport,
+} from "../../sync/types";
 import { EventBus } from "../event-bus";
 import { resolvePaneInstance } from "../../types/config";
 import { debugLog } from "../../utils/debug-log";
@@ -49,6 +55,7 @@ import {
   releaseSharedRegistry,
 } from "./shared";
 import { RegistryResumeStateListeners } from "./plugin-state";
+import { cloudSyncController } from "../../sync/controller";
 
 interface PluginRegistryOptions {
   enableCapabilityHandlers?: boolean;
@@ -215,6 +222,28 @@ export class PluginRegistry implements PluginRuntimeAccess {
   get tickerActions(): ReadonlyMap<string, TickerAction> { return this.contributions.tickerActionsMap; }
   get allPlugins(): ReadonlyMap<string, GloomPlugin> { return this.plugins; }
 
+  registerSyncContributorForPlugin(pluginId: string, contributor: SyncContributor): () => void {
+    return cloudSyncController.registerContributor(pluginId, contributor);
+  }
+
+  registerSyncTransportForPlugin(pluginId: string, transport: SyncTransport): () => void {
+    return cloudSyncController.registerTransport(pluginId, transport);
+  }
+
+  getEnabledSyncContributors(): RegisteredSyncContributor[] {
+    const disabledPlugins = new Set(this.getConfigFn().disabledPlugins ?? []);
+    return cloudSyncController
+      .getRegisteredContributors()
+      .filter((entry) => !disabledPlugins.has(entry.pluginId));
+  }
+
+  getActiveSyncTransport(): RegisteredSyncTransport | null {
+    const disabledPlugins = new Set(this.getConfigFn().disabledPlugins ?? []);
+    return cloudSyncController
+      .getRegisteredTransports()
+      .find((entry) => !disabledPlugins.has(entry.pluginId) && entry.transport.isAvailable()) ?? null;
+  }
+
   getContextMenuItems(context: ContextMenuContext): ContextMenuItem[] {
     return resolveRegistryContextMenuItems({
       context,
@@ -373,6 +402,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
       updateLayout: (layout) => this.updateLayoutFn(layout),
       resolvePaneTarget: (paneId) => this.resolvePaneTarget(paneId),
       registerCapabilityForPlugin: (targetPluginId, capability, pluginItems) => this.registerCapabilityForPlugin(targetPluginId, capability, pluginItems),
+      registerSyncContributorForPlugin: (targetPluginId, contributor) => this.registerSyncContributorForPlugin(targetPluginId, contributor),
+      registerSyncTransportForPlugin: (targetPluginId, transport) => this.registerSyncTransportForPlugin(targetPluginId, transport),
       watchNewsQuery: (query, listener) => this.watchNewsQueryFn(query, listener),
       getData: (ticker) => this.getDataFn(ticker),
       getTicker: (symbol) => this.getTickerFn(symbol),
