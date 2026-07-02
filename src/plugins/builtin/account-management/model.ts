@@ -14,7 +14,6 @@ export type AccountFieldKey =
   | "xAccount"
   | "acceptUnknownDms"
   | "sharedPortfolioId"
-  | "syncEnabled"
   | "weeklyRoundupEnabled"
   | "positionAlertsEnabled"
   | "emailAlertsOffAction"
@@ -31,7 +30,6 @@ export interface AccountDraft {
   xAccount: string;
   sharedPortfolioId: string;
   acceptUnknownDms: boolean;
-  syncEnabled: boolean;
   weeklyRoundupEnabled: boolean;
   positionAlertsEnabled: boolean;
 }
@@ -63,7 +61,6 @@ export const BASE_FIELD_ORDER: AccountFieldKey[] = [
   "xAccount",
   "acceptUnknownDms",
   "sharedPortfolioId",
-  "syncEnabled",
   "weeklyRoundupEnabled",
   "positionAlertsEnabled",
   "emailAlertsOffAction",
@@ -84,7 +81,6 @@ export function profileToDraft(profile: AccountProfile | null): AccountDraft {
     xAccount: profile?.xAccount ?? "",
     sharedPortfolioId: profile?.sharedPortfolioId ?? "",
     acceptUnknownDms: profile?.acceptUnknownDms === true,
-    syncEnabled: profile?.syncEnabled === false ? false : true,
     weeklyRoundupEnabled: profile?.weeklyRoundupEnabled === false ? false : true,
     positionAlertsEnabled: profile?.positionAlertsEnabled === false ? false : true,
   };

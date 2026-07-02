@@ -59,12 +59,6 @@ export function useAccountManagementKeyboard({
       setDraftValue("acceptUnknownDms", !draftRef.current.acceptUnknownDms);
       return;
     }
-    if (!event.targetEditable && activeField === "syncEnabled" && isPlainKey(event, "space", "enter", "return")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      setDraftValue("syncEnabled", !draftRef.current.syncEnabled);
-      return;
-    }
     if (!event.targetEditable && activeField === "weeklyRoundupEnabled" && isPlainKey(event, "space", "enter", "return")) {
       event.preventDefault?.();
       event.stopPropagation?.();

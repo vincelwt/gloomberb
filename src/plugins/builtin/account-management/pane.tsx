@@ -49,16 +49,6 @@ import { setSyncedProfileAnalytics } from "../../../sync/profile-analytics";
 
 type AccountBusy = "profile" | "password" | "alerts" | null;
 
-function formatSyncStatus(status: ReturnType<typeof useCloudSyncStatus>, profile: AccountProfile | null): string {
-  if (!profile?.syncEnabled) return "Off";
-  if (status.phase === "syncing") return "Syncing";
-  if (status.phase === "error") return status.error ? `Error: ${status.error}` : "Error";
-  if (status.lastSyncAt) return `Last sync ${new Date(status.lastSyncAt).toLocaleString()}`;
-  if (profile.lastSyncAt) return `Last sync ${new Date(profile.lastSyncAt).toLocaleString()}`;
-  if (status.phase === "disabled") return "Waiting for login";
-  return "Not synced yet";
-}
-
 export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const dialog = useDialog();
   const config = useAppSelector((state) => state.config);
@@ -378,7 +368,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
         xAccount: emptyToNull(current.xAccount),
         sharedPortfolioId: emptyToNull(current.sharedPortfolioId),
         acceptUnknownDms: current.acceptUnknownDms,
-        syncEnabled: current.syncEnabled,
         weeklyRoundupEnabled: current.weeklyRoundupEnabled,
         positionAlertsEnabled: current.positionAlertsEnabled,
       });
@@ -593,21 +582,9 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
 
           <Box flexDirection="column" gap={1}>
             <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-              Automatic Sync
-            </Text>
-            <Text fg={colors.textMuted} wrapText width={Math.max(24, formWidth - 2)}>
-              {formatSyncStatus(syncStatus, profile)}
+              Email Alerts
             </Text>
             <FieldRow twoColumns={twoColumns}>
-              <CheckboxRow
-                label="Cloud Sync"
-                checked={draft.syncEnabled}
-                active={activeField === "syncEnabled"}
-                description="Sync config, portfolios, watchlists, and sanitized positions."
-                width={fieldWidth}
-                onFocus={() => setActiveField("syncEnabled")}
-                onChange={(checked) => setDraftValue("syncEnabled", checked)}
-              />
               <CheckboxRow
                 label="Weekly Roundup"
                 checked={draft.weeklyRoundupEnabled}
@@ -622,7 +599,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
               label="Position/Watchlist Alerts"
               checked={draft.positionAlertsEnabled}
               active={activeField === "positionAlertsEnabled"}
-              description="Email alerts for large synced position or watchlist jumps."
+              description="Email alerts for large position or watchlist jumps."
               width={formWidth}
               onFocus={() => setActiveField("positionAlertsEnabled")}
               onChange={(checked) => setDraftValue("positionAlertsEnabled", checked)}
