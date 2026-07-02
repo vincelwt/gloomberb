@@ -20,6 +20,7 @@ import {
 import {
   BASE_FIELD_ORDER,
   NO_PORTFOLIO_VALUE,
+  buildPublishedProfileAnalyticsPreview,
   buildProfileAnalyticsPreview,
   buildPortfolioChoices,
   computeCumulativeReturn,
@@ -78,6 +79,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const [busy, setBusy] = useState<AccountBusy>(null);
   const syncStatus = useCloudSyncStatus();
   const bioRef = useRef<TextareaRenderable | null>(null);
+  const refreshedSyncRevisionRef = useRef<number | null>(null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
@@ -164,7 +166,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     () => (portfolioReturnSeries && spyReturnSeries ? computeDatedBeta(portfolioReturnSeries, spyReturnSeries) : null),
     [portfolioReturnSeries, spyReturnSeries],
   );
-  const analyticsPreview = useMemo(
+  const localAnalyticsPreview = useMemo(
     () => buildProfileAnalyticsPreview({
       beta,
       portfolio: selectedAnalyticsPortfolio,
@@ -183,12 +185,50 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   useEffect(() => {
     const portfolioId = selectedAnalyticsPortfolio?.id;
     if (!portfolioId) return;
-    const changed = setSyncedProfileAnalytics(portfolioId, analyticsPreview.publicAnalytics);
+    const changed = setSyncedProfileAnalytics(portfolioId, localAnalyticsPreview.publicAnalytics);
     if (changed) cloudSyncController.schedulePush("profile-analytics");
   }, [
-    analyticsPreview.publicAnalytics?.oneYearReturn,
-    analyticsPreview.publicAnalytics?.spyBeta,
+    localAnalyticsPreview.publicAnalytics?.oneYearReturn,
+    localAnalyticsPreview.publicAnalytics?.spyBeta,
     selectedAnalyticsPortfolio?.id,
+  ]);
+  const publicAnalyticsPreview = useMemo(
+    () => buildPublishedProfileAnalyticsPreview({
+      analytics: profile?.portfolioAnalytics ?? null,
+      draftProfilePublic: draft.profilePublic,
+      portfolio: selectedAnalyticsPortfolio,
+      profileLoaded: !!profile,
+      savedProfilePublic: profile?.profilePublic === true,
+      savedSharedPortfolioId: profile?.sharedPortfolioId ?? "",
+      selectedPortfolioId: draft.sharedPortfolioId,
+      syncing: syncStatus.phase === "syncing",
+    }),
+    [
+      draft.profilePublic,
+      draft.sharedPortfolioId,
+      profile,
+      selectedAnalyticsPortfolio,
+      syncStatus.phase,
+    ],
+  );
+  const profileAnalyticsDetail = useMemo(() => {
+    if (!draft.sharedPortfolioId) return "No public portfolio analytics";
+    if (!profile) return "Loading published metrics";
+    if (
+      draft.profilePublic !== profile.profilePublic
+      || draft.sharedPortfolioId !== (profile.sharedPortfolioId ?? "")
+    ) {
+      return "Save profile to update published metrics";
+    }
+    if (profile.profilePublic !== true) return "Public profile is off";
+    if (syncStatus.phase === "syncing") return "Syncing published metrics";
+    if (!profile.portfolioAnalytics) return "Waiting for published metrics";
+    return "Published public metrics";
+  }, [
+    draft.profilePublic,
+    draft.sharedPortfolioId,
+    profile,
+    syncStatus.phase,
   ]);
 
   useEffect(() => {
@@ -224,6 +264,23 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   useEffect(() => {
     void loadProfile();
   }, [loadProfile, sessionMarker]);
+
+  useEffect(() => {
+    if (!hasSession || !apiClient.getSessionToken()) return;
+    if (syncStatus.phase !== "synced" || syncStatus.revision == null) return;
+    if (refreshedSyncRevisionRef.current === syncStatus.revision) return;
+    refreshedSyncRevisionRef.current = syncStatus.revision;
+    let cancelled = false;
+    void (async () => {
+      const nextProfile = await apiClient.getAccountProfile().catch(() => null);
+      if (cancelled || !nextProfile) return;
+      setProfile(nextProfile);
+      await chatController.refreshSession().catch(() => {});
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasSession, syncStatus.phase, syncStatus.revision]);
 
   useEffect(() => {
     if (!fieldOrder.includes(activeField)) {
@@ -525,14 +582,14 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
           <PickerRow
             label="Profile Analytics"
             value={selectedPortfolioLabel(portfolios, draft.sharedPortfolioId)}
-            detail={draft.sharedPortfolioId ? "Preview below uses current market data" : "No public portfolio analytics"}
+            detail={profileAnalyticsDetail}
             active={activeField === "sharedPortfolioId"}
             width={formWidth}
             onFocus={() => setActiveField("sharedPortfolioId")}
             onOpen={() => { void openPortfolioDialog(); }}
           />
 
-          <AccountAnalyticsPreview preview={analyticsPreview} width={formWidth} />
+          <AccountAnalyticsPreview preview={publicAnalyticsPreview} width={formWidth} />
 
           <Box flexDirection="column" gap={1}>
             <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>

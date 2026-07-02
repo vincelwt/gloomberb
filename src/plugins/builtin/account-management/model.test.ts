@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Portfolio, TickerRecord } from "../../../types/ticker";
 import {
+  buildPublishedProfileAnalyticsPreview,
   buildPortfolioChoices,
   buildProfileAnalyticsPreview,
   computeCumulativeReturn,
@@ -103,5 +104,46 @@ describe("account management model", () => {
       oneYearReturn: 0.1,
       spyBeta: 1.1,
     });
+  });
+
+  test("builds the visible profile analytics card from published account data", () => {
+    const portfolio: Portfolio = { id: "main", name: "Main Portfolio", currency: "USD" };
+    const preview = buildPublishedProfileAnalyticsPreview({
+      analytics: { oneYearReturn: 0.15, spyBeta: 1.25 },
+      draftProfilePublic: true,
+      portfolio,
+      profileLoaded: true,
+      savedProfilePublic: true,
+      savedSharedPortfolioId: "main",
+      selectedPortfolioId: "main",
+      syncing: false,
+    });
+
+    expect(preview.status).toBe("ready");
+    expect(preview.title).toBe("Main Portfolio");
+    expect(preview.metrics).toEqual([
+      { id: "one-year", label: "1Y", value: "+15.00%", tone: "positive" },
+      { id: "beta", label: "SPY Beta", value: "1.25" },
+    ]);
+    expect(preview.publicAnalytics).toEqual({ oneYearReturn: 0.15, spyBeta: 1.25 });
+  });
+
+  test("does not show stale published analytics when the selected profile portfolio is unsaved", () => {
+    const portfolio: Portfolio = { id: "new", name: "New Portfolio", currency: "USD" };
+    const preview = buildPublishedProfileAnalyticsPreview({
+      analytics: { oneYearReturn: 0.15, spyBeta: 1.25 },
+      draftProfilePublic: true,
+      portfolio,
+      profileLoaded: true,
+      savedProfilePublic: true,
+      savedSharedPortfolioId: "old",
+      selectedPortfolioId: "new",
+      syncing: false,
+    });
+
+    expect(preview.status).toBe("pending");
+    expect(preview.metrics).toEqual([]);
+    expect(preview.subtitle).toBe("Save profile to update published metrics.");
+    expect(preview.publicAnalytics).toBeNull();
   });
 });

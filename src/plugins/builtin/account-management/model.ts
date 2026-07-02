@@ -45,7 +45,7 @@ export interface ProfileAnalyticsPreviewMetric {
 }
 
 export interface ProfileAnalyticsPreview {
-  status: "off" | "missing" | "empty" | "ready";
+  status: "off" | "missing" | "empty" | "pending" | "ready";
   title: string;
   subtitle: string;
   metrics: ProfileAnalyticsPreviewMetric[];
@@ -153,6 +153,34 @@ function finiteMetric(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function normalizePublicAnalytics(analytics: PublicPortfolioAnalytics | null | undefined): PublicPortfolioAnalytics | null {
+  const normalized: PublicPortfolioAnalytics = {
+    oneYearReturn: finiteMetric(analytics?.oneYearReturn),
+    spyBeta: finiteMetric(analytics?.spyBeta),
+  };
+  return normalized.oneYearReturn != null || normalized.spyBeta != null ? normalized : null;
+}
+
+function buildPublicAnalyticsMetrics(analytics: PublicPortfolioAnalytics): ProfileAnalyticsPreviewMetric[] {
+  const metrics: ProfileAnalyticsPreviewMetric[] = [];
+  if (analytics.oneYearReturn != null) {
+    metrics.push({
+      id: "one-year",
+      label: "1Y",
+      value: signedReturn(analytics.oneYearReturn),
+      tone: signedTone(analytics.oneYearReturn),
+    });
+  }
+  if (analytics.spyBeta != null) {
+    metrics.push({
+      id: "beta",
+      label: "SPY Beta",
+      value: formatNumber(analytics.spyBeta, 2),
+    });
+  }
+  return metrics;
+}
+
 export function getPortfolioPositionTickers(
   tickers: ReadonlyMap<string, TickerRecord>,
   portfolioId: string,
@@ -246,5 +274,94 @@ export function buildProfileAnalyticsPreview({
         tone: beta == null ? "muted" : undefined,
       },
     ],
+  };
+}
+
+export function buildPublishedProfileAnalyticsPreview({
+  analytics,
+  draftProfilePublic,
+  portfolio,
+  profileLoaded,
+  savedProfilePublic,
+  savedSharedPortfolioId,
+  selectedPortfolioId,
+  syncing,
+}: {
+  analytics: PublicPortfolioAnalytics | null | undefined;
+  draftProfilePublic: boolean;
+  portfolio: Portfolio | null;
+  profileLoaded: boolean;
+  savedProfilePublic: boolean;
+  savedSharedPortfolioId: string;
+  selectedPortfolioId: string;
+  syncing: boolean;
+}): ProfileAnalyticsPreview {
+  if (!selectedPortfolioId) {
+    return {
+      status: "off",
+      title: "No public portfolio analytics",
+      subtitle: "Choose a portfolio to publish 1Y return and SPY Beta.",
+      metrics: [],
+      publicAnalytics: null,
+    };
+  }
+
+  if (!portfolio) {
+    return {
+      status: "missing",
+      title: "Portfolio not found",
+      subtitle: selectedPortfolioId,
+      metrics: [],
+      publicAnalytics: null,
+    };
+  }
+
+  if (!profileLoaded) {
+    return {
+      status: "pending",
+      title: portfolio.name,
+      subtitle: "Loading published metrics.",
+      metrics: [],
+      publicAnalytics: null,
+    };
+  }
+
+  if (draftProfilePublic !== savedProfilePublic || selectedPortfolioId !== savedSharedPortfolioId) {
+    return {
+      status: "pending",
+      title: portfolio.name,
+      subtitle: "Save profile to update published metrics.",
+      metrics: [],
+      publicAnalytics: null,
+    };
+  }
+
+  if (!savedProfilePublic) {
+    return {
+      status: "off",
+      title: "No public portfolio analytics",
+      subtitle: "Public profile is off.",
+      metrics: [],
+      publicAnalytics: null,
+    };
+  }
+
+  const publicAnalytics = normalizePublicAnalytics(analytics);
+  if (!publicAnalytics) {
+    return {
+      status: "pending",
+      title: portfolio.name,
+      subtitle: syncing ? "Syncing published metrics." : "Waiting for published metrics.",
+      metrics: [],
+      publicAnalytics: null,
+    };
+  }
+
+  return {
+    status: "ready",
+    title: portfolio.name,
+    subtitle: "",
+    metrics: buildPublicAnalyticsMetrics(publicAnalytics),
+    publicAnalytics,
   };
 }
