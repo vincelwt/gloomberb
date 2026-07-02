@@ -28,12 +28,61 @@ function formatSignedPercent(value: number): string {
   return `${percent >= 0 ? "+" : ""}${formatNumber(percent, 2)}%`;
 }
 
-function analyticsLine(analytics: PublicPortfolioAnalytics): string | null {
-  const parts = [
-    analytics.oneYearReturn != null ? `1Y ${formatSignedPercent(analytics.oneYearReturn)}` : null,
-    analytics.spyBeta != null ? `Beta ${formatNumber(analytics.spyBeta, 2)}` : null,
-  ].filter((part): part is string => !!part);
-  return parts.length > 0 ? parts.join(" · ") : null;
+function analyticsValueColor(id: string, value: number): string {
+  if (id === "one-year") {
+    if (value > 0) return colors.positive;
+    if (value < 0) return colors.negative;
+  }
+  return colors.warning;
+}
+
+function analyticsMetrics(analytics: PublicPortfolioAnalytics) {
+  return [
+    analytics.oneYearReturn != null
+      ? {
+        id: "one-year",
+        label: "1Y",
+        value: formatSignedPercent(analytics.oneYearReturn),
+        rawValue: analytics.oneYearReturn,
+      }
+      : null,
+    analytics.spyBeta != null
+      ? {
+        id: "beta",
+        label: "Beta",
+        value: formatNumber(analytics.spyBeta, 2),
+        rawValue: analytics.spyBeta,
+      }
+      : null,
+  ].filter((metric): metric is { id: string; label: string; value: string; rawValue: number } => !!metric);
+}
+
+function PortfolioAnalyticsBand({
+  analytics,
+  width,
+}: {
+  analytics: PublicPortfolioAnalytics;
+  width: number;
+}) {
+  const metrics = analyticsMetrics(analytics);
+  if (metrics.length === 0) return null;
+  const metricWidth = Math.max(9, Math.floor((width - 5) / metrics.length));
+
+  return (
+    <Box flexDirection="column" width={width} backgroundColor={colors.commandBg} paddingX={1}>
+      <Text fg={colors.textDim}>Portfolio Stats</Text>
+      <Box flexDirection="row" gap={1}>
+        {metrics.map((metric) => (
+          <Box key={metric.id} width={metricWidth} flexDirection="column">
+            <Text fg={colors.textMuted}>{truncateChannelLabel(metric.label, metricWidth)}</Text>
+            <Text fg={analyticsValueColor(metric.id, metric.rawValue)} attributes={TextAttributes.BOLD}>
+              {truncateChannelLabel(metric.value, metricWidth)}
+            </Text>
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  );
 }
 
 export function UserProfilePopover({
@@ -55,7 +104,6 @@ export function UserProfilePopover({
   const meta = [user.title, user.company].filter(Boolean).join(" · ");
   const bio = user.bio?.trim();
   const analytics = user.portfolioAnalytics;
-  const analyticsDetail = analytics && hasPortfolioAnalytics(analytics) ? analyticsLine(analytics) : null;
   const canDm = user.id === currentUserId || user.acceptUnknownDms !== false;
 
   return (
@@ -94,11 +142,7 @@ export function UserProfilePopover({
         </Text>
       ) : null}
       {analytics && hasPortfolioAnalytics(analytics) ? (
-        <Box flexDirection="column">
-          {analyticsDetail ? (
-            <Text fg={colors.text}>{truncateChannelLabel(analyticsDetail, popoverWidth - 2)}</Text>
-          ) : null}
-        </Box>
+        <PortfolioAnalyticsBand analytics={analytics} width={popoverWidth - 2} />
       ) : null}
     </Box>
   );
