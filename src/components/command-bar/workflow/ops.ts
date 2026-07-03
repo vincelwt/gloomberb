@@ -7,10 +7,21 @@ import { updatePaneInstance, setPaneSettings } from "../../../pane-settings";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { cleanPortfolioPaneSettings, resolvePortfolioPaneCollectionId } from "../../../plugins/builtin/portfolio-list/settings";
 import {
+  DEFAULT_RELATIONSHIP_SECOND_SYMBOL,
+  RELATIONSHIP_GRAPH_PANE_ID,
+  buildRelationshipGraphPaneTitle,
+} from "../../../plugins/builtin/correlation/relationship/model";
+import {
   buildComparisonChartPaneTitle,
   COMPARISON_CHART_PANE_ID,
   MIN_COMPARISON_CHART_SYMBOLS,
 } from "../../../plugins/builtin/comparison-chart";
+import {
+  FUNDAMENTAL_GRAPH_PANE_ID,
+  graphKindFromSettings,
+  graphShortcutForKind,
+  graphTemplateTitle,
+} from "../../../plugins/builtin/ticker-detail/data-panes/fundamental-graph/settings";
 import { buildQuoteMonitorPaneTitle } from "../../../plugins/builtin/ticker-detail/settings";
 import { getPaneTemplateDisplayLabel } from "../pane-templates/items";
 import {
@@ -52,6 +63,30 @@ interface CreatePaneTemplateDeps extends SharedWorkflowDeps {
 
 interface ApplyPaneSettingDeps extends SharedWorkflowDeps {
   persistLayout: (layout: LayoutConfig, options?: { pushHistory?: boolean }) => void;
+}
+
+function updateTickerListPane(
+  layout: LayoutConfig,
+  targetId: string,
+  options: {
+    title: string;
+    symbols: readonly string[];
+    primarySymbol?: string;
+    settings?: Record<string, unknown>;
+  },
+): LayoutConfig {
+  const symbols = [...options.symbols];
+  return updatePaneInstance(layout, targetId, (instance) => ({
+    ...instance,
+    title: options.title,
+    ...(options.primarySymbol ? { binding: { kind: "fixed", symbol: options.primarySymbol } as PaneBinding } : {}),
+    settings: {
+      ...(instance.settings ?? {}),
+      symbols,
+      symbolsText: formatTickerListInput(symbols),
+      ...(options.settings ?? {}),
+    },
+  }));
 }
 
 async function resolvePaneTemplateOptions(
@@ -180,19 +215,50 @@ export async function applyPaneSettingFieldValue(
     const rawQuery = typeof value === "string" ? value.trim() : "";
     const symbols = await resolveTickerListInput(rawQuery, null, deps);
     const primarySymbol = symbols[0]!;
-    const symbolsText = formatTickerListInput(symbols);
-
-    const nextLayout = updatePaneInstance(state.config.layout, targetId, (instance) => ({
-      ...instance,
+    const nextLayout = updateTickerListPane(state.config.layout, targetId, {
       title: buildQuoteMonitorPaneTitle(symbols),
-      binding: { kind: "fixed", symbol: primarySymbol },
-      settings: {
-        ...(instance.settings ?? {}),
-        symbol: primarySymbol,
-        symbols,
-        symbolsText,
-      },
-    }));
+      symbols,
+      primarySymbol,
+      settings: { symbol: primarySymbol },
+    });
+    deps.persistLayout(nextLayout, { pushHistory: shouldPushHistory });
+    return;
+  }
+
+  if (descriptor.pane.paneId === FUNDAMENTAL_GRAPH_PANE_ID && field.key === "symbolsText") {
+    const rawInput = typeof value === "string" ? value : "";
+    const symbols = await resolveTickerListInput(
+      rawInput,
+      descriptor.context.activeCollectionId,
+      deps,
+    );
+    const primarySymbol = symbols[0]!;
+    const chartKind = graphKindFromSettings(descriptor.context.settings, "fundamental");
+    const nextLayout = updateTickerListPane(state.config.layout, targetId, {
+      title: graphTemplateTitle(graphShortcutForKind(chartKind), symbols),
+      symbols,
+      primarySymbol,
+    });
+    deps.persistLayout(nextLayout, { pushHistory: shouldPushHistory });
+    return;
+  }
+
+  if (descriptor.pane.paneId === RELATIONSHIP_GRAPH_PANE_ID && field.key === "symbolsText") {
+    const rawInput = typeof value === "string" ? value : "";
+    const symbols = await resolveTickerListInput(
+      rawInput,
+      descriptor.context.activeCollectionId,
+      deps,
+    );
+    if (symbols.length > 2) {
+      throw new Error("Enter one or two tickers.");
+    }
+    const pair: [string, string] = [symbols[0]!, symbols[1] ?? DEFAULT_RELATIONSHIP_SECOND_SYMBOL];
+    const nextLayout = updateTickerListPane(state.config.layout, targetId, {
+      title: buildRelationshipGraphPaneTitle(pair),
+      symbols: pair,
+      primarySymbol: pair[0],
+    });
     deps.persistLayout(nextLayout, { pushHistory: shouldPushHistory });
     return;
   }
@@ -207,15 +273,10 @@ export async function applyPaneSettingFieldValue(
     if (symbols.length < MIN_COMPARISON_CHART_SYMBOLS) {
       throw new Error(`Enter at least ${MIN_COMPARISON_CHART_SYMBOLS} tickers.`);
     }
-    const nextLayout = updatePaneInstance(state.config.layout, targetId, (instance) => ({
-      ...instance,
+    const nextLayout = updateTickerListPane(state.config.layout, targetId, {
       title: buildComparisonChartPaneTitle(symbols),
-      settings: {
-        ...(instance.settings ?? {}),
-        symbols,
-        symbolsText: formatTickerListInput(symbols),
-      },
-    }));
+      symbols,
+    });
     deps.persistLayout(nextLayout, { pushHistory: shouldPushHistory });
     return;
   }

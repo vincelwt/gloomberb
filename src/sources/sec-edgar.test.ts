@@ -200,6 +200,47 @@ describe("parseCompanyFactsFinancialStatements", () => {
       },
     ]);
   });
+
+  test("merges statement values from all configured tags for a field", () => {
+    const fact = (tag: string, unit: string, rows: unknown[]) => ({
+      [tag]: {
+        units: {
+          [unit]: rows,
+        },
+      },
+    });
+    const quarterly = (end: string, val: number, frame: string) => ({
+      start: `${end.slice(0, 4)}-01-01`,
+      end,
+      val,
+      filed: end,
+      form: "10-Q",
+      fp: "Q1",
+      frame,
+    });
+
+    const statements = parseCompanyFactsFinancialStatements({
+      facts: {
+        "us-gaap": {
+          ...fact("RevenueFromContractWithCustomerExcludingAssessedTax", "USD", [
+            quarterly("2026-03-31", 200, "CY2026Q1"),
+          ]),
+          ...fact("Revenues", "USD", [
+            quarterly("2025-03-31", 100, "CY2025Q1"),
+          ]),
+          ...fact("GrossProfit", "USD", [
+            quarterly("2025-03-31", 60, "CY2025Q1"),
+            quarterly("2026-03-31", 120, "CY2026Q1"),
+          ]),
+        },
+      },
+    });
+
+    expect(statements.quarterlyStatements).toEqual([
+      { date: "2025-03-31", totalRevenue: 100, grossProfit: 60 },
+      { date: "2026-03-31", totalRevenue: 200, grossProfit: 120 },
+    ]);
+  });
 });
 
 describe("SecEdgarClient", () => {
@@ -403,6 +444,7 @@ describe("SecEdgarClient", () => {
 
     const client = new SecEdgarClient();
     const content = await client.getFilingContent({
+      form: "10-Q",
       filingUrl: "https://www.sec.gov/Archives/edgar/data/320193/index.htm",
       primaryDocumentUrl: "https://www.sec.gov/Archives/edgar/data/320193/primary-doc.htm",
     });

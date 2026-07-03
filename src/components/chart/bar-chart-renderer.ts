@@ -34,6 +34,9 @@ export interface BarChartBar {
   category: string;
   value: number;
   color: string;
+  categoryIndex: number;
+  seriesIndex: number;
+  seriesCount: number;
   x: number;
   width: number;
   row: number;
@@ -69,17 +72,6 @@ export interface NativeBarChartPixelBounds {
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-function categorySlotBounds(width: number, categoryCount: number, index: number): { left: number; width: number } {
-  const left = Math.floor((index * width) / categoryCount);
-  const right = index === categoryCount - 1
-    ? width
-    : Math.floor(((index + 1) * width) / categoryCount);
-  return {
-    left,
-    width: Math.max(1, right - left),
-  };
-}
-
 function collectCategories(series: BarChartSeries[]): string[] {
   const categories: string[] = [];
   const seen = new Set<string>();
@@ -90,7 +82,10 @@ function collectCategories(series: BarChartSeries[]): string[] {
       categories.push(point.category);
     }
   }
-  return categories;
+  return categories.filter((category) => series.some((item) => {
+    const value = item.points.find((point) => point.category === category)?.value;
+    return typeof value === "number" && Number.isFinite(value);
+  }));
 }
 
 function normalizeRange(values: number[]): { min: number; max: number } {
@@ -133,32 +128,28 @@ export function buildBarChartScene(series: BarChartSeries[], options: BarChartSc
 
   const { min, max } = normalizeRange(values);
   const zeroRow = valueToRow(0, min, max, height);
-  const seriesCount = Math.max(series.length, 1);
-  const categorySlots = categories.map((_, index) => categorySlotBounds(width, categories.length, index));
-  const minSlotWidth = Math.max(1, Math.min(...categorySlots.map((slot) => slot.width)));
-  const groupedInnerWidth = Math.max(seriesCount, minSlotWidth - (minSlotWidth > seriesCount * 2 ? 1 : 0));
-  const groupedBarWidth = Math.max(1, Math.floor(groupedInnerWidth / seriesCount));
+  const seriesSlotCount = Math.max(series.length, 1);
   const bars: BarChartBar[] = [];
 
   categories.forEach((category, categoryIndex) => {
-    const group = categorySlots[categoryIndex]!;
-    const barWidth = seriesCount === 1 ? group.width : groupedBarWidth;
-    const barGroupWidth = barWidth * seriesCount;
-    const groupOffset = Math.max(0, Math.floor((group.width - barGroupWidth) / 2));
     series.forEach((item, seriesIndex) => {
       const value = item.points.find((point) => point.category === category)?.value;
       if (typeof value !== "number" || !Number.isFinite(value)) return;
       const color = value < 0 && options.colors.negativeColor
         ? options.colors.negativeColor
         : item.color;
+      const barBounds = chartSlotBounds(width, categories.length * seriesSlotCount, categoryIndex * seriesSlotCount + seriesIndex);
       bars.push({
         seriesId: item.id,
         seriesLabel: item.label,
         category,
         value,
         color,
-        x: clamp(group.left + groupOffset + seriesIndex * barWidth, 0, width - 1),
-        width: Math.min(barWidth, Math.max(width - (group.left + groupOffset + seriesIndex * barWidth), 1)),
+        categoryIndex,
+        seriesIndex,
+        seriesCount: seriesSlotCount,
+        x: barBounds.x,
+        width: barBounds.width,
         row: valueToRow(value, min, max, height),
       });
     });
@@ -174,6 +165,47 @@ export function buildBarChartScene(series: BarChartSeries[], options: BarChartSc
     max,
     zeroRow,
     colors: options.colors,
+  };
+}
+
+function chartSlotBounds(
+  width: number,
+  slotCount: number,
+  slotIndex: number,
+): { x: number; width: number } {
+  const slots = Math.max(1, slotCount);
+  if (slots > width) {
+    const x = clamp(Math.floor(slotIndex * width / slots), 0, width - 1);
+    const right = clamp(Math.floor((slotIndex + 1) * width / slots), x + 1, width);
+    return {
+      x,
+      width: Math.max(1, right - x),
+    };
+  }
+  const gap = slots > 1 && width >= slots * 2 - 1 ? 1 : 0;
+  const usableWidth = Math.max(slots, width - gap * (slots - 1));
+  const slotWidth = Math.max(1, Math.floor(usableWidth / slots));
+  const usedWidth = slotWidth * slots + gap * (slots - 1);
+  const offset = Math.max(0, Math.floor((width - usedWidth) / 2));
+  const x = clamp(offset + slotIndex * (slotWidth + gap), 0, width - 1);
+  return {
+    x,
+    width: Math.max(1, Math.min(slotWidth, width - x)),
+  };
+}
+
+function categoryCellBounds(
+  width: number,
+  categoryCount: number,
+  seriesCount: number,
+  categoryIndex: number,
+): { left: number; width: number } {
+  const first = chartSlotBounds(width, categoryCount * seriesCount, categoryIndex * seriesCount);
+  const last = chartSlotBounds(width, categoryCount * seriesCount, categoryIndex * seriesCount + seriesCount - 1);
+  const right = last.x + last.width;
+  return {
+    left: first.x,
+    width: Math.max(1, right - first.x),
   };
 }
 
@@ -227,6 +259,10 @@ export function resolveBarChartHover(scene: BarChartScene, cellX: number): BarCh
     return Math.abs(currentCenter - x) < Math.abs(closestCenter - x) ? current : closest;
   }, scene.bars[0]!);
 
+  return barToHover(bar);
+}
+
+function barToHover(bar: BarChartBar): BarChartHover {
   return {
     seriesId: bar.seriesId,
     seriesLabel: bar.seriesLabel,
@@ -237,6 +273,29 @@ export function resolveBarChartHover(scene: BarChartScene, cellX: number): BarCh
     width: bar.width,
     row: bar.row,
   };
+}
+
+export function resolveNativeBarChartHover(
+  scene: BarChartScene,
+  pixelX: number,
+  pixelWidth: number,
+): BarChartHover | null {
+  if (!Number.isFinite(pixelX) || scene.bars.length === 0) return null;
+  const width = Math.max(1, Math.floor(pixelWidth));
+  const x = clamp(Math.floor(pixelX), 0, width - 1);
+  const direct = scene.bars.find((bar) => {
+    const bounds = resolveNativeBarPixelBounds(scene, bar, width);
+    return x >= bounds.left && x < bounds.rightExclusive;
+  });
+  const bar = direct ?? scene.bars.reduce((closest, current) => {
+    const closestBounds = resolveNativeBarPixelBounds(scene, closest, width);
+    const currentBounds = resolveNativeBarPixelBounds(scene, current, width);
+    const closestCenter = (closestBounds.left + closestBounds.rightExclusive - 1) / 2;
+    const currentCenter = (currentBounds.left + currentBounds.rightExclusive - 1) / 2;
+    return Math.abs(currentCenter - x) < Math.abs(closestCenter - x) ? current : closest;
+  }, scene.bars[0]!);
+
+  return barToHover(bar);
 }
 
 export function renderBarChart(scene: BarChartScene, hover: BarChartHover | null = null): string[] {
@@ -288,7 +347,7 @@ export function renderBarChartAxis(scene: BarChartScene, rowCount = 1): string[]
   scene.categories.forEach((category, index) => {
     const label = compactCategoryLabel(category, scene.categories[index - 1], scene.categories.length);
     if (!label) return;
-    const group = categorySlotBounds(scene.width, scene.categories.length, index);
+    const group = categoryCellBounds(scene.width, scene.categories.length, Math.max(scene.series.length, 1), index);
     const start = centeredLabelStart(group.left + group.width / 2, label, scene.width, rightInset);
     const row = rows.find((candidate) => canPlaceLabel(candidate, start, label, minGap));
     if (!row) return;
@@ -305,40 +364,37 @@ export function resolveNativeBarPixelBounds(
   pixelWidth: number,
 ): NativeBarChartPixelBounds {
   const width = Math.max(1, Math.floor(pixelWidth));
-
-  if (scene.series.length === 1) {
-    const categoryIndex = scene.categories.indexOf(bar.category);
-    if (categoryIndex >= 0) {
-      const separatorWidth = scene.categories.length > 1 && width >= scene.categories.length * 3 ? 1 : 0;
-      const usableWidth = Math.max(
-        scene.categories.length,
-        width - separatorWidth * (scene.categories.length - 1),
-      );
-      const left = Math.floor((categoryIndex * usableWidth) / scene.categories.length)
-        + categoryIndex * separatorWidth;
-      const rightExclusive = categoryIndex === scene.categories.length - 1
-        ? width
-        : Math.floor(((categoryIndex + 1) * usableWidth) / scene.categories.length)
-          + categoryIndex * separatorWidth;
-      return {
-        left,
-        rightExclusive: Math.max(left + 1, rightExclusive),
-      };
-    }
-  }
-
-  const horizontalInset = 1;
-  const left = clamp(
-    Math.floor((bar.x / scene.width) * width + horizontalInset),
-    0,
-    width - 1,
-  );
-  const rightExclusive = clamp(
-    Math.ceil(((bar.x + bar.width) / scene.width) * width - horizontalInset),
-    left + 1,
+  const bounds = nativeSlotBounds(
     width,
+    scene.categories.length * bar.seriesCount,
+    bar.categoryIndex * bar.seriesCount + bar.seriesIndex,
   );
+  const left = clamp(bounds.left, 0, width - 1);
+  const rightExclusive = clamp(bounds.rightExclusive, left + 1, width);
   return { left, rightExclusive };
+}
+
+function nativeSlotBounds(
+  width: number,
+  slotCount: number,
+  slotIndex: number,
+): NativeBarChartPixelBounds {
+  const slots = Math.max(1, slotCount);
+  if (slots > width) {
+    const left = clamp(Math.floor(slotIndex * width / slots), 0, width - 1);
+    const rightExclusive = clamp(Math.floor((slotIndex + 1) * width / slots), left + 1, width);
+    return { left, rightExclusive };
+  }
+  const gap = slots > 1 && width >= slots * 2 - 1 ? 1 : 0;
+  const usableWidth = Math.max(slots, width - gap * (slots - 1));
+  const slotWidth = Math.max(1, Math.floor(usableWidth / slots));
+  const usedWidth = slotWidth * slots + gap * (slots - 1);
+  const offset = Math.max(0, Math.floor((width - usedWidth) / 2));
+  const left = offset + slotIndex * (slotWidth + gap);
+  return {
+    left,
+    rightExclusive: Math.max(left + 1, left + slotWidth),
+  };
 }
 
 export function renderNativeBarChart(

@@ -1,12 +1,13 @@
 import type { ProjectedChartPoint } from "../../../../components/chart/core/data";
 import type { TimeRange } from "../../../../components/chart/core/types";
 import type { ScatterChartPoint } from "../../../../components/chart/scatter-chart-renderer";
-import type { PaneTemplateCreateOptions } from "../../../../types/plugin";
+import type { PaneSettingsDef, PaneTemplateCreateOptions } from "../../../../types/plugin";
 import type { PricePoint } from "../../../../types/financials";
-import { parseTickerListInput } from "../../../../tickers/list";
+import { formatTickerListInput, parseTickerListInput } from "../../../../tickers/list";
 
 export type RelationshipRange = Extract<TimeRange, "1M" | "3M" | "6M" | "1Y" | "5Y" | "ALL">;
 
+export const RELATIONSHIP_GRAPH_PANE_ID = "relationship-graph";
 const RELATIONSHIP_RANGES: RelationshipRange[] = ["1M", "3M", "6M", "1Y", "5Y", "ALL"];
 export const DEFAULT_RELATIONSHIP_SECOND_SYMBOL = "SPY";
 const RELATIONSHIP_CORRELATION_WINDOWS = [30, 60, 120, 252] as const;
@@ -276,4 +277,23 @@ export function relationshipTemplateSymbols(
   } catch {
     return null;
   }
+}
+
+export function buildRelationshipGraphPaneTitle(pair: readonly [string, string]): string {
+  return `GR ${pair[0]}/${pair[1]}`;
+}
+
+export function buildRelationshipGraphSettingsDef(): PaneSettingsDef {
+  return {
+    title: "Relationship Graph Settings",
+    fields: [
+      {
+        key: "symbolsText",
+        label: "Tickers",
+        description: `Enter one or two tickers. One ticker compares against ${DEFAULT_RELATIONSHIP_SECOND_SYMBOL}.`,
+        type: "text",
+        placeholder: formatTickerListInput(["AMD", "NVDA"]),
+      },
+    ],
+  };
 }

@@ -4,6 +4,8 @@ export class MarketDataCoordinatorEvents {
   private version = 0;
   private pendingVersionBump = false;
   private pendingChangedKeys = new Set<string>();
+  private pendingNotify = false;
+  private pendingListeners = new Set<() => void>();
   private readonly listeners = new Set<() => void>();
   private readonly keyListeners = new Map<string, Set<() => void>>();
   private readonly keyVersions = new Map<string, number>();
@@ -60,15 +62,34 @@ export class MarketDataCoordinatorEvents {
       for (const key of changedKeys) {
         this.keyVersions.set(key, (this.keyVersions.get(key) ?? 0) + 1);
       }
-      const keyListeners = new Set<() => void>();
+      for (const listener of this.listeners) {
+        this.pendingListeners.add(listener);
+      }
       for (const key of changedKeys) {
         for (const listener of this.keyListeners.get(key) ?? []) {
-          keyListeners.add(listener);
+          this.pendingListeners.add(listener);
         }
       }
 
-      for (const listener of this.listeners) listener();
-      for (const listener of keyListeners) listener();
+      this.scheduleNotify();
     }, { changedKeyCount: changedKeys.size });
+  }
+
+  private scheduleNotify(): void {
+    if (this.pendingNotify) return;
+    this.pendingNotify = true;
+    setTimeout(() => this.flushNotify(), 0);
+  }
+
+  private flushNotify(): void {
+    this.pendingNotify = false;
+    const listeners = [...this.pendingListeners];
+    this.pendingListeners.clear();
+    for (const listener of listeners) {
+      listener();
+    }
+    if (this.pendingListeners.size > 0) {
+      this.scheduleNotify();
+    }
   }
 }

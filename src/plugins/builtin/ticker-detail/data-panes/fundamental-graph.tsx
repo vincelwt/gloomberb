@@ -12,6 +12,7 @@ import {
   isMetricForKind,
 } from "./fundamental-graph/model";
 import {
+  FUNDAMENTAL_GRAPH_PANE_ID,
   graphKindFromSettings,
   graphTemplateSymbols,
   graphTemplateTitle,
@@ -20,6 +21,7 @@ import {
 import type { FundamentalPeriod, GraphKind, GraphMetricKey } from "./fundamental-graph/types";
 
 export { buildFundamentalGraphRows, buildValuationGraphRows } from "./fundamental-graph/model";
+export { buildGraphPaneSettingsDef, FUNDAMENTAL_GRAPH_PANE_ID } from "./fundamental-graph/settings";
 
 export function FundamentalGraphPane({ focused, width, height }: PaneProps) {
   const pane = usePaneInstance();
@@ -99,7 +101,7 @@ export function createGraphPaneTemplate({
 }): PaneTemplateDef {
   return {
     id,
-    paneId: "fundamental-graph",
+    paneId: FUNDAMENTAL_GRAPH_PANE_ID,
     label,
     description,
     keywords: chartKind === "valuation"

@@ -18,7 +18,9 @@ import {
 } from "./settings";
 import { resolveCorrelationHeatmapCellColors } from "./colors";
 import {
+  buildRelationshipGraphSettingsDef,
   createRelationshipPaneTemplate,
+  RELATIONSHIP_GRAPH_PANE_ID,
   RelationshipGraphPane,
 } from "./relationship/pane";
 import {
@@ -234,13 +236,14 @@ export const correlationPlugin: GloomPlugin = {
       settings: buildCorrelationSettingsDef(),
     },
     {
-      id: "relationship-graph",
+      id: RELATIONSHIP_GRAPH_PANE_ID,
       name: "Relationship Graph",
       icon: "R",
       component: RelationshipGraphPane,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 30 },
+      settings: buildRelationshipGraphSettingsDef(),
     },
   ],
 

@@ -1,13 +1,17 @@
 import type { DataTableColumn } from "../../../../../components";
-import type { TickerFinancials } from "../../../../../types/financials";
+import type { FinancialStatement, TickerFinancials } from "../../../../../types/financials";
 
 export type FundamentalMetricKey =
   | "totalRevenue"
   | "grossProfit"
+  | "grossMargin"
   | "operatingIncome"
+  | "operatingMargin"
   | "netIncome"
+  | "netMargin"
   | "operatingCashFlow"
   | "freeCashFlow"
+  | "freeCashFlowMargin"
   | "totalAssets"
   | "totalDebt"
   | "totalEquity"
@@ -42,6 +46,9 @@ export type MetricDefinition<Key extends GraphMetricKey = GraphMetricKey> = {
   key: Key;
   label: string;
   format: (value: number) => string;
+  value?: Key extends FundamentalMetricKey
+    ? (statement: FinancialStatement) => number | null | undefined
+    : never;
 };
 
 export type SymbolFinancials = {

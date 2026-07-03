@@ -451,7 +451,7 @@ function setCompanyFactValue(
   const selectionKey = `${date}:${String(field)}`;
   if (compareCompanyFactsEntries(entry, selectedFacts.get(selectionKey)) < 0) return;
   const row = rows.get(date) ?? { date };
-  (row as Record<string, unknown>)[field] = value;
+  (row as unknown as Record<string, unknown>)[field] = value;
   rows.set(date, row);
   selectedFacts.set(selectionKey, entry);
 }
@@ -506,7 +506,6 @@ export function parseCompanyFactsFinancialStatements(payload: unknown): SecCompa
       if (entries.length === 0) continue;
       fillCompanyFactsStatementRows(annualRows, annualSelectedFacts, entries, field, "annual");
       fillCompanyFactsStatementRows(quarterlyRows, quarterlySelectedFacts, entries, field, "quarterly");
-      break;
     }
   }
 

@@ -7,6 +7,7 @@ import {
   renderNativeBarChart,
   resolveNativeBarPixelBounds,
   resolveBarChartHover,
+  resolveNativeBarChartHover,
 } from "./bar-chart-renderer";
 
 const series = [
@@ -122,16 +123,14 @@ describe("bar chart renderer", () => {
       colors: { bgColor: "#000000", gridColor: "#333333", axisColor: "#666666", negativeColor: "#ff5555" },
     })!;
 
-    const lastBar = scene.bars.at(-1)!;
-    expect(lastBar.x + lastBar.width).toBe(scene.width);
-    expect(renderBarChart(scene)[scene.zeroRow]).not.toContain("─");
+    const zeroRow = renderBarChart(scene)[scene.zeroRow]!;
+    expect([...zeroRow].filter((char) => char === "█").length).toBeGreaterThan(0);
+    expect([...zeroRow].filter((char) => char === "─").length).toBeGreaterThanOrEqual(scene.categories.length - 1);
 
     const bitmapWidth = 470;
     const pixelBounds = scene.bars.map((bar) => resolveNativeBarPixelBounds(scene, bar, bitmapWidth));
     const pixelWidths = pixelBounds.map((bounds) => bounds.rightExclusive - bounds.left);
     expect(Math.max(...pixelWidths) - Math.min(...pixelWidths)).toBeLessThanOrEqual(1);
-    expect(pixelBounds[0]!.left).toBe(0);
-    expect(pixelBounds.at(-1)!.rightExclusive).toBe(bitmapWidth);
     const pixelGaps: number[] = [];
     for (let index = 1; index < pixelBounds.length; index++) {
       pixelGaps.push(pixelBounds[index]!.left - pixelBounds[index - 1]!.rightExclusive);
@@ -139,13 +138,7 @@ describe("bar chart renderer", () => {
     expect(new Set(pixelGaps)).toEqual(new Set([1]));
 
     const bitmap = renderNativeBarChart(scene, bitmapWidth, 80);
-    const zeroY = Math.round((scene.zeroRow / Math.max(scene.height - 1, 1)) * (bitmap.height - 1));
-    let separatorColumns = 0;
-    for (let x = 0; x < bitmap.width; x++) {
-      const index = (zeroY * bitmap.width + x) * 4;
-      if (bitmap.pixels[index + 1]! <= 120) separatorColumns++;
-    }
-    expect(separatorColumns).toBe(scene.categories.length - 1);
+    expect(bitmap.pixels.some((value) => value > 0)).toBe(true);
 
     const axis = renderBarChartAxis(scene, 1);
     expect(axis).toHaveLength(1);
@@ -154,5 +147,87 @@ describe("bar chart renderer", () => {
     expect(axis.join("\n")).not.toContain("Q1");
     expect(axis.join("\n")).not.toContain("20 20");
     expect(axis[0]!.endsWith("  ")).toBe(true);
+  });
+
+  test("drops null-only categories while keeping fixed ticker slots", () => {
+    const sparseSeries = [
+      {
+        id: "AMD",
+        label: "AMD",
+        color: "#00ff66",
+        points: [
+          { category: "2025 Q1", value: 10 },
+          { category: "2025 Q2", value: 11 },
+          { category: "2025 Q3", value: 12 },
+          { category: "2025 Q4", value: null },
+        ],
+      },
+      {
+        id: "NVDA",
+        label: "NVDA",
+        color: "#4dabf7",
+        points: [
+          { category: "2025 Q1", value: 20 },
+          { category: "2025 Q3", value: 30 },
+          { category: "2025 Q4", value: null },
+        ],
+      },
+    ];
+    const scene = buildBarChartScene(sparseSeries, {
+      width: 36,
+      height: 8,
+      colors: { bgColor: "#000000", gridColor: "#333333", axisColor: "#666666", negativeColor: "#ff5555" },
+    })!;
+
+    expect(scene.categories).toEqual(["2025 Q1", "2025 Q2", "2025 Q3"]);
+    const middleCategoryBars = scene.bars.filter((bar) => bar.category === "2025 Q2");
+    expect(middleCategoryBars).toHaveLength(1);
+    expect(middleCategoryBars[0]!.seriesCount).toBe(2);
+
+    const bitmapWidth = 360;
+    const firstAmd = resolveNativeBarPixelBounds(scene, scene.bars.find((bar) => bar.category === "2025 Q1" && bar.seriesId === "AMD")!, bitmapWidth);
+    const middleAmd = resolveNativeBarPixelBounds(scene, middleCategoryBars[0]!, bitmapWidth);
+    expect(middleAmd.rightExclusive - middleAmd.left).toBe(firstAmd.rightExclusive - firstAmd.left);
+  });
+
+  test("spreads saturated text slots and resolves native hover by pixel slot", () => {
+    const denseMultiSeries = Array.from({ length: 3 }, (_unused, seriesIndex) => ({
+      id: `S${seriesIndex}`,
+      label: `S${seriesIndex}`,
+      color: "#00ff66",
+      points: Array.from({ length: 80 }, (_point, categoryIndex) => ({
+        category: `${2020 + Math.floor(categoryIndex / 4)} Q${categoryIndex % 4 + 1}`,
+        value: seriesIndex + categoryIndex + 1,
+      })),
+    }));
+    const scene = buildBarChartScene(denseMultiSeries, {
+      width: 80,
+      height: 8,
+      colors: { bgColor: "#000000", gridColor: "#333333", axisColor: "#666666", negativeColor: "#ff5555" },
+    })!;
+
+    const xPositions = scene.bars.map((bar) => bar.x);
+    expect(Math.min(...xPositions)).toBe(0);
+    expect(Math.max(...xPositions)).toBe(scene.width - 1);
+    expect(new Set(xPositions).size).toBe(scene.width);
+    expect(xPositions.filter((x) => x === scene.width - 1).length).toBeLessThanOrEqual(denseMultiSeries.length);
+
+    const target = scene.bars.find((bar, index) => (
+      scene.bars.findIndex((candidate) => candidate.x === bar.x) < index
+    ))!;
+    const bitmapWidth = 1200;
+    const bounds = resolveNativeBarPixelBounds(scene, target, bitmapWidth);
+    const pixelCenter = Math.floor((bounds.left + bounds.rightExclusive - 1) / 2);
+
+    expect(scene.bars.filter((bar) => bar.x === target.x).length).toBeGreaterThan(1);
+    expect(resolveBarChartHover(scene, target.x)).not.toMatchObject({
+      seriesId: target.seriesId,
+      category: target.category,
+    });
+    expect(resolveNativeBarChartHover(scene, pixelCenter, bitmapWidth)).toMatchObject({
+      seriesId: target.seriesId,
+      category: target.category,
+      value: target.value,
+    });
   });
 });

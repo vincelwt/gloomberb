@@ -1,7 +1,14 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
-import { Box, ChartSurface, Span, Text, useNativeRenderer, type BoxRenderable } from "../../../ui";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Box, ChartSurface, Text, TextAttributes, useNativeRenderer, type BoxRenderable } from "../../../ui";
 import { colors } from "../../../theme/colors";
-import { consumeChartMouseEvent, getLocalPlotPointer, type ChartMouseEvent } from "../core/pointer";
+import {
+  consumeChartMouseEvent,
+  getLocalPlotPointer,
+  getRenderablePixelSize,
+  scaleLocalPixelCoordinate,
+  type ChartMouseEvent,
+  type LocalPlotPointer,
+} from "../core/pointer";
 import type { NativeChartBitmap } from "../native/chart-rasterizer";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
 import { useStaticChartBitmapSize } from "./chart/bitmap";
@@ -12,10 +19,35 @@ import {
   renderBarChartYAxis,
   renderNativeBarChart,
   resolveBarChartHover,
+  resolveNativeBarChartHover,
   type BarChartColors,
   type BarChartHover,
+  type BarChartScene,
   type BarChartSeries,
 } from "../bar-chart-renderer";
+
+export interface BarChartSurfaceHoverGeometry {
+  bitmapPixelWidth: number;
+  renderablePixelWidth?: number | null;
+}
+
+export function resolveBarChartSurfaceHover(
+  scene: BarChartScene,
+  pointer: Pick<LocalPlotPointer, "cellX" | "pixelX">,
+  geometry?: BarChartSurfaceHoverGeometry | null,
+): BarChartHover | null {
+  if (geometry && pointer.pixelX !== null) {
+    const pixelX = scaleLocalPixelCoordinate(
+      pointer.pixelX,
+      geometry.renderablePixelWidth ?? geometry.bitmapPixelWidth,
+      geometry.bitmapPixelWidth,
+    );
+    if (pixelX !== null) {
+      return resolveNativeBarChartHover(scene, pixelX, geometry.bitmapPixelWidth);
+    }
+  }
+  return resolveBarChartHover(scene, pointer.cellX);
+}
 
 export interface StaticBarChartSurfaceProps {
   series: BarChartSeries[];
@@ -25,6 +57,8 @@ export interface StaticBarChartSurfaceProps {
   title?: string;
   header?: ReactNode;
   formatValue?: (value: number) => string;
+  hiddenSeriesIds?: readonly string[] | ReadonlySet<string>;
+  onToggleSeries?: (seriesId: string) => void;
   onHoverChange?: (hover: BarChartHover | null) => void;
   onMouseDown?: (event: ChartMouseEvent) => void;
 }
@@ -36,6 +70,8 @@ export function StaticBarChartSurface({
   title,
   header,
   formatValue,
+  hiddenSeriesIds,
+  onToggleSeries,
   onHoverChange,
   onMouseDown,
   colors: chartColors,
@@ -59,11 +95,18 @@ export function StaticBarChartSurface({
     negativeColor: chartColors?.negativeColor ?? colors.negative,
     hoverColor: chartColors?.hoverColor ?? colors.textBright,
   }), [chartColors]);
-  const scene = useMemo(() => buildBarChartScene(series, {
+  const hiddenSeriesIdSet = useMemo(() => (
+    hiddenSeriesIds instanceof Set ? hiddenSeriesIds : new Set(hiddenSeriesIds ?? [])
+  ), [hiddenSeriesIds]);
+  const visibleSeries = useMemo(
+    () => series.filter((item) => !hiddenSeriesIdSet.has(item.id)),
+    [hiddenSeriesIdSet, series],
+  );
+  const scene = useMemo(() => buildBarChartScene(visibleSeries, {
     width: plotWidth,
     height: plotHeight,
     colors: resolvedChartColors,
-  }), [plotHeight, plotWidth, resolvedChartColors, series]);
+  }), [plotHeight, plotWidth, resolvedChartColors, visibleSeries]);
 
   const bitmapSize = useStaticChartBitmapSize(plotWidth, plotHeight);
 
@@ -78,8 +121,8 @@ export function StaticBarChartSurface({
   const hoverLabel = useMemo(() => {
     if (!hover) return null;
     const value = formatValue ? formatValue(hover.value) : String(hover.value);
-    return series.length > 1 ? `${hover.category} ${hover.seriesLabel}: ${value}` : `${hover.category}: ${value}`;
-  }, [formatValue, hover, series.length]);
+    return visibleSeries.length > 1 ? `${hover.category} ${hover.seriesLabel}: ${value}` : `${hover.category}: ${value}`;
+  }, [formatValue, hover, visibleSeries.length]);
   const readout = useMemo(() => {
     if (!hoverLabel) return title ?? "";
     return title ? `${title}  ${hoverLabel}` : hoverLabel;
@@ -98,6 +141,17 @@ export function StaticBarChartSurface({
     return { labelLeft, labelTop, labelWidth, text };
   }, [hover, hoverLabel, plotHeight, plotWidth]);
 
+  const resolvePointerHover = useCallback((pointer: LocalPlotPointer): BarChartHover | null => {
+    if (!scene) return null;
+    const renderablePixelSize = bitmapSize ? getRenderablePixelSize(plotRef.current, renderer) : null;
+    return resolveBarChartSurfaceHover(scene, pointer, bitmapSize
+      ? {
+        bitmapPixelWidth: bitmapSize.pixelWidth,
+        renderablePixelWidth: renderablePixelSize?.pixelWidth ?? bitmapSize.pixelWidth,
+      }
+      : null);
+  }, [bitmapSize, renderer, scene]);
+
   const handleMouseMove = useCallback((event: ChartMouseEvent) => {
     if (!scene) return;
     const pointer = getLocalPlotPointer(event, plotRef.current, renderer);
@@ -106,11 +160,11 @@ export function StaticBarChartSurface({
       onHoverChange?.(null);
       return;
     }
-    const nextHover = resolveBarChartHover(scene, pointer.cellX);
+    const nextHover = resolvePointerHover(pointer);
     setHover(nextHover);
     onHoverChange?.(nextHover);
     consumeChartMouseEvent(event);
-  }, [onHoverChange, renderer, scene]);
+  }, [onHoverChange, renderer, resolvePointerHover, scene]);
 
   const handleMouseOut = useCallback(() => {
     setHover(null);
@@ -122,16 +176,54 @@ export function StaticBarChartSurface({
     if (!scene) return;
     const pointer = getLocalPlotPointer(event, plotRef.current, renderer);
     if (!pointer) return;
-    const nextHover = resolveBarChartHover(scene, pointer.cellX);
+    const nextHover = resolvePointerHover(pointer);
     setHover(nextHover);
     onHoverChange?.(nextHover);
     consumeChartMouseEvent(event);
-  }, [onHoverChange, onMouseDown, renderer, scene]);
+  }, [onHoverChange, onMouseDown, renderer, resolvePointerHover, scene]);
+
+  useEffect(() => {
+    if (hover && hiddenSeriesIdSet.has(hover.seriesId)) {
+      setHover(null);
+      onHoverChange?.(null);
+    }
+  }, [hiddenSeriesIdSet, hover, onHoverChange]);
+
+  const legend = legendRows ? (
+    <Box flexDirection="row" height={1}>
+      {series.map((item, index) => {
+        const hidden = hiddenSeriesIdSet.has(item.id);
+        const legendColor = hidden ? colors.textDim : item.color;
+        const legendAttributes = hidden ? TextAttributes.STRIKETHROUGH | TextAttributes.DIM : TextAttributes.NONE;
+        const handleLegendMouseDown = onToggleSeries
+          ? (event: any) => {
+            event.stopPropagation?.();
+            onToggleSeries(item.id);
+          }
+          : undefined;
+        return (
+          <Box
+            key={item.id}
+            flexDirection="row"
+            height={1}
+            onMouseDown={handleLegendMouseDown}
+            cursor={onToggleSeries ? "pointer" : undefined}
+            data-gloom-interactive={onToggleSeries ? "true" : undefined}
+          >
+            <Text>{index > 0 ? "  " : " "}</Text>
+            <Text fg={legendColor} bg={legendColor} attributes={legendAttributes}> </Text>
+            <Text fg={legendColor} attributes={legendAttributes}>{` ${item.label}`}</Text>
+          </Box>
+        );
+      })}
+    </Box>
+  ) : null;
 
   if (!scene) {
     return (
       <Box flexDirection="column" width={totalWidth} height={totalHeight} onMouseDown={onMouseDown}>
         {header ?? (title ? <Text fg={colors.textBright} bold>{truncateWithEllipsis(title, totalWidth)}</Text> : null)}
+        {legend}
         <Text fg={colors.textDim}>No chart data</Text>
       </Box>
     );
@@ -146,15 +238,7 @@ export function StaticBarChartSurface({
           </Text>
         )
       ) : null}
-      {legendRows ? (
-        <Text>
-          {series.map((item, index) => (
-            <Span key={item.id} fg={item.color}>
-              {index > 0 ? "  " : ""}{"■ "}{item.label}
-            </Span>
-          ))}
-        </Text>
-      ) : null}
+      {legend}
       <Box flexDirection="row" width={totalWidth} height={plotHeight}>
         {yAxisWidth ? (
           <Box flexDirection="column" width={yAxisWidth} height={plotHeight}>

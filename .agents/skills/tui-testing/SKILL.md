@@ -196,12 +196,15 @@ bun test --update-snapshots           # Update snapshot files
 
 Run the actual app in a tmux session, send keystrokes, and capture the rendered screen. **Use this as a last resort** — for verifying full-app behavior that can't be tested with the harness or CLI.
 
+When tmux is used for React/OpenTUI changes, always treat runtime health as part of the smoke. Do not stop at "it rendered"; scan for React hook/update-depth failures, listener leak warnings, and obvious memory runaway.
+
 ### When to use tmux
 
 - Verifying layout and pane arrangement with real data
 - Testing keyboard navigation flows across multiple views
 - Smoke-testing after major refactors
 - Debugging rendering issues that only appear with the full app
+- Checking for real-app React warnings, listener leaks, update loops, or memory growth after layout/pane/chart/subscription changes
 
 ### Setup
 
@@ -214,6 +217,12 @@ tmux new-session -d -s test -x 120 -y 40 'bun run dev 2>&1'
 
 # Wait for the app to render (2-3 seconds for initial load)
 sleep 3
+```
+
+For warning/error scans, pipe the pane output to a log before interacting:
+
+```bash
+tmux pipe-pane -o -t test 'cat > /tmp/gloomberb-test.log'
 ```
 
 If you need to run the app without `tmux`, keep the process handle so you can shut it down:
@@ -283,6 +292,60 @@ tmux capture-pane -t test -p
 # 5. Always clean up
 tmux kill-session -t test
 ```
+
+### Runtime health checks
+
+For real-app smokes, especially after touching React hooks, subscriptions, chart rendering, pane settings, market-data events, layout switching, or plugin runtime code, perform these checks before finishing:
+
+1. Capture a log and final screen.
+2. Scan both for React/runtime warnings.
+3. Sample RSS before and after interactions if the test runs long enough to compare.
+4. Explicitly report any remaining uncertainty, such as a short smoke not proving long-horizon leak absence.
+
+Suggested scan:
+
+```bash
+LOG=/tmp/gloomberb-test.log
+CAP=/tmp/gloomberb-test.capture
+tmux capture-pane -t test -p > "$CAP"
+
+rg -n \
+  "Possible EventTarget|MaxListeners|Maximum update depth|Invalid hook|Rendered more hooks|Rendered fewer hooks|React has detected|\\[ERROR\\]|Error:" \
+  "$LOG" "$CAP" || true
+```
+
+Suggested RSS sampling:
+
+```bash
+pane_pid=$(tmux display-message -p -t test '#{pane_pid}')
+child_pids=$(pgrep -P "$pane_pid" || true)
+grandchild_pids=""
+for pid in $child_pids; do
+  grandchild_pids="$grandchild_pids $(pgrep -P "$pid" || true)"
+done
+app_pids=$(printf '%s\n' $child_pids $grandchild_pids | awk 'NF' | sort -u)
+
+for pid in $app_pids; do
+  ps -o pid=,rss=,command= -p "$pid" || true
+done
+```
+
+Interpret memory samples conservatively:
+
+- A short smoke can catch obvious runaway growth, but it cannot prove there is no long-horizon leak.
+- Startup, first data load, chart bitmap allocation, and layout switching can legitimately increase RSS.
+- Suspicious signs are repeated warning logs, unbounded growth across repeated identical interactions, or jumps paired with update-depth/listener warnings.
+
+### Layout and pane smoke coverage
+
+When a bug mentions a specific saved layout, pane type, or focus path, launch directly into that layout or use the remote-control endpoint to switch layouts rather than relying only on keyboard shortcuts. Keyboard encoding in tmux can be terminal-dependent.
+
+Recommended coverage for layout/pane regressions:
+
+- Launch the affected layout directly from an isolated temp config or copied app config.
+- Exercise the affected pane's own interactions, such as chart period changes, refresh, tab changes, pane settings, or legend toggles.
+- Switch between the affected layout and another layout at least a few times when the bug involved layout activation or pane unmount/remount behavior.
+- Re-run the warning scan after interactions and after layout switches.
 
 ### Common command bar actions (Ctrl+P)
 

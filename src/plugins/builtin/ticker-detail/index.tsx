@@ -5,6 +5,7 @@ import { normalizeTickerInput } from "../../../tickers/search";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { TickerChartPane, ChartResearchTab } from "./chart-pane";
 import {
+  buildGraphPaneSettingsDef,
   createGraphPaneTemplate,
   FundamentalGraphPane,
   FundamentalGraphsResearchTab,
@@ -128,6 +129,7 @@ export const tickerDetailPlugin: GloomPlugin = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 82, height: 22 },
+      settings: buildGraphPaneSettingsDef(),
     },
     {
       id: "provider-search-results",

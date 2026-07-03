@@ -17,7 +17,9 @@ import { useRelationshipHistories } from "./history";
 import {
   DEFAULT_RELATIONSHIP_CORRELATION_WINDOW,
   DEFAULT_RELATIONSHIP_SECOND_SYMBOL,
+  RELATIONSHIP_GRAPH_PANE_ID,
   buildRelationshipAnalysis,
+  buildRelationshipGraphPaneTitle,
   nextRelationshipRange,
   nextRelationshipWindow,
   relationshipSymbolsFromPaneSettings,
@@ -35,7 +37,11 @@ import {
   formatNullableNumber,
 } from "./view-model";
 
-export { buildRelationshipAnalysis } from "./model";
+export {
+  buildRelationshipAnalysis,
+  buildRelationshipGraphSettingsDef,
+  RELATIONSHIP_GRAPH_PANE_ID,
+} from "./model";
 
 type RelationshipGraphShortcut = "range" | "window" | "correlation" | "regression";
 
@@ -326,7 +332,7 @@ export function RelationshipGraphPane({ focused, width, height }: PaneProps) {
 export function createRelationshipPaneTemplate(): PaneTemplateDef {
   return {
     id: "relationship-graph-pane",
-    paneId: "relationship-graph",
+    paneId: RELATIONSHIP_GRAPH_PANE_ID,
     label: "Relationship Graph",
     description: "Graph ratio, rolling correlation, and regression between two tickers.",
     keywords: ["relationship", "ratio", "graph", "correlation", "regression", "gr"],
@@ -345,7 +351,7 @@ export function createRelationshipPaneTemplate(): PaneTemplateDef {
       const pair = relationshipTemplateSymbols(context.activeTicker, options);
       return pair
         ? {
-          title: `GR ${pair[0]}/${pair[1]}`,
+          title: buildRelationshipGraphPaneTitle(pair),
           binding: { kind: "fixed" as const, symbol: pair[0] },
           placement: "floating" as const,
           settings: {

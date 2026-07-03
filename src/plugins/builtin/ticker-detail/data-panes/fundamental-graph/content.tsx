@@ -9,7 +9,9 @@ import {
 } from "../../../../../components";
 import { useShortcut } from "../../../../../react/input";
 import type { BarChartHover } from "../../../../../components/chart/bar-chart-renderer";
+import type { MouseInteractionEvent } from "../../../../../components/chart/core/pointer";
 import { StaticBarChartSurface } from "../../../../../components/chart/static/bar-chart-surface";
+import { useAppDispatch, usePaneInstanceId } from "../../../../../state/app/context";
 import { colors, priceColor } from "../../../../../theme/colors";
 import { usePluginPaneState } from "../../../../runtime";
 import { loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../../../shared/table-pane";
@@ -60,7 +62,10 @@ export function FundamentalGraphContent({
   setChartKind: (updater: (current: GraphKind) => GraphKind) => void;
   onCapture?: (capturing: boolean) => void;
 }) {
+  const dispatch = useAppDispatch();
+  const paneId = usePaneInstanceId();
   const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>("selectedIdx", 0);
+  const [hiddenSeriesIds, setHiddenSeriesIds] = usePluginPaneState<string[]>("hiddenSeriesIds", []);
   const [hoveredBar, setHoveredBar] = useState<BarChartHover | null>(null);
   const [metricTabsFocused, setMetricTabsFocused] = useState(false);
   const definition = metricDef(chartKind, metric);
@@ -69,17 +74,23 @@ export function FundamentalGraphContent({
     label: definition.label,
     value: definition.key,
   })), [metricOptions]);
-  const multiSymbol = new Set(rows.map((row) => row.symbol)).size > 1;
+  const chartSeries = useMemo(() => buildGraphBarSeries(rows), [rows]);
+  const chartSeriesIds = useMemo(() => new Set(chartSeries.map((series) => series.id)), [chartSeries]);
+  const hiddenSeriesIdSet = useMemo(() => new Set(hiddenSeriesIds), [hiddenSeriesIds]);
+  const visibleRows = useMemo(() => rows.filter((row) => {
+    const seriesId = row.symbol || "value";
+    return !hiddenSeriesIdSet.has(seriesId);
+  }), [hiddenSeriesIdSet, rows]);
+  const multiSymbol = new Set(visibleRows.map((row) => row.symbol)).size > 1;
   const columns = useMemo(() => buildFundamentalColumns(width, multiSymbol), [multiSymbol, width]);
-  const tableRows = useMemo(() => [...rows].sort((left, right) => (
+  const tableRows = useMemo(() => [...visibleRows].sort((left, right) => (
     right.date.localeCompare(left.date) || left.symbol.localeCompare(right.symbol)
-  )), [rows]);
+  )), [visibleRows]);
   const boundedSelectedIdx = tableRows.length > 0 ? Math.min(selectedIdx, tableRows.length - 1) : -1;
   const minTableHeight = tableRows.length > 0 ? 4 : 3;
   const desiredChartHeight = height >= 14 ? Math.min(16, Math.max(9, Math.floor(height * 0.58))) : Math.max(4, Math.floor(height / 2));
   const chartHeight = Math.max(1, Math.min(desiredChartHeight, Math.max(1, height - minTableHeight)));
   const tableHeight = Math.max(0, height - chartHeight);
-  const chartSeries = useMemo(() => buildGraphBarSeries(rows), [rows]);
   const selectMetric = useCallback((value: string) => {
     const nextMetric = value as GraphMetricKey;
     const nextKind = metricKind(nextMetric);
@@ -88,11 +99,19 @@ export function FundamentalGraphContent({
     setChartKind(() => nextKind);
     setMetric(() => nextMetric);
   }, [setChartKind, setMetric]);
-  const focusMetricTabs = useCallback(() => {
+  const focusPaneForMouseInteraction = useCallback((event: MouseInteractionEvent | null | undefined) => {
+    event?.stopPropagation?.();
+    event?.preventDefault?.();
+    if (!focused) {
+      dispatch({ type: "FOCUS_PANE", paneId });
+    }
+  }, [dispatch, focused, paneId]);
+  const focusMetricTabs = useCallback((event?: MouseInteractionEvent | null) => {
+    focusPaneForMouseInteraction(event);
     if (metricTabsFocused) return;
     setMetricTabsFocused(true);
     onCapture?.(true);
-  }, [metricTabsFocused, onCapture]);
+  }, [focusPaneForMouseInteraction, metricTabsFocused, onCapture]);
   const releaseMetricTabs = useCallback(() => {
     if (!metricTabsFocused) return;
     setMetricTabsFocused(false);
@@ -103,6 +122,14 @@ export function FundamentalGraphContent({
     selectMetric(value);
   }, [focusMetricTabs, selectMetric]);
   const togglePeriod = useCallback(() => setPeriod((current) => current === "annual" ? "quarterly" : "annual"), [setPeriod]);
+  const toggleSeries = useCallback((seriesId: string) => {
+    setHiddenSeriesIds((current) => {
+      const hidden = new Set(current);
+      if (hidden.has(seriesId)) hidden.delete(seriesId);
+      else hidden.add(seriesId);
+      return [...hidden].filter((id) => chartSeriesIds.has(id));
+    });
+  }, [chartSeriesIds, setHiddenSeriesIds]);
   const hoveredValue = useMemo(() => {
     if (!hoveredBar) return null;
     const label = chartSeries.length > 1 ? `${hoveredBar.category} ${hoveredBar.seriesLabel}` : hoveredBar.category;
@@ -110,6 +137,13 @@ export function FundamentalGraphContent({
   }, [chartSeries.length, definition, hoveredBar]);
 
   useClampSelectedIndex(tableRows.length, selectedIdx, setSelectedIdx);
+
+  useEffect(() => {
+    setHiddenSeriesIds((current) => {
+      const next = current.filter((id) => chartSeriesIds.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [chartSeriesIds, setHiddenSeriesIds]);
 
   useEffect(() => {
     if (!focused && metricTabsFocused) {
@@ -228,10 +262,12 @@ export function FundamentalGraphContent({
         width={width}
         height={chartHeight}
         series={chartSeries}
+        hiddenSeriesIds={hiddenSeriesIds}
+        onToggleSeries={toggleSeries}
         header={metricHeader}
         formatValue={definition.format}
         onHoverChange={setHoveredBar}
-        onMouseDown={focusMetricTabs}
+        onMouseDown={focusPaneForMouseInteraction}
       />
       {tableHeight > 0 ? (
         <DataTableView<FundamentalGraphRow, FundamentalColumn>
