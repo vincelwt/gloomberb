@@ -28,6 +28,13 @@ function formatSignedPercent(value: number): string {
   return `${percent >= 0 ? "+" : ""}${formatNumber(percent, 2)}%`;
 }
 
+type AnalyticsMetric = {
+  id: "one-year" | "beta";
+  label: string;
+  value: string;
+  rawValue: number;
+};
+
 function analyticsValueColor(id: string, value: number): string {
   if (id === "one-year") {
     if (value > 0) return colors.positive;
@@ -36,7 +43,7 @@ function analyticsValueColor(id: string, value: number): string {
   return colors.warning;
 }
 
-function analyticsMetrics(analytics: PublicPortfolioAnalytics) {
+function analyticsMetrics(analytics: PublicPortfolioAnalytics): AnalyticsMetric[] {
   return [
     analytics.oneYearReturn != null
       ? {
@@ -54,28 +61,49 @@ function analyticsMetrics(analytics: PublicPortfolioAnalytics) {
         rawValue: analytics.spyBeta,
       }
       : null,
-  ].filter((metric): metric is { id: string; label: string; value: string; rawValue: number } => !!metric);
+  ].filter((metric): metric is AnalyticsMetric => !!metric);
 }
 
-function PortfolioAnalyticsBand({
-  analytics,
+function headerMetricLabel(metric: AnalyticsMetric): string {
+  return metric.id === "beta" ? "Beta" : metric.label;
+}
+
+function headerMetricsNaturalWidth(metrics: AnalyticsMetric[]): number {
+  const metricWidth = metrics.reduce((sum, metric) => (
+    sum + headerMetricLabel(metric).length + 1 + metric.value.length
+  ), 0);
+  return metricWidth + Math.max(0, metrics.length - 1);
+}
+
+function HeaderAnalyticsStats({
+  metrics,
   width,
 }: {
-  analytics: PublicPortfolioAnalytics;
+  metrics: AnalyticsMetric[];
   width: number;
 }) {
-  const metrics = analyticsMetrics(analytics);
-  if (metrics.length === 0) return null;
-  const metricWidth = Math.max(11, Math.floor((width - 2) / metrics.length));
+  if (metrics.length === 0 || width < 8) return null;
+  const gapWidth = Math.max(0, metrics.length - 1);
+  const naturalWidths = metrics.map((metric) => headerMetricLabel(metric).length + 1 + metric.value.length);
+  const availableMetricWidth = Math.max(metrics.length * 4, width - gapWidth);
+  let overflow = Math.max(0, naturalWidths.reduce((sum, value) => sum + value, 0) - availableMetricWidth);
+  const metricWidths = naturalWidths.map((naturalWidth, index) => {
+    const shrinkable = Math.max(0, naturalWidth - 4);
+    const shrink = Math.min(shrinkable, Math.ceil(overflow / (naturalWidths.length - index)));
+    overflow -= shrink;
+    return naturalWidth - shrink;
+  });
 
   return (
-    <Box flexDirection="row" flexWrap="wrap" gap={2} width={width} backgroundColor={colors.commandBg}>
-      {metrics.map((metric) => {
-        const labelWidth = Math.max(1, Math.min(metric.label.length, metricWidth - 2));
+    <Box flexDirection="row" gap={1} width={width}>
+      {metrics.map((metric, index) => {
+        const label = headerMetricLabel(metric);
+        const metricWidth = metricWidths[index] ?? 4;
+        const labelWidth = Math.max(1, Math.min(label.length, metricWidth - 2));
         const valueWidth = Math.max(1, metricWidth - labelWidth - 1);
         return (
           <Box key={metric.id} width={metricWidth} height={1} flexDirection="row" gap={1}>
-            <Text fg={colors.textMuted}>{truncateChannelLabel(metric.label, labelWidth)}</Text>
+            <Text fg={colors.textMuted}>{truncateChannelLabel(label, labelWidth)}</Text>
             <Text fg={analyticsValueColor(metric.id, metric.rawValue)} attributes={TextAttributes.BOLD}>
               {truncateChannelLabel(metric.value, valueWidth)}
             </Text>
@@ -105,7 +133,15 @@ export function UserProfilePopover({
   const meta = [user.title, user.company].filter(Boolean).join(" · ");
   const bio = user.bio?.trim();
   const analytics = user.portfolioAnalytics;
+  const metrics = analytics ? analyticsMetrics(analytics) : [];
   const canDm = user.id === currentUserId || user.acceptUnknownDms !== false;
+  const headerWidth = Math.max(1, popoverWidth - 4);
+  const dmWidth = canDm ? 5 : 9;
+  const maxStatsWidth = Math.max(0, headerWidth - dmWidth - 8);
+  const statsWidth = metrics.length > 0 && maxStatsWidth >= 8
+    ? Math.min(headerMetricsNaturalWidth(metrics), maxStatsWidth)
+    : 0;
+  const usernameWidth = Math.max(1, headerWidth - dmWidth - (statsWidth > 0 ? statsWidth + 1 : 0));
 
   return (
     <Box
@@ -122,10 +158,18 @@ export function UserProfilePopover({
       onMouseOut={onClose}
       style={{ zIndex: 4 }}
     >
-      <Box height={1} flexDirection="row">
-        <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
-          {truncateChannelLabel(user.username ? `@${user.username}` : user.displayName, Math.max(popoverWidth - 10, 1))}
-        </Text>
+      <Box height={1} width={headerWidth} flexDirection="row">
+        <Box width={usernameWidth}>
+          <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
+            {truncateChannelLabel(user.username ? `@${user.username}` : user.displayName, usernameWidth)}
+          </Text>
+        </Box>
+        {statsWidth > 0 ? (
+          <>
+            <Box width={1} />
+            <HeaderAnalyticsStats metrics={metrics} width={statsWidth} />
+          </>
+        ) : null}
         <Box flexGrow={1} />
         <ChatActionChip
           label={canDm ? "DM" : "Closed"}
@@ -141,9 +185,6 @@ export function UserProfilePopover({
         <Text fg={colors.text} wrapText width={popoverWidth - 2}>
           {bio}
         </Text>
-      ) : null}
-      {analytics && hasPortfolioAnalytics(analytics) ? (
-        <PortfolioAnalyticsBand analytics={analytics} width={Math.max(1, popoverWidth - 4)} />
       ) : null}
     </Box>
   );
