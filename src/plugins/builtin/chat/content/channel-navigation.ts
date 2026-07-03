@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { ChatChannel, ChatUserSummary } from "../../../../api-client";
+import type { ChatChannel } from "../../../../api-client";
 import { useThrottledCommitValue } from "../../../../react/use-throttled-commit-value";
 import {
   DEFAULT_CHAT_CHANNEL_ID,
   normalizeChannelId,
 } from "../channels";
-import type { ChatContentController } from "./types";
 
 const CHANNEL_NAVIGATION_COMMIT_DELAY_MS = 150;
 
@@ -20,8 +19,6 @@ export function useChatChannelNavigation({
   channelIdRef,
   channels,
   channelsLoading,
-  closeProfilePopover,
-  controller,
   focused,
   inputFocused,
   onChannelChange,
@@ -33,8 +30,6 @@ export function useChatChannelNavigation({
   channelIdRef: MutableRefObject<string>;
   channels: ChatChannel[];
   channelsLoading: boolean;
-  closeProfilePopover: () => void;
-  controller: ChatContentController;
   focused: boolean;
   inputFocused: boolean;
   onChannelChange?: (channelId: string) => void;
@@ -46,7 +41,6 @@ export function useChatChannelNavigation({
   focusChannelSidebar: () => boolean;
   focusChatContent: () => boolean;
   moveSidebarChannelSelection: (direction: "up" | "down") => boolean;
-  openDirectMessage: (target: ChatUserSummary) => Promise<void>;
   selectSidebarChannel: (channelId: string) => void;
   setDirectExpanded: Dispatch<SetStateAction<boolean>>;
   setSidebarFocused: (nextFocused: boolean) => void;
@@ -81,19 +75,6 @@ export function useChatChannelNavigation({
     flushValue: flushSidebarCursorChannelId,
     replaceValue: replaceSidebarCursorChannelId,
   } = useThrottledCommitValue(channelId, changeChannel, CHANNEL_NAVIGATION_COMMIT_DELAY_MS);
-
-  const openDirectMessage = useCallback(async (target: ChatUserSummary) => {
-    if (!target.id && !target.username) return;
-    try {
-      const channel = await controller.openDirectChannel({
-        userId: target.id,
-        username: target.username ?? undefined,
-      });
-      setDirectExpanded(true);
-      setSidebarCursorChannelId(channel.id, { immediate: true });
-      closeProfilePopover();
-    } catch {}
-  }, [closeProfilePopover, controller, setSidebarCursorChannelId]);
 
   useEffect(() => {
     if (!onChannelChange || channelsLoading || channels.length === 0) return;
@@ -185,7 +166,6 @@ export function useChatChannelNavigation({
     focusChannelSidebar,
     focusChatContent,
     moveSidebarChannelSelection,
-    openDirectMessage,
     selectSidebarChannel,
     setDirectExpanded,
     setSidebarFocused,

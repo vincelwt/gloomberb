@@ -5,6 +5,7 @@ import { AppContext, appReducer, createInitialState, PaneInstanceProvider } from
 import { createConfigBackedTestPluginRuntime, createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { createDefaultConfig, findPaneInstance, type PaneInstanceConfig } from "../../../types/config";
 import { TextAttributes } from "../../../ui";
+import { apiClient } from "../../../api-client";
 import { PluginRenderProvider } from "../../runtime";
 import { gloomberbCloudPlugin } from "../cloud";
 import { ChatContent } from "../chat";
@@ -18,6 +19,7 @@ import {
   installChatApiTestDefaults,
   installServerChannels,
   lineText,
+  makeMessage,
   MemoryPersistence,
   type ChatTestSetup,
 } from "./test-harness";
@@ -214,6 +216,72 @@ describe("ChatContent channel sidebar", () => {
     expect(setup().captureCharFrame()).not.toContain("#options");
   });
 
+  test("opens a new direct-message dialog from the DMs header", async () => {
+    const controller = createController({
+      messages: [{
+        ...makeMessage(1),
+        user: { id: "u2", username: "bob", displayName: "Bob" },
+      }],
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    });
+    installServerChannels(controller);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    const openedTargets: Array<{ username?: string }> = [];
+    const originalOpenDirectChannel = apiClient.openDirectChannel.bind(apiClient);
+    apiClient.openDirectChannel = async (target) => {
+      openedTargets.push(target);
+      return {
+        id: "dm:bob",
+        name: "@bob",
+        kind: "direct",
+        created_at: "2026-07-03T09:30:00.000Z",
+        dmUser: { id: "u2", username: "bob", displayName: "Bob" },
+      };
+    };
+    const ChannelPane = createChannelPane(controller, "everyone");
+
+    try {
+      await act(async () => {
+        testSetup = await testRender(<ChannelPane />, {
+          width: 90,
+          height: 14,
+        });
+      });
+
+      await flushFrame();
+      const lines = setup().captureCharFrame().split("\n");
+      const row = lines.findIndex((line) => line.includes("DMs"));
+      const col = lines[row]?.lastIndexOf("+") ?? -1;
+      expect(row).toBeGreaterThanOrEqual(0);
+      expect(col).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await setup().mockMouse.click(col, row);
+        await setup().renderOnce();
+        await setup().renderOnce();
+      });
+      await flushFrame();
+
+      expect(setup().captureCharFrame()).toContain("New DM");
+
+      await act(async () => {
+        await setup().mockInput.typeText("@bob");
+        setup().mockInput.pressEnter();
+        await setup().renderOnce();
+        await setup().renderOnce();
+      });
+      await flushFrame();
+
+      expect(openedTargets).toEqual([{ username: "bob" }]);
+      expect(setup().captureCharFrame()).toContain("@bob");
+      expect(setup().captureCharFrame()).not.toContain("New DM");
+    } finally {
+      apiClient.openDirectChannel = originalOpenDirectChannel;
+    }
+  });
+
   test("shows the sidebar online count footer", async () => {
     const controller = createController({ sessionToken: "token-123" });
     installServerChannels(controller);
@@ -314,8 +382,6 @@ describe("ChatContent channel sidebar", () => {
         channelIdRef,
         channels,
         channelsLoading: false,
-        closeProfilePopover: () => {},
-        controller,
         focused: true,
         inputFocused: false,
         onChannelChange: handleChannelChange,
@@ -412,6 +478,7 @@ describe("ChatContent channel sidebar", () => {
       },
       registerPaneTemplate: () => {},
       registerTickerResearchTab: () => {},
+      registerSyncTransport: () => {},
       registerShortcut: () => {},
       registerCommand: () => {},
       showPane: () => {},

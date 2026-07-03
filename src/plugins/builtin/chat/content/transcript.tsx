@@ -29,7 +29,6 @@ interface ChatTranscriptProps {
   messages: ChatMessage[];
   nativePaneChrome: boolean | undefined;
   latestEditableMessageId: string | null;
-  openDirectMessage: (target: ChatUserSummary) => void;
   openTicker: (symbol: string) => void;
   profilePopoverUser: ChatUserSummary | null;
   registerMessageElement: (messageId: string, node: unknown | null) => void;
@@ -61,7 +60,6 @@ export function ChatTranscript({
   messages,
   nativePaneChrome,
   latestEditableMessageId,
-  openDirectMessage,
   openTicker,
   profilePopoverUser,
   registerMessageElement,
@@ -152,8 +150,6 @@ export function ChatTranscript({
         <UserProfilePopover
           user={profilePopoverUser}
           width={chatWidth}
-          currentUserId={user?.id}
-          onDirectMessage={openDirectMessage}
           onClose={scheduleProfilePopoverClose}
           onKeepOpen={cancelProfilePopoverClose}
         />

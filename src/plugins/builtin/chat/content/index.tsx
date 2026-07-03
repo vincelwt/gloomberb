@@ -32,6 +32,7 @@ import { buildChatUserByUsername } from "./user-map";
 import { useChatComposerRuntime } from "./composer-runtime";
 import { useChatMessageSelection } from "./selection-runtime";
 import type { ChatMessage } from "../../../../api-client";
+import { NewDmDialog } from "./new-dm-dialog";
 import {
   CHAT_MESSAGE_EDIT_WINDOW_MS,
   findLatestEditableChatMessage,
@@ -67,6 +68,7 @@ export function ChatContent({
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [followMessages, setFollowMessages] = useState(true);
+  const [newDmOpen, setNewDmOpen] = useState(false);
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const messageElementsRef = useRef(new Map<string, unknown>());
@@ -217,7 +219,6 @@ export function ChatContent({
     focusChannelSidebar,
     focusChatContent,
     moveSidebarChannelSelection,
-    openDirectMessage,
     selectSidebarChannel,
     setDirectExpanded,
     setSidebarFocused,
@@ -230,8 +231,6 @@ export function ChatContent({
     channelIdRef,
     channels,
     channelsLoading,
-    closeProfilePopover,
-    controller,
     focused,
     inputFocused,
     onChannelChange,
@@ -240,11 +239,42 @@ export function ChatContent({
   });
 
   const focusInput = useCallback(() => {
+    setNewDmOpen(false);
     setSidebarFocused(false);
     setInputFocused(true);
     dispatch({ type: "SET_INPUT_CAPTURED", captured: true });
     inputRef.current?.focus?.();
   }, [dispatch, setSidebarFocused]);
+
+  const closeNewDmDialog = useCallback(() => {
+    setNewDmOpen(false);
+    dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
+  }, [dispatch]);
+
+  const openNewDmDialog = useCallback(() => {
+    blurInput();
+    closeProfilePopover();
+    setSidebarFocused(false);
+    setNewDmOpen(true);
+    dispatch({ type: "SET_INPUT_CAPTURED", captured: true });
+  }, [blurInput, closeProfilePopover, dispatch, setSidebarFocused]);
+
+  const openConversationFromDialog = useCallback(async (usernames: string[]) => {
+    const channel = usernames.length === 1
+      ? await controller.openDirectChannel({ username: usernames[0] })
+      : await controller.openGroupChannel({ usernames });
+    setDirectExpanded(true);
+    channelIdRef.current = channel.id;
+    selectSidebarChannel(channel.id);
+    setSidebarFocused(false);
+    closeNewDmDialog();
+  }, [channelIdRef, closeNewDmDialog, controller, selectSidebarChannel, setDirectExpanded, setSidebarFocused]);
+
+  useEffect(() => {
+    if (!focused && newDmOpen) {
+      closeNewDmDialog();
+    }
+  }, [closeNewDmDialog, focused, newDmOpen]);
 
   const {
     beginEditLatestMessage,
@@ -327,7 +357,7 @@ export function ChatContent({
     focusChannelSidebar,
     focusChatContent,
     focusComposer,
-    focused,
+    focused: focused && !newDmOpen,
     hasOlderMessages,
     inputFocused,
     inputValueRef,
@@ -376,9 +406,11 @@ export function ChatContent({
           keyboardFocused={sidebarFocused}
           loading={channelsLoading}
           canManageNotifications={!!user?.emailVerified}
+          canCreateConversation={!!user?.emailVerified}
           directExpanded={directExpanded}
           onSelect={selectSidebarChannel}
           onFocusRequest={() => setSidebarFocused(true)}
+          onCreateConversation={openNewDmDialog}
           onToggleNotifications={(nextChannelId, enabled) => {
             controller.setChannelNotificationsEnabled(nextChannelId, enabled);
           }}
@@ -420,7 +452,6 @@ export function ChatContent({
         messages={messages}
         nativePaneChrome={nativePaneChrome}
         latestEditableMessageId={latestEditableMessageId}
-        openDirectMessage={openDirectMessage}
         openTicker={openTicker}
         profilePopoverUser={profilePopoverUser}
         registerMessageElement={registerMessageElement}
@@ -433,6 +464,17 @@ export function ChatContent({
         user={user}
         userByUsername={userByUsername}
       />
+
+      {newDmOpen ? (
+        <NewDmDialog
+          width={chatWidth}
+          height={height}
+          userByUsername={userByUsername}
+          currentUserId={user?.id}
+          onCancel={closeNewDmDialog}
+          onSubmit={openConversationFromDialog}
+        />
+      ) : null}
 
       {!nativePaneChrome && !canSend && (
         <Box height={1} width={contentWidth}>

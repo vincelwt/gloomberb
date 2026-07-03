@@ -4,7 +4,6 @@ import { colors } from "../../../../theme/colors";
 import type { ChatUserSummary, PublicPortfolioAnalytics } from "../../../../api-client";
 import { formatNumber } from "../../../../utils/format";
 import { truncateChannelLabel } from "../channels";
-import { ChatActionChip } from "./action-chip";
 
 export const PROFILE_POPOVER_CLOSE_DELAY_MS = 40;
 
@@ -117,15 +116,11 @@ function HeaderAnalyticsStats({
 export function UserProfilePopover({
   user,
   width,
-  currentUserId,
-  onDirectMessage,
   onClose,
   onKeepOpen,
 }: {
   user: ChatUserSummary;
   width: number;
-  currentUserId?: string | null;
-  onDirectMessage: (user: ChatUserSummary) => void;
   onClose: () => void;
   onKeepOpen: () => void;
 }) {
@@ -134,14 +129,12 @@ export function UserProfilePopover({
   const bio = user.bio?.trim();
   const analytics = user.portfolioAnalytics;
   const metrics = analytics ? analyticsMetrics(analytics) : [];
-  const canDm = user.id === currentUserId || user.acceptUnknownDms !== false;
-  const headerWidth = Math.max(1, popoverWidth - 4);
-  const dmWidth = canDm ? 5 : 9;
-  const maxStatsWidth = Math.max(0, headerWidth - dmWidth - 8);
+  const headerWidth = Math.max(1, popoverWidth - 2);
+  const maxStatsWidth = Math.max(0, headerWidth - 8);
   const statsWidth = metrics.length > 0 && maxStatsWidth >= 8
     ? Math.min(headerMetricsNaturalWidth(metrics), maxStatsWidth)
     : 0;
-  const usernameWidth = Math.max(1, headerWidth - dmWidth - (statsWidth > 0 ? statsWidth + 1 : 0));
+  const usernameWidth = Math.max(1, headerWidth - (statsWidth > 0 ? statsWidth + 1 : 0));
 
   return (
     <Box
@@ -171,14 +164,6 @@ export function UserProfilePopover({
           </>
         ) : null}
         <Box flexGrow={1} />
-        <ChatActionChip
-          label={canDm ? "DM" : "Closed"}
-          width={canDm ? 5 : 9}
-          emphasized
-          onPress={() => {
-            if (canDm) onDirectMessage(user);
-          }}
-        />
       </Box>
       {meta ? <Text fg={colors.textDim}>{truncateChannelLabel(meta, popoverWidth - 2)}</Text> : null}
       {bio ? (

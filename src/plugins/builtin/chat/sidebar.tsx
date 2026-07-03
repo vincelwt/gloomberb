@@ -109,9 +109,11 @@ export function ChannelSidebar({
   keyboardFocused,
   loading,
   canManageNotifications,
+  canCreateConversation,
   directExpanded,
   onSelect,
   onFocusRequest,
+  onCreateConversation,
   onToggleNotifications,
   onToggleDirectExpanded,
 }: {
@@ -125,9 +127,11 @@ export function ChannelSidebar({
   keyboardFocused: boolean;
   loading: boolean;
   canManageNotifications: boolean;
+  canCreateConversation: boolean;
   directExpanded: boolean;
   onSelect?: (channelId: string) => void;
   onFocusRequest?: () => void;
+  onCreateConversation?: () => void;
   onToggleNotifications?: (channelId: string, enabled: boolean) => void;
   onToggleDirectExpanded?: () => void;
 }) {
@@ -149,9 +153,9 @@ export function ChannelSidebar({
   const conversationUnread = conversationChannels.some((channel) => (channelStateById.get(channel.id)?.unreadCount ?? 0) > 0);
   const sidebarRows = useMemo(() => [
     ...publicChannels.map((channel) => ({ kind: "channel" as const, channel })),
-    ...(conversationChannels.length > 0 ? [{ kind: "direct-header" as const }] : []),
+    ...(conversationChannels.length > 0 || canCreateConversation ? [{ kind: "direct-header" as const }] : []),
     ...(directExpanded ? conversationChannels.map((channel) => ({ kind: "channel" as const, channel })) : []),
-  ], [conversationChannels, directExpanded, publicChannels]);
+  ], [canCreateConversation, conversationChannels, directExpanded, publicChannels]);
   const sidebarLayoutHeight = nativePaneChrome ? "100%" : height;
   const nativeFillStyle = nativePaneChrome ? { minHeight: 0 } : undefined;
   const sidebarBorder = borderWidth > 0
@@ -201,6 +205,26 @@ export function ChannelSidebar({
                 >
                   {` ${directExpanded ? "▾" : "▸"} DMs`}
                 </Text>
+                <Box flexGrow={1} />
+                {canCreateConversation ? (
+                  <Box
+                    width={3}
+                    height={1}
+                    alignItems="center"
+                    justifyContent="center"
+                    backgroundColor={hoveredChannelId === "direct-header:create" ? hoverBg() : sidebarBg}
+                    onMouseOver={() => setHoveredChannelId("direct-header:create")}
+                    onMouseOut={() => setHoveredChannelId((current) => (current === "direct-header:create" ? null : current))}
+                    onMouseDown={(event: any) => {
+                      event?.preventDefault?.();
+                      event?.stopPropagation?.();
+                      onCreateConversation?.();
+                    }}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <Text fg={colors.text} attributes={TextAttributes.BOLD}>+</Text>
+                  </Box>
+                ) : null}
               </Box>
             );
           }
