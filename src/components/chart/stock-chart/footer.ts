@@ -1,7 +1,8 @@
 import { useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-import { formatCompact } from "../../../utils/format";
+import { formatCompact, formatPercentRaw } from "../../../utils/format";
 import { formatMarketPriceWithCurrency } from "../../../market-data/market/format";
 import { usePaneFooter, type PaneFooterSegment, type PaneHint } from "../../layout/pane/footer";
+import { priceColor } from "../../../theme/colors";
 import type { PricePoint } from "../../../types/financials";
 import type { ProjectedChartPoint } from "../core/data";
 import type { DateWindowRange } from "../core/controller";
@@ -24,8 +25,53 @@ import {
   type StockChartViewportState,
 } from "./viewport";
 
-interface StockChartFooterOptions {
+interface StockChartOhlcReadout extends ProjectedChartPoint {
+  changePercent: number | null;
+}
+
+function summarizeOhlcWindow(points: readonly ProjectedChartPoint[]): StockChartOhlcReadout | null {
+  const first = points[0];
+  const last = points.at(-1);
+  if (!first || !last) return null;
+
+  let high = first.high;
+  let low = first.low;
+  let volume = 0;
+  for (const point of points) {
+    high = Math.max(high, point.high);
+    low = Math.min(low, point.low);
+    volume += point.volume;
+  }
+
+  return {
+    date: last.date,
+    open: first.open,
+    high,
+    low,
+    close: last.close,
+    volume,
+    changePercent: Number.isFinite(first.open) && first.open !== 0
+      ? ((last.close - first.open) / first.open) * 100
+      : null,
+  };
+}
+
+export function resolveStockChartFooterOhlcReadout({
+  activePoint,
+  hasDisplayCursor,
+  points,
+}: {
   activePoint: ProjectedChartPoint | null;
+  hasDisplayCursor: boolean;
+  points: readonly ProjectedChartPoint[];
+}): StockChartOhlcReadout | null {
+  if (hasDisplayCursor) {
+    return activePoint ? { ...activePoint, changePercent: null } : null;
+  }
+  return summarizeOhlcWindow(points);
+}
+
+interface StockChartFooterOptions {
   activePreset: TimeRange | null;
   baseDateBounds: DateWindowRange | null;
   boundsHistoryDates: Date[];
@@ -37,6 +83,7 @@ interface StockChartFooterOptions {
   history: PricePoint[];
   manualMinimumSpanMs: number | null;
   navigableDateWindow: DateWindowRange | null;
+  ohlcReadout: StockChartOhlcReadout | null;
   pendingAutoWindowRef: MutableRefObject<DateWindowRange | null>;
   pendingCanonicalResetRef: MutableRefObject<number>;
   persistRenderMode: (mode: ChartRenderMode) => void;
@@ -50,7 +97,6 @@ interface StockChartFooterOptions {
   setRenderedAutoView: Dispatch<SetStateAction<AutoRenderedView | null>>;
   setResolution: (resolution: ChartResolution) => void;
   setViewState: Dispatch<SetStateAction<StockChartViewportState>>;
-  showOhlcSummary: boolean;
   updateDisplayCursorTarget: (next: DisplayCursorState, motionKind: ChartCursorMotionKind) => void;
   visibleDateWindow: DateWindowRange | null;
   visiblePriceRange: number | undefined;
@@ -58,7 +104,6 @@ interface StockChartFooterOptions {
 }
 
 export function useStockChartFooter({
-  activePoint,
   activePreset,
   baseDateBounds,
   boundsHistoryDates,
@@ -70,6 +115,7 @@ export function useStockChartFooter({
   history,
   manualMinimumSpanMs,
   navigableDateWindow,
+  ohlcReadout,
   pendingAutoWindowRef,
   pendingCanonicalResetRef,
   persistRenderMode,
@@ -83,7 +129,6 @@ export function useStockChartFooter({
   setRenderedAutoView,
   setResolution,
   setViewState,
-  showOhlcSummary,
   updateDisplayCursorTarget,
   visibleDateWindow,
   visiblePriceRange,
@@ -196,7 +241,7 @@ export function useStockChartFooter({
   ]);
 
   const chartFooterInfo = useMemo<PaneFooterSegment[]>(() => {
-    if (compact || !showOhlcSummary || !activePoint) return [];
+    if (compact || !ohlcReadout) return [];
 
     const formatPrice = (value: number) => formatMarketPriceWithCurrency(value, chartCurrency, {
       assetCategory: chartAssetCategory,
@@ -210,16 +255,27 @@ export function useStockChartFooter({
         ? []
         : [
             { text: "O", tone: "label" as const },
-            { text: formatPrice(activePoint.open), tone: "value" as const },
+            { text: formatPrice(ohlcReadout.open), tone: "value" as const },
           ]),
       { text: "H", tone: "label" },
-      { text: formatPrice(activePoint.high), tone: "value" },
+      { text: formatPrice(ohlcReadout.high), tone: "value" },
       { text: "L", tone: "label" },
-      { text: formatPrice(activePoint.low), tone: "value" },
+      { text: formatPrice(ohlcReadout.low), tone: "value" },
       { text: "C", tone: "label" },
-      { text: formatPrice(activePoint.close), tone: "value" },
+      { text: formatPrice(ohlcReadout.close), tone: "value" },
+      ...(ohlcReadout.changePercent === null
+        ? []
+        : [
+            { text: "%", tone: "label" as const },
+            {
+              text: formatPercentRaw(ohlcReadout.changePercent),
+              tone: "value" as const,
+              color: priceColor(ohlcReadout.changePercent),
+              bold: true,
+            },
+          ]),
       { text: "V", tone: "label" },
-      { text: formatCompact(activePoint.volume), tone: "value" },
+      { text: formatCompact(ohlcReadout.volume), tone: "value" },
     ];
 
     return [{
@@ -227,12 +283,11 @@ export function useStockChartFooter({
       parts,
     }];
   }, [
-    activePoint,
     chartAssetCategory,
     chartCurrency,
     compact,
+    ohlcReadout,
     projectionMode,
-    showOhlcSummary,
     visiblePriceRange,
   ]);
 

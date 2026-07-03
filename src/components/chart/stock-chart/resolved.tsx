@@ -1,5 +1,5 @@
-import { memo, type ComponentProps } from "react";
-import { useStockChartFooter } from "./footer";
+import { memo, useMemo, type ComponentProps } from "react";
+import { resolveStockChartFooterOhlcReadout, useStockChartFooter } from "./footer";
 import { useStockChartKeyboardShortcuts } from "./keyboard";
 import { useStockChartControlRenderInvalidation } from "./rendering/invalidation";
 import { useStockChartRenderOutput } from "./rendering/output";
@@ -139,9 +139,23 @@ function useResolvedStockChartControls(
   } = runtime;
   const { output, status } = render;
   const manualMinimumSpanMs = getChartResolutionStepMs(dataRuntime.renderedResolution);
+  const ohlcReadout = useMemo(
+    () => output.showOhlcSummary
+      ? resolveStockChartFooterOhlcReadout({
+        activePoint: output.activePoint,
+        hasDisplayCursor: output.hasDisplayCursor,
+        points: projectionModel.projection.points,
+      })
+      : null,
+    [
+      output.activePoint,
+      output.hasDisplayCursor,
+      output.showOhlcSummary,
+      projectionModel.projection.points,
+    ],
+  );
 
   useStockChartFooter({
-    activePoint: output.activePoint,
     activePreset: viewportRuntime.activePreset,
     baseDateBounds: dataRuntime.baseDateBounds,
     boundsHistoryDates: dataRuntime.boundsHistoryDates,
@@ -153,6 +167,7 @@ function useResolvedStockChartControls(
     history: dataRuntime.history,
     manualMinimumSpanMs,
     navigableDateWindow: dataRuntime.navigableDateWindow,
+    ohlcReadout,
     pendingAutoWindowRef: interactionRuntime.pendingAutoWindowRef,
     pendingCanonicalResetRef: interactionRuntime.pendingCanonicalResetRef,
     persistRenderMode: viewportRuntime.persistRenderMode,
@@ -166,7 +181,6 @@ function useResolvedStockChartControls(
     setRenderedAutoView: dataRuntime.setRenderedAutoView,
     setResolution: viewportRuntime.setResolution,
     setViewState: settings.setViewState,
-    showOhlcSummary: output.showOhlcSummary,
     updateDisplayCursorTarget: interactionRuntime.updateDisplayCursorTarget,
     visibleDateWindow: dataRuntime.visibleDateWindow,
     visiblePriceRange: output.visiblePriceRange,
