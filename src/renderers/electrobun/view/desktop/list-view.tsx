@@ -20,17 +20,29 @@ function DefaultDesktopRow({
   selected: boolean;
 }) {
   return (
-    <Box flexDirection="row" justifyContent="space-between" width="100%" alignItems="center">
-      <Box flexDirection="row" alignItems="center" minWidth={0}>
+    <Box
+      flexDirection="row"
+      justifyContent="space-between"
+      width="100%"
+      minWidth={0}
+      alignItems="center"
+      style={{ boxSizing: "border-box" }}
+    >
+      <Box flexDirection="row" alignItems="center" minWidth={0} flexShrink={1}>
         <Text
           fg={selected ? colors.text : colors.textDim}
           attributes={selected ? TextAttributes.BOLD : 0}
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
         >
           {item.label}
         </Text>
       </Box>
       {item.detail && (
-        <Text fg={colors.textMuted}>
+        <Text fg={colors.textMuted} style={{ flexShrink: 0, marginLeft: 12 }}>
           {item.detail}
         </Text>
       )}
@@ -43,7 +55,10 @@ function listRowStyle(selected: boolean): CSSProperties {
     borderRadius: CONTROL_RADIUS,
     border: `1px solid ${selected ? colors.borderFocused : "transparent"}`,
     boxShadow: selected ? `inset 0 1px 0 ${blendHex(colors.bg, colors.textBright, 0.06)}` : undefined,
+    boxSizing: "border-box",
     cursor: "pointer",
+    maxWidth: "100%",
+    minWidth: 0,
     paddingInline: 10,
   };
 }

@@ -7,6 +7,7 @@ import { blendHex, colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, ScrollBox, Text, Textarea, TextAttributes, type TextareaRenderable, useRendererHost } from "../../../ui";
 import { useDialog, type AlertContext, type PromptContext } from "../../../ui/dialog";
+import { openNativeSelect, type NativeSelectElement } from "../../../components/ui/native-select";
 import { apiClient, type AccountProfile } from "../../../api-client";
 import { chatController } from "../chat/controller";
 import { CloudAuthNotice } from "../cloud/auth-actions";
@@ -151,6 +152,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const [activeTab, setActiveTab] = useState<AccountTab>("profile");
   const syncStatus = useCloudSyncStatus();
   const bioRef = useRef<TextareaRenderable | null>(null);
+  const portfolioNativeSelectRef = useRef<NativeSelectElement | null>(null);
   const refreshedSyncRevisionRef = useRef<number | null>(null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
@@ -418,6 +420,15 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     setDraftValue("sharedPortfolioId", selected === NO_PORTFOLIO_VALUE ? "" : selected);
   }, [dialog, portfolioChoices, setDraftValue]);
 
+  const openPortfolioPicker = useCallback(async () => {
+    setActiveField("sharedPortfolioId");
+    if (portfolioNativeSelectRef.current) {
+      openNativeSelect(portfolioNativeSelectRef.current);
+      return;
+    }
+    await openPortfolioDialog();
+  }, [openPortfolioDialog]);
+
   const cycleField = useCallback((delta: number) => {
     setActiveField((current) => {
       const index = fieldOrder.indexOf(current);
@@ -572,7 +583,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     draftRef,
     focused,
     openPasswordDialog,
-    openPortfolioDialog,
+    openPortfolioDialog: openPortfolioPicker,
     openUpgrade,
     saveProfile,
     setDraftValue,
@@ -721,6 +732,10 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                   border
                   borderColor={activeField === "bio" ? colors.borderFocused : colors.border}
                   backgroundColor={colors.panel}
+                  style={{
+                    borderRadius: 6,
+                    overflow: "hidden",
+                  }}
                 >
                   <Textarea
                     key={`bio:${profile?.updatedAt ?? "empty"}`}
@@ -740,13 +755,22 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
 
               <PublicAnalyticsGroup
                 preview={publicAnalyticsPreview}
+                choices={portfolioChoices}
+                value={draft.sharedPortfolioId || NO_PORTFOLIO_VALUE}
                 label={selectedPortfolioLabel(portfolios, draft.sharedPortfolioId)}
                 detail={profileAnalyticsDetail}
                 active={activeField === "sharedPortfolioId"}
                 width={formWidth}
                 disclaimer={draft.sharedPortfolioId ? "Only 1Y return and SPY Beta are shared. Positions are not shared." : null}
+                selectRef={(element) => {
+                  portfolioNativeSelectRef.current = element;
+                }}
                 onFocus={() => setActiveField("sharedPortfolioId")}
-                onOpen={() => { void openPortfolioDialog(); }}
+                onSelect={(selected) => {
+                  setActiveField("sharedPortfolioId");
+                  setDraftValue("sharedPortfolioId", selected === NO_PORTFOLIO_VALUE ? "" : selected);
+                }}
+                onOpen={() => { void openPortfolioPicker(); }}
               />
 
               <Box flexDirection="row" gap={1}>
@@ -767,15 +791,15 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                 onChange={(checked) => setDraftValue("weeklyRoundupEnabled", checked)}
               />
               <CheckboxRow
-                label="Smart Position/Watchlist Alerts"
+                label="Smart Alerts"
                 checked={draft.positionAlertsEnabled}
                 active={activeField === "positionAlertsEnabled"}
-                description="Automatic alerts for unusual portfolio or watchlist moves."
+                description="Unusual portfolio or watchlist moves."
                 width={formWidth}
                 onFocus={() => setActiveField("positionAlertsEnabled")}
                 onChange={(checked) => setDraftValue("positionAlertsEnabled", checked)}
               />
-              <Box flexDirection="row" gap={1}>
+              <Box flexDirection="row" gap={1} style={{ marginTop: 8 }}>
                 <Button
                   label={busy === "alerts" ? "Turning Off..." : "Turn Off Both"}
                   active={activeField === "emailAlertsOffAction"}

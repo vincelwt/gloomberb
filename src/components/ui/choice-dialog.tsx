@@ -37,6 +37,15 @@ function getInitialChoiceIndex(choices: ChoiceDialogChoice[], selectedChoiceId: 
   return selectedIndex >= 0 ? selectedIndex : 0;
 }
 
+function choiceDialogWidth(title: string, choices: ChoiceDialogChoice[]): number {
+  const contentWidth = Math.max(
+    title.length,
+    ...choices.map((choice) => choice.label.length + (choice.detail ? choice.detail.length + 4 : 0)),
+    ...choices.map((choice) => getChoiceDescription(choice).length),
+  );
+  return Math.max(34, Math.min(76, contentWidth + 4));
+}
+
 export function ChoiceDialog({
   resolve,
   title,
@@ -57,6 +66,7 @@ export function ChoiceDialog({
     detail: choice.detail,
     disabled: choice.disabled,
   })), [choices]);
+  const width = useMemo(() => choiceDialogWidth(title, choices), [choices, title]);
 
   useEffect(() => {
     setIndex((current) => clampChoiceIndex(current, choices.length));
@@ -82,7 +92,7 @@ export function ChoiceDialog({
 
   return (
     <DialogFrame title={title} footer={footer} showTitleDivider={false}>
-      <Box flexDirection="column">
+      <Box flexDirection="column" width={width}>
         <ListView
           items={items}
           selectedIndex={selectedIndex}
@@ -95,7 +105,7 @@ export function ChoiceDialog({
           onActivate={(_, nextIndex) => activateChoice(choices[nextIndex])}
         />
         <Box height={1} />
-        <Text fg={colors.textDim}>{getChoiceDescription(selectedChoice)}</Text>
+        <Text fg={colors.textDim} wrapText width={width}>{getChoiceDescription(selectedChoice)}</Text>
       </Box>
     </DialogFrame>
   );

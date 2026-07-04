@@ -1,7 +1,8 @@
 import { type ReactNode } from "react";
-import { Button, Checkbox, TextField } from "../../../components";
-import { Box, Text, TextAttributes } from "../../../ui";
+import { Button, Checkbox, TextField, type ChoiceDialogChoice } from "../../../components";
+import { Box, Text, TextAttributes, useUiHost } from "../../../ui";
 import { colors } from "../../../theme/colors";
+import { NativeSelect, type NativeSelectElement } from "../../../components/ui/native-select";
 import type { AccountFieldKey, ProfileAnalyticsPreview } from "./model";
 import { truncate } from "./model";
 
@@ -148,9 +149,12 @@ export function CheckboxRow({
   onFocus: () => void;
   onChange: (checked: boolean) => void;
 }) {
-  const labelWidth = accountFieldLabelWidth(width);
-  const controlWidth = Math.max(8, width - labelWidth - 1);
   const labelText = `${active ? "> " : "  "}${label}`;
+  const labelWidth = Math.min(
+    width - 9,
+    Math.max(accountFieldLabelWidth(width), Math.min(labelText.length, 34)),
+  );
+  const controlWidth = Math.max(8, width - labelWidth - 1);
   return (
     <Box
       flexDirection="column"
@@ -277,28 +281,38 @@ export function AccountAnalyticsPreview({
 
 export function PublicAnalyticsGroup({
   preview,
+  choices,
+  value,
   label,
   detail,
   active,
   width,
   disclaimer,
+  selectRef,
   onFocus,
+  onSelect,
   onOpen,
 }: {
   preview: ProfileAnalyticsPreview;
+  choices: ChoiceDialogChoice[];
+  value: string;
   label: string;
   detail?: string;
   active: boolean;
   width: number;
   disclaimer?: string | null;
+  selectRef?: (element: NativeSelectElement | null) => void;
   onFocus: () => void;
+  onSelect: (value: string) => void;
   onOpen: () => void;
 }) {
+  const isDesktop = useUiHost().kind === "desktop-web";
   const contentWidth = Math.max(1, width - 2);
   const labelText = active ? "> Public Stats:" : "  Public Stats:";
   const labelWidth = Math.min(accountFieldLabelWidth(width), Math.max(1, contentWidth));
   const buttonWidth = Math.max(14, Math.min(24, Math.floor(contentWidth * 0.3)));
-  const selectLabel = `${label} v`;
+  const buttonLabel = truncate(label, Math.max(1, buttonWidth - 4));
+  const nativeSelectWidth = buttonWidth * 8;
   const normalizedDetail = (detail ?? "").replace(/\.+$/, "");
   const displayPreview = (
     preview.metrics.length === 0
@@ -315,20 +329,36 @@ export function PublicAnalyticsGroup({
       width={width}
       onMouseOver={onFocus}
     >
-      <Box height={1} flexDirection="row" gap={1}>
+      <Box height={isDesktop ? "24px" : 1} flexDirection="row" gap={1} alignItems="center">
         <Text fg={active ? colors.textBright : colors.textDim} attributes={active ? TextAttributes.BOLD : 0}>
           {truncate(labelText, labelWidth)}
         </Text>
-        <Button
-          label={truncate(selectLabel, Math.max(1, buttonWidth - 2))}
-          variant="secondary"
-          width={buttonWidth}
-          active={active}
-          onPress={() => {
-            onFocus();
-            onOpen();
-          }}
-        />
+        {isDesktop ? (
+          <NativeSelect
+            value={value}
+            options={choices.map((choice) => ({
+              value: choice.id,
+              label: choice.label,
+              disabled: choice.disabled,
+            }))}
+            width={nativeSelectWidth}
+            height={22}
+            selectRef={selectRef}
+            onFocus={onFocus}
+            onChange={onSelect}
+          />
+        ) : (
+          <Button
+            label={`${buttonLabel} v`}
+            variant="secondary"
+            width={buttonWidth}
+            active={active}
+            onPress={() => {
+              onFocus();
+              onOpen();
+            }}
+          />
+        )}
         {metrics.length > 0 ? metrics.map((metric) => {
           const labelTextWidth = Math.max(1, Math.min(metric.label.length, metricWidth - 2));
           const valueWidth = Math.max(1, metricWidth - labelTextWidth - 1);

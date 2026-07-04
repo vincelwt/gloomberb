@@ -4,7 +4,7 @@ import { Box, Input, Text, Textarea, editableTextContextMenuItems, useRendererHo
 import { TextAttributes, type InputRenderable } from "../../../../ui";
 import { useShortcut } from "../../../../react/input";
 import { blendHex, colors } from "../../../../theme/colors";
-import { blendForContrast, higherContrast } from "../../../../theme/color-utils";
+import { contrastRatio } from "../../../../theme/color-utils";
 import { useThemeColors } from "../../../../theme/theme-context";
 import { isDetailBackNavigationKey } from "../../../../utils/back-navigation";
 import type { ButtonProps } from "../../../../components/ui/button";
@@ -53,7 +53,8 @@ export function WebButton({
       style={{
         border: `1px solid ${palette.border}`,
         borderRadius: CONTROL_RADIUS,
-        paddingInline: 8,
+        paddingLeft: 8,
+        paddingRight: 8,
         boxShadow: controlShadow(active),
         cursor: disabled ? "default" : "pointer",
       }}
@@ -61,7 +62,9 @@ export function WebButton({
       <Text
         fg={palette.fg}
         attributes={active ? TextAttributes.BOLD : 0}
-        style={{ fontWeight: active || variant === "primary" ? 700 : 600 }}
+        style={{
+          fontWeight: active || variant === "primary" ? 700 : 600,
+        }}
       >
         {label}
       </Text>
@@ -75,6 +78,27 @@ export function WebButton({
       )}
     </Box>
   );
+}
+
+function checkboxAccentColor(): string {
+  const base = colors.borderFocused;
+  const nativeCheckmark = "#ffffff";
+  const candidates = [
+    blendHex(base, colors.selected, 0.55),
+    blendHex(base, colors.selected, 0.65),
+    blendHex(base, "#000000", 0.45),
+    blendHex(base, "#000000", 0.52),
+    base,
+  ];
+  return candidates.find((candidate) => (
+    contrastRatio(candidate, nativeCheckmark) >= 4.5
+    && contrastRatio(candidate, colors.panel) >= 2.2
+  )) ?? candidates[1]!;
+}
+
+function checkboxCheckImage(): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14"><path d="M3 7.3 5.8 10 11.2 3.7" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 }
 
 export function WebCheckbox({
@@ -94,20 +118,8 @@ export function WebCheckbox({
     ? colors.textBright
     : colors.text;
   const visibleLabel = displayLabel ?? label;
-  const accentColor = blendForContrast(
-    higherContrast(colors.borderFocused, colors.selected, colors.panel),
-    colors.panel,
-    colors.textBright,
-    3.8,
-  );
-  const outlineColor = checked
-    ? blendForContrast(
-      higherContrast(colors.textBright, colors.bg, accentColor),
-      accentColor,
-      colors.bg,
-      3.2,
-    )
-    : controlBorderColor(active, false);
+  const accentColor = checkboxAccentColor();
+  const borderColor = checked ? accentColor : controlBorderColor(active, false);
   return (
     <Box
       flexDirection="column"
@@ -137,6 +149,7 @@ export function WebCheckbox({
           fontWeight: active ? 700 : 500,
           lineHeight: "20px",
           userSelect: "none",
+          position: "relative",
         }}
       >
         <input
@@ -145,14 +158,25 @@ export function WebCheckbox({
           readOnly
           disabled={disabled}
           style={{
+            appearance: "none",
+            WebkitAppearance: "none",
             width: 14,
             height: 14,
             margin: 0,
-            accentColor,
+            backgroundColor: checked ? accentColor : panelFill(),
+            backgroundImage: checked ? checkboxCheckImage() : undefined,
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+            backgroundSize: "12px 12px",
+            border: `1px solid ${borderColor}`,
+            borderRadius: 4,
+            boxShadow: active
+              ? `0 0 0 2px ${blendHex(colors.bg, colors.borderFocused, 0.28)}, inset 0 1px 0 rgba(255,255,255,0.16)`
+              : "inset 0 1px 0 rgba(255,255,255,0.10)",
+            boxSizing: "border-box",
             flexShrink: 0,
             cursor: disabled ? "default" : "pointer",
-            outline: `1px solid ${outlineColor}`,
-            outlineOffset: 1,
+            verticalAlign: "middle",
           }}
         />
         <span

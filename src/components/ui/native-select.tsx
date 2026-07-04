@@ -17,6 +17,7 @@ export interface NativeSelectProps {
   value: string;
   options: NativeSelectOption[];
   width?: number | string;
+  height?: number;
   includeUnsetOption?: boolean;
   selectRef?: (element: NativeSelectElement | null) => void;
   onFocus?: () => void;
@@ -41,6 +42,7 @@ export function NativeSelect({
   value,
   options,
   width = 184,
+  height = 28,
   includeUnsetOption = false,
   selectRef,
   onFocus,
@@ -49,7 +51,7 @@ export function NativeSelect({
   const hasCurrentValue = options.some((option) => option.value === value);
   const style: CSSProperties = {
     width,
-    height: 28,
+    height,
     color: colors.text,
     backgroundColor: blendHex(colors.panel, colors.textBright, 0.06),
     border: `1px solid ${colors.border}`,
@@ -66,7 +68,7 @@ export function NativeSelect({
 
   return (
     <Box
-      height="28px"
+      height={`${height}px`}
       flexDirection="row"
       alignItems="center"
       onMouseDown={(event: any) => {
