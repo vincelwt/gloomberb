@@ -10,6 +10,7 @@ const config: ElectrobunConfig = {
     identifier: "com.vincelwt.gloomberb",
     version: pkg.version,
     description: pkg.description,
+    urlSchemes: ["gloomberb"],
   },
   build: {
     bun: {

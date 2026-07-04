@@ -103,6 +103,41 @@ function requireDesktopWorkspace(): DesktopWorkspace {
   return desktopWorkspace;
 }
 
+const pendingDesktopDeepLinks: string[] = [];
+
+function isGloomberbDeepLink(rawUrl: string): boolean {
+  try {
+    return new URL(rawUrl).protocol === "gloomberb:";
+  } catch {
+    return false;
+  }
+}
+
+function readOpenUrlEvent(event: unknown): string | null {
+  const data = event && typeof event === "object" ? (event as { data?: unknown }).data : null;
+  if (!data || typeof data !== "object") return null;
+  const url = (data as { url?: unknown }).url;
+  return typeof url === "string" && url ? url : null;
+}
+
+function sendDesktopDeepLink(rawUrl: string): void {
+  if (!isGloomberbDeepLink(rawUrl)) return;
+  const rpc = getWindowRpc(MAIN_WINDOW_RPC_KEY);
+  if (!rpc || !isWindowRpcReady(MAIN_WINDOW_RPC_KEY)) {
+    pendingDesktopDeepLinks.push(rawUrl);
+    if (pendingDesktopDeepLinks.length > 20) pendingDesktopDeepLinks.shift();
+    return;
+  }
+  detachedWindowManager.focusWindowForRpcKey(MAIN_WINDOW_RPC_KEY);
+  rpc.send["desktop.deepLink"]({ url: rawUrl });
+}
+
+function flushPendingDesktopDeepLinks(): void {
+  if (pendingDesktopDeepLinks.length === 0) return;
+  const urls = pendingDesktopDeepLinks.splice(0);
+  for (const url of urls) sendDesktopDeepLink(url);
+}
+
 function remoteFailure(code: string, message: string): RemoteControlResponse {
   return { ok: false, error: { code, message } };
 }
@@ -377,6 +412,7 @@ async function initialize(
     syncConfigAccessors,
   });
   if (init.windowKind === "main") {
+    flushPendingDesktopDeepLinks();
     void ensureDesktopRemoteControlServer().catch((error) => {
       console.error("[remote] desktop control endpoint failed", summarizeError(error));
     });
@@ -500,6 +536,12 @@ Electrobun.events.on("context-menu-clicked", (event: unknown) => {
   forEachReadyWindowRpc((windowRpc) => {
     windowRpc.send["context-menu.select"](message);
   });
+});
+
+Electrobun.events.on("open-url", (event: unknown) => {
+  const url = readOpenUrlEvent(event);
+  if (!url) return;
+  sendDesktopDeepLink(url);
 });
 
 ApplicationMenu.on("application-menu-clicked", (event: unknown) => {

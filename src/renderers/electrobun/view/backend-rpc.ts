@@ -4,6 +4,7 @@ import {
   type ApplicationMenuSelectMessage,
   type CapabilityEventMessage,
   type ContextMenuSelectMessage,
+  type DesktopDeepLinkMessage,
   type DesktopDockPreviewMessage,
   type DesktopRestartMessage,
   type DesktopStateMessage,
@@ -18,6 +19,7 @@ import type { RemoteControlRequest, RemoteControlResponse } from "../../../remot
 
 type ContextMenuSelectListener = (message: ContextMenuSelectMessage) => void;
 type ApplicationMenuSelectListener = (message: ApplicationMenuSelectMessage) => void;
+type DesktopDeepLinkListener = (message: DesktopDeepLinkMessage) => void;
 type DesktopStateListener = (message: DesktopStateMessage) => void;
 type DesktopDockPreviewListener = (message: DesktopDockPreviewMessage) => void;
 type DesktopThemePreviewListener = (message: DesktopThemePreviewMessage) => void;
@@ -29,6 +31,8 @@ let initSnapshot: ElectrobunBackendInit | null = null;
 let remoteControlRequestHandler: RemoteControlRequestHandler | null = null;
 const contextMenuSelectListeners = new Map<string, Set<ContextMenuSelectListener>>();
 const applicationMenuSelectListeners = new Set<ApplicationMenuSelectListener>();
+const desktopDeepLinkListeners = new Set<DesktopDeepLinkListener>();
+const pendingDesktopDeepLinks: DesktopDeepLinkMessage[] = [];
 const desktopStateListeners = new Set<DesktopStateListener>();
 const desktopDockPreviewListeners = new Set<DesktopDockPreviewListener>();
 const desktopThemePreviewListeners = new Set<DesktopThemePreviewListener>();
@@ -64,6 +68,17 @@ function subscribe<T>(
   };
 }
 
+function dispatchDesktopDeepLink(message: DesktopDeepLinkMessage): void {
+  if (desktopDeepLinkListeners.size === 0) {
+    pendingDesktopDeepLinks.push(message);
+    if (pendingDesktopDeepLinks.length > 20) pendingDesktopDeepLinks.shift();
+    return;
+  }
+  for (const listener of desktopDeepLinkListeners) {
+    listener(message);
+  }
+}
+
 const rpc = Electroview.defineRPC<ElectrobunDesktopRpcSchema>({
   maxRequestTime: 120_000,
   handlers: {
@@ -91,6 +106,10 @@ const rpc = Electroview.defineRPC<ElectrobunDesktopRpcSchema>({
         for (const listener of applicationMenuSelectListeners) {
           listener(decoded);
         }
+      },
+      "desktop.deepLink": (message) => {
+        if (typeof message.url !== "string" || !message.url) return;
+        dispatchDesktopDeepLink({ url: message.url });
       },
       "desktop.state": (message) => {
         for (const listener of desktopStateListeners) {
@@ -185,6 +204,16 @@ export function onApplicationMenuSelect(listener: ApplicationMenuSelectListener)
   applicationMenuSelectListeners.add(listener);
   return () => {
     applicationMenuSelectListeners.delete(listener);
+  };
+}
+
+export function onDesktopDeepLink(listener: DesktopDeepLinkListener): () => void {
+  desktopDeepLinkListeners.add(listener);
+  for (const message of pendingDesktopDeepLinks.splice(0)) {
+    listener(message);
+  }
+  return () => {
+    desktopDeepLinkListeners.delete(listener);
   };
 }
 

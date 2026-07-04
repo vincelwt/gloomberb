@@ -22,6 +22,7 @@ import { PluginRegistry } from "./plugins/registry";
 import type { TickerRepository } from "./data/ticker-repository";
 import { ThemeProvider, useThemeColors } from "./theme/theme-context";
 import type { AppConfig } from "./types/config";
+import type { DesktopDeepLinkBridge } from "./types/desktop-deeplink";
 import type { CliLaunchRequest } from "./types/plugin";
 import type { DataProvider } from "./types/data-provider";
 import type { DesktopDockPreviewState, DesktopSharedStateSnapshot, DesktopThemePreviewState, DesktopWindowBridge } from "./types/desktop-window";
@@ -32,6 +33,7 @@ import type { MarketDataCoordinator } from "./market-data/coordinator";
 import { createAppNotifier } from "./notifications/app-notifier";
 import { createAppServices } from "./core/app-services";
 import { useBrokerImportRuntime } from "./app/runtime/broker-import";
+import { useDesktopDeepLinkRuntime } from "./app/runtime/desktop-deeplink";
 import { useDesktopApplicationMenuRuntime } from "./app/runtime/desktop-menu";
 import { useAppGlobalShortcuts } from "./app/global-shortcuts";
 import { useAppPaneRuntime } from "./app/pane-runtime";
@@ -59,6 +61,7 @@ interface AppInnerProps {
   sessionSnapshot?: AppSessionSnapshot | null;
   desktopWindowBridge?: DesktopWindowBridge;
   desktopApplicationMenuBridge?: DesktopApplicationMenuBridge;
+  desktopDeepLinkBridge?: DesktopDeepLinkBridge;
   remoteControlAdapter?: RemoteControlAdapter;
 }
 
@@ -88,6 +91,7 @@ function AppInner({
   sessionSnapshot = null,
   desktopWindowBridge,
   desktopApplicationMenuBridge,
+  desktopDeepLinkBridge,
   remoteControlAdapter,
 }: AppInnerProps) {
   const dispatch = useAppDispatch();
@@ -223,6 +227,12 @@ function AppInner({
     rendererHost,
     runUpdateCheck,
     stateRef,
+  });
+
+  useDesktopDeepLinkRuntime({
+    desktopDeepLinkBridge,
+    desktopWindowKind: desktopWindowBridge?.kind,
+    pluginRegistry,
   });
 
   const focusedTickerSymbol = getFocusedTickerSymbol(state);
@@ -372,6 +382,7 @@ interface AppProps {
   cliLaunchRequest?: CliLaunchRequest | null;
   desktopWindowBridge?: DesktopWindowBridge;
   desktopApplicationMenuBridge?: DesktopApplicationMenuBridge;
+  desktopDeepLinkBridge?: DesktopDeepLinkBridge;
   desktopSnapshot?: DesktopSharedStateSnapshot | null;
   desktopThemePreview?: DesktopThemePreviewState | null;
   remoteControlAdapter?: RemoteControlAdapter;
@@ -383,6 +394,7 @@ export function App({
   cliLaunchRequest = null,
   desktopWindowBridge,
   desktopApplicationMenuBridge,
+  desktopDeepLinkBridge,
   desktopSnapshot = null,
   desktopThemePreview = null,
   remoteControlAdapter,
@@ -470,6 +482,7 @@ export function App({
           sessionSnapshot={sessionSnapshot}
           desktopWindowBridge={desktopWindowBridge}
           desktopApplicationMenuBridge={desktopApplicationMenuBridge}
+          desktopDeepLinkBridge={desktopDeepLinkBridge}
           remoteControlAdapter={remoteControlAdapter}
         />
       </AppProvider>

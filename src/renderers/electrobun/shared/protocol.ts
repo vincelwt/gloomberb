@@ -60,6 +60,10 @@ export interface DesktopRestartMessage {
   source?: string;
 }
 
+export interface DesktopDeepLinkMessage {
+  url: string;
+}
+
 export interface RemoteControlRequestMessage {
   request: RemoteControlRequest;
 }
@@ -89,6 +93,7 @@ export interface ElectrobunDesktopRpcSchema {
       "desktop.state": DesktopStateMessage;
       "desktop.dockPreview": DesktopDockPreviewMessage;
       "desktop.themePreview": DesktopThemePreviewMessage;
+      "desktop.deepLink": DesktopDeepLinkMessage;
       "update.progress": UpdateProgressMessage;
       "capability.event": CapabilityEventMessage;
     };

@@ -21,6 +21,7 @@ import { webNativeRenderer } from "./native-renderer";
 import { WebToastHostProvider } from "./toast-host";
 import { createWebUiHost, webRendererHost } from "./ui-host";
 import { createApplicationMenuBridge } from "./application-menu-bridge";
+import { createDesktopDeepLinkBridge } from "./desktop-deeplink-bridge";
 import { createDesktopWindowBridge } from "./desktop/window/bridge";
 import { prepareDetachedSnapshot } from "./desktop/window/snapshot";
 
@@ -88,6 +89,7 @@ async function boot() {
   const config = desktopSnapshot?.config ?? init.config;
   const desktopWindowBridge = createDesktopWindowBridge(init.windowKind, init.paneId);
   const desktopApplicationMenuBridge = createApplicationMenuBridge();
+  const desktopDeepLinkBridge = createDesktopDeepLinkBridge();
   const webUiHost = createWebUiHost(init.desktopPlatform);
   const remoteControlAdapter = init.windowKind === "main"
     ? { registerHandler: setElectrobunRemoteRequestHandler }
@@ -103,6 +105,7 @@ async function boot() {
                   config={config}
                   desktopWindowBridge={desktopWindowBridge}
                   desktopApplicationMenuBridge={desktopApplicationMenuBridge}
+                  desktopDeepLinkBridge={desktopDeepLinkBridge}
                   desktopSnapshot={desktopSnapshot}
                   desktopThemePreview={init.desktopThemePreview}
                   remoteControlAdapter={remoteControlAdapter}
