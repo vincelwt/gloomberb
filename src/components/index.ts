@@ -25,6 +25,7 @@ export { PaneFooterScope, usePaneFooter } from "./layout/pane/footer";
 export type { PaneFooterSegment, PaneHint } from "./layout/pane/footer";
 export { useExternalLinkFooter } from "./use-external-link-footer";
 export { Button } from "./ui/button";
+export { Checkbox } from "./ui/checkbox";
 export { ConfirmDialog } from "./ui/confirm-dialog";
 export { ChoiceDialog } from "./ui/choice-dialog";
 export type { ChoiceDialogChoice } from "./ui/choice-dialog";

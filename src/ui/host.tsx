@@ -85,7 +85,7 @@ export interface SyntaxStyleLike {
 export interface BoxRenderable {
   x?: number;
   y?: number;
-  width?: number;
+  width?: number | string;
   height?: number;
   absoluteX?: number;
   absoluteY?: number;
@@ -264,6 +264,17 @@ export interface HostTabsProps {
   palette: HostTabsPalette;
 }
 
+export interface HostCheckboxProps {
+  label: string;
+  checked: boolean;
+  onChange?: (checked: boolean) => void;
+  disabled?: boolean;
+  active?: boolean;
+  description?: string;
+  width?: number;
+  variant?: "default" | "desktop";
+}
+
 export interface UiHost {
   kind?: "opentui" | "desktop-web";
   capabilities?: {
@@ -299,6 +310,7 @@ export interface UiHost {
   DialogFrame?: ComponentType<any>;
   PageStackView?: ComponentType<any>;
   Tabs?: ComponentType<HostTabsProps>;
+  Checkbox?: ComponentType<HostCheckboxProps>;
   DataTable?: ComponentType<any>;
   createSyntaxStyle?(): SyntaxStyleLike;
   colorFromHex?(hex: string): unknown;

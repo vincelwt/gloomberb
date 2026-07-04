@@ -7,6 +7,7 @@ import { backendRequest } from "./backend-rpc";
 import { WebDataTable } from "./data-table";
 import {
   WebButton,
+  WebCheckbox,
   WebDialogFrame,
   WebListView,
   WebMessageComposer,
@@ -82,6 +83,7 @@ export function createWebUiHost(desktopPlatform?: string): UiHost {
     Input: WebInput,
     Textarea: WebTextarea,
     Button: WebButton,
+    Checkbox: WebCheckbox,
     TextField: WebTextField,
     MessageComposer: WebMessageComposer,
     ListView: WebListView,

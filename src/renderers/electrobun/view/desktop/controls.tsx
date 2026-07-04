@@ -7,6 +7,7 @@ import { blendHex, colors } from "../../../../theme/colors";
 import { useThemeColors } from "../../../../theme/theme-context";
 import { isDetailBackNavigationKey } from "../../../../utils/back-navigation";
 import type { ButtonProps } from "../../../../components/ui/button";
+import type { CheckboxProps } from "../../../../components/ui/checkbox";
 import type { TextFieldProps } from "../../../../components/ui/fields";
 import type { DialogFrameProps } from "../../../../components/ui/frame";
 import type { MessageComposerProps } from "../../../../components/ui/message-composer";
@@ -71,6 +72,90 @@ export function WebButton({
           {shortcut}
         </Text>
       )}
+    </Box>
+  );
+}
+
+export function WebCheckbox({
+  label,
+  checked,
+  onChange,
+  disabled = false,
+  active = false,
+  description,
+  width,
+}: CheckboxProps) {
+  useThemeColors();
+  const textColor = disabled
+    ? colors.textMuted
+    : active
+    ? colors.textBright
+    : colors.text;
+  return (
+    <Box
+      flexDirection="column"
+      width={width}
+      data-gloom-role="desktop-checkbox"
+      data-gloom-interactive={disabled ? undefined : "true"}
+      style={{ opacity: disabled ? 0.55 : 1 }}
+    >
+      <label
+        onMouseDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!disabled) onChange?.(!checked);
+        }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          width: "100%",
+          minWidth: 0,
+          cursor: disabled ? "default" : "pointer",
+          color: textColor,
+          fontWeight: active ? 700 : 500,
+          lineHeight: "20px",
+          userSelect: "none",
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={checked}
+          readOnly
+          disabled={disabled}
+          style={{
+            width: 14,
+            height: 14,
+            margin: 0,
+            accentColor: colors.borderFocused,
+            flexShrink: 0,
+            cursor: disabled ? "default" : "pointer",
+          }}
+        />
+        <span
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {label}
+        </span>
+      </label>
+      {description ? (
+        <Text
+          fg={colors.textMuted}
+          wrapText
+          width={width}
+          style={{ paddingLeft: 22, lineHeight: "18px" }}
+        >
+          {description}
+        </Text>
+      ) : null}
     </Box>
   );
 }

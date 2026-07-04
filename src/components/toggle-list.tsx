@@ -1,6 +1,6 @@
-import { Box, Text, useUiHost } from "../ui";
-import { TextAttributes } from "../ui";
-import { blendHex, colors } from "../theme/colors";
+import { Box, useUiHost } from "../ui";
+import { colors } from "../theme/colors";
+import { Checkbox } from "./ui/checkbox";
 import { ListView, type ListRowState, type ListViewItem } from "./ui/list-view";
 
 interface ToggleListItem {
@@ -36,23 +36,14 @@ function DesktopToggleRow({
   state,
   rowIdPrefix,
   enabled,
+  onPress,
 }: {
   item: ListViewItem;
   state: ListRowState;
   rowIdPrefix?: string;
   enabled: boolean;
+  onPress: () => void;
 }) {
-  const checkboxBorder = enabled
-    ? colors.borderFocused
-    : state.selected
-    ? colors.textMuted
-    : colors.border;
-  const textColor = state.disabled
-    ? colors.textMuted
-    : state.selected
-    ? colors.text
-    : colors.textDim;
-
   return (
     <Box
       id={rowIdPrefix ? `${rowIdPrefix}:${item.id}` : undefined}
@@ -67,48 +58,15 @@ function DesktopToggleRow({
         opacity: state.disabled ? 0.55 : 1,
       }}
     >
-      <Box
-        alignItems="center"
-        justifyContent="center"
-        backgroundColor={enabled ? colors.borderFocused : "transparent"}
-        style={{
-          width: 16,
-          height: 16,
-          minWidth: 16,
-          alignSelf: "center",
-          border: `1px solid ${checkboxBorder}`,
-          borderRadius: 4,
-          boxShadow: enabled
-            ? `inset 0 1px 0 ${blendHex(colors.borderFocused, colors.textBright, 0.28)}`
-            : `inset 0 1px 0 ${blendHex(colors.bg, colors.textBright, 0.05)}`,
-        }}
-      >
-        {enabled && (
-          <Text
-            fg={colors.bg}
-            attributes={TextAttributes.BOLD}
-            style={{ fontSize: 12, lineHeight: "14px", fontWeight: 800 }}
-          >
-            {"✓"}
-          </Text>
-        )}
-      </Box>
-      <Box minWidth={0} flexShrink={1}>
-        <Text
-          fg={textColor}
-          attributes={state.selected ? TextAttributes.BOLD : 0}
-          style={{
-            display: "block",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            fontWeight: state.selected ? 700 : 500,
-            lineHeight: "16px",
-          }}
-        >
-          {item.label}
-        </Text>
-      </Box>
+      <Checkbox
+        label={item.label}
+        checked={enabled}
+        disabled={state.disabled}
+        active={state.selected}
+        width="100%"
+        variant="desktop"
+        onChange={onPress}
+      />
     </Box>
   );
 }
@@ -161,6 +119,13 @@ export function ToggleList({
       }}
       renderRow={(item, state, index) => {
         const toggleItem = items.find((entry) => entry.id === item.id);
+        const activate = (event?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
+          event?.stopPropagation?.();
+          event?.preventDefault?.();
+          if (state.disabled) return;
+          onSelect?.(index);
+          onToggle?.(item.id);
+        };
         if (isDesktopWeb) {
           return (
             <DesktopToggleRow
@@ -168,33 +133,24 @@ export function ToggleList({
               state={state}
               rowIdPrefix={rowIdPrefix}
               enabled={toggleItem?.enabled === true}
+              onPress={() => activate()}
             />
           );
         }
 
-        const checked = toggleItem?.enabled ? "\u2713" : " ";
-        const activate = (event: any) => {
-          event.stopPropagation?.();
-          if (state.disabled) return;
-          onSelect?.(index);
-          onToggle?.(item.id);
-        };
         return (
           <Box
             id={rowIdPrefix ? `${rowIdPrefix}:${item.id}` : undefined}
             flexDirection="row"
             onMouseDown={activate}
           >
-            <Text fg={state.selected ? colors.selectedText : colors.textDim}>
-              {state.selected ? "\u25b8 " : "  "}
-            </Text>
-            <Text
-              fg={state.selected ? colors.text : colors.textDim}
-              attributes={state.selected ? TextAttributes.BOLD : 0}
-              onMouseDown={activate}
-            >
-              {`[${checked}] ${item.label}`}
-            </Text>
+            <Checkbox
+              label={item.label}
+              checked={toggleItem?.enabled === true}
+              disabled={state.disabled}
+              active={state.selected}
+              onChange={() => activate()}
+            />
           </Box>
         );
       }}

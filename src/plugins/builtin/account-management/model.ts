@@ -17,7 +17,9 @@ export type AccountFieldKey =
   | "weeklyRoundupEnabled"
   | "positionAlertsEnabled"
   | "emailAlertsOffAction"
-  | "passwordAction";
+  | "upgradeAction"
+  | "passwordAction"
+  | "deleteAccountAction";
 
 export interface AccountDraft {
   username: string;
@@ -64,7 +66,9 @@ export const BASE_FIELD_ORDER: AccountFieldKey[] = [
   "weeklyRoundupEnabled",
   "positionAlertsEnabled",
   "emailAlertsOffAction",
+  "upgradeAction",
   "passwordAction",
+  "deleteAccountAction",
 ];
 
 export const NO_PORTFOLIO_VALUE = "__none__";

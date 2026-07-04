@@ -1,5 +1,6 @@
 import { Box, Text } from "../../../../ui";
 import { colors } from "../../../../theme/colors";
+import { Checkbox } from "../../../../components/ui/checkbox";
 
 export function RelationshipMetricsTable({
   rows,
@@ -39,7 +40,7 @@ export function RelationshipToggle({
 }) {
   return (
     <Box
-      width={label.length + 5}
+      width={label.length + 6}
       height={1}
       onMouseDown={(event: { preventDefault?: () => void; stopPropagation?: () => void }) => {
         event.preventDefault?.();
@@ -47,7 +48,12 @@ export function RelationshipToggle({
         onPress();
       }}
     >
-      <Text fg={checked ? colors.text : colors.textDim}>{checked ? "[x]" : "[ ]"} {label}</Text>
+      <Checkbox
+        label={label}
+        checked={checked}
+        width={label.length + 6}
+        onChange={onPress}
+      />
     </Box>
   );
 }

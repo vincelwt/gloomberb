@@ -1,24 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, ChoiceDialog } from "../../../components";
+import { Button, ChoiceDialog, ConfirmDialog, Tabs } from "../../../components";
 import { useAppSelector } from "../../../state/app/context";
 import { useChartQueries, useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
-import { Box, ScrollBox, Text, Textarea, TextAttributes, type TextareaRenderable } from "../../../ui";
+import { Box, ScrollBox, Text, Textarea, TextAttributes, type TextareaRenderable, useRendererHost } from "../../../ui";
 import { useDialog, type AlertContext, type PromptContext } from "../../../ui/dialog";
 import { apiClient, type AccountProfile } from "../../../api-client";
 import { chatController } from "../chat/controller";
 import { CloudAuthNotice } from "../cloud/auth-actions";
 import {
-  AccountAnalyticsPreview,
   AccountTextField,
   CheckboxRow,
   FieldRow,
-  PickerRow,
+  PublicAnalyticsGroup,
 } from "./form-components";
 import {
-  BASE_FIELD_ORDER,
   NO_PORTFOLIO_VALUE,
   buildPublishedProfileAnalyticsPreview,
   buildProfileAnalyticsPreview,
@@ -26,6 +24,7 @@ import {
   computeCumulativeReturn,
   countPortfolioHoldings,
   emptyToNull,
+  formatPlan,
   getPortfolioPositionTickers,
   portfolioOptionIds,
   profileToDraft,
@@ -47,10 +46,78 @@ import { useCloudSyncStatus } from "../../../sync/react";
 import { cloudSyncController } from "../../../sync/controller";
 import { setSyncedProfileAnalytics } from "../../../sync/profile-analytics";
 
-type AccountBusy = "profile" | "password" | "alerts" | null;
+type AccountBusy = "profile" | "password" | "alerts" | "billing" | "delete" | null;
+type AccountTab = "profile" | "emails" | "pro" | "advanced";
+
+const CLOUD_UPGRADE_URL = "https://gloom.sh/cloud?upgrade=pro";
+
+const ACCOUNT_TABS: Array<{ label: string; value: AccountTab }> = [
+  { label: "Profile", value: "profile" },
+  { label: "Emails", value: "emails" },
+  { label: "Pro", value: "pro" },
+  { label: "Advanced", value: "advanced" },
+];
+
+const ACCOUNT_TAB_FIELD_ORDER: Record<AccountTab, AccountFieldKey[]> = {
+  profile: [
+    "profilePublic",
+    "acceptUnknownDms",
+    "username",
+    "name",
+    "company",
+    "title",
+    "publicEmail",
+    "xAccount",
+    "bio",
+    "sharedPortfolioId",
+  ],
+  emails: ["weeklyRoundupEnabled", "positionAlertsEnabled", "emailAlertsOffAction"],
+  pro: ["upgradeAction"],
+  advanced: ["passwordAction", "deleteAccountAction"],
+};
+
+const FREE_BENEFITS = [
+  "Delayed market data",
+  "12h delayed news",
+  "Cloud sync",
+];
+
+const PRO_BENEFITS = [
+  "Real-time financial data",
+  "Real-time news wire",
+  "X data",
+  "Chat",
+  "AI Screener soon",
+];
+
+function BenefitList({
+  title,
+  benefits,
+  active,
+  width,
+}: {
+  title: string;
+  benefits: string[];
+  active: boolean;
+  width: number;
+}) {
+  return (
+    <Box flexDirection="column" width={width} backgroundColor={active ? colors.panel : undefined} paddingX={active ? 1 : 0}>
+      <Text fg={active ? colors.textBright : colors.textDim} attributes={active ? TextAttributes.BOLD : 0}>
+        {title}
+      </Text>
+      {benefits.map((benefit) => (
+        <Text key={benefit} fg={active ? colors.text : colors.textDim} wrapText width={Math.max(12, width - (active ? 2 : 0))}>
+          {`+ ${benefit}`}
+        </Text>
+      ))}
+    </Box>
+  );
+}
 
 export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const dialog = useDialog();
+  const renderer = useRendererHost();
   const config = useAppSelector((state) => state.config);
   const portfolios = config.portfolios;
   const baseCurrency = config.baseCurrency;
@@ -67,6 +134,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const [activeField, setActiveField] = useState<AccountFieldKey>("username");
   const [message, setMessage] = useState<{ tone: "info" | "success" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState<AccountBusy>(null);
+  const [activeTab, setActiveTab] = useState<AccountTab>("profile");
   const syncStatus = useCloudSyncStatus();
   const bioRef = useRef<TextareaRenderable | null>(null);
   const refreshedSyncRevisionRef = useRef<number | null>(null);
@@ -78,7 +146,8 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const fieldWidth = twoColumns ? Math.max(22, Math.floor((formWidth - 3) / 2)) : Math.max(18, Math.min(46, formWidth - 2));
   const fullFieldWidth = Math.max(18, Math.min(54, formWidth - 2));
   const bodyHeight = Math.max(5, height);
-  const fieldOrder = BASE_FIELD_ORDER;
+  const benefitColumnWidth = twoColumns ? Math.max(22, Math.floor((formWidth - 3) / 2)) : formWidth;
+  const fieldOrder = ACCOUNT_TAB_FIELD_ORDER[activeTab];
 
   const portfolioHoldingCounts = useMemo(() => countPortfolioHoldings(tickers), [tickers]);
   const portfolioChoices = useMemo(
@@ -274,12 +343,18 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
 
   useEffect(() => {
     if (!fieldOrder.includes(activeField)) {
-      setActiveField("username");
+      setActiveField(fieldOrder[0] ?? "username");
     }
   }, [activeField, fieldOrder]);
 
   const setDraftValue = useCallback(<K extends keyof AccountDraft>(key: K, value: AccountDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
+  }, []);
+
+  const selectTab = useCallback((tab: string) => {
+    const nextTab = tab as AccountTab;
+    setActiveTab(nextTab);
+    setActiveField(ACCOUNT_TAB_FIELD_ORDER[nextTab][0] ?? "username");
   }, []);
 
   const openPasswordDialog = useCallback(() => {
@@ -412,12 +487,65 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     }
   }, []);
 
+  const openUpgrade = useCallback(() => {
+    setActiveField("upgradeAction");
+    setBusy("billing");
+    setMessage({ tone: "info", text: "Opening Pro upgrade..." });
+    void renderer.openExternal(CLOUD_UPGRADE_URL)
+      .then(() => setMessage(null))
+      .catch((error) => {
+        setMessage({
+          tone: "error",
+          text: error instanceof Error ? error.message : "Failed to open upgrade page.",
+        });
+      })
+      .finally(() => setBusy(null));
+  }, [renderer]);
+
+  const deleteAccount = useCallback(async () => {
+    setActiveField("deleteAccountAction");
+    if (busy) return;
+    const confirmed = await dialog.prompt<boolean>({
+      closeOnClickOutside: false,
+      content: (context: PromptContext<boolean>) => (
+        <ConfirmDialog
+          {...context}
+          title="Delete Account"
+          body={[
+            "Delete your Gloom Cloud account?",
+            "This removes cloud profile, chat, sync, and billing-linked account data.",
+          ]}
+          confirmLabel="Delete Account"
+          confirmVariant="danger"
+        />
+      ),
+    }).catch(() => false);
+    if (!confirmed) return;
+
+    setBusy("delete");
+    setMessage({ tone: "info", text: "Deleting account..." });
+    try {
+      await apiClient.deleteAccount();
+      setProfile(null);
+      setDraft(profileToDraft(null));
+      setHasSession(false);
+      await chatController.refreshSession().catch(() => {});
+      setMessage({ tone: "success", text: "Account deleted." });
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Failed to delete account.",
+      });
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, dialog]);
+
   useAccountManagementFooter({
     busy,
     draft,
     hasSession,
     message,
-    openPasswordDialog,
     profile,
     saveProfile,
   });
@@ -426,10 +554,12 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     activeField,
     cycleField,
     cyclePortfolio,
+    deleteAccount,
     draftRef,
     focused,
     openPasswordDialog,
     openPortfolioDialog,
+    openUpgrade,
     saveProfile,
     setDraftValue,
     turnOffEmailAlerts,
@@ -444,189 +574,244 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   }
 
   return (
-    <Box flexDirection="column" width={width} height={height} paddingX={1}>
-      <ScrollBox height={bodyHeight} scrollY focusable={false}>
+    <Box flexDirection="column" width={width} height={height} paddingX={1} gap={1}>
+      <Tabs
+        tabs={ACCOUNT_TABS}
+        activeValue={activeTab}
+        onSelect={selectTab}
+        focused={focused}
+        variant="pill"
+        compact
+        keyboardNavigation={false}
+      />
+      <ScrollBox height={Math.max(3, bodyHeight - 2)} scrollY focusable={false}>
         <Box flexDirection="column" width={formWidth} gap={1}>
-          <FieldRow twoColumns={twoColumns}>
-            <AccountTextField
-              fieldKey="username"
-              label="Username"
-              value={draft.username}
-              placeholder="username"
-              activeField={activeField}
-              focused={focused}
-              width={fieldWidth}
-              onFocus={setActiveField}
-              onChange={(value) => setDraftValue("username", value)}
-              onSubmit={() => { void saveProfile(); }}
-            />
-            <AccountTextField
-              fieldKey="name"
-              label="Full Name"
-              value={draft.name}
-              placeholder="Full name"
-              activeField={activeField}
-              focused={focused}
-              width={fieldWidth}
-              onFocus={setActiveField}
-              onChange={(value) => setDraftValue("name", value)}
-              onSubmit={() => { void saveProfile(); }}
-            />
-          </FieldRow>
+          {activeTab === "profile" ? (
+            <>
+              <FieldRow twoColumns={twoColumns}>
+                <CheckboxRow
+                  label="Public Profile"
+                  checked={draft.profilePublic}
+                  active={activeField === "profilePublic"}
+                  width={fieldWidth}
+                  onFocus={() => setActiveField("profilePublic")}
+                  onChange={(checked) => setDraftValue("profilePublic", checked)}
+                />
+                <CheckboxRow
+                  label="Incoming DMs"
+                  checked={draft.acceptUnknownDms}
+                  active={activeField === "acceptUnknownDms"}
+                  width={fieldWidth}
+                  onFocus={() => setActiveField("acceptUnknownDms")}
+                  onChange={(checked) => setDraftValue("acceptUnknownDms", checked)}
+                />
+              </FieldRow>
 
-          <FieldRow twoColumns={twoColumns}>
-            <AccountTextField
-              fieldKey="company"
-              label="Company"
-              value={draft.company}
-              placeholder="Company"
-              activeField={activeField}
-              focused={focused}
-              width={fieldWidth}
-              onFocus={setActiveField}
-              onChange={(value) => setDraftValue("company", value)}
-              onSubmit={() => { void saveProfile(); }}
-            />
-            <AccountTextField
-              fieldKey="title"
-              label="Title"
-              value={draft.title}
-              placeholder="Title"
-              activeField={activeField}
-              focused={focused}
-              width={fieldWidth}
-              onFocus={setActiveField}
-              onChange={(value) => setDraftValue("title", value)}
-              onSubmit={() => { void saveProfile(); }}
-            />
-          </FieldRow>
+              <FieldRow twoColumns={twoColumns}>
+                <AccountTextField
+                  fieldKey="username"
+                  label="Username"
+                  value={draft.username}
+                  placeholder="username"
+                  activeField={activeField}
+                  focused={focused}
+                  width={fieldWidth}
+                  onFocus={setActiveField}
+                  onChange={(value) => setDraftValue("username", value)}
+                  onSubmit={() => { void saveProfile(); }}
+                />
+                <AccountTextField
+                  fieldKey="name"
+                  label="Full Name"
+                  value={draft.name}
+                  placeholder="Full name"
+                  activeField={activeField}
+                  focused={focused}
+                  width={fieldWidth}
+                  onFocus={setActiveField}
+                  onChange={(value) => setDraftValue("name", value)}
+                  onSubmit={() => { void saveProfile(); }}
+                />
+              </FieldRow>
 
-          <FieldRow twoColumns={twoColumns}>
-            <AccountTextField
-              fieldKey="publicEmail"
-              label="Public Email"
-              value={draft.publicEmail}
-              placeholder="public@example.com"
-              activeField={activeField}
-              focused={focused}
-              width={fieldWidth}
-              onFocus={setActiveField}
-              onChange={(value) => setDraftValue("publicEmail", value)}
-              onSubmit={() => { void saveProfile(); }}
-            />
-            <AccountTextField
-              fieldKey="xAccount"
-              label="X Account"
-              value={draft.xAccount}
-              placeholder="handle"
-              activeField={activeField}
-              focused={focused}
-              width={fieldWidth}
-              onFocus={setActiveField}
-              onChange={(value) => setDraftValue("xAccount", value)}
-              onSubmit={() => { void saveProfile(); }}
-            />
-          </FieldRow>
+              <FieldRow twoColumns={twoColumns}>
+                <AccountTextField
+                  fieldKey="company"
+                  label="Company"
+                  value={draft.company}
+                  placeholder="Company"
+                  activeField={activeField}
+                  focused={focused}
+                  width={fieldWidth}
+                  onFocus={setActiveField}
+                  onChange={(value) => setDraftValue("company", value)}
+                  onSubmit={() => { void saveProfile(); }}
+                />
+                <AccountTextField
+                  fieldKey="title"
+                  label="Title"
+                  value={draft.title}
+                  placeholder="Title"
+                  activeField={activeField}
+                  focused={focused}
+                  width={fieldWidth}
+                  onFocus={setActiveField}
+                  onChange={(value) => setDraftValue("title", value)}
+                  onSubmit={() => { void saveProfile(); }}
+                />
+              </FieldRow>
 
-          <Box flexDirection="column" onMouseDown={() => setActiveField("bio")}>
-            <Text fg={activeField === "bio" ? colors.textBright : colors.textDim} attributes={activeField === "bio" ? TextAttributes.BOLD : 0}>
-              {activeField === "bio" ? "> Bio" : "  Bio"}
-            </Text>
-            <Box height={3} width={fullFieldWidth} border borderColor={activeField === "bio" ? colors.borderFocused : colors.border} backgroundColor={colors.panel}>
-              <Textarea
-                key={`bio:${profile?.updatedAt ?? "empty"}`}
-                ref={bioRef}
-                initialValue={draft.bio}
-                placeholder="Short profile bio"
-                focused={focused && activeField === "bio"}
-                textColor={colors.text}
-                placeholderColor={colors.textDim}
-                backgroundColor={colors.panel}
-                flexGrow={1}
-                wrapText
-                onInput={(value: string) => setDraftValue("bio", value)}
+              <FieldRow twoColumns={twoColumns}>
+                <AccountTextField
+                  fieldKey="publicEmail"
+                  label="Public Email"
+                  value={draft.publicEmail}
+                  placeholder="public@example.com"
+                  activeField={activeField}
+                  focused={focused}
+                  width={fieldWidth}
+                  onFocus={setActiveField}
+                  onChange={(value) => setDraftValue("publicEmail", value)}
+                  onSubmit={() => { void saveProfile(); }}
+                />
+                <AccountTextField
+                  fieldKey="xAccount"
+                  label="X Account"
+                  value={draft.xAccount}
+                  placeholder="handle"
+                  activeField={activeField}
+                  focused={focused}
+                  width={fieldWidth}
+                  onFocus={setActiveField}
+                  onChange={(value) => setDraftValue("xAccount", value)}
+                  onSubmit={() => { void saveProfile(); }}
+                />
+              </FieldRow>
+
+              <Box flexDirection="column" onMouseDown={() => setActiveField("bio")}>
+                <Text fg={activeField === "bio" ? colors.textBright : colors.textDim} attributes={activeField === "bio" ? TextAttributes.BOLD : 0}>
+                  {activeField === "bio" ? "> Bio" : "  Bio"}
+                </Text>
+                <Box height={3} width={fullFieldWidth} border borderColor={activeField === "bio" ? colors.borderFocused : colors.border} backgroundColor={colors.panel}>
+                  <Textarea
+                    key={`bio:${profile?.updatedAt ?? "empty"}`}
+                    ref={bioRef}
+                    initialValue={draft.bio}
+                    placeholder="Short profile bio"
+                    focused={focused && activeField === "bio"}
+                    textColor={colors.text}
+                    placeholderColor={colors.textDim}
+                    backgroundColor={colors.panel}
+                    flexGrow={1}
+                    wrapText
+                    onInput={(value: string) => setDraftValue("bio", value)}
+                  />
+                </Box>
+              </Box>
+
+              <PublicAnalyticsGroup
+                preview={publicAnalyticsPreview}
+                label={selectedPortfolioLabel(portfolios, draft.sharedPortfolioId)}
+                detail={profileAnalyticsDetail}
+                active={activeField === "sharedPortfolioId"}
+                width={formWidth}
+                disclaimer={draft.sharedPortfolioId ? "Only 1Y return and SPY Beta are shared. Positions are not shared." : null}
+                onFocus={() => setActiveField("sharedPortfolioId")}
+                onOpen={() => { void openPortfolioDialog(); }}
               />
-            </Box>
-          </Box>
 
-          <FieldRow twoColumns={twoColumns}>
-            <CheckboxRow
-              label="Public Profile"
-              checked={draft.profilePublic}
-              active={activeField === "profilePublic"}
-              width={fieldWidth}
-              onFocus={() => setActiveField("profilePublic")}
-              onChange={(checked) => setDraftValue("profilePublic", checked)}
-            />
-            <CheckboxRow
-              label="Incoming DMs"
-              checked={draft.acceptUnknownDms}
-              active={activeField === "acceptUnknownDms"}
-              width={fieldWidth}
-              onFocus={() => setActiveField("acceptUnknownDms")}
-              onChange={(checked) => setDraftValue("acceptUnknownDms", checked)}
-            />
-          </FieldRow>
+              <Box flexDirection="row" gap={1}>
+                <Button label={busy === "profile" ? "Saving..." : "Save Profile"} variant="primary" onPress={() => { void saveProfile(); }} disabled={!!busy} />
+              </Box>
+            </>
+          ) : null}
 
-          <PickerRow
-            label="Profile Analytics"
-            value={selectedPortfolioLabel(portfolios, draft.sharedPortfolioId)}
-            detail={profileAnalyticsDetail}
-            active={activeField === "sharedPortfolioId"}
-            width={formWidth}
-            onFocus={() => setActiveField("sharedPortfolioId")}
-            onOpen={() => { void openPortfolioDialog(); }}
-          />
-
-          <AccountAnalyticsPreview
-            preview={publicAnalyticsPreview}
-            width={formWidth}
-            disclaimer={draft.sharedPortfolioId ? "Only 1Y return and SPY Beta are shared. Positions are not shared." : null}
-          />
-
-          <Box flexDirection="column" gap={1}>
-            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-              Email Alerts
-            </Text>
-            <FieldRow twoColumns={twoColumns}>
+          {activeTab === "emails" ? (
+            <>
               <CheckboxRow
                 label="Weekly Roundup"
                 checked={draft.weeklyRoundupEnabled}
                 active={activeField === "weeklyRoundupEnabled"}
-                description="Friday after market close portfolio and watchlist email."
-                width={fieldWidth}
+                description="Friday after market close."
+                width={formWidth}
                 onFocus={() => setActiveField("weeklyRoundupEnabled")}
                 onChange={(checked) => setDraftValue("weeklyRoundupEnabled", checked)}
               />
-            </FieldRow>
-            <CheckboxRow
-              label="Position/Watchlist Alerts"
-              checked={draft.positionAlertsEnabled}
-              active={activeField === "positionAlertsEnabled"}
-              description="Email alerts for large position or watchlist jumps."
-              width={formWidth}
-              onFocus={() => setActiveField("positionAlertsEnabled")}
-              onChange={(checked) => setDraftValue("positionAlertsEnabled", checked)}
-            />
-            <Box flexDirection="row" gap={1}>
-              <Button
-                label={busy === "alerts" ? "Turning Off..." : "Turn Off Email Alerts"}
-                active={activeField === "emailAlertsOffAction"}
-                onPress={() => { void turnOffEmailAlerts(); }}
-                disabled={!!busy || (!draft.weeklyRoundupEnabled && !draft.positionAlertsEnabled)}
+              <CheckboxRow
+                label="Position/Watchlist Alerts"
+                checked={draft.positionAlertsEnabled}
+                active={activeField === "positionAlertsEnabled"}
+                description="Large portfolio or watchlist jumps."
+                width={formWidth}
+                onFocus={() => setActiveField("positionAlertsEnabled")}
+                onChange={(checked) => setDraftValue("positionAlertsEnabled", checked)}
               />
-            </Box>
-          </Box>
+              <Box flexDirection="row" gap={1}>
+                <Button
+                  label={busy === "alerts" ? "Turning Off..." : "Turn Off Both"}
+                  active={activeField === "emailAlertsOffAction"}
+                  onPress={() => { void turnOffEmailAlerts(); }}
+                  disabled={!!busy || (!draft.weeklyRoundupEnabled && !draft.positionAlertsEnabled)}
+                />
+                <Button label={busy === "profile" ? "Saving..." : "Save"} variant="primary" onPress={() => { void saveProfile(); }} disabled={!!busy} />
+              </Box>
+            </>
+          ) : null}
 
-          <Box flexDirection="row" gap={1}>
-            <Button label={busy === "profile" ? "Saving..." : "Save Profile"} variant="primary" onPress={() => { void saveProfile(); }} disabled={!!busy} />
-            <Button
-              label="Change Password"
-              active={activeField === "passwordAction"}
-              onPress={openPasswordDialog}
-              disabled={!!busy}
-            />
-          </Box>
+          {activeTab === "pro" ? (
+            <>
+              <Box flexDirection="row" gap={1}>
+                <Text fg={colors.textDim}>Status</Text>
+                <Text fg={profile?.plan === "pro" ? colors.positive : colors.textBright} attributes={TextAttributes.BOLD}>
+                  {formatPlan(profile?.plan)}
+                </Text>
+                {profile?.email ? <Text fg={colors.textMuted}>{profile.email}</Text> : null}
+              </Box>
+              <FieldRow twoColumns={twoColumns}>
+                <BenefitList
+                  title="Free"
+                  benefits={FREE_BENEFITS}
+                  active={profile?.plan !== "pro"}
+                  width={benefitColumnWidth}
+                />
+                <BenefitList
+                  title="Pro $49/mo"
+                  benefits={PRO_BENEFITS}
+                  active={profile?.plan === "pro"}
+                  width={benefitColumnWidth}
+                />
+              </FieldRow>
+              <Box flexDirection="row" gap={1}>
+                <Button
+                  label={profile?.plan === "pro" ? "Manage Pro" : busy === "billing" ? "Opening..." : "Upgrade to Pro"}
+                  variant={profile?.plan === "pro" ? "secondary" : "primary"}
+                  active={activeField === "upgradeAction"}
+                  onPress={openUpgrade}
+                  disabled={!!busy}
+                />
+              </Box>
+            </>
+          ) : null}
+
+          {activeTab === "advanced" ? (
+            <>
+              <Box flexDirection="row" gap={1}>
+                <Button
+                  label="Change Password"
+                  active={activeField === "passwordAction"}
+                  onPress={openPasswordDialog}
+                  disabled={!!busy}
+                />
+                <Button
+                  label={busy === "delete" ? "Deleting..." : "Delete Account"}
+                  variant="danger"
+                  active={activeField === "deleteAccountAction"}
+                  onPress={() => { void deleteAccount(); }}
+                  disabled={!!busy}
+                />
+              </Box>
+            </>
+          ) : null}
           <Box height={1} />
         </Box>
       </ScrollBox>

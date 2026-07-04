@@ -8,22 +8,19 @@ export function useAccountManagementFooter({
   draft,
   hasSession,
   message,
-  openPasswordDialog,
   profile,
   saveProfile,
 }: {
-  busy: "profile" | "password" | "alerts" | null;
+  busy: "profile" | "password" | "alerts" | "billing" | "delete" | null;
   draft: AccountDraft;
   hasSession: boolean;
   message: { tone: "info" | "success" | "error"; text: string } | null;
-  openPasswordDialog: () => void;
   profile: AccountProfile | null;
   saveProfile: () => Promise<void>;
 }) {
   const footerHints = useMemo<PaneHint[]>(() => [
     { id: "save", key: "Ctrl+S", label: "save", onPress: () => { void saveProfile(); }, disabled: !!busy || !hasSession },
-    { id: "password", key: "p", label: "assword", onPress: openPasswordDialog, disabled: !!busy || !hasSession },
-  ], [busy, hasSession, openPasswordDialog, saveProfile]);
+  ], [busy, hasSession, saveProfile]);
 
   usePaneFooter("account-management", () => ({
     info: [

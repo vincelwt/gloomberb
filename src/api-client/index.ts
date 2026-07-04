@@ -246,6 +246,10 @@ class GloomApiClient {
     return this.auth.changePassword(currentPassword, newPassword);
   }
 
+  async deleteAccount(): Promise<void> {
+    return this.auth.deleteAccount();
+  }
+
   async getChannels(): Promise<ChatChannel[]> {
     return this.chat.getChannels();
   }

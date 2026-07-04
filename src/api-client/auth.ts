@@ -175,4 +175,13 @@ export class CloudAuthApi {
       }),
     });
   }
+
+  async deleteAccount(): Promise<void> {
+    await this.options.request("/account", {
+      method: "DELETE",
+      body: JSON.stringify({}),
+    });
+    this.options.setSessionToken(null);
+    this.options.setCurrentUser(null);
+  }
 }

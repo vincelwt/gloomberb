@@ -35,6 +35,7 @@ export { contextMenuDivider } from "../types/context-menu";
 export type {
   BoxRenderable,
   ChartSurfaceProps,
+  HostCheckboxProps,
   Highlight,
   ImageSurfaceProps,
   InputRenderable,

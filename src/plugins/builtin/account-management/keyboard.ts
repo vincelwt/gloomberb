@@ -10,8 +10,10 @@ export function useAccountManagementKeyboard({
   focused,
   openPasswordDialog,
   openPortfolioDialog,
+  openUpgrade,
   saveProfile,
   setDraftValue,
+  deleteAccount,
   turnOffEmailAlerts,
 }: {
   activeField: AccountFieldKey;
@@ -21,8 +23,10 @@ export function useAccountManagementKeyboard({
   focused: boolean;
   openPasswordDialog: () => void;
   openPortfolioDialog: () => Promise<void>;
+  openUpgrade: () => void;
   saveProfile: () => Promise<void>;
   setDraftValue: <K extends keyof AccountDraft>(key: K, value: AccountDraft[K]) => void;
+  deleteAccount: () => Promise<void>;
   turnOffEmailAlerts: () => Promise<void>;
 }) {
   useShortcut((event) => {
@@ -95,16 +99,22 @@ export function useAccountManagementKeyboard({
       openPasswordDialog();
       return;
     }
+    if (!event.targetEditable && activeField === "upgradeAction" && isPlainKey(event, "space", "enter", "return")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openUpgrade();
+      return;
+    }
+    if (!event.targetEditable && activeField === "deleteAccountAction" && isPlainKey(event, "space", "enter", "return")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      void deleteAccount();
+      return;
+    }
     if (!event.targetEditable && activeField === "emailAlertsOffAction" && isPlainKey(event, "space", "enter", "return")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       void turnOffEmailAlerts();
-      return;
-    }
-    if (!event.targetEditable && event.name === "p") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      openPasswordDialog();
     }
   }, { allowEditable: true });
 }

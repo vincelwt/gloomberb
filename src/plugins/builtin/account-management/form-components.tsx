@@ -1,7 +1,7 @@
-import { useState, type ReactNode } from "react";
-import { TextField } from "../../../components";
+import { type ReactNode } from "react";
+import { Checkbox, TextField } from "../../../components";
 import { Box, Text, TextAttributes } from "../../../ui";
-import { colors, hoverBg } from "../../../theme/colors";
+import { colors } from "../../../theme/colors";
 import type { AccountFieldKey, ProfileAnalyticsPreview } from "./model";
 import { truncate } from "./model";
 
@@ -127,32 +127,20 @@ export function CheckboxRow({
   onFocus: () => void;
   onChange: (checked: boolean) => void;
 }) {
-  const [hovered, setHovered] = useState(false);
-  const marker = checked ? "x" : " ";
-  const fg = active ? colors.textBright : colors.text;
-
   return (
-    <Box
-      flexDirection="column"
-      backgroundColor={hovered ? hoverBg() : undefined}
-      onMouseOver={() => {
-        setHovered(true);
-        onFocus();
-      }}
-      onMouseOut={() => setHovered(false)}
-      onMouseDown={() => {
-        onFocus();
-        onChange(!checked);
-      }}
-    >
-      <Text fg={fg} attributes={active ? TextAttributes.BOLD : 0}>
-        {`${active ? "> " : "  "}[${marker}] ${label}`}
-      </Text>
-      {description ? (
-        <Text fg={colors.textMuted} wrapText width={Math.max(24, width - 2)}>
-          {description}
-        </Text>
-      ) : null}
+    <Box onMouseOver={onFocus}>
+      <Checkbox
+        label={label}
+        checked={checked}
+        active={active}
+        description={description}
+        width={width}
+        variant="desktop"
+        onChange={(nextChecked) => {
+          onFocus();
+          onChange(nextChecked);
+        }}
+      />
     </Box>
   );
 }
@@ -168,28 +156,39 @@ export function AccountAnalyticsPreview({
   preview,
   width,
   disclaimer,
+  surface = "panel",
 }: {
   preview: ProfileAnalyticsPreview;
   width: number;
   disclaimer?: string | null;
+  surface?: "panel" | "plain";
 }) {
-  const contentWidth = Math.max(1, width - 2);
+  const horizontalPadding = surface === "panel" ? 1 : 0;
+  const contentWidth = Math.max(1, width - horizontalPadding * 2);
   const metricWidth = Math.max(14, Math.min(28, Math.floor((contentWidth - 2) / 2)));
   const subtitleWidth = Math.max(1, contentWidth - preview.title.length - 2);
+  const showHeader = surface === "panel";
 
   return (
-    <Box flexDirection="column" width={width} backgroundColor={colors.panel} paddingX={1}>
-      <Box height={1} flexDirection="row">
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-          {truncate(preview.title, contentWidth)}
-        </Text>
-        {preview.subtitle ? (
-          <>
-            <Box flexGrow={1} />
-            <Text fg={colors.textMuted}>{truncate(preview.subtitle, subtitleWidth)}</Text>
-          </>
-        ) : null}
-      </Box>
+    <Box
+      flexDirection="column"
+      width={width}
+      backgroundColor={surface === "panel" ? colors.panel : undefined}
+      paddingX={horizontalPadding}
+    >
+      {showHeader ? (
+        <Box height={1} flexDirection="row">
+          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+            {truncate(preview.title, contentWidth)}
+          </Text>
+          {preview.subtitle ? (
+            <>
+              <Box flexGrow={1} />
+              <Text fg={colors.textMuted}>{truncate(preview.subtitle, subtitleWidth)}</Text>
+            </>
+          ) : null}
+        </Box>
+      ) : null}
       {preview.metrics.length > 0 ? (
         <Box flexDirection="row" flexWrap="wrap" gap={2}>
           {preview.metrics.map((metric) => {
@@ -211,16 +210,86 @@ export function AccountAnalyticsPreview({
             );
           })}
         </Box>
-      ) : (
+      ) : preview.subtitle ? (
         <Text fg={colors.textMuted} wrapText width={contentWidth}>
           {preview.subtitle}
         </Text>
-      )}
+      ) : null}
       {disclaimer ? (
         <Text fg={colors.textMuted} wrapText width={contentWidth}>
           {disclaimer}
         </Text>
       ) : null}
+    </Box>
+  );
+}
+
+export function PublicAnalyticsGroup({
+  preview,
+  label,
+  detail,
+  active,
+  width,
+  disclaimer,
+  onFocus,
+  onOpen,
+}: {
+  preview: ProfileAnalyticsPreview;
+  label: string;
+  detail?: string;
+  active: boolean;
+  width: number;
+  disclaimer?: string | null;
+  onFocus: () => void;
+  onOpen: () => void;
+}) {
+  const contentWidth = Math.max(1, width - 2);
+  const buttonWidth = Math.max(12, Math.min(34, Math.floor(contentWidth * 0.44)));
+  const detailWidth = Math.max(0, contentWidth - buttonWidth - 12);
+  const normalizedDetail = (detail ?? "").replace(/\.+$/, "");
+  const displayPreview = (
+    preview.metrics.length === 0
+    && normalizedDetail
+    && preview.subtitle.replace(/\.+$/, "") === normalizedDetail
+  ) ? { ...preview, subtitle: "" } : preview;
+  return (
+    <Box
+      flexDirection="column"
+      width={width}
+      backgroundColor={colors.panel}
+      paddingX={1}
+      onMouseOver={onFocus}
+    >
+      <Box height={1} flexDirection="row" gap={1}>
+        <Text fg={active ? colors.textBright : colors.textDim} attributes={active ? TextAttributes.BOLD : 0}>
+          {active ? "> Analytics" : "  Analytics"}
+        </Text>
+        <Box
+          width={buttonWidth}
+          backgroundColor={active ? colors.selected : colors.bg}
+          onMouseDown={(event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            onFocus();
+            onOpen();
+          }}
+        >
+          <Text fg={active ? colors.selectedText : colors.text}>
+            {` ${truncate(label, Math.max(1, buttonWidth - 2))} `}
+          </Text>
+        </Box>
+        {detail ? (
+          <Text fg={colors.textMuted}>
+            {truncate(detail, detailWidth)}
+          </Text>
+        ) : null}
+      </Box>
+      <AccountAnalyticsPreview
+        preview={displayPreview}
+        width={contentWidth}
+        disclaimer={disclaimer}
+        surface="plain"
+      />
     </Box>
   );
 }
