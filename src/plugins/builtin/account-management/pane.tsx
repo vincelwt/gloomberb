@@ -751,10 +751,10 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                 onChange={(checked) => setDraftValue("weeklyRoundupEnabled", checked)}
               />
               <CheckboxRow
-                label="Position/Watchlist Alerts"
+                label="Smart Position/Watchlist Alerts"
                 checked={draft.positionAlertsEnabled}
                 active={activeField === "positionAlertsEnabled"}
-                description="Large portfolio or watchlist jumps."
+                description="Automatic alerts for unusual portfolio or watchlist moves."
                 width={formWidth}
                 onFocus={() => setActiveField("positionAlertsEnabled")}
                 onChange={(checked) => setDraftValue("positionAlertsEnabled", checked)}
