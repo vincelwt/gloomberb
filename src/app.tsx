@@ -232,7 +232,9 @@ function AppInner({
   useDesktopDeepLinkRuntime({
     desktopDeepLinkBridge,
     desktopWindowKind: desktopWindowBridge?.kind,
+    dispatch,
     pluginRegistry,
+    stateRef,
   });
 
   const focusedTickerSymbol = getFocusedTickerSymbol(state);
