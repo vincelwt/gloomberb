@@ -1,6 +1,6 @@
 {
   "name": "gloomberb",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "description": "Market research and portfolio tracker for the terminal",
   "module": "src/index.tsx",
   "type": "module",
