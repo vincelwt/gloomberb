@@ -23,7 +23,7 @@ export interface CloudSyncStatus {
 }
 
 interface SyncRuntime {
-  state: AppState;
+  getState: () => AppState;
   dispatch: Dispatch<AppAction>;
   tickerRepository: TickerRepository;
   getContributors: () => RegisteredSyncContributor[];
@@ -32,7 +32,6 @@ interface SyncRuntime {
 
 const CLIENT_ID_STORAGE_KEY = "gloomberb.sync.clientId";
 const PUSH_DEBOUNCE_MS = 2500;
-const PULL_MIN_INTERVAL_MS = 60_000;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -47,6 +46,15 @@ function resolveClientId(): string {
   return id;
 }
 
+function snapshotContentSignature(snapshot: SyncSnapshot): string {
+  return stableStringify(Object.fromEntries(
+    Object.entries(snapshot.contributors).map(([id, contributor]) => [
+      id,
+      { schemaVersion: contributor.schemaVersion, payload: contributor.payload },
+    ]),
+  ));
+}
+
 export class CloudSyncController {
   private runtime: SyncRuntime | null = null;
   private contributors = new Map<string, RegisteredSyncContributor>();
@@ -57,7 +65,6 @@ export class CloudSyncController {
   private syncQueued = false;
   private clientId: string | null = null;
   private lastSignature: string | null = null;
-  private lastPulledAtMs = 0;
   private hasPulledForTransport = new Set<string>();
   private status: CloudSyncStatus = {
     phase: "idle",
@@ -100,16 +107,20 @@ export class CloudSyncController {
     return [...this.transports.values()];
   }
 
-  setRuntime(runtime: SyncRuntime): void {
-    this.runtime = runtime;
-    this.updateAvailability();
+  setRuntime(runtime: SyncRuntime): () => void {
+    if (this.runtime !== runtime) {
+      this.resetOperations();
+      this.runtime = runtime;
+      this.updateAvailability();
+    }
+    return () => this.clearRuntime(runtime);
   }
 
-  clearRuntime(): void {
+  clearRuntime(runtime?: SyncRuntime): void {
+    if (runtime && this.runtime !== runtime) return;
     this.runtime = null;
-    if (this.pushTimer) clearTimeout(this.pushTimer);
-    this.pushTimer = null;
-    this.syncQueued = false;
+    this.resetOperations();
+    this.setStatus({ phase: "disabled", transportId: null, error: null });
   }
 
   subscribe(listener: () => void): () => void {
@@ -124,11 +135,11 @@ export class CloudSyncController {
   schedulePush(reason: string): void {
     const runtime = this.runtime;
     if (!runtime) return;
-    const transport = runtime.getTransport();
-    if (!transport?.transport.isAvailable()) {
+    const registration = runtime.getTransport();
+    if (!registration?.transport.isAvailable()) {
       this.setStatus({
         phase: "disabled",
-        transportId: transport?.transport.id ?? null,
+        transportId: registration?.transport.id ?? null,
         error: null,
       });
       return;
@@ -146,6 +157,7 @@ export class CloudSyncController {
       return this.inFlight;
     }
     const run = this.syncOnce(options).finally(async () => {
+      if (this.inFlight !== run) return;
       this.inFlight = null;
       if (!this.syncQueued) return;
       this.syncQueued = false;
@@ -155,42 +167,36 @@ export class CloudSyncController {
     return run;
   }
 
-  async pullLatest(options: { force?: boolean } = {}): Promise<void> {
-    const runtime = this.runtime;
-    if (!runtime) return;
-    const transport = runtime.getTransport();
-    if (!transport?.transport.isAvailable()) {
-      this.setStatus({ phase: "disabled", transportId: transport?.transport.id ?? null, error: null });
-      return;
-    }
-    const currentMs = Date.now();
-    if (!options.force && currentMs - this.lastPulledAtMs < PULL_MIN_INTERVAL_MS) return;
-    if (await this.runPull(runtime, transport.transport)) {
-      this.lastPulledAtMs = currentMs;
-    }
-  }
-
   private async syncOnce(options: { reason?: string; force?: boolean }): Promise<void> {
     const runtime = this.runtime;
     if (!runtime) return;
-    const transportRegistration = runtime.getTransport();
-    if (!transportRegistration?.transport.isAvailable()) {
-      this.setStatus({ phase: "disabled", transportId: transportRegistration?.transport.id ?? null, error: null });
+    const registration = runtime.getTransport();
+    if (!registration?.transport.isAvailable()) {
+      this.setStatus({
+        phase: "disabled",
+        transportId: registration?.transport.id ?? null,
+        error: null,
+      });
       return;
     }
-    const transport = transportRegistration.transport;
+    const transport = registration.transport;
+
     if (!this.hasPulledForTransport.has(transport.id)) {
+      this.lastSignature = null;
       if (!await this.runPull(runtime, transport)) return;
+      if (!this.isCurrent(runtime, transport)) return;
       this.hasPulledForTransport.add(transport.id);
     }
 
     const snapshot = await this.assembleSnapshot(runtime);
-    const signature = stableStringify(snapshot.contributors);
+    if (!this.isCurrent(runtime, transport)) return;
+    const signature = snapshotContentSignature(snapshot);
     if (!options.force && signature === this.lastSignature) return;
 
     this.setStatus({ phase: "syncing", transportId: transport.id, error: null });
     try {
       const result = await transport.pushSnapshot(snapshot, { baseRevision: this.status.revision });
+      if (!this.isCurrent(runtime, transport)) return;
       this.lastSignature = signature;
       this.setStatus({
         phase: "synced",
@@ -200,6 +206,7 @@ export class CloudSyncController {
         error: null,
       });
     } catch (error) {
+      if (!this.isCurrent(runtime, transport)) return;
       this.setStatus({
         phase: "error",
         transportId: transport.id,
@@ -209,9 +216,30 @@ export class CloudSyncController {
   }
 
   private async runPull(runtime: SyncRuntime, transport: SyncTransport): Promise<boolean> {
+    const baselineState = runtime.getState();
     this.setStatus({ phase: "syncing", transportId: transport.id, error: null });
     try {
       const response = await transport.pullSnapshot();
+      if (!this.isCurrent(runtime, transport)) return false;
+
+      if (response.snapshot) {
+        for (const entry of runtime.getContributors()) {
+          if (!this.isCurrent(runtime, transport)) return false;
+          const payload = response.snapshot.contributors[entry.contributor.id]?.payload;
+          if (payload === undefined || !entry.contributor.apply) continue;
+          await entry.contributor.apply(payload, {
+            snapshot: response.snapshot,
+            baselineState,
+            state: runtime.getState(),
+            getState: runtime.getState,
+            isCurrent: () => this.isCurrent(runtime, transport),
+            dispatch: runtime.dispatch,
+            tickerRepository: runtime.tickerRepository,
+          });
+        }
+      }
+
+      if (!this.isCurrent(runtime, transport)) return false;
       this.setStatus({
         phase: response.snapshot ? "synced" : "idle",
         transportId: transport.id,
@@ -220,19 +248,9 @@ export class CloudSyncController {
         lastSyncAt: response.updatedAt,
         error: null,
       });
-      if (!response.snapshot) return true;
-      for (const entry of runtime.getContributors()) {
-        const payload = response.snapshot.contributors[entry.contributor.id]?.payload;
-        if (payload === undefined || !entry.contributor.apply) continue;
-        await entry.contributor.apply(payload, {
-          snapshot: response.snapshot,
-          state: runtime.state,
-          dispatch: runtime.dispatch,
-          tickerRepository: runtime.tickerRepository,
-        });
-      }
       return true;
     } catch (error) {
+      if (!this.isCurrent(runtime, transport)) return false;
       this.setStatus({
         phase: "error",
         transportId: transport.id,
@@ -247,7 +265,7 @@ export class CloudSyncController {
     const createdAt = nowIso();
     const payloads: SyncSnapshot["contributors"] = {};
     for (const entry of contributors) {
-      const payload = await entry.contributor.collect({ state: runtime.state });
+      const payload = await entry.contributor.collect({ state: runtime.getState() });
       payloads[entry.contributor.id] = {
         schemaVersion: entry.contributor.schemaVersion,
         updatedAt: createdAt,
@@ -261,6 +279,19 @@ export class CloudSyncController {
       createdAt,
       contributors: payloads,
     };
+  }
+
+  private isCurrent(runtime: SyncRuntime, transport: SyncTransport): boolean {
+    return this.runtime === runtime && runtime.getTransport()?.transport === transport;
+  }
+
+  private resetOperations(): void {
+    if (this.pushTimer) clearTimeout(this.pushTimer);
+    this.pushTimer = null;
+    this.inFlight = null;
+    this.syncQueued = false;
+    this.hasPulledForTransport.clear();
+    this.lastSignature = null;
   }
 
   private updateAvailability(): void {

@@ -25,7 +25,10 @@ export interface SyncCollectContext {
 
 export interface SyncApplyContext {
   snapshot: SyncSnapshot;
+  baselineState: AppState;
   state: AppState;
+  getState: () => AppState;
+  isCurrent: () => boolean;
   dispatch: Dispatch<AppAction>;
   tickerRepository: TickerRepository;
 }

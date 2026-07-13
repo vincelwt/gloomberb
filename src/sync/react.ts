@@ -6,6 +6,7 @@ import { cloudSyncController } from "./controller";
 
 interface CloudSyncRuntimeOptions {
   state: AppState;
+  getState: () => AppState;
   dispatch: Dispatch<AppAction>;
   tickerRepository: TickerRepository;
   pluginRegistry: PluginRegistry;
@@ -14,28 +15,25 @@ interface CloudSyncRuntimeOptions {
 
 export function useCloudSyncRuntime({
   state,
+  getState,
   dispatch,
   tickerRepository,
   pluginRegistry,
   initialized,
 }: CloudSyncRuntimeOptions): void {
   useEffect(() => {
-    cloudSyncController.setRuntime({
-      state,
+    return cloudSyncController.setRuntime({
+      getState,
       dispatch,
       tickerRepository,
       getContributors: () => pluginRegistry.getEnabledSyncContributors(),
       getTransport: () => pluginRegistry.getActiveSyncTransport(),
     });
-  }, [dispatch, pluginRegistry, state, tickerRepository]);
-
-  useEffect(() => () => {
-    cloudSyncController.clearRuntime();
-  }, []);
+  }, [dispatch, getState, pluginRegistry, tickerRepository]);
 
   useEffect(() => {
     if (!initialized) return;
-    void cloudSyncController.pullLatest();
+    void cloudSyncController.requestSync({ reason: "startup" });
   }, [initialized, pluginRegistry]);
 
   useEffect(() => {

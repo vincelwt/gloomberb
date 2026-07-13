@@ -268,6 +268,7 @@ function AppInner({
 
   useCloudSyncRuntime({
     state,
+    getState: getRemoteState,
     dispatch,
     tickerRepository,
     pluginRegistry,

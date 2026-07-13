@@ -1,4 +1,5 @@
 import { scheduleConfigSave } from "../state/config-save-scheduler";
+import { stableStringify } from "../remote/revision";
 import type { AppConfig, BrokerInstanceConfig } from "../types/config";
 import type { PricePoint, TickerFinancials } from "../types/financials";
 import type { Portfolio, TickerMetadata, TickerPosition, TickerRecord, Watchlist } from "../types/ticker";
@@ -295,20 +296,30 @@ function collectCoreCollectionsPayload(
   };
 }
 
-function mergeConfigPayload(config: AppConfig, payload: unknown): AppConfig | null {
+function valuesEqual(left: unknown, right: unknown): boolean {
+  return stableStringify(left) === stableStringify(right);
+}
+
+function mergeConfigPayload(
+  config: AppConfig,
+  payload: unknown,
+  baselineConfig: AppConfig = config,
+): AppConfig | null {
   if (!isPlainObject(payload)) return null;
   const next: AppConfig = { ...config };
+  const canApply = <K extends keyof AppConfig>(key: K) => (
+    valuesEqual(config[key], baselineConfig[key])
+  );
   const assign = <K extends keyof AppConfig>(key: K) => {
-    if (key in payload) {
+    if (key in payload && canApply(key)) {
       next[key] = payload[key as string] as AppConfig[K];
     }
   };
 
   assign("baseCurrency");
   assign("refreshIntervalMinutes");
-  assign("layout");
-  assign("layouts");
-  assign("activeLayoutIndex");
+  assign("portfolios");
+  assign("watchlists");
   assign("disabledPlugins");
   assign("disabledSources");
   assign("pluginConfig");
@@ -318,9 +329,21 @@ function mergeConfigPayload(config: AppConfig, payload: unknown): AppConfig | nu
   assign("recentTickers");
   assign("onboardingComplete");
 
-  if (Array.isArray(payload.portfolios)) next.portfolios = payload.portfolios as Portfolio[];
-  if (Array.isArray(payload.watchlists)) next.watchlists = payload.watchlists as Watchlist[];
-  if (Array.isArray(payload.brokerInstances)) {
+  if (
+    ["layout", "layouts", "activeLayoutIndex"].every((key) => (
+      key in payload &&
+      valuesEqual(
+        config[key as keyof AppConfig],
+        baselineConfig[key as keyof AppConfig],
+      )
+    ))
+  ) {
+    next.layout = payload.layout as unknown as AppConfig["layout"];
+    next.layouts = payload.layouts as AppConfig["layouts"];
+    next.activeLayoutIndex = payload.activeLayoutIndex as number;
+  }
+
+  if (Array.isArray(payload.brokerInstances) && canApply("brokerInstances")) {
     const incoming = payload.brokerInstances as Array<Partial<BrokerInstanceConfig>>;
     const existingById = new Map(config.brokerInstances.map((instance) => [instance.id, instance]));
     next.brokerInstances = incoming.map((instance) => {
@@ -343,9 +366,9 @@ export const coreConfigSyncContributor: SyncContributor = {
   id: "core.config",
   schemaVersion: 1,
   collect: ({ state }) => collectCoreConfigPayload(state.config),
-  apply: (payload, { state, dispatch }) => {
-    const nextConfig = mergeConfigPayload(state.config, payload);
-    if (!nextConfig) return;
+  apply: (payload, { baselineState, state, dispatch }) => {
+    const nextConfig = mergeConfigPayload(state.config, payload, baselineState.config);
+    if (!nextConfig || valuesEqual(nextConfig, state.config)) return;
     dispatch({ type: "SET_CONFIG", config: nextConfig });
     scheduleConfigSave(nextConfig);
   },
@@ -360,18 +383,15 @@ export const coreCollectionsSyncContributor: SyncContributor = {
     state.financials,
     state.exchangeRates,
   ),
-  apply: async (payload, { state, dispatch, tickerRepository }) => {
+  apply: async (payload, { getState, isCurrent, dispatch, tickerRepository }) => {
     if (!isPlainObject(payload)) return;
-    const nextConfig = { ...state.config };
-    if (Array.isArray(payload.portfolios)) nextConfig.portfolios = payload.portfolios as Portfolio[];
-    if (Array.isArray(payload.watchlists)) nextConfig.watchlists = payload.watchlists as Watchlist[];
-
-    const nextTickers = new Map(state.tickers);
+    const incomingRecords: TickerRecord[] = [];
     const rawTickers = Array.isArray(payload.tickers) ? payload.tickers : [];
     for (const rawTicker of rawTickers) {
+      if (!isCurrent()) return;
       if (!isPlainObject(rawTicker)) continue;
       const current = typeof rawTicker.ticker === "string"
-        ? nextTickers.get(rawTicker.ticker)
+        ? getState().tickers.get(rawTicker.ticker)
         : null;
       const metadata = hydrateTickerMetadata({
         ...current?.metadata,
@@ -380,12 +400,15 @@ export const coreCollectionsSyncContributor: SyncContributor = {
       });
       const record: TickerRecord = { metadata };
       await tickerRepository.saveTicker(record);
-      nextTickers.set(metadata.ticker, record);
+      incomingRecords.push(record);
     }
 
-    dispatch({ type: "SET_CONFIG", config: nextConfig });
+    if (!isCurrent() || incomingRecords.length === 0) return;
+    const nextTickers = new Map(getState().tickers);
+    for (const record of incomingRecords) {
+      nextTickers.set(record.metadata.ticker, record);
+    }
     dispatch({ type: "SET_TICKERS", tickers: nextTickers });
-    scheduleConfigSave(nextConfig);
   },
 };
 
@@ -397,4 +420,5 @@ export const __syncContributorInternalsForTests = {
   sanitizeUnknown,
   collectCoreConfigPayload,
   collectCoreCollectionsPayload,
+  mergeConfigPayload,
 };
