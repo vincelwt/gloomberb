@@ -39,4 +39,18 @@ describe("handleHttpFetch", () => {
     expect(response.headers.location).toBe("/reader");
     expect(response.setCookie).toEqual(["substack.sid=sid123; Path=/; HttpOnly"]);
   });
+
+  test("aborts the backend fetch at the requested deadline", async () => {
+    server = Bun.serve({
+      port: 0,
+      fetch() {
+        return new Promise<Response>(() => {});
+      },
+    });
+
+    await expect(handleHttpFetch({
+      url: server.url.toString(),
+      init: { timeoutMs: 10 },
+    })).rejects.toThrow();
+  });
 });

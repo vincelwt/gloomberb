@@ -11,6 +11,8 @@ interface ElectrobunHttpFetchResponse {
   body: string;
 }
 
+const CLOUD_MARKET_HTTP_TIMEOUT_MS = 10_000;
+
 function normalizeHeaders(headers: HeadersInit | undefined): Record<string, string> {
   const normalized: Record<string, string> = {};
   if (!headers) return normalized;
@@ -75,7 +77,11 @@ async function electrobunHttpFetch(url: string, init?: RequestInit): Promise<Res
   return fetchResponse;
 }
 
-async function requestBackendHttpFetch(url: string, init?: RequestInit): Promise<ElectrobunHttpFetchResponse> {
+async function requestBackendHttpFetch(
+  url: string,
+  init?: RequestInit,
+  timeoutMs?: number,
+): Promise<ElectrobunHttpFetchResponse> {
   return backendRequest<ElectrobunHttpFetchResponse>("http.fetch", {
     url,
     init: {
@@ -83,6 +89,7 @@ async function requestBackendHttpFetch(url: string, init?: RequestInit): Promise
       headers: normalizeHeaders(init?.headers),
       body: await serializeBody(init?.body),
       redirect: init?.redirect,
+      timeoutMs,
     },
   });
 }
@@ -100,7 +107,13 @@ function createResponseHeaders(headers: Record<string, string>, setCookie: strin
 }
 
 async function electrobunCloudApiFetch(url: string, init?: RequestInit): Promise<Response> {
-  const response = await requestBackendHttpFetch(url, init);
+  if (init?.signal?.aborted) {
+    throw createAbortError();
+  }
+  const timeoutMs = new URL(url).pathname.startsWith("/market/")
+    ? CLOUD_MARKET_HTTP_TIMEOUT_MS
+    : undefined;
+  const response = await withAbort(requestBackendHttpFetch(url, init, timeoutMs), init?.signal);
 
   return {
     ok: response.status >= 200 && response.status < 300,
