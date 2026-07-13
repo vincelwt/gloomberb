@@ -15,13 +15,6 @@ export function takeOption(args: string[], name: string): string | undefined {
   return value;
 }
 
-export function takeFlag(args: string[], name: string): boolean {
-  const index = args.indexOf(name);
-  if (index < 0) return false;
-  args.splice(index, 1);
-  return true;
-}
-
 export function parseJsonPayload(value: string | undefined, ctx: CliCommandContext): unknown {
   if (!value) return {};
   try {

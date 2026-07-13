@@ -1,14 +1,12 @@
 import type { DataProvider, SecFilingDocument, SecFilingItem } from "../../types/data-provider";
-import type { NewsArticle } from "../../news/types";
 import type { OptionsChain } from "../../types/financials";
-import type { NewsRequest, OptionsRequest, SecFilingsRequest } from "../request-types";
+import type { OptionsRequest, SecFilingsRequest } from "../request-types";
 import type { QueryEntry } from "../result-types";
 import { QueryStore } from "../query-store";
 import {
   ARTICLE_SUMMARY_CACHE_TTL_MS,
   EXPECTED_EMPTY,
   FX_CACHE_TTL_MS,
-  NEWS_CACHE_TTL_MS,
   OPTIONS_CACHE_TTL_MS,
   SEC_CONTENT_CACHE_TTL_MS,
   SEC_FILINGS_CACHE_TTL_MS,
@@ -23,7 +21,6 @@ import {
 import {
   buildArticleSummaryKey,
   buildFxKey,
-  buildNewsKey,
   buildOptionsKey,
   buildSecContentKey,
   buildSecDocumentsKey,
@@ -40,46 +37,6 @@ interface AuxiliaryLoaderOptions<T> {
   ttlMs: number;
   runSingleFlight: RunSingleFlight;
   load: (startedAt: number) => Promise<QueryEntry<T>>;
-}
-
-interface NewsDataProvider extends DataProvider {
-  getNews?: (query: {
-    feed: "ticker";
-    ticker: string;
-    exchange?: string;
-    tickerTier: "primary";
-    limit?: number;
-  }) => Promise<NewsArticle[]>;
-}
-
-export function loadNewsEntry(options: {
-  dataProvider: DataProvider;
-  request: NewsRequest;
-  store: QueryStore<NewsArticle[]>;
-  runSingleFlight: RunSingleFlight;
-}): Promise<QueryEntry<NewsArticle[]>> {
-  const { dataProvider, request, store, runSingleFlight } = options;
-  const key = buildNewsKey(request);
-  return loadAuxiliaryEntry({
-    dataProvider,
-    key,
-    store,
-    ttlMs: NEWS_CACHE_TTL_MS,
-    runSingleFlight,
-    load: async (startedAt) => {
-      const newsProvider = dataProvider as NewsDataProvider;
-      if (!newsProvider.getNews) throw new Error("No news provider available");
-      const data = await newsProvider.getNews({
-        feed: "ticker",
-        ticker: request.instrument.symbol,
-        exchange: request.instrument.exchange ?? "",
-        tickerTier: "primary",
-        limit: request.count ?? 50,
-      });
-      const attempts = [createAttempt(dataProvider.id, startedAt, data.length > 0 ? "success" : "empty", data.length === 0 ? "NO_DATA" : undefined)];
-      return store.update(key, (current) => readyEntry(current, data.length > 0 ? data : null, dataProvider.id, attempts, { keepLastGoodOnEmpty: true }));
-    },
-  });
 }
 
 export function loadOptionsEntry(options: {

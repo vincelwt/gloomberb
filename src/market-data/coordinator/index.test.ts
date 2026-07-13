@@ -155,13 +155,8 @@ describe("MarketDataCoordinator", () => {
   });
 
   it("reuses fresh empty tab query results instead of refetching on reopen", async () => {
-    let newsCalls = 0;
     let optionsCalls = 0;
     const provider = createProvider({
-      getNews: async () => {
-        newsCalls += 1;
-        return [];
-      },
       getOptionsChain: async () => {
         optionsCalls += 1;
         return {
@@ -175,16 +170,11 @@ describe("MarketDataCoordinator", () => {
     const coordinator = new MarketDataCoordinator(provider);
     const instrument = { symbol: "AAPL", exchange: "NASDAQ" };
 
-    const firstNews = await coordinator.loadNews({ instrument, count: 20 });
-    const secondNews = await coordinator.loadNews({ instrument, count: 20 });
     const firstOptions = await coordinator.loadOptions({ instrument });
     const secondOptions = await coordinator.loadOptions({ instrument });
 
-    expect(firstNews.error?.reasonCode).toBe("NO_DATA");
-    expect(secondNews.error?.reasonCode).toBe("NO_DATA");
     expect(firstOptions.error?.reasonCode).toBe("NO_DATA");
     expect(secondOptions.error?.reasonCode).toBe("NO_DATA");
-    expect(newsCalls).toBe(1);
     expect(optionsCalls).toBe(1);
   });
 

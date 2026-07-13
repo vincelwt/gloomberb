@@ -78,29 +78,33 @@ function updateExistingTicker(
   positionEntry: TickerPosition,
   brokerContract?: BrokerContractRef,
 ): TickerRecord {
-  if (position.name && ticker.metadata.name === ticker.metadata.ticker) {
-    ticker.metadata.name = position.name;
-  }
-  if (position.assetCategory && !ticker.metadata.assetCategory) {
-    ticker.metadata.assetCategory = position.assetCategory;
-  }
-  if (position.isin && !ticker.metadata.isin) {
-    ticker.metadata.isin = position.isin;
-  }
-
   const otherPositions = ticker.metadata.positions.filter(
     (entry) => !(entry.portfolio === portfolioId && entry.broker === instance.brokerType),
   );
-  ticker.metadata.positions = [...otherPositions, positionEntry];
-  ticker.metadata.broker_contracts = mergeBrokerContracts(
+  const brokerContracts = mergeBrokerContracts(
     ticker.metadata.broker_contracts ?? [],
     brokerContract ? [brokerContract] : [],
   );
-  if (!ticker.metadata.portfolios.includes(portfolioId)) {
-    ticker.metadata.portfolios.push(portfolioId);
-  }
+  const portfolios = ticker.metadata.portfolios.includes(portfolioId)
+    ? ticker.metadata.portfolios
+    : [...ticker.metadata.portfolios, portfolioId];
 
-  return ticker;
+  return {
+    ...ticker,
+    metadata: {
+      ...ticker.metadata,
+      name: position.name && ticker.metadata.name === ticker.metadata.ticker
+        ? position.name
+        : ticker.metadata.name,
+      assetCategory: position.assetCategory && !ticker.metadata.assetCategory
+        ? position.assetCategory
+        : ticker.metadata.assetCategory,
+      isin: position.isin && !ticker.metadata.isin ? position.isin : ticker.metadata.isin,
+      positions: [...otherPositions, positionEntry],
+      broker_contracts: brokerContracts,
+      portfolios,
+    },
+  };
 }
 
 export async function upsertBrokerPositionTicker({

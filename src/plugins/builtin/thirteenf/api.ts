@@ -226,21 +226,6 @@ export async function searchThirteenFFunds(
   return arrayResponse(raw).map(mapFund).filter((fund): fund is ThirteenFFund => !!fund);
 }
 
-export async function listThirteenFFilers(
-  limit = 50,
-  signal?: AbortSignal,
-  options: { forceRefresh?: boolean; offset?: number } = {},
-): Promise<ThirteenFFund[]> {
-  const raw = await fetchForms13F<unknown>("/filers", {
-    offset: options.offset ?? 0,
-    limit,
-  }, { signal, forceRefresh: options.forceRefresh });
-  return arrayResponse(raw).map((entry) => mapFund({
-    cik: entry.cik,
-    name: Array.isArray(entry.company_names) ? entry.company_names[0] : entry.company_name,
-  })).filter((fund): fund is ThirteenFFund => !!fund);
-}
-
 export async function listTopThirteenFFunds(
   quarter: string,
   limit = 50,

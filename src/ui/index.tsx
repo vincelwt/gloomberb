@@ -33,6 +33,7 @@ export {
 } from "./context-menu";
 export { contextMenuDivider } from "../types/context-menu";
 export type {
+  BitmapSurface,
   BoxRenderable,
   ChartSurfaceProps,
   HostCheckboxProps,

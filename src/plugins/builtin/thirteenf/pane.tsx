@@ -235,7 +235,6 @@ export function ThirteenFPane({ focused, width, height }: PaneProps) {
   }, { allowEditable: true });
 
   const sortedRows = useMemo(() => sortBrowserRows(rows, sortPreference), [rows, sortPreference]);
-  const selectedIndex = selectedIndexById(sortedRows, selectedId);
   const columns = useMemo(() => buildBrowserColumns(width), [width]);
 
   useEffect(() => {
@@ -643,7 +642,7 @@ function FundDetailView({
             getId: (row) => row.id,
             onChange: (id) => setFilingSelectedId(id),
           }}
-          onActivate={openFilingInPane}
+          onActivate={(row) => openFilingInPane(row)}
           onDetailKeyDown={(event) => {
             if (event.name !== "o" || !openFiling?.url) return false;
             event.preventDefault?.();
@@ -755,7 +754,6 @@ function FilingDetailView({
       sortPreference,
     )
   ), [filing.tableValueTotal, holdings, sortPreference]);
-  const selectedPositionIndex = selectedIndexById(positionRows, selectedPositionId);
   const columns = useMemo(() => buildFilingPositionColumns(width), [width]);
 
   useEffect(() => {

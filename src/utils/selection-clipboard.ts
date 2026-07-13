@@ -65,7 +65,7 @@ export function copyActiveSelection(
 export function isCopyShortcut(
   event: Pick<KeyEvent, "name" | "super" | "meta" | "ctrl" | "shift">,
 ): boolean {
-  const keyName = event.name.toLowerCase();
+  const keyName = event.name?.toLowerCase() ?? "";
   return keyName === "c" && (
     event.super === true
     || event.meta === true
@@ -76,7 +76,7 @@ export function isCopyShortcut(
 export function isPasteShortcut(
   event: Pick<KeyEvent, "name" | "super" | "meta" | "ctrl" | "shift">,
 ): boolean {
-  const keyName = event.name.toLowerCase();
+  const keyName = event.name?.toLowerCase() ?? "";
   return keyName === "v" && (
     event.super === true
     || event.meta === true

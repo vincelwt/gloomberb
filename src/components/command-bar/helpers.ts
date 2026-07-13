@@ -1,4 +1,4 @@
-import type { CommandDef, PaneSettingField } from "../../types/plugin";
+import type { CommandDef } from "../../types/plugin";
 import type { CommandBarRoute } from "./workflow/types";
 import type { CollectionKind, CollectionMembershipAction } from "./workflow/ops";
 
@@ -37,14 +37,6 @@ export function routeCommandIdToScreen(commandId: RouteCommandId): "ticker-searc
   }
 }
 
-export function isRootParsedCommand(commandId: string): boolean {
-  return commandId === "security-description"
-    || commandId === "add-watchlist"
-    || commandId === "add-portfolio"
-    || commandId === "remove-watchlist"
-    || commandId === "remove-portfolio";
-}
-
 export function isCollectionCommand(commandId: string): commandId is CollectionCommandId {
   return commandId === "add-watchlist"
     || commandId === "add-portfolio"
@@ -62,33 +54,6 @@ export function getCollectionCommandAction(commandId: CollectionCommandId): Coll
 
 export function getCollectionCommandVerb(action: CollectionMembershipAction): string {
   return action === "add" ? "Add" : "Remove";
-}
-
-export function summarizePaneSettingValue(field: PaneSettingField, value: unknown): string {
-  switch (field.type) {
-    case "toggle":
-      return value === true ? "On" : "Off";
-    case "text":
-      return typeof value === "string" && value.trim().length > 0 ? value : "Unset";
-    case "select": {
-      const option = field.options.find((entry) => entry.value === value);
-      return option?.label ?? "Unset";
-    }
-    case "multi-select":
-    case "ordered-multi-select": {
-      const selected = Array.isArray(value)
-        ? value.filter((entry): entry is string => typeof entry === "string")
-        : [];
-      if (selected.length === 0) return "None";
-      const labels = selected
-        .map((entry) => field.options.find((option) => option.value === entry)?.label ?? entry)
-        .slice(0, 3);
-      const suffix = selected.length > 3 ? ` +${selected.length - 3}` : "";
-      return `${labels.join(", ")}${suffix}`;
-    }
-    default:
-      return "";
-  }
 }
 
 export function getScreenFooterLeft(route: CommandBarRoute | null): string {

@@ -101,6 +101,7 @@ interface ScrollBarRenderable {
 }
 
 export interface ScrollBoxRenderable {
+  width?: number;
   scrollTop: number;
   scrollLeft?: number;
   scrollHeight: number;
@@ -272,7 +273,7 @@ export interface HostCheckboxProps {
   disabled?: boolean;
   active?: boolean;
   description?: string;
-  width?: number;
+  width?: number | string;
   variant?: "default" | "desktop";
 }
 

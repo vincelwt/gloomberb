@@ -2,7 +2,7 @@ import { Box, Text } from "../../../../ui";
 import { RemoteImage } from "../../../../components/ui";
 import { colors } from "../../../../theme/colors";
 import type { BuildoutObservation, BuildoutSite } from "../model/types";
-import { dateShort, truncate } from "../format";
+import { dateShort } from "../format";
 
 function observationImageUrl(observation: BuildoutObservation) {
   return observation.upscaledImageUrl

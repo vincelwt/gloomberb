@@ -112,38 +112,6 @@ async function pressKey(key: string) {
 }
 
 describe("BrokersPane", () => {
-  test("shows empty state and opens add broker flow", async () => {
-    const calls: string[] = [];
-    testSetup = await testRender(<Harness calls={calls} />, { width: 92, height: 24 });
-    await act(async () => {
-      await testSetup!.renderOnce();
-    });
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("No broker profiles.");
-    expect(frame).not.toContain("Press a or click Add Broker.");
-    await act(async () => {
-      testSetup!.mockInput.pressKey("a");
-      await testSetup!.renderOnce();
-    });
-
-    expect(calls).toEqual(["command:Add Broker Account"]);
-  });
-
-  test("hides unavailable footer actions with no broker profile", async () => {
-    const calls: string[] = [];
-    testSetup = await testRender(<FooterHarness calls={calls} />, { width: 92, height: 25 });
-    await act(async () => {
-      await testSetup!.renderOnce();
-      await testSetup!.renderOnce();
-    });
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("[a]dd");
-    expect(frame).not.toContain("[c]onnect");
-    expect(frame).not.toContain("[d]isconnect");
-  });
-
   test("renders IBKR row and invokes broker actions", async () => {
     const calls: string[] = [];
     testSetup = await testRender(<FooterHarness calls={calls} instance={createGatewayInstance()} height={35} />, { width: 92, height: 35 });

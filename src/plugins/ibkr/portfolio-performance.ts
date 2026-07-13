@@ -5,7 +5,7 @@ import type { BrokerPortfolioPerformance } from "../../types/trading";
 import { debugLog } from "../../utils/debug-log";
 import { loadFlexStatement, parseFlexPortfolioPerformance } from "./flex";
 import { normalizeIbkrConfig } from "./config";
-import { fnv1aHashString } from "./hash";
+import { fnv1aHashString } from "../../utils/hash";
 
 const PERFORMANCE_LOG = debugLog.createLogger("ibkr-performance");
 const PERFORMANCE_CACHE_KIND = "portfolio-performance";

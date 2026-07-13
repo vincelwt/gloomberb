@@ -267,7 +267,7 @@ export function FundamentalGraphContent({
         header={metricHeader}
         formatValue={definition.format}
         onHoverChange={setHoveredBar}
-        onMouseDown={focusPaneForMouseInteraction}
+        onMouseDown={focusMetricTabs}
       />
       {tableHeight > 0 ? (
         <DataTableView<FundamentalGraphRow, FundamentalColumn>

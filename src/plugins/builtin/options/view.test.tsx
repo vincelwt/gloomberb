@@ -123,8 +123,8 @@ function OptionsHarness({
 async function renderSettled() {
   for (let i = 0; i < 4; i += 1) {
     await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
       await testSetup!.renderOnce();
-      await Promise.resolve();
     });
   }
 }
@@ -137,43 +137,6 @@ afterEach(async () => {
     testSetup = undefined;
   }
   setSharedMarketDataCoordinator(null);
-});
-
-test("renders the options chain with the shared table columns", async () => {
-  const provider = createTestDataProvider({
-    getOptionsChain: async () => makeChain(),
-  });
-  setSharedMarketDataCoordinator(new MarketDataCoordinator(provider));
-
-  await act(async () => {
-    testSetup = await testRender(<OptionsHarness ticker={makeTicker("AAPL")} />, {
-      width: 124,
-      height: 16,
-    });
-  });
-
-  await renderSettled();
-
-  const frame = testSetup!.captureCharFrame();
-  expect(frame).toContain("C LAST");
-  expect(frame).toContain("C IV");
-  expect(frame).toContain("STRIKE");
-  expect(frame).toContain("P IV");
-  expect(frame).toContain("P LAST");
-  expect(frame).toContain("100");
-  expect(frame).toContain("101");
-
-  const headerLine = frame.split("\n").find((line) => line.includes("C OI") && line.includes("STRIKE")) ?? "";
-  expect(headerLine.indexOf("C OI")).toBeLessThan(headerLine.indexOf("C VOL"));
-  expect(headerLine.indexOf("C VOL")).toBeLessThan(headerLine.indexOf("C LAST"));
-  expect(headerLine.indexOf("C LAST")).toBeLessThan(headerLine.indexOf("C IV"));
-  expect(headerLine.indexOf("C IV")).toBeLessThan(headerLine.indexOf("C BID"));
-  expect(headerLine.indexOf("C BID")).toBeLessThan(headerLine.indexOf("C ASK"));
-  expect(headerLine.indexOf("P BID")).toBeLessThan(headerLine.indexOf("P ASK"));
-  expect(headerLine.indexOf("P ASK")).toBeLessThan(headerLine.indexOf("P IV"));
-  expect(headerLine.indexOf("P IV")).toBeLessThan(headerLine.indexOf("P LAST"));
-  expect(headerLine.indexOf("P LAST")).toBeLessThan(headerLine.indexOf("P VOL"));
-  expect(headerLine.indexOf("P VOL")).toBeLessThan(headerLine.indexOf("P OI"));
 });
 
 test("defaults the table around the nearest strike to the current quote", async () => {

@@ -1,6 +1,5 @@
 import type { PluginRegistry } from "../../plugins/registry";
 import {
-  findDockLeaf,
   getDockLeafLayouts,
   getLeafRect,
 } from "../../plugins/pane-manager";

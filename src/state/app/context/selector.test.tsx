@@ -82,8 +82,12 @@ function createDesktopBridge(
 }
 
 describe("pane selectors", () => {
-  afterEach(() => {
-    testSetup?.renderer.destroy();
+  afterEach(async () => {
+    if (testSetup) {
+      await act(async () => {
+        testSetup!.renderer.destroy();
+      });
+    }
     testSetup = undefined;
     capturedDispatch = null;
     applyTheme("amber");

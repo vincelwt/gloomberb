@@ -245,8 +245,8 @@ describe("ChatController", () => {
     const controller = new ChatController();
 
     apiClient.setSessionToken("token-123");
-    (controller as any).sessionToken = "token-123";
-    (controller as any).user = { id: "u1", username: "vince", emailVerified: false };
+    (controller as any).session.sessionToken = "token-123";
+    (controller as any).session.user = { id: "u1", username: "vince", emailVerified: false };
 
     controller.setAppActive(false);
     (controller as any).realtime.syncVerificationPolling();
@@ -263,12 +263,12 @@ describe("ChatController", () => {
     let closed = false;
 
     apiClient.setSessionToken("token-123");
-    (controller as any).sessionToken = "token-123";
-    (controller as any).user = { id: "u1", username: "vince", emailVerified: false };
+    (controller as any).session.sessionToken = "token-123";
+    (controller as any).session.user = { id: "u1", username: "vince", emailVerified: false };
     (controller as any).realtime.syncVerificationPolling();
     expect((controller as any).realtime.verificationPollTimer).not.toBeNull();
 
-    (controller as any).user = { id: "u1", username: "vince", emailVerified: true };
+    (controller as any).session.user = { id: "u1", username: "vince", emailVerified: true };
     apiClient.connectChannel = () => ({
       send: async () => {
         throw new Error("not implemented");

@@ -21,7 +21,6 @@ export interface FeedDataTableItem {
   eyebrow?: string;
   title: string;
   timestamp?: Date | string | null;
-  preview?: string | null;
   detailTitle?: string;
   detailMeta?: string[];
   detailBody?: string | null;

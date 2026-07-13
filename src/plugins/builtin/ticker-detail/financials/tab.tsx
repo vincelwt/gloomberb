@@ -274,13 +274,6 @@ export function ResolvedFinancialsTab({
     })),
   ];
   const rows = buildFinancialRows(subTab.rows, displayStatements, collapsedGroups);
-  const selectedIndex = selectedRowId
-    ? rows.findIndex((row) => row.id === selectedRowId)
-    : rows.length > 0 ? 0 : -1;
-  const effectiveSelectedIndex = selectedIndex >= 0
-    ? selectedIndex
-    : rows.length > 0 ? 0 : -1;
-
   useEffect(() => {
     if (rows.length === 0) {
       if (selectedRowId !== null) setSelectedRowId(null);

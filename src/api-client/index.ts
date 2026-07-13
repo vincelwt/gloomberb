@@ -39,8 +39,6 @@ import type {
   CloudCongressHousePayload,
   CloudNewsPayload,
   CloudNewsListResponse,
-  CloudTweetPayload,
-  CloudTweetQueryType,
   CloudTweetSearchResponse,
   CloudMarketResponse,
   CloudMarketBatchTarget,
@@ -156,10 +154,6 @@ class GloomApiClient {
 
   private getSocketAuthToken(): string | null {
     return this.transport.getSocketAuthToken();
-  }
-
-  private async handleSocketMessage(raw: string): Promise<void> {
-    await this.socket.handleSocketMessage(raw);
   }
 
   async ensureVerifiedSession(): Promise<AuthUser | null> {

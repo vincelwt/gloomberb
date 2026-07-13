@@ -4,7 +4,6 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { gzipSync } from "zlib";
 import {
-  canSelfUpdate,
   checkForUpdate,
   checkForUpdateDetailed,
   detectUpdateAction,
@@ -150,26 +149,6 @@ describe("resolveSelfUpdateTargetPath", () => {
       "/Applications/Gloomberb.app/Contents/MacOS/launcher",
       ["/Applications/Gloomberb.app/Contents/MacOS/launcher"],
     )).toBeNull();
-  });
-});
-
-describe("canSelfUpdate", () => {
-  test("returns false for manual update releases", () => {
-    expect(canSelfUpdate({
-      updateAction: { kind: "manual", command: "bun install -g gloomberb@latest" },
-    })).toBe(false);
-  });
-
-  test("returns true for self-update releases", () => {
-    expect(canSelfUpdate({
-      updateAction: { kind: "self" },
-    })).toBe(true);
-  });
-
-  test("returns true for desktop update releases", () => {
-    expect(canSelfUpdate({
-      updateAction: { kind: "desktop" },
-    })).toBe(true);
   });
 });
 

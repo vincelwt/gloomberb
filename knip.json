@@ -3,23 +3,22 @@
   "entry": [
     "bin/gloomberb",
     "electrobun.config.ts",
-    "scripts/build.ts",
-    "scripts/build-electrobun-view.ts",
-    "src/index.tsx",
+    "scripts/install-electrobun-tui-shim.ts",
+    "src/cli/entry.ts",
     "src/renderers/electrobun/bun/index.ts",
+    "src/renderers/electrobun/bun/tui-entry.ts",
     "src/renderers/electrobun/view/main.tsx",
     "src/renderers/electrobun/view/app-services.ts",
+    "src/renderers/electrobun/view/cli-pane-shot-entry.tsx",
     "src/renderers/electrobun/view/notes-files.ts",
-    "src/renderers/electrobun/view/native-stubs/chart-kitty-support.ts",
-    "src/renderers/electrobun/view/native-stubs/chart-surface-manager.ts",
-    "src/renderers/electrobun/view/native-stubs/chart-surface-sync.ts"
+    "src/renderers/electrobun/view/native-stubs/**/*.ts"
   ],
   "project": [
-    "electrobun.config.ts",
     "scripts/**/*.ts",
     "src/**/*.{ts,tsx}"
   ],
-  "ignore": [
-    "dist/**"
+  "ignoreDependencies": [
+    "png-to-ico",
+    "rcedit"
   ]
 }

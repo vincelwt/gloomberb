@@ -3,10 +3,8 @@ import {
   applyBufferedPanExpansion,
   consumeScrollPanCellDelta,
   consumeScrollPanMovement,
-  getDragPanPointDelta,
   getDragPanWindowRatio,
   getKeyboardPanCellCount,
-  resolveDragPanOffset,
   resolveHorizontalScrollPanDirection,
 } from "./scroll";
 
@@ -34,11 +32,7 @@ describe("chart-scroll", () => {
 
   test("keeps keyboard pan small while matching drag to the visible window", () => {
     expect(getKeyboardPanCellCount(100)).toBe(2);
-    expect(getDragPanPointDelta(10, 100, 200)).toBe(20);
     expect(getDragPanWindowRatio(10, 100)).toBeCloseTo(0.1);
-    expect(resolveDragPanOffset(20, 10, 100, 200, 40)).toBe(40);
-    expect(resolveDragPanOffset(20, -10, 100, 200, 40)).toBe(0);
-    expect(resolveDragPanOffset(38, 10, 100, 200, 40)).toBe(40);
   });
 
   test("resolves wheel direction, cell delta, remainder, and ratio together", () => {

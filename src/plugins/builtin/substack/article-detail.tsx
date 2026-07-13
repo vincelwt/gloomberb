@@ -43,7 +43,7 @@ const ARTICLE_IMAGE_MAX_HEIGHT = 26;
 const ARTICLE_IMAGE_MIN_HEIGHT = 6;
 const ARTICLE_IMAGE_LEGACY_HEIGHT_CAP = 14;
 
-export function resolveArticleImageSize(lineWidth: number) {
+function resolveArticleImageSize(lineWidth: number) {
   const safeLineWidth = Math.max(1, Math.floor(lineWidth));
   const width = Math.min(safeLineWidth, ARTICLE_IMAGE_MAX_WIDTH);
   const legacyHeight = Math.min(ARTICLE_IMAGE_LEGACY_HEIGHT_CAP, Math.floor(width * 0.32));

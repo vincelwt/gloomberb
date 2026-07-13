@@ -441,35 +441,47 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
   async register(plugin: GloomPlugin): Promise<void> {
     this.registryLog.info(`Registering plugin: ${plugin.id} v${plugin.version ?? "?"}`);
-    const items = this.contributions.getOrCreatePluginItems(plugin.id);
-    if (plugin.panes) {
-      for (const pane of plugin.panes) {
-        this.contributions.registerPane(plugin.id, pane, items);
-      }
-    }
-
-    if (plugin.paneTemplates) {
-      for (const template of plugin.paneTemplates) {
-        this.contributions.registerPaneTemplate(plugin.id, template, items);
-      }
-    }
-
-    if (plugin.broker) {
-      this.contributions.registerBroker(plugin.id, plugin.broker, items);
-    }
-
-    if (this.enableCapabilityHandlers && plugin.capabilities) {
-      for (const capability of plugin.capabilities) {
-        this.registerCapabilityForPlugin(plugin.id, capability, items);
-      }
-    }
-
-    this.slots.register(plugin, this);
-
+    if (this.plugins.has(plugin.id)) throw new Error(`Plugin already registered: ${plugin.id}`);
     this.plugins.set(plugin.id, plugin);
+    try {
+      const items = this.contributions.getOrCreatePluginItems(plugin.id);
+      if (plugin.panes) {
+        for (const pane of plugin.panes) {
+          this.contributions.registerPane(plugin.id, pane, items);
+        }
+      }
 
-    if (plugin.setup) {
-      await plugin.setup(this.createContext(plugin.id));
+      if (plugin.paneTemplates) {
+        for (const template of plugin.paneTemplates) {
+          this.contributions.registerPaneTemplate(plugin.id, template, items);
+        }
+      }
+
+      if (plugin.broker) {
+        this.contributions.registerBroker(plugin.id, plugin.broker, items);
+      }
+
+      if (this.enableCapabilityHandlers && plugin.capabilities) {
+        for (const capability of plugin.capabilities) {
+          this.registerCapabilityForPlugin(plugin.id, capability, items);
+        }
+      }
+
+      this.slots.register(plugin, this);
+
+      if (plugin.setup) {
+        await plugin.setup(this.createContext(plugin.id));
+      }
+    } catch (error) {
+      try {
+        this.removePlugin(plugin.id);
+      } catch (cleanupError) {
+        this.registryLog.error("Failed to clean up rejected plugin registration", {
+          pluginId: plugin.id,
+          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        });
+      }
+      throw error;
     }
 
     this.events.emit("plugin:registered", { pluginId: plugin.id });
@@ -480,13 +492,19 @@ export class PluginRegistry implements PluginRuntimeAccess {
     if (!plugin) return;
     this.registryLog.info(`Unregistering plugin: ${pluginId}`);
 
-    plugin.dispose?.();
-    this.slots.unregister(pluginId);
-
-    this.contributions.unregister(pluginId);
-
-    this.plugins.delete(pluginId);
+    this.removePlugin(pluginId);
     this.events.emit("plugin:unregistered", { pluginId });
+  }
+
+  private removePlugin(pluginId: string): void {
+    const plugin = this.plugins.get(pluginId);
+    if (!plugin) return;
+    let cleanupError: unknown;
+    try { plugin.dispose?.(); } catch (error) { cleanupError = error; }
+    try { this.slots.unregister(pluginId); } catch (error) { cleanupError ??= error; }
+    try { this.contributions.unregister(pluginId); } catch (error) { cleanupError ??= error; }
+    this.plugins.delete(pluginId);
+    if (cleanupError) throw cleanupError;
   }
 
   destroy(): void {

@@ -24,15 +24,22 @@ export class CapabilityRegistry {
     if (existing) {
       throw new Error(`Capability "${capability.id}" already registered by plugin "${existing.pluginId}".`);
     }
-    this.capabilities.set(capability.id, { pluginId, capability });
+    const registration = { pluginId, capability };
+    this.capabilities.set(capability.id, registration);
     return () => {
+      if (this.capabilities.get(capability.id) !== registration) return;
       this.capabilities.delete(capability.id);
+      let firstError: unknown;
       for (const [subscriptionId, entry] of this.subscriptions) {
         if (entry.capabilityId === capability.id) {
-          entry.dispose();
-          this.subscriptions.delete(subscriptionId);
+          try {
+            this.unsubscribe(subscriptionId);
+          } catch (error) {
+            firstError ??= error;
+          }
         }
       }
+      if (firstError) throw firstError;
     };
   }
 
@@ -97,6 +104,10 @@ export class CapabilityRegistry {
     const subscriptionId = options.subscriptionId ?? `${capabilityId}:${operationId}:${this.nextSubscriptionId++}`;
     this.unsubscribe(subscriptionId);
     const dispose = await operation.subscribe(input, emit, { capability, operationId });
+    if (this.capabilities.get(capabilityId)?.capability !== capability) {
+      dispose();
+      throw new Error(`Capability "${capabilityId}" is not available.`);
+    }
     this.subscriptions.set(subscriptionId, { capabilityId, dispose });
     return subscriptionId;
   }
@@ -104,12 +115,18 @@ export class CapabilityRegistry {
   unsubscribe(subscriptionId: string): void {
     const entry = this.subscriptions.get(subscriptionId);
     if (!entry) return;
-    entry.dispose();
     this.subscriptions.delete(subscriptionId);
+    entry.dispose();
   }
 
   destroy(): void {
-    for (const subscriptionId of [...this.subscriptions.keys()]) this.unsubscribe(subscriptionId);
+    for (const subscriptionId of [...this.subscriptions.keys()]) {
+      try {
+        this.unsubscribe(subscriptionId);
+      } catch {
+        // Continue releasing the remaining subscriptions.
+      }
+    }
     this.capabilities.clear();
   }
 

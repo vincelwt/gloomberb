@@ -1,12 +1,13 @@
 import { readdir } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
+import { homedir } from "os";
 import type { GloomPlugin } from "../types/plugin";
 import { debugLog } from "../utils/debug-log";
 
 const loaderLog = debugLog.createLogger("plugin-loader");
 
-const PLUGINS_DIR = join(process.env.HOME || "~", ".gloomberb", "plugins");
+const PLUGINS_DIR = join(process.env.HOME || homedir(), ".gloomberb", "plugins");
 
 export interface LoadedExternalPlugin {
   plugin: GloomPlugin;

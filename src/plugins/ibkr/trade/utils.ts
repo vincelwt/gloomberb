@@ -5,6 +5,7 @@ import type { TickerRecord } from "../../../types/ticker";
 import type { BrokerAccount, BrokerOrderPreview, BrokerOrderType } from "../../../types/trading";
 import { colors } from "../../../theme/colors";
 import { formatCompact, formatCurrency } from "../../../utils/format";
+export { truncateWithEllipsis as truncateTradeText } from "../../../utils/text-wrap";
 import { formatMarketPrice, formatMarketPriceWithCurrency, formatSignedMarketPrice, type AssetDisplayContext } from "../../../market-data/market/format";
 import { getConfiguredIbkrGatewayInstances } from "../instance-selection";
 
@@ -106,13 +107,6 @@ export function getTradeTonePalette(tone: TradeTone) {
 export function formatPreviewMetric(before?: number, after?: number): string {
   if (before == null && after == null) return "—";
   return `${formatCompact(before || 0)} → ${formatCompact(after || 0)}`;
-}
-
-export function truncateTradeText(value: string, maxWidth: number): string {
-  if (maxWidth <= 0) return "";
-  if (value.length <= maxWidth) return value;
-  if (maxWidth <= 3) return value.slice(0, maxWidth);
-  return `${value.slice(0, maxWidth - 3)}...`;
 }
 
 export function findTickerForOrder(

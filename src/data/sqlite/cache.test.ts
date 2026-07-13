@@ -35,6 +35,7 @@ describe("AppPersistence", () => {
     }, {
       cachePolicy: { staleMs: 60_000, expireMs: 120_000 },
       schemaVersion: 1,
+      fetchedAt: 1,
     });
 
     expect(persistence.resources.get<{ price: number }>({
@@ -43,6 +44,10 @@ describe("AppPersistence", () => {
       entityKey: "AAPL",
       sourceKey: "provider:yahoo",
     }, { allowExpired: true })?.value.price).toBe(123);
+    const listed = persistence.resources.list<{ price: number }>({
+      namespace: "market", kind: "quote", entityKey: "AAPL",
+    }, { allowExpired: true });
+    expect(listed[0]?.lastAccessedAt).toBeGreaterThan(1);
     persistence.close();
   });
 

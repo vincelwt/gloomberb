@@ -1,5 +1,7 @@
 import type { DataTableColumn } from "../../../components";
 import { formatCompact } from "../../../utils/format";
+
+export { truncateWithEllipsis as truncate } from "../../../utils/text-wrap";
 import type {
   CloudCongressMemberPayload,
   CloudCongressTradePayload,
@@ -74,13 +76,6 @@ export function formatAmountRange(low: number | null, high: number | null, raw?:
     return `${formatMoneyShort(low)}-${formatMoneyShort(high).replace(/^\$/, "")}`;
   }
   return formatMoneyShort(low ?? high);
-}
-
-export function truncate(value: string, width: number): string {
-  if (width <= 0) return "";
-  if (value.length <= width) return value;
-  if (width <= 3) return value.slice(0, width);
-  return `${value.slice(0, width - 3)}...`;
 }
 
 function compareText(left: string, right: string): number {

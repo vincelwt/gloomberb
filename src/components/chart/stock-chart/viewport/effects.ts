@@ -1,5 +1,4 @@
 import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-import { applyBufferedPanExpansion } from "../../core/scroll";
 import {
   applyDateWindowViewport,
   buildVisibleDateWindow,
@@ -15,7 +14,6 @@ import {
   type StoredChartSelectionSyncState,
 } from "../../core/pane-settings";
 import {
-  getNextBufferRange,
   getSupportMaxRange,
   type ManualChartResolution,
 } from "../../core/resolution";
@@ -31,7 +29,6 @@ import type {
 import type { ChartCursorMotionKind } from "../../cursor-motion";
 import type { AutoRenderedView } from "../auto";
 import {
-  clearAutoViewportState,
   resolveViewportPresetSelection,
   resolveViewportStoredSelection,
   type PendingExpansionAction,

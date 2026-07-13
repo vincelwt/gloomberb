@@ -10,7 +10,7 @@ import {
   CONGRESS_TRADES_PANE_ID,
   CongressTradesPane,
 } from "../congress-trades/pane";
-import { registerTwitterFeedFeature } from "../cloud-tweets";
+import { registerTwitterFeedFeature } from "../cloud-tweets/registration";
 import {
   buildDmCommandResults,
   formatChatPaneTitle,

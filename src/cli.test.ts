@@ -6,14 +6,11 @@ import { AppPersistence } from "./data/app-persistence";
 import { loadConfig, saveConfig } from "./data/config/store";
 import {
   buildSearchReport,
-  buildTickerReport,
   runCli,
   searchCandidatesForCli,
 } from "./cli/index";
 import { createDefaultConfig } from "./types/config";
 import { TickerRepository } from "./data/ticker-repository";
-import type { TickerFinancials } from "./types/financials";
-import type { NewsItem, SecFilingItem } from "./types/data-provider";
 import type { TickerRecord } from "./types/ticker";
 import { createTestDataProvider } from "./test-support/data-provider";
 
@@ -372,160 +369,6 @@ describe("CLI portfolio commands", () => {
     const result = await captureConsoleFailure(() => runCli(["portfolio", "add", "IBKR Account", "NVDA"]));
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('Portfolio "IBKR Account" is broker-managed and cannot be modified manually.');
-  });
-});
-
-describe("buildTickerReport", () => {
-  test("includes deeper fundamentals and recent statement sections", async () => {
-    const config = createDefaultConfig("/tmp/gloomberb-cli-report");
-    config.watchlists = [{ id: "growth", name: "Growth" }];
-
-    const ticker = makeTicker({
-      portfolios: ["main"],
-      watchlists: ["growth"],
-      positions: [{
-        portfolio: "main",
-        shares: 10,
-        avgCost: 400,
-        broker: "manual",
-      }],
-      assetCategory: "STK",
-      sector: "Technology",
-      industry: "Semiconductors",
-    });
-
-    const financials: TickerFinancials = {
-      quote: {
-        symbol: "NVDA",
-        price: 912.34,
-        currency: "USD",
-        change: 12.5,
-        changePercent: 1.39,
-        lastUpdated: Date.UTC(2026, 3, 1, 14, 30),
-        marketCap: 2_240_000_000_000,
-        volume: 48_000_000,
-        name: "NVIDIA Corporation",
-        exchangeName: "NMS",
-        marketState: "REGULAR",
-        bid: 912.3,
-        ask: 912.4,
-        bidSize: 100,
-        askSize: 200,
-        open: 905,
-        high: 918,
-        low: 901,
-        high52w: 980,
-        low52w: 500,
-        dataSource: "live",
-      },
-      fundamentals: {
-        trailingPE: 35.2,
-        forwardPE: 29.8,
-        pegRatio: 1.4,
-        enterpriseValue: 2_300_000_000_000,
-        operatingCashFlow: 82_000_000_000,
-        freeCashFlow: 67_000_000_000,
-        dividendYield: 0.001,
-        revenue: 128_000_000_000,
-        netIncome: 73_000_000_000,
-        eps: 2.97,
-        operatingMargin: 0.58,
-        profitMargin: 0.57,
-        revenueGrowth: 0.42,
-        return1Y: 0.88,
-        return3Y: 2.45,
-        lastQuarterGrowth: 0.61,
-        sharesOutstanding: 2_450_000_000,
-      },
-      profile: {
-        description: "Designs GPUs and accelerated computing platforms.",
-        sector: "Technology",
-        industry: "Semiconductors",
-      },
-      annualStatements: [{
-        date: "2025-12-31",
-        totalRevenue: 128_000_000_000,
-        grossProfit: 97_000_000_000,
-        operatingIncome: 76_000_000_000,
-        netIncome: 73_000_000_000,
-        ebitda: 79_000_000_000,
-        operatingCashFlow: 82_000_000_000,
-        freeCashFlow: 67_000_000_000,
-        cashAndCashEquivalents: 40_000_000_000,
-        totalAssets: 110_000_000_000,
-        totalLiabilities: 36_000_000_000,
-        totalDebt: 9_000_000_000,
-        totalEquity: 74_000_000_000,
-        eps: 11.84,
-        dilutedShares: 2_450_000_000,
-      }],
-      quarterlyStatements: [{
-        date: "2026-03-31",
-        totalRevenue: 38_000_000_000,
-        grossProfit: 28_000_000_000,
-        operatingIncome: 22_000_000_000,
-        netIncome: 21_000_000_000,
-        ebitda: 23_000_000_000,
-        operatingCashFlow: 24_000_000_000,
-        freeCashFlow: 19_000_000_000,
-        cashAndCashEquivalents: 42_000_000_000,
-        totalAssets: 118_000_000_000,
-        totalLiabilities: 38_000_000_000,
-        totalDebt: 9_000_000_000,
-        totalEquity: 80_000_000_000,
-        eps: 3.4,
-        dilutedShares: 2_455_000_000,
-      }],
-      priceHistory: [],
-    };
-
-    const recentNews: NewsItem[] = [{
-      title: "NVIDIA unveils next platform",
-      source: "Example News",
-      url: "https://example.com/nvda-platform",
-      publishedAt: "2026-04-01T15:45:00.000Z" as unknown as Date,
-      summary: "Analysts expect the launch to expand datacenter demand.",
-    }];
-
-    const recentSecFilings: SecFilingItem[] = [{
-      accessionNumber: "0000000000-26-000001",
-      form: "8-K",
-      filingDate: "2026-03-31T00:00:00.000Z" as unknown as Date,
-      cik: "0001045810",
-      filingUrl: "https://www.sec.gov/Archives/example-8k",
-      primaryDocument: "nvda-8k.htm",
-      primaryDocDescription: "Current report announcing a product launch",
-      items: "2.02, 7.01",
-    }];
-
-    const report = await buildTickerReport({
-      symbol: "NVDA",
-      tickerFile: ticker,
-      financials,
-      config,
-      toBase: async (value) => value,
-      notes: "Conviction remains high.\nWatch gross margin guidance.",
-      recentNews,
-      recentSecFilings,
-    });
-
-    expect(report).toContain("Fundamentals");
-    expect(report).toContain("(+1.39%)");
-    expect(report).not.toContain("++1.39%");
-    expect(report).toContain("Operating Cash Flow");
-    expect(report).toContain("Latest Annual (2025-12-31)");
-    expect(report).toContain("Latest Quarter (2026-03-31)");
-    expect(report).toContain("Watchlists Growth");
-    expect(report).toContain("Designs GPUs and accelerated computing platforms.");
-    expect(report).toContain("Notes");
-    expect(report).toContain("Conviction remains high.");
-    expect(report).toContain("Recent News");
-    expect(report).toContain("NVIDIA unveils next platform");
-    expect(report).toContain("Example News");
-    expect(report).toContain("Apr 1, 2026");
-    expect(report).toContain("Recent SEC Filings");
-    expect(report).toContain("8-K | Mar 31, 2026");
-    expect(report).toContain("Current report announcing a product launch");
   });
 });
 

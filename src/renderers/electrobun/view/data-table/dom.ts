@@ -19,7 +19,6 @@ export const CSS_TEXT_DIM = "var(--gloom-text-dim)";
 export const CSS_TEXT_BRIGHT = "var(--gloom-text-bright)";
 export const CSS_SELECTED = "var(--gloom-selected)";
 export const CSS_SELECTED_TEXT = "var(--gloom-selected-text)";
-export const CSS_HOVER_BG = "var(--gloom-hover-bg)";
 
 function hasAttribute(attributes: unknown, flag: number): boolean {
   return typeof attributes === "number" && (attributes & flag) !== 0;

@@ -58,7 +58,11 @@ export class NewsService {
     if (this.pollTimer !== null) {
       void this.pollActiveQueries();
     }
-    return () => this.unregister(source.id);
+    return () => {
+      if (this.sources.get(source.id) === source) {
+        this.unregister(source.id);
+      }
+    };
   }
 
   unregister(sourceId: string): void {

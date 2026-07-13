@@ -103,15 +103,6 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
     return false;
   }, [reload]);
 
-  const selectDisplayRow = useCallback((row: EarningsDisplayRow) => {
-    if (row.kind !== "event") return;
-    if (row.eventIdx === activeEventIdx) {
-      openEvent(row.event);
-      return;
-    }
-    setSelectedIdx(row.eventIdx);
-  }, [activeEventIdx, openEvent, setSelectedIdx]);
-
   const renderCell = useCallback((
     row: EarningsDisplayRow,
     column: EarningsColumn,

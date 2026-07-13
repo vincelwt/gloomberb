@@ -3,7 +3,7 @@ import type { PluginRegistry } from "../../plugins/registry";
 import { fuzzyFilter } from "../../utils/fuzzy-search";
 import type { ResultItem } from "./list/model";
 import type { CommandBarRoute, CommandBarWorkflowRoute } from "./workflow/types";
-import { summarizePaneSettingValue } from "./helpers";
+import { summarizePaneSettingValue } from "../pane-settings-dialog/value";
 
 type NotifyFn = (body: string, options?: { type?: "info" | "success" | "error" }) => void;
 

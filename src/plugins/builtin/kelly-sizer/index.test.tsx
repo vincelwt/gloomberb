@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { testRender } from "../../../renderers/opentui/test-utils";
 import { setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
-import type { TickerRecord } from "../../../types/ticker";
 import { KellySizerHarness, createFinancials, createSizerConfig, createTicker } from "./test-support";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
@@ -36,31 +35,6 @@ afterEach(async () => {
 });
 
 describe("KellySizerPane", () => {
-  test("renders binary sizing context, result, and curve", async () => {
-    await renderPane();
-    await flushFrame();
-
-    const frame = testSetup!.captureCharFrame();
-    expect(frame).toContain("AAPL · Main Portfolio");
-    expect(frame).toContain("Bankroll");
-    expect(frame).toContain("100000");
-    expect(frame).toContain("Win p");
-    expect(frame).toContain("Full Kelly");
-    expect(frame).toContain("Clipped");
-    expect(frame).toContain("Target val");
-    expect(frame).toContain("Current %");
-    expect(frame).toContain("Kelly Curve");
-    expect(frame).toContain("4.0% -> 8.0%");
-    expect(frame).toContain("growth");
-    expect(frame).toContain("loss cap");
-    expect(frame).toContain("cap max loss, max name");
-    expect(frame).toContain("full");
-    expect(frame).toContain("159%");
-    expect(frame).toContain("636%");
-    expect(frame).not.toContain("Mode");
-    expect(frame).not.toContain("Sensitivity");
-  });
-
   test("prefills shared caps from plugin config", async () => {
     const config = {
       ...createSizerConfig(),

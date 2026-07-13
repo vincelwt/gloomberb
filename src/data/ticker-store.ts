@@ -47,11 +47,4 @@ export class TickerStore {
       this.db.query("DELETE FROM tickers WHERE symbol = ?").run(symbol);
     });
   }
-
-  count(): number {
-    const row = withSqliteBusyRetry("count tickers", () => (
-      this.db.query<{ count: number }, []>("SELECT COUNT(*) as count FROM tickers").get()
-    ));
-    return row?.count ?? 0;
-  }
 }

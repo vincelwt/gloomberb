@@ -148,7 +148,7 @@ export function getChartMarketSessionKey(session: ChartMarketSession | null | un
 }
 
 export function resolveExtendedHoursBackgroundSpans(
-  values: readonly Array<Date | string | number>,
+  values: readonly (Date | string | number)[],
   session: ChartMarketSession | null | undefined,
 ): ChartSessionBackgroundSpan[] {
   if (!session) return [];

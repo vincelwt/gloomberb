@@ -211,8 +211,8 @@ async function runCorrelation(args: string[], ctx: Parameters<CliCommandDef["exe
 
 export const overviewCliCommands: CliCommandDef[] = [
   { name: "movers", description: "Fetch gainers, losers, active, or trending market movers", help: { usage: ["movers [gainers|losers|active|trending]"] }, execute: runMoverCommand },
-  { name: "indices", description: "Fetch major US index quotes", execute: (args, ctx) => runQuoteBasket([...MARKET_SUMMARY_SYMBOLS], ctx, { group: "indices" }) },
-  { name: "sectors", description: "Fetch SPDR sector ETF quotes", execute: (args, ctx) => runQuoteBasket(SECTOR_ETFS, ctx, { group: "sectors" }) },
+  { name: "indices", description: "Fetch major US index quotes", execute: (_args, ctx) => runQuoteBasket([...MARKET_SUMMARY_SYMBOLS], ctx, { group: "indices" }) },
+  { name: "sectors", description: "Fetch SPDR sector ETF quotes", execute: (_args, ctx) => runQuoteBasket(SECTOR_ETFS, ctx, { group: "sectors" }) },
   { name: "fear-greed", description: "Fetch CNN Fear & Greed gauge data", execute: runFearGreed },
   { name: "econ", description: "Fetch economic calendar events", help: { usage: ["econ [--country US|G7|EU|all] [--impact high|medium|low|all]"] }, execute: runEcon },
   { name: "fred", description: "Fetch a FRED series through the configured cloud session", help: { usage: ["fred <series-id> [--start yyyy-mm-dd]"] }, execute: runFred },

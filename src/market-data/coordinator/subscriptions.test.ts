@@ -40,6 +40,7 @@ function quote(symbol: string, price: number, overrides: Partial<Quote> = {}): Q
 
 async function flushCoordinator(): Promise<void> {
   await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 describe("MarketDataCoordinator key subscriptions", () => {

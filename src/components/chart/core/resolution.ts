@@ -239,22 +239,6 @@ export function clampTimeRangeToMaxRange(range: TimeRange, maxRange: TimeRange):
   return isTimeRangeAtOrBelow(range, maxRange) ? range : maxRange;
 }
 
-export function clampTimeRangeForResolution(range: TimeRange, resolution: ChartResolution): TimeRange {
-  if (resolution === "auto") return range;
-  const maxRange = getSupportMaxRange(
-    normalizeChartResolutionSupport([{ resolution, maxRange: "ALL" }]),
-    resolution,
-  ) ?? "ALL";
-  const intrinsicMaxRange = resolution === "1m" || resolution === "5m"
-    ? "1W"
-    : resolution === "15m"
-      ? "1M"
-      : resolution === "30m" || resolution === "45m" || resolution === "1h"
-        ? "3M"
-        : "ALL";
-  return clampTimeRangeToMaxRange(range, minTimeRange(maxRange, intrinsicMaxRange));
-}
-
 export function isIntradayResolution(resolution: ManualChartResolution): boolean {
   return resolution === "1m"
     || resolution === "5m"
@@ -275,16 +259,6 @@ export function isRangePresetSupported(
   }
   const maxRange = getSupportMaxRange(support as readonly ChartResolutionSupport[], resolution);
   return maxRange !== null && isTimeRangeAtOrBelow(range, maxRange);
-}
-
-export function getActiveRangePreset(
-  range: TimeRange,
-  resolution: ChartResolution,
-  zoomLevel: number,
-  panOffset: number,
-): TimeRange | null {
-  if (zoomLevel !== 1 || panOffset !== 0) return null;
-  return RANGE_PRESET_RESOLUTION[range] === resolution ? range : null;
 }
 
 export function getWidestPresetForResolution(

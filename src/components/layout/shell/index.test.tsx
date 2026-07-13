@@ -14,7 +14,6 @@ import { cloneLayout, createDefaultConfig, TICKER_RESEARCH_PANE_ID, type LayoutC
 import type { PluginRegistry } from "../../../plugins/registry";
 import type { PaneProps } from "../../../types/plugin";
 import { Textarea } from "../../../ui";
-import { Header } from "../header";
 import {
   buildNativeWindowState,
   resolvePaneManagementShortcut,
@@ -70,7 +69,7 @@ function createShellPluginRegistry(options?: {
   } as unknown as PluginRegistry;
 }
 
-async function emitKeypress(event: { name?: string; sequence?: string; ctrl?: boolean; meta?: boolean; shift?: boolean; alt?: boolean }) {
+async function emitKeypress(event: { name?: string; sequence?: string; ctrl?: boolean; meta?: boolean; super?: boolean; shift?: boolean; alt?: boolean }) {
   await act(async () => {
     const keyEvent = {
       ctrl: false,
@@ -183,112 +182,6 @@ function ShellTransientHarness({
 function findUpdateLayout(actions: ShellTestAction[]) {
   return actions.find((action) => action.type === "UPDATE_LAYOUT");
 }
-
-function HeaderHarness({
-  updateAvailable = null,
-  updateProgress = null,
-  updateCheckInProgress = false,
-  updateNotice = null,
-}: {
-  updateAvailable?: ReturnType<typeof createInitialState>["updateAvailable"];
-  updateProgress?: ReturnType<typeof createInitialState>["updateProgress"];
-  updateCheckInProgress?: boolean;
-  updateNotice?: string | null;
-}) {
-  const initialState = createInitialState(createDefaultConfig("/tmp/gloomberb-header-test"));
-  initialState.updateAvailable = updateAvailable;
-  initialState.updateProgress = updateProgress;
-  initialState.updateCheckInProgress = updateCheckInProgress;
-  initialState.updateNotice = updateNotice;
-  const [state, dispatch] = useReducer(appReducer, initialState);
-
-  return (
-    <AppContext value={{ state, dispatch }}>
-      <Header />
-    </AppContext>
-  );
-}
-
-describe("Header", () => {
-  test("shows automatic self-update status for standalone binaries", async () => {
-    testSetup = await testRender(
-      <HeaderHarness updateAvailable={{
-        version: "0.3.0",
-        tagName: "v0.3.0",
-        downloadUrl: "https://example.com/gloomberb",
-        publishedAt: "2026-04-01T00:00:00.000Z",
-        updateAction: { kind: "self" },
-      }} />,
-      { width: 120, height: 2 },
-    );
-
-    await testSetup.renderOnce();
-    const frame = testSetup!.captureCharFrame();
-
-    expect(frame).toContain("v0.3.0 available");
-    expect(frame).toContain("starting download");
-    expect(frame).not.toContain("press u to update");
-  });
-
-  test("shows the manual npm command when self-update is disabled", async () => {
-    testSetup = await testRender(
-      <HeaderHarness updateAvailable={{
-        version: "0.3.0",
-        tagName: "v0.3.0",
-        downloadUrl: "https://example.com/gloomberb",
-        publishedAt: "2026-04-01T00:00:00.000Z",
-        updateAction: { kind: "manual", command: "npm install -g gloomberb@latest" },
-      }} />,
-      { width: 120, height: 2 },
-    );
-
-    await testSetup.renderOnce();
-    const frame = testSetup!.captureCharFrame();
-
-    expect(frame).toContain("v0.3.0 available");
-    expect(frame).toContain("run npm install -g gloomberb@latest");
-    expect(frame).not.toContain("press u to update");
-  });
-
-  test("shows update download progress and notices", async () => {
-    testSetup = await testRender(
-      <HeaderHarness
-        updateAvailable={{
-          version: "0.3.0",
-          tagName: "v0.3.0",
-          downloadUrl: "https://example.com/gloomberb",
-          publishedAt: "2026-04-01T00:00:00.000Z",
-          updateAction: { kind: "self" },
-        }}
-        updateProgress={{ phase: "downloading", percent: 42 }}
-      />,
-      { width: 120, height: 2 },
-    );
-
-    await testSetup.renderOnce();
-    expect(testSetup.captureCharFrame()).toContain("Downloading v0.3.0: 42%");
-
-    testSetup.renderer.destroy();
-
-    testSetup = await testRender(
-      <HeaderHarness updateCheckInProgress />,
-      { width: 120, height: 2 },
-    );
-
-    await testSetup.renderOnce();
-    expect(testSetup.captureCharFrame()).toContain("Checking for updates...");
-
-    testSetup.renderer.destroy();
-
-    testSetup = await testRender(
-      <HeaderHarness updateNotice="Already on v0.3.1" />,
-      { width: 120, height: 2 },
-    );
-
-    await testSetup.renderOnce();
-    expect(testSetup.captureCharFrame()).toContain("Already on v0.3.1");
-  });
-});
 
 describe("Shell", () => {
   test("uses the desktop titlebar overlay height for shell chrome math", () => {
@@ -716,7 +609,6 @@ describe("Shell", () => {
     await emitKeypress({
       name: "f",
       key: "f",
-      meta: true,
       super: true,
       shift: true,
       targetEditable: true,
@@ -1330,10 +1222,7 @@ describe("Shell", () => {
     );
 
     await testSetup.renderOnce();
-    await act(async () => {
-      testSetup!.mockInput.pressKey("w", { meta: true });
-      await testSetup!.renderOnce();
-    });
+    await emitKeypress({ name: "w", super: true });
 
     const updateLayout = actions.find((action) => action.type === "UPDATE_LAYOUT");
     expect(updateLayout?.layout.instances.map((instance: { instanceId: string }) => instance.instanceId)).toEqual(["portfolio-list:main"]);

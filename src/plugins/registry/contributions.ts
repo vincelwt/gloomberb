@@ -37,6 +37,11 @@ interface RegistryContributionsOptions {
   wrapBrokerAdapter?: (broker: BrokerAdapter, pluginId: string) => BrokerAdapter;
 }
 
+function setUnique<T>(map: Map<string, T>, id: string, value: T): void {
+  if (map.has(id)) throw new Error(`Duplicate plugin contribution id: ${id}`);
+  map.set(id, value);
+}
+
 export class RegistryContributions {
   readonly pluginItems = new Map<string, PluginItems>();
   readonly commandOwners = new Map<string, string>();
@@ -82,30 +87,30 @@ export class RegistryContributions {
   }
 
   registerPane(pluginId: string, pane: PaneDef, items = this.getOrCreatePluginItems(pluginId)): void {
-    this.panesMap.set(pane.id, this.options.wrapPaneDef(pluginId, pane));
+    setUnique(this.panesMap, pane.id, this.options.wrapPaneDef(pluginId, pane));
     this.paneOwners.set(pane.id, pluginId);
     items.panes.push(pane.id);
   }
 
   registerPaneTemplate(pluginId: string, template: PaneTemplateDef, items = this.getOrCreatePluginItems(pluginId)): void {
-    this.paneTemplatesMap.set(template.id, template);
+    setUnique(this.paneTemplatesMap, template.id, template);
     this.paneTemplateOwners.set(template.id, pluginId);
     items.paneTemplates.push(template.id);
   }
 
   registerCommand(pluginId: string, command: CommandDef, items = this.getOrCreatePluginItems(pluginId)): void {
-    this.commandsMap.set(command.id, command);
+    setUnique(this.commandsMap, command.id, command);
     this.commandOwners.set(command.id, pluginId);
     items.commands.push(command.id);
   }
 
   registerColumn(_pluginId: string, column: CustomColumnDef, items: PluginItems): void {
-    this.columnsMap.set(column.id, column);
+    setUnique(this.columnsMap, column.id, column);
     items.columns.push(column.id);
   }
 
   registerBroker(pluginId: string, broker: BrokerAdapter, items = this.getOrCreatePluginItems(pluginId)): void {
-    this.brokersMap.set(broker.id, this.options.wrapBrokerAdapter?.(broker, pluginId) ?? broker);
+    setUnique(this.brokersMap, broker.id, this.options.wrapBrokerAdapter?.(broker, pluginId) ?? broker);
     items.brokers.push(broker.id);
   }
 
@@ -115,19 +120,19 @@ export class RegistryContributions {
   }
 
   registerTickerResearchTab(pluginId: string, tab: TickerResearchTabDef, items = this.getOrCreatePluginItems(pluginId)): void {
-    this.tickerResearchTabsMap.set(tab.id, this.options.wrapTickerResearchTabDef(pluginId, tab));
+    setUnique(this.tickerResearchTabsMap, tab.id, this.options.wrapTickerResearchTabDef(pluginId, tab));
     this.tickerResearchTabOwners.set(tab.id, pluginId);
     items.tickerResearchTabs.push(tab.id);
   }
 
   registerShortcut(pluginId: string, shortcut: KeyboardShortcut, items = this.getOrCreatePluginItems(pluginId)): void {
-    this.shortcutsMap.set(shortcut.id, shortcut);
+    setUnique(this.shortcutsMap, shortcut.id, shortcut);
     this.shortcutOwners.set(shortcut.id, pluginId);
     items.shortcuts.push(shortcut.id);
   }
 
   registerTickerAction(_pluginId: string, action: TickerAction, items: PluginItems): void {
-    this.tickerActionsMap.set(action.id, action);
+    setUnique(this.tickerActionsMap, action.id, action);
     items.tickerActions.push(action.id);
   }
 
@@ -166,9 +171,15 @@ export class RegistryContributions {
     }
     for (const actionId of items.tickerActions) this.tickerActionsMap.delete(actionId);
     for (const providerKey of items.contextMenuProviders) this.contextMenuProvidersMap.delete(providerKey);
-    for (const dispose of items.eventDisposers) dispose();
-    for (const dispose of items.capabilityDisposers) dispose();
-    for (const dispose of items.newsQueryWatchDisposers) dispose();
+    let disposeError: unknown;
+    for (const dispose of [...items.eventDisposers, ...items.capabilityDisposers, ...items.newsQueryWatchDisposers]) {
+      try {
+        dispose();
+      } catch (error) {
+        disposeError ??= error;
+      }
+    }
     this.pluginItems.delete(pluginId);
+    if (disposeError) throw disposeError;
   }
 }

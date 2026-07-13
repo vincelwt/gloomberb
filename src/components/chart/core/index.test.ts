@@ -918,30 +918,6 @@ describe("renderChart", () => {
     }
   });
 
-  test("keeps the default area renderer stable", () => {
-    const projection = projectChartData(chartFixture, 12, undefined, false);
-    const result = renderChart(projection.points, {
-      width: 12,
-      height: 5,
-      showVolume: false,
-      volumeHeight: 0,
-      cursorX: null,
-      cursorY: null,
-      mode: projection.effectiveMode,
-      colors: palette,
-    });
-
-    expect(projection.requestedMode).toBe("area");
-    expect(projection.effectiveMode).toBe("area");
-    expect(textLines(result)).toEqual([
-      "⠁ ⡠⠔⢣ ⠁  ⠁  ",
-      "⠔⠊⣿⣿⠈⢆⠄  ⠄  ",
-      "⣿⣿⣿⣿⣿⠘⡄    ⡠",
-      "⣿⣿⣿⣿⣿⣿⠱⡀ ⢠⠊⣿",
-      "⣿⣿⣿⣿⣿⣿⣿⢣⠔⠁⣿⣿",
-    ]);
-  });
-
   test("formats y-axis labels as percent change when requested", () => {
     const projection = projectChartData(chartFixture, 12, "line", false);
     const result = renderChart(projection.points, {

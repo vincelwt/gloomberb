@@ -1,7 +1,7 @@
 import type { BrokerInstanceConfig } from "../../types/config";
 import type { CachePolicy } from "../../types/persistence";
 import { normalizeIbkrConfig } from "./config";
-import { fnv1aHashString } from "./hash";
+import { fnv1aHashString } from "../../utils/hash";
 
 const FLEX_ACCOUNT_CACHE_POLICY = {
   staleMs: 6 * 60 * 60 * 1000,

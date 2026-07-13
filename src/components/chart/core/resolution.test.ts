@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   CHART_RESOLUTION_STEP_MS,
-  clampTimeRangeForResolution,
-  getActiveRangePreset,
   getBestSupportedResolutionForVisibleWindow,
   getExpandedBufferRange,
   getPresetResolution,
@@ -22,24 +20,9 @@ describe("chart-resolution", () => {
     expect(getPresetResolution("ALL")).toBe("1mo");
   });
 
-  test("derives the active range preset only for the exact reset preset pair", () => {
-    expect(getActiveRangePreset("1Y", "1d", 1, 0)).toBe("1Y");
-    expect(getActiveRangePreset("1Y", "auto", 1, 0)).toBeNull();
-    expect(getActiveRangePreset("1Y", "1d", 1.2, 0)).toBeNull();
-    expect(getActiveRangePreset("1Y", "1d", 1, 2)).toBeNull();
-  });
-
   test("checks whether a range preset is supported by the visible capability set", () => {
     expect(isRangePresetSupported("1Y", ["1d", "1wk"])).toBe(true);
     expect(isRangePresetSupported("ALL", ["1d", "1wk"])).toBe(false);
-  });
-
-  test("clamps overly-wide ranges for manual intraday resolutions", () => {
-    expect(clampTimeRangeForResolution("5Y", "5m")).toBe("1W");
-    expect(clampTimeRangeForResolution("6M", "1h")).toBe("3M");
-    expect(clampTimeRangeForResolution("1M", "15m")).toBe("1M");
-    expect(clampTimeRangeForResolution("5Y", "1d")).toBe("5Y");
-    expect(clampTimeRangeForResolution("5Y", "auto")).toBe("5Y");
   });
 
   test("expands buffers only toward wider supported ranges", () => {

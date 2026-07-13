@@ -16,7 +16,6 @@ import {
   TWEET_SEARCH_SCHEMA_VERSION,
   TWITTER_FEED_LAUNCH_SCHEMA_VERSION,
   TWITTER_FEED_LAUNCH_STATE_KEY,
-  TWITTER_FEED_PANE_ID,
   createFeed,
   deriveFeedTitle,
   normalizeFeedQuery,

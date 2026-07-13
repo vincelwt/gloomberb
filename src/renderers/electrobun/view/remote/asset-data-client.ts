@@ -93,7 +93,7 @@ export function createRemoteAssetDataClient(): RemoteAssetDataClient {
   let quoteBackendFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   const quoteTargetKey = (target: QuoteSubscriptionTarget) =>
-    `${target.symbol}:${target.exchange ?? ""}:${target.context?.brokerId ?? ""}:${target.context?.brokerInstanceId ?? ""}:${target.context?.instrument?.conId ?? target.context?.instrument?.localSymbol ?? ""}`;
+    `${target.symbol}:${target.exchange ?? ""}:${target.context?.brokerId ?? ""}:${target.context?.brokerInstanceId ?? ""}:${target.context?.instrument?.conId ?? target.context?.instrument?.localSymbol ?? target.context?.instrument?.symbol ?? ""}`;
 
   const scheduleQuoteBackendSubscriptionFlush = () => {
     if (quoteBackendFlushTimer) return;
@@ -156,7 +156,7 @@ export function createRemoteAssetDataClient(): RemoteAssetDataClient {
       if (!hasRendererOperation(assetDataOperations, "subscribeQuotes")) return () => {};
       const uniqueTargets = [...new Map(
         targets.map((target) => [
-          `${target.symbol}:${target.exchange ?? ""}:${target.context?.brokerId ?? ""}:${target.context?.brokerInstanceId ?? ""}`,
+          quoteTargetKey(target),
           target,
         ] as const),
       ).values()];

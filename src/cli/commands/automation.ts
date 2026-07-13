@@ -102,9 +102,7 @@ export const aiCliCommand: CliCommandDef = {
     if (action === "ask") {
       const rawArgs = args.slice(1);
       const providerId = takeOption(rawArgs, "--provider") ?? detectProviders().find((provider) => provider.available)?.id;
-      const provider = getAiProvider(providerId);
-      if (!provider) ctx.fail("Unknown AI provider.");
-      const selectedProvider = provider;
+      const selectedProvider = getAiProvider(providerId) ?? ctx.fail("Unknown AI provider.");
       if (!selectedProvider.available) ctx.fail(`${selectedProvider.name} is not installed or not available in PATH.`);
       const prompt = rawArgs.join(" ").trim();
       if (!prompt) ctx.fail("Usage: gloomberb ai ask [--provider id] <prompt>");

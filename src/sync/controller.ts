@@ -1,6 +1,7 @@
 import type { Dispatch } from "react";
 import type { AppAction, AppState } from "../core/state/app/state";
 import type { TickerRepository } from "../data/ticker-repository";
+import { stableStringify } from "../remote/revision";
 import {
   SYNC_SNAPSHOT_SCHEMA_VERSION,
   type RegisteredSyncContributor,
@@ -37,15 +38,6 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function stableStringify(value: unknown): string {
-  if (value == null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, child]) => `${JSON.stringify(key)}:${stableStringify(child)}`);
-  return `{${entries.join(",")}}`;
-}
-
 function resolveClientId(): string {
   const storage = globalThis.localStorage;
   const existing = storage?.getItem(CLIENT_ID_STORAGE_KEY);
@@ -55,13 +47,14 @@ function resolveClientId(): string {
   return id;
 }
 
-class CloudSyncController {
+export class CloudSyncController {
   private runtime: SyncRuntime | null = null;
   private contributors = new Map<string, RegisteredSyncContributor>();
   private transports = new Map<string, RegisteredSyncTransport>();
   private listeners = new Set<() => void>();
   private pushTimer: ReturnType<typeof setTimeout> | null = null;
   private inFlight: Promise<void> | null = null;
+  private syncQueued = false;
   private clientId: string | null = null;
   private lastSignature: string | null = null;
   private lastPulledAtMs = 0;
@@ -116,6 +109,7 @@ class CloudSyncController {
     this.runtime = null;
     if (this.pushTimer) clearTimeout(this.pushTimer);
     this.pushTimer = null;
+    this.syncQueued = false;
   }
 
   subscribe(listener: () => void): () => void {
@@ -141,14 +135,21 @@ class CloudSyncController {
     }
     if (this.pushTimer) clearTimeout(this.pushTimer);
     this.pushTimer = setTimeout(() => {
+      this.pushTimer = null;
       void this.requestSync({ reason });
     }, PUSH_DEBOUNCE_MS);
   }
 
   async requestSync(options: { reason?: string; force?: boolean } = {}): Promise<void> {
-    if (this.inFlight) return this.inFlight;
-    const run = this.syncOnce(options).finally(() => {
+    if (this.inFlight) {
+      this.syncQueued = true;
+      return this.inFlight;
+    }
+    const run = this.syncOnce(options).finally(async () => {
       this.inFlight = null;
+      if (!this.syncQueued) return;
+      this.syncQueued = false;
+      await this.requestSync({ reason: "queued-state-change" });
     });
     this.inFlight = run;
     return run;
@@ -164,8 +165,9 @@ class CloudSyncController {
     }
     const currentMs = Date.now();
     if (!options.force && currentMs - this.lastPulledAtMs < PULL_MIN_INTERVAL_MS) return;
-    this.lastPulledAtMs = currentMs;
-    await this.runPull(runtime, transport.transport);
+    if (await this.runPull(runtime, transport.transport)) {
+      this.lastPulledAtMs = currentMs;
+    }
   }
 
   private async syncOnce(options: { reason?: string; force?: boolean }): Promise<void> {
@@ -178,7 +180,7 @@ class CloudSyncController {
     }
     const transport = transportRegistration.transport;
     if (!this.hasPulledForTransport.has(transport.id)) {
-      await this.runPull(runtime, transport);
+      if (!await this.runPull(runtime, transport)) return;
       this.hasPulledForTransport.add(transport.id);
     }
 
@@ -206,7 +208,7 @@ class CloudSyncController {
     }
   }
 
-  private async runPull(runtime: SyncRuntime, transport: SyncTransport): Promise<void> {
+  private async runPull(runtime: SyncRuntime, transport: SyncTransport): Promise<boolean> {
     this.setStatus({ phase: "syncing", transportId: transport.id, error: null });
     try {
       const response = await transport.pullSnapshot();
@@ -218,7 +220,7 @@ class CloudSyncController {
         lastSyncAt: response.updatedAt,
         error: null,
       });
-      if (!response.snapshot) return;
+      if (!response.snapshot) return true;
       for (const entry of runtime.getContributors()) {
         const payload = response.snapshot.contributors[entry.contributor.id]?.payload;
         if (payload === undefined || !entry.contributor.apply) continue;
@@ -229,12 +231,14 @@ class CloudSyncController {
           tickerRepository: runtime.tickerRepository,
         });
       }
+      return true;
     } catch (error) {
       this.setStatus({
         phase: "error",
         transportId: transport.id,
         error: error instanceof Error ? error.message : String(error),
       });
+      return false;
     }
   }
 

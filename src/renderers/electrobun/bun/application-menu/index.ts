@@ -26,7 +26,7 @@ function openCommandBar(label: string, query: string, options?: { accelerator?: 
   return commandItem(label, { type: "open-command-bar", query }, options);
 }
 
-export function buildApplicationMenu(): ApplicationMenuItemConfig[] {
+function buildApplicationMenu(): ApplicationMenuItemConfig[] {
   return [
     {
       label: "Gloomberb",

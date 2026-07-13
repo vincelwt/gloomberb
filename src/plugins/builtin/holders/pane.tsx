@@ -127,11 +127,6 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
     };
   }, [sortedRows]);
 
-  const selectIndex = useCallback((index: number) => {
-    const row = sortedRows[index];
-    if (row) setSelectedId(row.id);
-  }, [sortedRows]);
-
   const selectedRow = activeIdx >= 0 ? sortedRows[activeIdx] ?? null : null;
   const selectedFundMatch = selectedRow ? fundMatches.get(selectedRow.id) ?? null : null;
 

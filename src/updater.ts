@@ -91,10 +91,6 @@ function normalizePath(value: string): string {
   return value.replace(/\\/g, "/").toLowerCase();
 }
 
-function tryRealpath(value: string): string {
-  return value;
-}
-
 function basename(value: string): string {
   const normalized = value.replace(/\\/g, "/");
   return normalized.slice(normalized.lastIndexOf("/") + 1);
@@ -124,7 +120,7 @@ const runtimeExecutables = new Set([
 ]);
 
 function resolveEntrypointPath(argv = process.argv): string {
-  return tryRealpath(argv[1] ?? "");
+  return argv[1] ?? "";
 }
 
 function isSourceEntrypoint(entrypoint: string): boolean {
@@ -138,7 +134,7 @@ function isMacAppBundleExecutable(execPath: string): boolean {
 }
 
 function isBundledDesktopTuiRuntime(execPath: string, argv: string[]): boolean {
-  const normalizedExecPath = normalizePath(tryRealpath(execPath));
+  const normalizedExecPath = normalizePath(execPath);
   const entrypoint = normalizePath(resolveEntrypointPath(argv));
   if (!entrypoint.endsWith("/resources/gloomberb-tui/tui-entry.js")) return false;
   return normalizedExecPath.endsWith("/contents/macos/bun")
@@ -150,7 +146,7 @@ export function resolveSelfUpdateTargetPath(
   execPath = getRuntimeProcess()?.execPath ?? "",
   argv = getRuntimeProcess()?.argv ?? [],
 ): string | null {
-  const resolvedExecPath = tryRealpath(execPath);
+  const resolvedExecPath = execPath;
   const normalizedExecPath = normalizePath(resolvedExecPath);
   if (isMacAppBundleExecutable(resolvedExecPath)) return null;
 
@@ -171,7 +167,7 @@ export function detectUpdateAction(
   if (isMacAppBundleExecutable(execPath)) return null;
   if (isBundledDesktopTuiRuntime(execPath, argv)) return null;
 
-  const normalizedExecPath = normalizePath(tryRealpath(execPath));
+  const normalizedExecPath = normalizePath(execPath);
   const execBase = basename(normalizedExecPath);
   const entrypoint = normalizePath(resolveEntrypointPath(argv));
   if (execBase === "gloomberb.exe") return null;
@@ -344,7 +340,6 @@ export async function performUpdate(
     const fsModulePath = "fs";
     const zlibModulePath = "zlib";
     const {
-      writeFileSync,
       renameSync,
       unlinkSync,
       chmodSync,
@@ -377,12 +372,16 @@ export async function performUpdate(
       }
     }
 
-    // Write to temp file
-    const blob = new Blob(chunks);
-    const buffer = await blob.arrayBuffer();
-    const downloaded = Buffer.from(buffer);
-    const nextBinary = release.compressed ? gunzipSync(downloaded) : downloaded;
-    writeFileSync(updatePath, nextBinary);
+    const downloaded = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      downloaded.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const nextBinary = release.compressed
+      ? new Uint8Array(gunzipSync(downloaded))
+      : downloaded;
+    await Bun.write(updatePath, nextBinary);
     chmodSync(updatePath, 0o755);
 
     // Swap binaries
@@ -391,7 +390,12 @@ export async function performUpdate(
       unlinkSync(oldPath);
     } catch {}
     renameSync(execPath, oldPath);
-    renameSync(updatePath, execPath);
+    try {
+      renameSync(updatePath, execPath);
+    } catch (error) {
+      renameSync(oldPath, execPath);
+      throw error;
+    }
     try {
       unlinkSync(oldPath);
     } catch {}

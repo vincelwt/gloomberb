@@ -14,7 +14,7 @@ import {
 import { fail, inferCliErrorOptions, printCliError } from "./errors";
 import { setCliColorEnabledOverride } from "../utils/cli-output";
 import { search, searchCandidatesForCli, buildSearchReport } from "./commands/search";
-import { ticker, buildTickerReport } from "./commands/ticker";
+import { ticker } from "./commands/ticker";
 import { apiCliCommand } from "./commands/api";
 import { marketDataCliCommands } from "./commands/market";
 import { overviewCliCommands } from "./commands/overview";
@@ -216,7 +216,7 @@ async function createRegistry(options: DispatchCliOptions = {}): Promise<CliComm
   return registry;
 }
 
-export { buildSearchReport, buildTickerReport, searchCandidatesForCli };
+export { buildSearchReport, searchCandidatesForCli };
 
 export async function dispatchCli(args: string[], options: DispatchCliOptions = {}): Promise<CliDispatchResult> {
   let parsed;

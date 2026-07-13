@@ -60,9 +60,9 @@ function sanitizePlacementMemory(value: unknown): PanePlacementMemory | undefine
   const docked = (() => {
     const raw = (value as PanePlacementMemory).docked;
     if (!raw || typeof raw !== "object") return undefined;
-    const path = Array.isArray((raw as { path?: unknown }).path)
-      ? (raw as { path?: unknown }).path
-        ?.filter((segment): segment is 0 | 1 => segment === 0 || segment === 1)
+    const rawPath = (raw as { path?: unknown }).path;
+    const path = Array.isArray(rawPath)
+      ? rawPath.filter((segment): segment is 0 | 1 => segment === 0 || segment === 1)
       : undefined;
     const anchorInstanceId = typeof (raw as { anchorInstanceId?: unknown }).anchorInstanceId === "string"
       ? (raw as { anchorInstanceId: string }).anchorInstanceId

@@ -3,7 +3,6 @@ import { TextAttributes } from "../../../../../ui";
 import {
   DataTableStackView,
   TickerBadgeList,
-  activeStackIndex,
   sortStackItems,
   type DataTableCell,
   type DataTableColumn,
@@ -165,22 +164,12 @@ export function NewsArticleStackView({
     [articles, sortPreference],
   );
   const selectedIdx = sortedArticles.findIndex((article) => article.id === selectedArticleId);
-  const activeIdx = activeStackIndex(sortedArticles.length, selectedIdx);
   const columns = useMemo(() => buildColumns(width, columnIds), [columnIds, width]);
-
-  const selectIndex = useCallback((index: number) => {
-    setSelectedArticleId(sortedArticles[index]?.id ?? null);
-  }, [setSelectedArticleId, sortedArticles]);
 
   const openArticle = useCallback((article: MarketNewsItem) => {
     onArticleRead?.(article.id);
     onOpenArticle(article);
   }, [onArticleRead, onOpenArticle]);
-
-  const openIndex = useCallback((index: number) => {
-    const article = sortedArticles[index];
-    if (article) openArticle(article);
-  }, [openArticle, sortedArticles]);
 
   useEffect(() => {
     if (sortedArticles.length === 0) {

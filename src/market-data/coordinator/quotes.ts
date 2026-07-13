@@ -228,7 +228,6 @@ export class QuoteSubscriptionManager {
   private nextQuoteSubscriptionId = 1;
   private quoteSubscriptionDispose: (() => void) | null = null;
   private quoteSubscriptionSignature = "";
-  private pendingQuoteSubscriptionKeys = new Set<string>();
 
   constructor(
     private readonly dataProvider: DataProvider,
@@ -250,7 +249,6 @@ export class QuoteSubscriptionManager {
       if (existing) {
         existing.targets.set(subscriptionId, target);
         existing.target = mergeQuoteSubscriptionTargets(existing.targets.values()) ?? target;
-        this.pendingQuoteSubscriptionKeys.add(key);
         if (existing.removeTimer) {
           clearTimeout(existing.removeTimer);
           existing.removeTimer = null;
@@ -262,7 +260,6 @@ export class QuoteSubscriptionManager {
         targets: new Map([[subscriptionId, target]]),
         removeTimer: null,
       });
-      this.pendingQuoteSubscriptionKeys.add(key);
     }
     this.flush();
 
@@ -274,7 +271,6 @@ export class QuoteSubscriptionManager {
         const mergedTarget = mergeQuoteSubscriptionTargets(existing.targets.values());
         if (mergedTarget) {
           existing.target = mergedTarget;
-          this.pendingQuoteSubscriptionKeys.add(key);
           this.flush();
           continue;
         }
@@ -283,7 +279,6 @@ export class QuoteSubscriptionManager {
           const current = this.quoteSubscriptions.get(key);
           if (!current || current.targets.size > 0) return;
           this.quoteSubscriptions.delete(key);
-          this.pendingQuoteSubscriptionKeys.delete(key);
           this.flush();
         }, QUOTE_SUBSCRIPTION_REMOVE_GRACE_MS);
       }
@@ -292,7 +287,6 @@ export class QuoteSubscriptionManager {
 
   private flush(): void {
     if (!this.dataProvider.subscribeQuotes) return;
-    this.pendingQuoteSubscriptionKeys = new Set();
 
     const activeEntries = [...this.quoteSubscriptions.entries()]
       .filter(([, entry]) => entry.targets.size > 0 || entry.removeTimer)

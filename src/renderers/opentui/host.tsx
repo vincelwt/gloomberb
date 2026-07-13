@@ -22,6 +22,7 @@ export function toKeyEventLike(event: {
   shift?: boolean;
   alt?: boolean;
   meta?: boolean;
+  option?: boolean;
   preventDefault?: () => void;
   stopPropagation?: () => void;
   defaultPrevented?: boolean;
@@ -37,9 +38,12 @@ export function toKeyEventLike(event: {
     sequence: event.sequence,
     ctrl: event.ctrl ?? false,
     shift: event.shift ?? false,
-    alt: event.alt ?? false,
-    meta: event.meta ?? event.super ?? false,
-    super: event.super ?? event.meta ?? false,
+    // OpenTUI follows terminal naming: `meta` is Alt/Option, while the
+    // kitty keyboard protocol exposes the Command/Windows modifier as
+    // `super`. Keep the shared input model aligned with browser semantics.
+    alt: event.alt === true || event.meta === true || event.option === true,
+    meta: event.super === true,
+    super: event.super === true,
     get defaultPrevented() {
       return event.defaultPrevented ?? false;
     },
@@ -101,6 +105,9 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
       await proc.exited;
     },
     async copyText(text) {
+      if (!text) return;
+      if (renderer.copyToClipboardOSC52(text)) return;
+      if (process.platform !== "darwin") return;
       const proc = Bun.spawn(["pbcopy"], {
         stdin: "pipe",
         stdout: "ignore",
@@ -111,6 +118,7 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
       await proc.exited;
     },
     async readText() {
+      if (process.platform !== "darwin") return "";
       const proc = Bun.spawn(["pbpaste"], {
         stdout: "pipe",
         stderr: "ignore",

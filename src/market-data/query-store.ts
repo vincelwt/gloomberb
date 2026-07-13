@@ -21,8 +21,4 @@ export class QueryStore<T> {
     this.onChange(key);
     return next;
   }
-
-  values(): IterableIterator<QueryEntry<T>> {
-    return this.entries.values();
-  }
 }

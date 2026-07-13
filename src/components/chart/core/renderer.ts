@@ -2,20 +2,16 @@ import type { PixelBuffer } from "./types";
 import type { ProjectedChartPoint } from "./data";
 import { buildTimeAxis } from "./time-axis";
 import {
-  formatAxisCell,
   formatAxisValue,
-  formatCursorAxisValue,
   formatPriceWithCurrency,
   getAxisFractionDigitFloor,
   resolveAxisFractionDigits,
-  resolveChartAxisWidth,
 } from "./axis-format";
 import {
   bufferToBrailleLines,
   createPixelBuffer,
   drawCrosshair,
   drawGridLines,
-  drawLine,
   type StyledContent,
 } from "../rendering/pixel-buffer";
 import {

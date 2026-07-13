@@ -1,5 +1,4 @@
 import type { AppConfig, BrokerInstanceConfig } from "../types/config";
-import type { BrokerContractRef } from "../types/instrument";
 import type { Portfolio, TickerPosition, TickerRecord } from "../types/ticker";
 import { buildBrokerPortfolioId, getBrokerInstance, isBrokerPortfolioId } from "../utils/broker-instances";
 

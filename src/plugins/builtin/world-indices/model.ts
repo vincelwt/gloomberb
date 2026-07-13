@@ -87,13 +87,6 @@ export function buildFlatRows(
   return rows;
 }
 
-export function rowIndicesOf(flatRows: WorldIndexTableRow[]): number[] {
-  return flatRows.reduce<number[]>((acc, row, i) => {
-    if (row.type === "row") acc.push(i);
-    return acc;
-  }, []);
-}
-
 export function nextSortPreference(
   current: WorldIndexSortPreference,
   columnId: string,

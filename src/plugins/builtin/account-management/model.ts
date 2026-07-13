@@ -3,6 +3,8 @@ import type { AccountProfile, PublicPortfolioAnalytics } from "../../../api-clie
 import type { Portfolio, TickerRecord } from "../../../types/ticker";
 import { formatNumber } from "../../../utils/format";
 
+export { truncateWithEllipsis as truncate } from "../../../utils/text-wrap";
+
 export type AccountFieldKey =
   | "username"
   | "name"
@@ -36,7 +38,7 @@ export interface AccountDraft {
   positionAlertsEnabled: boolean;
 }
 
-export interface ProfileAnalyticsPreviewMetric {
+interface ProfileAnalyticsPreviewMetric {
   id: string;
   label: string;
   value: string;
@@ -51,25 +53,6 @@ export interface ProfileAnalyticsPreview {
   metrics: ProfileAnalyticsPreviewMetric[];
   publicAnalytics: PublicPortfolioAnalytics | null;
 }
-
-export const BASE_FIELD_ORDER: AccountFieldKey[] = [
-  "username",
-  "name",
-  "company",
-  "title",
-  "bio",
-  "profilePublic",
-  "publicEmail",
-  "xAccount",
-  "acceptUnknownDms",
-  "sharedPortfolioId",
-  "weeklyRoundupEnabled",
-  "positionAlertsEnabled",
-  "emailAlertsOffAction",
-  "upgradeAction",
-  "passwordAction",
-  "deleteAccountAction",
-];
 
 export const NO_PORTFOLIO_VALUE = "__none__";
 
@@ -93,13 +76,6 @@ export function profileToDraft(profile: AccountProfile | null): AccountDraft {
 export function emptyToNull(value: string): string | null {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
-}
-
-export function truncate(value: string, width: number): string {
-  if (width <= 0) return "";
-  if (value.length <= width) return value;
-  if (width <= 3) return value.slice(0, width);
-  return `${value.slice(0, width - 3)}...`;
 }
 
 export function formatPlan(plan: AccountProfile["plan"] | null | undefined): string {

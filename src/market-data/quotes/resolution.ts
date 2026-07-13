@@ -147,7 +147,7 @@ function assignField(
   quote: QuoteContribution | undefined,
 ): void {
   if (!quote) return;
-  const value = (quote as Record<string, unknown>)[field];
+  const value = (quote as unknown as Record<string, unknown>)[field];
   if (value === undefined) return;
   (target as Record<string, unknown>)[field] = value;
   provenance.fields ??= {};
@@ -161,7 +161,7 @@ function pickField(
   candidates: QuoteContribution[],
 ): QuoteContribution | undefined {
   for (const candidate of candidates) {
-    if ((candidate as Record<string, unknown>)[field] === undefined) continue;
+    if ((candidate as unknown as Record<string, unknown>)[field] === undefined) continue;
     assignField(target, provenance, field, candidate);
     return candidate;
   }

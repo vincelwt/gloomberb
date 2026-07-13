@@ -9,7 +9,7 @@ import { Box } from "../../../ui";
 import { apiClient, type ChatChannel, type ChatMessage } from "../../../api-client";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../runtime";
 import { setSharedMarketDataForTests, setSharedRegistryForTests } from "../../registry";
-import { ChatContent } from "../chat";
+import { ChatContent } from "./content";
 import { ChatController } from "./controller";
 
 const TRANSCRIPT_KIND = "channel-transcript";
@@ -201,7 +201,7 @@ export function createChatTestControls(getSetup: () => ChatTestSetup) {
         ...event,
       };
       await act(async () => {
-        getSetup().renderer.keyInput.emit("keypress", keyEvent as any);
+        (getSetup().renderer.keyInput as any).emit("keypress", keyEvent);
         await getSetup().renderOnce();
       });
       return keyEvent;

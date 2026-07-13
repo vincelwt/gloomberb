@@ -21,17 +21,6 @@ export function documentContentTarget(filing: SecFilingItem, document: SecFiling
   };
 }
 
-export function formatDocumentLabel(document: SecFilingDocument): string {
-  const label = document.isPrimary ? "PRIMARY" : document.type || "DOCUMENT";
-  const description = document.description
-    && document.description !== document.document
-    && document.description !== document.type
-    ? ` | ${document.description}`
-    : "";
-  const size = document.size ? ` | ${document.size}` : "";
-  return `${label.padEnd(8)} ${document.document}${description}${size}`;
-}
-
 export function formatCompactDocumentLabel(document: SecFilingDocument): string {
   const label = document.isPrimary ? "PRIMARY" : document.type || "DOCUMENT";
   const description = document.description

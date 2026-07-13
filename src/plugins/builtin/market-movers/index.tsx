@@ -51,8 +51,6 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
   const selectedIdx = selectedSymbol
     ? rows.findIndex((row) => row.symbol === selectedSymbol)
     : -1;
-  const activeIdx = selectedIdx >= 0 ? selectedIdx : (rows.length > 0 ? 0 : -1);
-
   useEffect(() => {
     if (selectedSymbol && selectedIdx >= 0) return;
     const firstRow = rows[0];

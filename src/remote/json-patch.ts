@@ -12,6 +12,14 @@ function pointerSegments(path: string): string[] {
   return path.slice(1).split("/").map(decodePointerSegment);
 }
 
+const UNSAFE_OBJECT_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+function assertSafeObjectKey(key: string): void {
+  if (UNSAFE_OBJECT_KEYS.has(key)) {
+    throw new Error(`Unsafe object key in JSON patch path: ${key}`);
+  }
+}
+
 function cloneJson<T>(value: T): T {
   return value == null ? value : JSON.parse(JSON.stringify(value)) as T;
 }
@@ -30,12 +38,18 @@ function containerFor(root: unknown, path: string): { parent: unknown; key: stri
       }
       parent = parent[index];
     } else if (parent && typeof parent === "object") {
+      assertSafeObjectKey(segment);
+      if (!Object.prototype.hasOwnProperty.call(parent, segment)) {
+        throw new Error(`Cannot descend into missing object key: ${segment}`);
+      }
       parent = (parent as Record<string, unknown>)[segment];
     } else {
       throw new Error(`Cannot descend into non-object patch path: ${path}`);
     }
   }
-  return { parent, key: segments[segments.length - 1]! };
+  const key = segments[segments.length - 1]!;
+  if (!Array.isArray(parent)) assertSafeObjectKey(key);
+  return { parent, key };
 }
 
 function applyOperation(root: unknown, operation: RemoteJsonPatchOperation): void {

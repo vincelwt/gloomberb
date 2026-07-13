@@ -1,5 +1,4 @@
 import { collectNewsDisplayTickers } from "../../news/ticker-symbols";
-import type { NewsItem } from "../../types/data-provider";
 import type { NewsArticle, NewsQuery, NewsStoryItem } from "../../types/news-source";
 import type {
   CloudNewsPayload,
@@ -87,17 +86,6 @@ export function mapCloudNewsArticle(
     isBreaking: !!item.flags?.breaking,
     isDeveloping: !!item.flags?.developing,
     items: item.items?.map(mapCloudNewsStoryItem) ?? [],
-  };
-}
-
-export function mapCloudNewsItem(item: CloudNewsPayload): NewsItem {
-  const article = mapCloudNewsArticle(item);
-  return {
-    title: article.title,
-    url: article.url,
-    source: article.source,
-    publishedAt: article.publishedAt,
-    summary: article.summary,
   };
 }
 

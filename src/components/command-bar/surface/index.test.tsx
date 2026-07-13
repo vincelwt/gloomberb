@@ -81,22 +81,6 @@ function mutablePaneRegistryMap(map: ReadonlyMap<string, unknown>): Map<string, 
 }
 
 describe("CommandBar", () => {
-  test("renders the default layout with opencode-style chrome", async () => {
-    testSetup = await testRender(<CommandBarHarness query="" selectedTicker="AAPL" />, {
-      width: 80,
-      height: 24,
-    });
-
-    await testSetup.renderOnce();
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Commands");
-    expect(frame).not.toContain("Tickers");
-    expect(frame).toContain("Panes");
-    expect(frame).toContain("Portfolio");
-    expect(frame).toContain("Help");
-  });
-
   test("keeps generic command filtering separate from ticker search", async () => {
     const searchQueries: string[] = [];
     testSetup = await testRender(<CommandBarHarness

@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import type { DisplayCursorState } from "../core/pointer";
 import type { ComparisonChartProjection } from "../comparison/data";
 import {
   buildComparisonChartScene,
@@ -8,16 +7,14 @@ import {
   type ComparisonChartScene,
   type RenderComparisonChartResult,
 } from "../comparison/renderer";
-import type { ChartAxisMode, ChartMarketSession, ResolvedChartRenderer } from "../core/types";
+import type { ChartMarketSession, ResolvedChartRenderer } from "../core/types";
 
 type ComparisonChartColors = Parameters<typeof buildComparisonChartScene>[1]["colors"];
 
 interface UseComparisonChartRenderOutputOptions {
-  axisMode: ChartAxisMode;
   chartColors: ComparisonChartColors;
   chartHeight: number;
   chartWidth: number;
-  displayCursor: DisplayCursorState;
   displayCursorX: number | null;
   displayCursorY: number | null;
   effectiveRenderer: ResolvedChartRenderer;
@@ -34,22 +31,20 @@ interface UseComparisonChartRenderOutputResult {
   cursorRow: number | null;
   cursorTimeAxisColumn: number | null;
   cursorTimeAxisDate: Date | null;
-  displayScene: ComparisonChartScene;
+  displayScene: ComparisonChartScene | null;
   hasDisplayCursor: boolean;
   legendActiveIndex: number | null;
   result: RenderComparisonChartResult;
   staticResult: RenderComparisonChartResult;
-  staticScene: ComparisonChartScene;
+  staticScene: ComparisonChartScene | null;
   timeAxisLabel: string;
   visiblePriceRange: number | undefined;
 }
 
 export function useComparisonChartRenderOutput({
-  axisMode,
   chartColors,
   chartHeight,
   chartWidth,
-  displayCursor,
   displayCursorX,
   displayCursorY,
   effectiveRenderer,

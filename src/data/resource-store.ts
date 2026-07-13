@@ -291,6 +291,12 @@ export class ResourceStore {
       }
       records.push(record);
     }
+    if (options.touch !== false) {
+      for (const record of records) {
+        const touchedAt = this.touch(record);
+        if (touchedAt != null) record.lastAccessedAt = touchedAt;
+      }
+    }
     return records;
   }
 

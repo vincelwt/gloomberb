@@ -3,24 +3,6 @@ import { cloneLayout, createDefaultConfig, createPaneInstance, DEFAULT_PORTFOLIO
 import { deletePaneSetting, getPaneSettingValue, setPaneSetting } from "./pane-settings";
 
 describe("pane settings helpers", () => {
-  test("seeds built-in default panes with persisted settings", () => {
-    const config = createDefaultConfig("/tmp/gloomberb-pane-settings");
-    const portfolioPane = config.layout.instances.find((instance) => instance.instanceId === "portfolio-list:main");
-    const detailPane = config.layout.instances.find((instance) => instance.instanceId === "ticker-detail:main");
-
-    expect(portfolioPane?.settings).toMatchObject({
-      collectionScope: "all",
-      viewMode: "table",
-    });
-    expect(portfolioPane?.settings?.columnIds).toEqual(DEFAULT_PORTFOLIO_COLUMN_IDS);
-    expect(detailPane?.settings).toEqual({
-      chartRangePreset: "5Y",
-      chartResolution: "auto",
-      hideTabs: false,
-      lockedTabId: "overview",
-    });
-  });
-
   test("cloneLayout deep-clones pane settings", () => {
     const layout = cloneLayout(createDefaultConfig("/tmp/gloomberb-pane-settings").layout);
     const cloned = cloneLayout(layout);

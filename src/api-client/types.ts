@@ -6,9 +6,7 @@ import type {
   HolderData,
   HolderRecord,
   OptionsChain,
-  PricePoint,
   Quote,
-  TickerFinancials,
 } from "../types/financials";
 import type { SyncSettings, SyncSnapshot } from "../sync/types";
 

@@ -3,6 +3,7 @@ import type { BrokerAdapter } from "../types/broker";
 import type { BrokerInstanceConfig } from "../types/config";
 import type { CachePolicy } from "../types/persistence";
 import type { BrokerAccount } from "../types/trading";
+import { fnv1aHashString } from "../utils/hash";
 
 const BROKER_ACCOUNT_SNAPSHOT_KIND = "account-snapshot";
 const BROKER_ACCOUNT_SNAPSHOT_SCHEMA_VERSION = 1;
@@ -16,15 +17,6 @@ interface PersistedBrokerAccountSnapshot {
   brokerType?: string;
 }
 
-function hashString(input: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `fnv1a:${(hash >>> 0).toString(16).padStart(8, "0")}`;
-}
-
 function brokerAccountNamespace(instance: BrokerInstanceConfig): string {
   return `plugin:${instance.brokerType}`;
 }
@@ -36,7 +28,7 @@ export function getBrokerAccountCacheSourceKey(
   if (broker?.getAccountCacheSourceKey) {
     return broker.getAccountCacheSourceKey(instance);
   }
-  return hashString(JSON.stringify({
+  return fnv1aHashString(JSON.stringify({
     brokerType: instance.brokerType,
     config: broker?.toConfigValues?.(instance) ?? instance.config,
   }));

@@ -29,6 +29,7 @@ type PluginGroupOptions = Pick<
 };
 
 function createPluginGroup(options: PluginGroupOptions): GloomPlugin {
+  let startedPlugins: GloomPlugin[] = [];
   return {
     id: options.id,
     name: options.name,
@@ -42,17 +43,30 @@ function createPluginGroup(options: PluginGroupOptions): GloomPlugin {
     capabilities: options.plugins.flatMap((plugin) => plugin.capabilities ?? []),
 
     async setup(ctx) {
+      startedPlugins = [];
       await options.setup?.(ctx);
       for (const plugin of options.plugins) {
+        startedPlugins.push(plugin);
         await plugin.setup?.(ctx);
       }
     },
 
     dispose() {
-      for (const plugin of [...options.plugins].reverse()) {
-        plugin.dispose?.();
+      let firstError: unknown;
+      for (const plugin of startedPlugins.reverse()) {
+        try {
+          plugin.dispose?.();
+        } catch (error) {
+          firstError ??= error;
+        }
       }
-      options.dispose?.();
+      startedPlugins = [];
+      try {
+        options.dispose?.();
+      } catch (error) {
+        firstError ??= error;
+      }
+      if (firstError) throw firstError;
     },
   };
 }

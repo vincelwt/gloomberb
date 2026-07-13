@@ -1,4 +1,4 @@
-import { Box, Text } from "../../../ui";
+import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { DataTableStackView, usePaneFooter, type DataTableCell } from "../../../components";
@@ -243,10 +243,6 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
   }), [countryFilter, cycleCountryFilter, cycleImpactFilter, error, impactFilter, load, loading, nextCountdown, nextEvent?.event, staleness]);
 
   const handleHeaderClick = useCallback(() => {}, []);
-  const selectDisplayRow = useCallback((row: DisplayRow) => {
-    if (row.kind !== "event") return;
-    setSelectedIdx(row.eventIdx);
-  }, []);
   const openDisplayRow = useCallback((row: DisplayRow) => {
     if (row.kind !== "event") return;
     setDetailEvent(row.event);

@@ -229,8 +229,6 @@ function toFeedItems(
       eyebrow: filing.form,
       title: form4Preview ? `${displayTitle} | ${form4Preview}` : enrichedTitle,
       timestamp: filing.filingDate,
-      preview: form4Preview
-        ?? (filing.items ? `Items ${filing.items}` : (formDesc || filing.primaryDocument)),
       detailTitle: enrichedTitle,
       detailMeta: [
         `Filed ${formatFiledAt(filing)}`,

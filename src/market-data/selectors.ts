@@ -1,6 +1,6 @@
 import type { MarketDataRequestContext } from "../types/data-provider";
 import type { Quote, TickerFinancials } from "../types/financials";
-import type { InstrumentRef, NewsRequest, OptionsRequest, SecFilingsRequest, ChartRequest } from "./request-types";
+import type { InstrumentRef, OptionsRequest, SecFilingsRequest, ChartRequest } from "./request-types";
 import type { QueryEntry } from "./result-types";
 import { hasLikelyQuoteUnitMismatch } from "../utils/currency-units";
 import { normalizePriceHistory } from "../utils/price-history";
@@ -59,10 +59,6 @@ export function buildChartKey(request: ChartRequest): string {
     request.endDate ? request.endDate.toISOString() : "",
     request.barSize ?? "",
   ].join(":");
-}
-
-export function buildNewsKey(request: NewsRequest): string {
-  return `news:${buildInstrumentKey(request.instrument)}:${request.count ?? 50}`;
 }
 
 export function buildOptionsKey(request: OptionsRequest): string {

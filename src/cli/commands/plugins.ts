@@ -1,6 +1,6 @@
 import { join } from "path";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "fs";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { getPluginsDir } from "../../plugins/loader";
 import {
   cliStyles,
@@ -18,18 +18,34 @@ function ensurePluginsDir() {
   }
 }
 
-function parseGitHubRef(ref: string): { url: string; name: string } {
-  if (ref.startsWith("https://github.com/")) {
-    const clean = ref.replace(/\.git$/, "");
-    const name = clean.split("/").pop()!;
-    return { url: clean.endsWith(".git") ? ref : `${clean}.git`, name };
+const GITHUB_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+function validatePluginDirectoryName(name: string): string {
+  if (!GITHUB_SEGMENT_PATTERN.test(name)) {
+    throw new Error(`Invalid plugin name: ${name}.`);
   }
-  if (ref.startsWith("github:")) {
-    ref = ref.slice(7);
+  return name;
+}
+
+function parseGitHubRef(rawRef: string): { url: string; name: string } {
+  const ref = rawRef.startsWith("github:") ? rawRef.slice("github:".length) : rawRef;
+  let segments: string[];
+  if (ref.startsWith("https://")) {
+    const parsed = new URL(ref);
+    if (parsed.hostname !== "github.com" || parsed.port || parsed.username || parsed.password || parsed.search || parsed.hash) {
+      throw new Error(`Invalid plugin reference: ${rawRef}. Use user/repo or a GitHub URL.`);
+    }
+    segments = parsed.pathname.split("/").filter(Boolean);
+  } else if (!ref.includes("://")) {
+    segments = ref.split("/");
+  } else {
+    segments = [];
   }
-  if (ref.includes("/") && !ref.includes("://")) {
-    const name = ref.split("/").pop()!;
-    return { url: `https://github.com/${ref}.git`, name };
+  const [owner, rawRepo] = segments;
+  const repo = rawRepo?.replace(/\.git$/, "");
+  if (segments.length === 2 && owner && GITHUB_SEGMENT_PATTERN.test(owner) && repo) {
+    const name = validatePluginDirectoryName(repo);
+    return { url: `https://github.com/${owner}/${name}.git`, name };
   }
   throw new Error(`Invalid plugin reference: ${ref}. Use user/repo or a GitHub URL.`);
 }
@@ -47,8 +63,9 @@ export async function installPlugin(ref: string) {
   console.log(cliStyles.muted(url));
 
   try {
-    execSync(`git clone --depth 1 ${url} ${targetDir}`, { stdio: "inherit" });
+    execFileSync("git", ["clone", "--depth", "1", url, targetDir], { stdio: "inherit" });
   } catch {
+    rmSync(targetDir, { recursive: true, force: true });
     fail(`Failed to clone ${url}.`);
   }
 
@@ -56,7 +73,7 @@ export async function installPlugin(ref: string) {
   if (existsSync(pkgPath)) {
     console.log(cliStyles.muted("Installing plugin dependencies..."));
     try {
-      execSync("bun install", { cwd: targetDir, stdio: "inherit" });
+      execFileSync("bun", ["install"], { cwd: targetDir, stdio: "inherit" });
     } catch {
       console.error(cliStyles.warning("Warning: failed to install plugin dependencies."));
     }
@@ -92,7 +109,7 @@ export async function installPlugin(ref: string) {
 }
 
 export async function removePlugin(name: string) {
-  const targetDir = join(PLUGINS_DIR, name);
+  const targetDir = join(PLUGINS_DIR, validatePluginDirectoryName(name));
   if (!existsSync(targetDir)) {
     fail(`Plugin "${name}" was not found.`, PLUGINS_DIR);
   }
@@ -103,7 +120,7 @@ export async function removePlugin(name: string) {
 export async function updatePlugins(name?: string) {
   ensurePluginsDir();
   const dirs = name
-    ? [name]
+    ? [validatePluginDirectoryName(name)]
     : readdirSync(PLUGINS_DIR, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name);
@@ -121,10 +138,10 @@ export async function updatePlugins(name?: string) {
     }
     console.log(cliStyles.accent(`Updating ${dir}...`));
     try {
-      execSync("git pull", { cwd: targetDir, stdio: "inherit" });
+      execFileSync("git", ["pull", "--ff-only"], { cwd: targetDir, stdio: "inherit" });
       const pkgPath = join(targetDir, "package.json");
       if (existsSync(pkgPath)) {
-        execSync("bun install", { cwd: targetDir, stdio: "inherit" });
+        execFileSync("bun", ["install"], { cwd: targetDir, stdio: "inherit" });
       }
     } catch {
       console.error(cliStyles.danger(`Failed to update ${dir}.`));

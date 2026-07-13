@@ -88,7 +88,7 @@ export function PageStackView({
     >
       <Box height={1} flexDirection="row">
         <Box
-          onMouseDown={(event) => {
+          onMouseDown={(event: { preventDefault?: () => void; stopPropagation?: () => void }) => {
             goBack(event);
           }}
           backgroundColor={colors.selected}

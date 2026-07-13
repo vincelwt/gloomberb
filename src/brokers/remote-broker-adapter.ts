@@ -44,6 +44,9 @@ export function createRemoteBrokerAdapter(adapter: BrokerAdapter): BrokerAdapter
     ...adapter,
     validate: (instance) => invoke<boolean>(instance, "validate"),
     importPositions: (instance) => invoke(instance, "importPositions"),
+    importPortfolioSnapshot: adapter.importPortfolioSnapshot
+      ? (instance) => invoke(instance, "importPortfolioSnapshot")
+      : undefined,
     connect: (instance) => invoke<void>(instance, "connect"),
     disconnect: (instance) => invoke<void>(instance, "disconnect"),
     getStatus: (instance) => getBrokerRemoteClient()?.getStatus(instance.id) ?? adapter.getStatus?.(instance) ?? disconnectedStatus(),

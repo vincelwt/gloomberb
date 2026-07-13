@@ -31,7 +31,7 @@ const HELP_TABS = [
 type HelpTabId = typeof HELP_TABS[number]["value"];
 const GLOOMBERB_ISSUES_URL = "https://github.com/vincelwt/gloomberb/issues";
 
-export function HelpPane({ focused, width, height }: PaneProps) {
+function HelpPane({ focused, width, height }: PaneProps) {
   const registry = getSharedRegistry();
   const { openCommandBar, showPane } = usePluginAppActions();
   const [activeTabId, setActiveTabId] = useState<HelpTabId>("basics");
@@ -381,7 +381,7 @@ export function HelpPane({ focused, width, height }: PaneProps) {
     <Box flexDirection="column" width={width} height={height}>
       <Box width={width} height={1} flexShrink={0}>
         <Tabs
-          tabs={HELP_TABS}
+          tabs={[...HELP_TABS]}
           activeValue={activeTabId}
           onSelect={(value) => setActiveTabId(value as HelpTabId)}
           focused={focused}

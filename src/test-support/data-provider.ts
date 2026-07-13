@@ -14,7 +14,6 @@ export function createTestDataProvider(overrides: Partial<DataProvider> = {}): D
     getQuote: async () => unused<Quote>("getQuote"),
     getExchangeRate: async () => 1,
     search: async () => [] satisfies InstrumentSearchResult[],
-    getNews: async () => [],
     getArticleSummary: async () => null,
     getPriceHistory: async () => [],
     ...overrides,

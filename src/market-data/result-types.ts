@@ -19,17 +19,6 @@ export interface ProviderAttempt {
   message?: string;
 }
 
-interface ProviderResult<T> {
-  status: ProviderStatus;
-  data: T | null;
-  providerId: string;
-  latencyMs: number;
-  completeness: "full" | "partial";
-  reasonCode?: ProviderReasonCode;
-  asOf?: number;
-  staleAt?: number;
-}
-
 type QueryPhase = "idle" | "loading" | "ready" | "refreshing" | "error";
 
 export interface QueryEntry<T> {

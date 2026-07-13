@@ -1,4 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { useNativeRenderer } from "../../ui";
 import {
   InputHostProvider,
   shouldDeliverShortcut,
@@ -19,6 +20,7 @@ interface ShortcutEntry {
 let nextShortcutOrder = 1;
 
 export function OpenTuiInputHostProvider({ children }: { children: ReactNode }) {
+  const renderer = useNativeRenderer();
   const shortcutsRef = useRef<ShortcutEntry[]>([]);
   const dispatchShortcut = (event: KeyEventLike) => {
     const shortcuts = shortcutsRef.current;
@@ -34,7 +36,9 @@ export function OpenTuiInputHostProvider({ children }: { children: ReactNode }) 
   };
 
   useKeyboard((event) => {
-    dispatchShortcut(toKeyEventLike(event));
+    const shortcutEvent = toKeyEventLike(event);
+    shortcutEvent.targetEditable = renderer.currentFocusedEditor != null;
+    dispatchShortcut(shortcutEvent);
   });
 
   const host = useMemo<InputHost>(() => ({

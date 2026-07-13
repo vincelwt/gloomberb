@@ -1,20 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type { PaneTemplateDef, WizardStep } from "../../types/plugin";
-import type {
-  CommandBarRoute,
-  CommandBarWorkflowField,
-} from "./workflow/types";
+import type { CommandBarWorkflowField } from "./workflow/types";
 import {
   buildGeneratedTemplateField,
   getCollectionCommandAction,
   getCollectionCommandKind,
   getCollectionCommandVerb,
   getFirstVisibleFieldId,
-  getScreenFooterLeft,
-  getScreenFooterRight,
   getVisibleWorkflowFields,
   isCollectionCommand,
-  isRootParsedCommand,
   isRouteCommandId,
   isWorkflowTextField,
   looksDestructiveCommand,
@@ -22,7 +16,6 @@ import {
   routeCommandIdToScreen,
   slugifyName,
   summarizeError,
-  summarizePaneSettingValue,
   summarizeWorkflowFieldValue,
 } from "./helpers";
 
@@ -68,26 +61,6 @@ describe("command-bar helpers", () => {
     }, "quality\ncompounders")).toBe("quality compounders");
     expect(summarizeWorkflowFieldValue({
       id: "columns",
-      label: "Columns",
-      type: "ordered-multi-select",
-      options: [
-        { label: "Symbol", value: "symbol" },
-        { label: "Price", value: "price" },
-        { label: "P&L", value: "pnl" },
-        { label: "Volume", value: "volume" },
-      ],
-    }, ["symbol", "price", "pnl", "volume"])).toBe("Symbol, Price, P&L +1");
-  });
-
-  test("summarizes pane setting values consistently", () => {
-    expect(summarizePaneSettingValue({
-      key: "theme",
-      label: "Theme",
-      type: "select",
-      options: [{ label: "Nord", value: "nord" }],
-    }, "nord")).toBe("Nord");
-    expect(summarizePaneSettingValue({
-      key: "columns",
       label: "Columns",
       type: "ordered-multi-select",
       options: [
@@ -157,61 +130,9 @@ describe("command-bar helpers", () => {
     });
   });
 
-  test("formats screen footers based on route context", () => {
-    const orderedPickerRoute: CommandBarRoute = {
-      kind: "picker",
-      pickerId: "field-multi-select",
-      title: "Columns",
-      query: "",
-      selectedIdx: 0,
-      hoveredIdx: null,
-      options: [],
-      payload: { fieldType: "ordered-multi-select" },
-    };
-    const filteredPickerRoute: CommandBarRoute = {
-      ...orderedPickerRoute,
-      query: "vol",
-    };
-    const workflowRoute: CommandBarRoute = {
-      kind: "workflow",
-      workflowId: "create-pane",
-      title: "Create Pane",
-      fields: [],
-      values: {},
-      activeFieldId: null,
-      submitLabel: "Create",
-      pending: false,
-      error: null,
-      payload: {
-        kind: "builtin",
-        actionId: "create-pane",
-      },
-    };
-    const confirmRoute: CommandBarRoute = {
-      kind: "confirm",
-      confirmId: "delete",
-      title: "Delete",
-      body: ["Delete item?"],
-      confirmLabel: "Delete",
-      cancelLabel: "Back",
-      tone: "danger",
-      onConfirm: () => {},
-      pending: false,
-      error: null,
-    };
-
-    expect(getScreenFooterLeft(null)).toBe("up/down move  enter select");
-    expect(getScreenFooterLeft(orderedPickerRoute)).toBe("up/down move  space toggle  [ ] reorder  enter done");
-    expect(getScreenFooterRight(orderedPickerRoute)).toBe("backspace/esc back");
-    expect(getScreenFooterRight(filteredPickerRoute)).toBe("backspace delete  esc back");
-    expect(getScreenFooterRight(workflowRoute)).toBe("backspace/esc back");
-    expect(getScreenFooterRight(confirmRoute)).toBe("backspace/esc back");
-  });
-
   test("maps route and collection command ids", () => {
     expect(isRouteCommandId("plugins")).toBe(true);
     expect(routeCommandIdToScreen("plugins")).toBe("plugins");
-    expect(isRootParsedCommand("remove-portfolio")).toBe(true);
     expect(isCollectionCommand("remove-portfolio")).toBe(true);
     expect(getCollectionCommandKind("remove-portfolio")).toBe("portfolio");
     expect(getCollectionCommandAction("remove-portfolio")).toBe("remove");

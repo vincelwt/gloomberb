@@ -70,6 +70,49 @@ afterEach(() => {
   currentPersistence = null;
 });
 
+describe("PluginRegistry lifecycle", () => {
+  test("rolls back rejected registrations and always removes owned contributions", async () => {
+    const registry = createRegistry();
+    const pane = {
+      id: "shared-pane",
+      name: "Shared",
+      component: () => null,
+      defaultPosition: "right" as const,
+    };
+
+    await expect(registry.register({
+      id: "setup-failure",
+      name: "Setup failure",
+      version: "1.0.0",
+      panes: [pane],
+      setup: () => { throw new Error("setup failed"); },
+    })).rejects.toThrow("setup failed");
+    expect(registry.allPlugins.has("setup-failure")).toBe(false);
+    expect(registry.panes.has("shared-pane")).toBe(false);
+
+    await registry.register({ id: "owner", name: "Owner", version: "1.0.0", panes: [pane] });
+    await expect(registry.register({ id: "collision", name: "Collision", version: "1.0.0", panes: [pane] }))
+      .rejects.toThrow("Duplicate plugin contribution id");
+    expect(registry.panes.get("shared-pane")?.name).toBe("Shared");
+
+    await registry.register({
+      id: "throwing-dispose",
+      name: "Throwing dispose",
+      version: "1.0.0",
+      panes: [{
+        id: "disposable-pane",
+        name: "Disposable",
+        component: () => null,
+        defaultPosition: "right",
+      }],
+      dispose: () => { throw new Error("dispose failed"); },
+    });
+    expect(() => registry.unregister("throwing-dispose")).toThrow("dispose failed");
+    expect(registry.allPlugins.has("throwing-dispose")).toBe(false);
+    expect(registry.panes.has("disposable-pane")).toBe(false);
+  });
+});
+
 describe("PluginRegistry context menu providers", () => {
   test("registers and unregisters context menu providers", async () => {
     const registry = createRegistry();
@@ -234,6 +277,7 @@ describe("PluginRegistry pane settings", () => {
         settings: {},
       }],
       floating: [],
+      detached: [],
     };
     registry.getConfigFn = () => config;
     registry.getLayoutFn = () => config.layout;

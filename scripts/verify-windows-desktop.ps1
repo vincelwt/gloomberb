@@ -888,22 +888,6 @@ function Measure-WindowCloseGlyphPadding {
   }
 }
 
-function Assert-WindowControlPadding {
-  param(
-    [string]$Path,
-    [string]$Label
-  )
-
-  $Measurement = Measure-WindowCloseGlyphPadding -Path $Path -Label $Label
-  Write-Host "$Label close glyph padding: top=$($Measurement.TopInset) right=$($Measurement.RightInset) delta=$($Measurement.Delta)"
-
-  if ([Math]::Abs($Measurement.Delta) -gt 2) {
-    throw "$Label close glyph padding is not balanced: $($Measurement | ConvertTo-Json -Depth 5 -Compress)"
-  }
-
-  return $Measurement
-}
-
 function Assert-WindowControlPaddingMeasurement {
   param([object]$Measurement)
 

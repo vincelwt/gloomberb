@@ -6,7 +6,6 @@ import type {
   LayoutBounds,
   ResolvedPane,
 } from "../../../plugins/pane-manager";
-import type { LayoutConfig } from "../../../types/config";
 import {
   constrainFloatingRectToBounds,
   pointInRect,

@@ -9,11 +9,9 @@ import type {
   AssetDataProvider,
   CachedFinancialsTarget,
   MarketDataRequestContext,
-  NewsItem,
   QuoteBatchResult,
   QuoteSubscriptionTarget,
   SearchRequestContext,
-  SecFilingItem,
   TickerFinancialsBatchResult,
 } from "../../types/data-provider";
 import type { AnalystResearchData, CorporateActionsData, HolderData, OptionsChain, PricePoint, Quote, TickerFinancials } from "../../types/financials";
@@ -27,12 +25,11 @@ import {
 } from "../../api-client";
 import type { NewsArticle, NewsQuery } from "../../types/news-source";
 import { resolvePriceHistoryCurrencyUnit } from "../../utils/currency-units";
-import { canonicalTickerKey, publicExchange } from "../../utils/exchanges";
+import { canonicalTickerKey } from "../../utils/exchanges";
 import { createProviderMiss } from "../provider-errors";
 import {
   cloudNewsParams,
   mapCloudNewsArticle,
-  mapCloudNewsItem,
 } from "./news";
 import {
   GLOOMBERB_CLOUD_PROVIDER_ID,
@@ -237,20 +234,6 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     );
   }
 
-  async getNews(ticker: string, count?: number, exchange?: string, _context?: MarketDataRequestContext): Promise<NewsItem[]> {
-    const response = await withCloudFallback(
-      () => apiClient.getCloudNews({
-        feed: "ticker",
-        ticker,
-        exchange: exchange ? publicExchange(exchange) : undefined,
-        tickerTier: "primary",
-        limit: count,
-      }),
-      `Cloud news is unavailable for ${ticker}`,
-    );
-    return response.items.map(mapCloudNewsItem);
-  }
-
   async getHolders(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<HolderData> {
     await requireVerifiedSession();
     return withCloudFallback(async () => {
@@ -273,18 +256,6 @@ export class GloomberbCloudProvider implements AssetDataProvider {
       const response = await apiClient.getCloudCorporateActions(ticker, exchange);
       return unwrapRequiredCloudResponse(response, `Cloud corporate actions are unavailable for ${ticker}`) as CloudCorporateActionsPayload;
     }, `Cloud corporate actions are unavailable for ${ticker}`);
-  }
-
-  async getSecFilings(_ticker: string, _count?: number, _exchange?: string, _context?: MarketDataRequestContext): Promise<SecFilingItem[]> {
-    throw createProviderMiss("Cloud SEC filings are not available");
-  }
-
-  async getSecFilingDocuments(_filing: SecFilingItem) {
-    throw createProviderMiss("Cloud filing documents are not available");
-  }
-
-  async getSecFilingContent(_filing: SecFilingItem): Promise<string | null> {
-    throw createProviderMiss("Cloud filing content is not available");
   }
 
   async getArticleSummary(_url: string): Promise<string | null> {

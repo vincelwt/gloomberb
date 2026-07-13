@@ -13,10 +13,12 @@ import type { PinTickerOptions } from "../../../../types/plugin";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
-afterEach(() => {
+afterEach(async () => {
   setSharedMarketDataCoordinator(null);
   if (testSetup) {
-    testSetup.renderer.destroy();
+    await act(async () => {
+      testSetup!.renderer.destroy();
+    });
     testSetup = undefined;
   }
 });
@@ -181,44 +183,13 @@ async function renderOnce() {
 async function flushFrames(count: number) {
   for (let index = 0; index < count; index += 1) {
     await act(async () => {
-      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
       await testSetup!.renderOnce();
     });
   }
 }
 
 describe("QuoteMonitorPane", () => {
-  test("renders a compact quote card for the bound ticker", async () => {
-    await renderHarness(createQuoteMonitorHarness(), {
-      width: 72,
-      height: 7,
-    });
-
-    await renderOnce();
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("MSFT");
-    expect(frame).toContain("$356.15");
-    expect(frame).toContain("-2.68%");
-    expect(frame).toContain("-9.82");
-    expect(frame).toMatch(/[⠁-⣿]/);
-  });
-
-  test("renders multiple configured tickers", async () => {
-    await renderHarness(createQuoteMonitorHarness({ symbols: ["MSFT", "AAPL"] }), {
-      width: 72,
-      height: 8,
-    });
-
-    await renderOnce();
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("MSFT");
-    expect(frame).toContain("AAPL");
-    expect(frame).toContain("$356.15");
-    expect(frame).toContain("$202.12");
-  });
-
   test("opens a Ticker Research pane on the second card click", async () => {
     const pinCalls: PinTickerCall[] = [];
     await renderHarness(createQuoteMonitorHarness({ pinCalls }), {

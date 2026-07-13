@@ -212,7 +212,6 @@ export function Shell({
 
   const {
     dockedPanes,
-    floatingPanes,
     paneMap,
     visibleFloatingPanes,
   } = useShellResolvedPanes({

@@ -43,5 +43,3 @@ export const kellySizerPlugin: GloomPlugin = {
     },
   ],
 };
-
-export default kellySizerPlugin;

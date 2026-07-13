@@ -28,11 +28,6 @@ export interface ChartRequest {
   barSize?: string;
 }
 
-export interface NewsRequest {
-  instrument: InstrumentRef;
-  count?: number;
-}
-
 export interface OptionsRequest {
   instrument: InstrumentRef;
   expirationDate?: number;

@@ -19,7 +19,6 @@ import {
   CONGRESS_FILING_LIMIT,
   CONGRESS_MEMBER_FILING_LIMIT,
   CONGRESS_TRADE_LIMIT,
-  CONGRESS_TRADES_PANE_ID,
   buildMemberColumns,
   buildTradeColumns,
   nextSort,

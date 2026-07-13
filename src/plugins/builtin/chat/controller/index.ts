@@ -30,7 +30,6 @@ import {
   disposeChatControllerRuntime,
   resetChatControllerRuntime,
 } from "./lifecycle";
-import type { ChatSessionUser } from "./persistence";
 import {
   closeAllChannelConnections,
   closeInactiveChannelConnections,
@@ -68,15 +67,6 @@ export class ChatController {
   private pendingMessageSeq = 0;
   private notifyFn: (notification: AppNotificationRequest) => void = () => {};
   private notifiedMessageIds = new Set<string>();
-
-  private get hydrated(): boolean { return this.session.hydrated; }
-  private set hydrated(value: boolean) { this.session.hydrated = value; }
-  private get sessionToken(): string | null { return this.session.sessionToken; }
-  private set sessionToken(value: string | null) { this.session.sessionToken = value; }
-  private get sessionChecked(): boolean { return this.session.sessionChecked; }
-  private set sessionChecked(value: boolean) { this.session.sessionChecked = value; }
-  private get user(): ChatSessionUser | null { return this.session.user; }
-  private set user(value: ChatSessionUser | null) { this.session.user = value; }
 
   private readonly storage = new ChatControllerStorage({
     emit: (channelId) => this.emit(channelId),

@@ -1,1 +1,0 @@
-export { registerTwitterFeedFeature } from "./registration";

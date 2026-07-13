@@ -90,17 +90,6 @@ export function callCellMouseHandler(handler: unknown, event: CellMouseEvent): v
   (handler as (event: unknown) => void)(event);
 }
 
-export function hasDirectMouseHandler(props: Record<string, unknown>): boolean {
-  return typeof props.onMouseDown === "function"
-    || typeof props.onMouseOver === "function"
-    || typeof props.onMouseUp === "function"
-    || typeof props.onMouseMove === "function"
-    || typeof props.onMouseOut === "function"
-    || typeof props.onMouseDrag === "function"
-    || typeof props.onMouseDragEnd === "function"
-    || typeof props.onMouseScroll === "function";
-}
-
 export function cellBoundsForElement(
   getElement: () => HTMLElement | null,
   getProps: () => Record<string, unknown>,

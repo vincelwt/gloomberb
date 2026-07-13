@@ -402,11 +402,9 @@ function ComparisonStockChartView({
     staticScene,
     timeAxisLabel,
   } = useComparisonChartRenderOutput({
-    axisMode,
     chartColors,
     chartHeight,
     chartWidth,
-    displayCursor,
     displayCursorX,
     displayCursorY,
     effectiveRenderer,

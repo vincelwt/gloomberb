@@ -1,13 +1,8 @@
 import { colors, priceColor } from "../../../theme/colors";
-import { formatDetailDate as sharedFormatDetailDate, formatRelativeTime as sharedFormatRelativeTime, parseDisplayDate } from "../../../utils/datetime-format";
+import { formatDetailDate as sharedFormatDetailDate, parseDisplayDate } from "../../../utils/datetime-format";
 import type { BuildoutSource, BuildoutUpdate } from "./model/types";
 
-export function truncate(text: string, width: number) {
-  if (width <= 0) return "";
-  if (text.length <= width) return text;
-  if (width <= 3) return text.slice(0, width);
-  return `${text.slice(0, width - 3)}...`;
-}
+export { truncateWithEllipsis as truncate } from "../../../utils/text-wrap";
 
 export function text(value: unknown, fallback = "-") {
   if (value == null) return fallback;
@@ -60,10 +55,6 @@ export function dateShort(value: string | null | undefined) {
 export function dateDetail(value: string | null | undefined) {
   const formatted = sharedFormatDetailDate(value, "");
   return formatted || null;
-}
-
-export function formatRelativeTime(value: string | null | undefined): string {
-  return sharedFormatRelativeTime(value);
 }
 
 export function activityLabel(value: number | null | undefined) {

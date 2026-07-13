@@ -8,7 +8,7 @@ import { TextAttributes } from "../../../ui";
 import { apiClient } from "../../../api-client";
 import { PluginRenderProvider } from "../../runtime";
 import { gloomberbCloudPlugin } from "../cloud";
-import { ChatContent } from "../chat";
+import { ChatContent } from "./content";
 import { chatController } from "./controller";
 import { useChatChannelNavigation } from "./content/channel-navigation";
 import {
@@ -366,7 +366,6 @@ describe("ChatContent channel sidebar", () => {
   });
 
   test("coalesces rapid sidebar navigation to the final channel", async () => {
-    const controller = createController({ sessionToken: "token-123" });
     const channels = [
       { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
       { id: "equities", name: "equities", created_at: "2026-05-09T00:00:00.000Z" },

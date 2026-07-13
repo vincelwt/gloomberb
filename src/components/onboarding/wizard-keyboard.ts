@@ -72,7 +72,7 @@ export function useOnboardingKeyboard({
     }
 
     if (editingField) {
-      if (event.name === "return") {
+      if (event.name === "enter" || event.name === "return") {
         setEditingField(false);
         if (portfolioSub === "broker-fields" && selectedBrokerId) {
           const currentField = activeBrokerFields[brokerFieldIdx];
@@ -188,28 +188,7 @@ export function useOnboardingKeyboard({
         }
       }
       nextStep();
-    } else if (isBackNavigationKey(event)) {
-      if (step === "portfolio" && portfolioSub === "broker-sync") {
-        resetBrokerSync();
-        setPortfolioSub("broker-fields");
-        return;
-      }
-      if (step === "portfolio" && portfolioSub === "broker-fields") {
-        setPortfolioSub("broker-setup");
-        return;
-      }
-      if (step === "portfolio" && portfolioSub === "broker-setup") {
-        setPortfolioSub("broker-fields");
-        setBrokerFieldIdx(0);
-        return;
-      }
-      if (step === "portfolio" && portfolioSub !== "choose") {
-        setPortfolioSub("choose");
-        setBrokerFieldIdx(0);
-        return;
-      }
-      prevStep();
-    } else if (event.name === "left") {
+    } else if (isBackNavigationKey(event) || event.name === "left") {
       if (step === "portfolio" && portfolioSub === "broker-sync") {
         resetBrokerSync();
         setPortfolioSub("broker-fields");

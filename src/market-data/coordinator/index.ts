@@ -1,7 +1,6 @@
 import type { DataProvider, SecFilingDocument, SecFilingItem } from "../../types/data-provider";
-import type { NewsArticle } from "../../news/types";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../../types/financials";
-import type { ChartRequest, InstrumentRef, NewsRequest, OptionsRequest, SecFilingsRequest } from "../request-types";
+import type { ChartRequest, InstrumentRef, OptionsRequest, SecFilingsRequest } from "../request-types";
 import { QueryStore } from "../query-store";
 import type { QueryEntry } from "../result-types";
 import {
@@ -9,7 +8,6 @@ import {
   buildChartKey,
   buildFxKey,
   buildTickerFinancialsSnapshot,
-  buildNewsKey,
   buildOptionsKey,
   buildQuoteKey,
   buildSecContentKey,
@@ -41,7 +39,6 @@ import {
 import {
   loadArticleSummaryEntry,
   loadFxRateEntry,
-  loadNewsEntry,
   loadOptionsEntry,
   loadSecFilingContentEntry,
   loadSecFilingDocumentsEntry,
@@ -73,7 +70,6 @@ export class MarketDataCoordinator {
   private readonly fundamentalsStore = new QueryStore<TickerFinancials["fundamentals"]>((key) => this.events.bump(key));
   private readonly statementsStore = new QueryStore<Pick<TickerFinancials, "annualStatements" | "quarterlyStatements">>((key) => this.events.bump(key));
   private readonly chartStore = new QueryStore<PricePoint[]>((key) => this.events.bump(key));
-  private readonly newsStore = new QueryStore<NewsArticle[]>((key) => this.events.bump(key));
   private readonly optionsStore = new QueryStore<OptionsChain>((key) => this.events.bump(key));
   private readonly secFilingsStore = new QueryStore<SecFilingItem[]>((key) => this.events.bump(key));
   private readonly secDocumentsStore = new QueryStore<SecFilingDocument[]>((key) => this.events.bump(key));
@@ -122,10 +118,6 @@ export class MarketDataCoordinator {
 
   getChartEntry(request: ChartRequest): QueryEntry<PricePoint[]> {
     return this.chartStore.get(buildChartKey(request));
-  }
-
-  getNewsEntry(request: NewsRequest): QueryEntry<NewsArticle[]> {
-    return this.newsStore.get(buildNewsKey(request));
   }
 
   getOptionsEntry(request: OptionsRequest): QueryEntry<OptionsChain> {
@@ -308,15 +300,6 @@ export class MarketDataCoordinator {
         const attempt = createAttempt(this.dataProvider.id, startedAt, EXPECTED_EMPTY.test(classified.message) ? "empty" : "fatal_error", classified.reasonCode, classified.message);
         return this.chartStore.update(key, (current) => errorEntry(current, attempt));
       }
-    });
-  }
-
-  async loadNews(request: NewsRequest): Promise<QueryEntry<NewsArticle[]>> {
-    return loadNewsEntry({
-      dataProvider: this.dataProvider,
-      request,
-      store: this.newsStore,
-      runSingleFlight: (key, task) => this.runSingleFlight(key, task),
     });
   }
 

@@ -45,19 +45,29 @@ export async function startRemoteControlServer(options: RemoteControlServerOptio
     token,
     startedAt: new Date().toISOString(),
   };
-  await writeRemoteEndpointFiles(options.dataDir, endpoint);
+  try {
+    await writeRemoteEndpointFiles(options.dataDir, endpoint);
+  } catch (error) {
+    await closeHttpServer(httpServer);
+    await removeRemoteEndpointFiles(options.dataDir, endpoint).catch(() => {});
+    throw error;
+  }
 
   return {
     endpoint,
     close: async () => {
-      await new Promise<void>((resolve, reject) => {
-        httpServer.close((error) => (error ? reject(error) : resolve()));
-      }).catch((error) => {
-        if ((error as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING") throw error;
-      });
+      await closeHttpServer(httpServer);
       await removeRemoteEndpointFiles(options.dataDir, endpoint);
     },
   };
+}
+
+async function closeHttpServer(httpServer: ReturnType<typeof createServer>): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    httpServer.close((error) => (error ? reject(error) : resolve()));
+  }).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING") throw error;
+  });
 }
 
 async function handleHttpRequest(

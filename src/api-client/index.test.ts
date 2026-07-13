@@ -415,7 +415,7 @@ describe("apiClient chat timestamps", () => {
       seenCreatedAts.push(message.createdAt);
     });
 
-    await (apiClient as any).handleSocketMessage(JSON.stringify({
+    await (apiClient as any).socket.handleSocketMessage(JSON.stringify({
       type: "chat.message",
       channelId: "everyone",
       data: {
@@ -531,11 +531,11 @@ describe("apiClient chat timestamps", () => {
       seenNotifications.push(`${notification.id}:${notification.message.createdAt}`);
     });
 
-    await (apiClient as any).handleSocketMessage(JSON.stringify({
+    await (apiClient as any).socket.handleSocketMessage(JSON.stringify({
       type: "chat.presence",
       onlineCount: 5,
     }));
-    await (apiClient as any).handleSocketMessage(JSON.stringify({
+    await (apiClient as any).socket.handleSocketMessage(JSON.stringify({
       type: "chat.notification",
       data: {
         id: "n1",

@@ -81,9 +81,9 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
   }
 
   useEffect(() => {
-    if (editingField) {
-      setTimeout(() => inputRef.current?.focus(), 10);
-    }
+    if (!editingField) return;
+    const focusTimer = setTimeout(() => inputRef.current?.focus?.(), 10);
+    return () => clearTimeout(focusTimer);
   }, [editingField, portfolioSub, brokerFieldIdx]);
 
   useEffect(() => {

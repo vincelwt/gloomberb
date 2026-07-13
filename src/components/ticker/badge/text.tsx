@@ -4,7 +4,6 @@ import { TickerBadge } from "./index";
 import { ExternalLinkText, openUrl } from "../../ui";
 import { tokenizeInlineContent } from "../../../utils/inline-content-tokenizer";
 import type { InlineTickerCatalogEntry } from "../../../state/hooks/inline-tickers";
-import { displayWidth } from "../../../utils/format";
 import { splitLongTextSegmentByDisplayWidth } from "../../../utils/text-wrap";
 import { blendHex, colors } from "../../../theme/colors";
 

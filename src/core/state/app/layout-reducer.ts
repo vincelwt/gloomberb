@@ -2,7 +2,6 @@ import { cloneLayout, createBlankLayout, type SavedLayout } from "../../../types
 import {
   clonePaneStateMap,
   cloneSavedLayout,
-  getActiveSavedPaneState,
   historyForIndex,
   removeHistoryIndex,
   setHistoryForIndex,

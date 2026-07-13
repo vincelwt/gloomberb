@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync } from "fs";
+import { homedir } from "os";
 import { join } from "path";
 import { createAppServices, type AppServices } from "../../../../core/app-services";
 import type { AppSessionSnapshot } from "../../../../core/state/session-persistence";
@@ -98,7 +99,7 @@ function buildInitializationPayload(
 }
 
 async function resolveDesktopDataDir(): Promise<string> {
-  const dataDir = await getDataDir() ?? join(process.env.HOME || "~", ".gloomberb");
+  const dataDir = await getDataDir() ?? join(process.env.HOME || homedir(), ".gloomberb");
   if (!existsSync(dataDir)) {
     mkdirSync(dataDir, { recursive: true });
   }

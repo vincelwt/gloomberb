@@ -32,7 +32,6 @@ function getFeedItems(
       eyebrow: item.source,
       title: item.title,
       timestamp: item.publishedAt,
-      preview,
       detailTitle: item.title,
       detailMeta: [
         item.source,

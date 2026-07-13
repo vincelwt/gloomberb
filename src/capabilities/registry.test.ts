@@ -47,6 +47,10 @@ describe("CapabilityRegistry", () => {
 
     dispose();
     expect(registry.list()).toEqual([]);
+
+    registry.register("plugin-b", testCapability());
+    dispose();
+    expect(registry.list()).toHaveLength(1);
   });
 
   test("filters disabled plugins and disabled capabilities", () => {
@@ -133,5 +137,26 @@ describe("CapabilityRegistry", () => {
     expect(events).toEqual(["first", "second"]);
     expect(disposed).toBe(2);
     expect(registry.list()).toEqual([]);
+  });
+
+  test("disposes subscriptions that finish after their capability is removed", async () => {
+    const registry = new CapabilityRegistry();
+    let finishSubscribe!: (dispose: () => void) => void;
+    let disposed = 0;
+    const disposeCapability = registry.register("plugin-a", testCapability({
+      operations: {
+        ticks: {
+          kind: "stream",
+          subscribe: () => new Promise((resolve) => { finishSubscribe = resolve; }),
+        },
+      },
+    }));
+
+    const subscribing = registry.subscribe("plugin-service.test", "ticks", {}, () => {});
+    disposeCapability();
+    finishSubscribe(() => { disposed += 1; });
+
+    await expect(subscribing).rejects.toThrow("not available");
+    expect(disposed).toBe(1);
   });
 });

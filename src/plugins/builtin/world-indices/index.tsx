@@ -9,7 +9,6 @@ import {
   buildFlatRows,
   DEFAULT_SORT_PREFERENCE,
   nextSortPreference,
-  rowIndicesOf,
   type IndexQuoteState,
   type QuoteMap,
   type WorldIndexSortPreference,
@@ -36,12 +35,9 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
     () => buildFlatRows(indicesByRegion, sortPreference, quotes),
     [indicesByRegion, quotes, sortPreference],
   );
-  const navigableIndices = useMemo(() => rowIndicesOf(flatRows), [flatRows]);
   const selectedFlatIdx = selectedSymbol
     ? flatRows.findIndex((row) => row.type === "row" && row.entry.symbol === selectedSymbol)
     : -1;
-  const activeFlatIdx = selectedFlatIdx >= 0 ? selectedFlatIdx : (navigableIndices[0] ?? -1);
-
   useEffect(() => {
     if (selectedSymbol && selectedFlatIdx >= 0) return;
     const firstRow = flatRows.find((row) => row.type === "row");

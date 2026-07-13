@@ -22,7 +22,6 @@ import {
   getScaledComparisonY,
   getSelectedComparisonSeries,
   type ComparisonChartColors,
-  type ComparisonChartScene,
   type RenderComparisonChartOptions,
 } from "./scene";
 

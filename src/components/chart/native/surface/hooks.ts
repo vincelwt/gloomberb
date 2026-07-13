@@ -71,8 +71,9 @@ export function useNativeChartSurfaceLifecycle({
 
   useEffect(() => {
     if (effectiveRenderer !== "kitty" || !nativeReady || !plotRef.current) return;
-    const plot = plotRef.current;
+    const plot = plotRef.current as BoxRenderable & { onLifecyclePass?: (() => void) | null };
     let mountTimer: ReturnType<typeof setTimeout> | null = null;
+    const previousLifecyclePass = plot.onLifecyclePass;
 
     const syncPlacement = () => {
       if (effectiveRenderer !== "kitty" || !nativeReady || !plotRef.current) return;
@@ -108,7 +109,11 @@ export function useNativeChartSurfaceLifecycle({
       );
     };
 
-    plot.onLifecyclePass = syncPlacement;
+    const lifecyclePass = () => {
+      previousLifecyclePass?.();
+      syncPlacement();
+    };
+    plot.onLifecyclePass = lifecyclePass;
     renderer.registerLifecyclePass(plot);
     syncPlacement();
     mountTimer = setTimeout(() => {
@@ -118,7 +123,9 @@ export function useNativeChartSurfaceLifecycle({
 
     return () => {
       if (mountTimer) clearTimeout(mountTimer);
-      plot.onLifecyclePass = null;
+      if (plot.onLifecyclePass === lifecyclePass) {
+        plot.onLifecyclePass = previousLifecyclePass;
+      }
       renderer.unregisterLifecyclePass(plot);
       lastGeometryRef.current = null;
     };

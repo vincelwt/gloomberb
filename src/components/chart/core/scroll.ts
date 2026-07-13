@@ -21,34 +21,12 @@ export interface ScrollPanMovement extends ScrollPanCellDelta {
   ratio: number;
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
 export function getKeyboardPanCellCount(chartWidth: number): number {
   return Math.max(Math.round(chartWidth * KEYBOARD_PAN_WIDTH_RATIO), 1);
 }
 
-export function getDragPanPointDelta(deltaCells: number, chartWidth: number, visibleCount: number): number {
-  return Math.round((deltaCells / Math.max(chartWidth, 1)) * Math.max(visibleCount, 1) * DRAG_PAN_VISIBLE_RATIO);
-}
-
 export function getDragPanWindowRatio(deltaCells: number, chartWidth: number): number {
   return (deltaCells / Math.max(chartWidth, 1)) * DRAG_PAN_VISIBLE_RATIO;
-}
-
-export function resolveDragPanOffset(
-  startPanOffset: number,
-  deltaCells: number,
-  chartWidth: number,
-  visibleCount: number,
-  maxPanOffset: number,
-): number {
-  return clamp(
-    startPanOffset + getDragPanPointDelta(deltaCells, chartWidth, visibleCount),
-    0,
-    Math.max(maxPanOffset, 0),
-  );
 }
 
 export function consumeScrollPanCellDelta(

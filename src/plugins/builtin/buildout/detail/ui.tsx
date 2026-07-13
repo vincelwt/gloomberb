@@ -6,7 +6,6 @@ import { colors } from "../../../../theme/colors";
 import type { InlineTickerCatalogEntry } from "../../../../state/hooks/inline-tickers";
 import type { BuildoutCompany, BuildoutRelatedCompany, BuildoutSource } from "../model/types";
 import { domainFromUrl, text, textOrNull, tickerSymbol, truncate } from "../format";
-import { booleanText } from "./values";
 
 export type InlineTickerCatalog = Record<string, InlineTickerCatalogEntry>;
 

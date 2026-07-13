@@ -37,7 +37,6 @@ interface CommandBarPanelRuntimeOptions {
   applyThemePreview: (themeId: string | null) => void;
   cellHeightPx: number;
   cellWidthPx: number;
-  clearThemePreview: (themeId: string | null | undefined) => void;
   closeAll: (options?: { revertThemePreview?: boolean }) => void;
   commitTheme: (themeId: string) => void;
   committedThemeId: string;
@@ -92,7 +91,6 @@ export function useCommandBarPanelRuntime({
   applyThemePreview,
   cellHeightPx,
   cellWidthPx,
-  clearThemePreview,
   closeAll,
   commitTheme,
   committedThemeId,

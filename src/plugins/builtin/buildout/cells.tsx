@@ -1,6 +1,7 @@
 import { TextAttributes } from "../../../ui";
 import type { DataTableCell } from "../../../components";
 import { colors } from "../../../theme/colors";
+import { formatRelativeTime } from "../../../utils/datetime-format";
 import {
   CompanyCell,
   FavoriteCell,
@@ -11,7 +12,6 @@ import {
   activityColor,
   activityLabel,
   criticalityColor,
-  formatRelativeTime,
   metricColor,
   text,
   tickerSymbol,

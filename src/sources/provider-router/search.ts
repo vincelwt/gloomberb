@@ -4,6 +4,7 @@ import type { BrokerCandidate } from "./brokers";
 import { shouldLogProviderError } from "../provider-errors";
 
 const SEARCH_CACHE_TTL_MS = 30_000;
+const SEARCH_CACHE_MAX_ENTRIES = 100;
 
 const SEARCH_PROVIDER_TIMEOUT_MS = 5_000;
 
@@ -88,6 +89,7 @@ export class ProviderRouterSearchRoutes {
     const cacheKey = buildSearchCacheKey(query, context);
     const cached = this.searchCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.results;
+    if (cached) this.searchCache.delete(cacheKey);
     const inFlight = this.searchInFlight.get(cacheKey);
     if (inFlight) return inFlight;
 
@@ -111,6 +113,9 @@ export class ProviderRouterSearchRoutes {
         expiresAt: Date.now() + ttl,
         results,
       });
+      if (this.searchCache.size > SEARCH_CACHE_MAX_ENTRIES) {
+        this.searchCache.delete(this.searchCache.keys().next().value!);
+      }
     };
     const push = (items: InstrumentSearchResult[]) => {
       mergeSearchResults(results, resultIndexByKey, items, context);

@@ -69,7 +69,6 @@ export function ChatTranscript({
   setHoveredIdx,
   showProfilePopover,
   stickyTranscript,
-  user,
   userByUsername,
 }: ChatTranscriptProps) {
   return (

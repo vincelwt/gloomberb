@@ -8,7 +8,6 @@ const EMPTY_MESSAGE = "No data available";
 export const EXPECTED_EMPTY = /no data|not found|delisted|unavailable|unsupported/i;
 export const SNAPSHOT_CACHE_TTL_MS = 5 * 60_000;
 export const CHART_CACHE_TTL_MS = 10 * 60_000;
-export const NEWS_CACHE_TTL_MS = 2 * 60_000;
 export const OPTIONS_CACHE_TTL_MS = 10 * 60_000;
 export const SEC_FILINGS_CACHE_TTL_MS = 10 * 60_000;
 export const SEC_CONTENT_CACHE_TTL_MS = 24 * 60 * 60_000;

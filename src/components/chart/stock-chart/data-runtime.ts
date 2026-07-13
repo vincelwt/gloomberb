@@ -3,7 +3,6 @@ import type { InstrumentRef } from "../../../market-data/request-types";
 import type { DataProvider } from "../../../types/data-provider";
 import type { PricePoint, TickerFinancials } from "../../../types/financials";
 import { appendLiveQuotePoint, resolveStableOhlcProjectionOptions } from "../core/data";
-import type { DateWindowRange } from "../core/controller";
 import {
   getChartResolutionLabel,
   sortChartResolutions,

@@ -33,7 +33,11 @@ type YahooChartFetcher = (
   symbol: string,
   range: string,
   interval: ManualChartResolution,
-) => Promise<ChartResult>;
+) => Promise<{
+  meta: NonNullable<ChartResult["meta"]>;
+  history: PricePoint[];
+  events?: ChartResult["events"];
+}>;
 
 export function getYahooChartResolutionSupport(): ChartResolutionSupport[] {
   return YAHOO_RESOLUTION_SUPPORT;

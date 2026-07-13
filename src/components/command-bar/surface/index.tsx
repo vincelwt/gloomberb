@@ -291,7 +291,6 @@ export function CommandBar({
     applyThemePreview,
     cellHeightPx,
     cellWidthPx,
-    clearThemePreview,
     closeAll,
     commitTheme,
     committedThemeId: state.config.theme,

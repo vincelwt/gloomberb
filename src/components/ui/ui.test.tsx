@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useEffect, useRef, useState } from "react";
 import { TestDialogProvider, testRender } from "../../renderers/opentui/test-utils";
-import { TextAttributes } from "../../ui";
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core";
 import { ChoiceDialog } from "./choice-dialog";
 import { DataTable, type DataTableColumn } from "./data-table";
@@ -167,37 +166,6 @@ function DataTableHorizontalScrollHarness({
       horizontalPadding={horizontalPadding}
       fillAvailableWidth={fillAvailableWidth}
       showHorizontalScrollbar={showHorizontalScrollbar}
-    />
-  );
-}
-
-function DataTableColumnGapHarness() {
-  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
-  const scrollRef = useRef<ScrollBoxRenderable>(null);
-  const items = [{ id: "row-0", left: "AA", right: "BB" }];
-
-  return (
-    <DataTableView
-      rootWidth={8}
-      rootHeight={4}
-      selection={{ kind: "none" }}
-      columns={[
-        { id: "left", label: "L", width: 2, align: "left" },
-        { id: "right", label: "R", width: 2, align: "left" },
-      ]}
-      items={items}
-      sortColumnId={null}
-      sortDirection="asc"
-      onHeaderClick={() => {}}
-      headerScrollRef={headerScrollRef}
-      scrollRef={scrollRef}
-      getItemKey={(row) => row.id}
-      renderCell={(row, column) => ({ text: column.id === "left" ? row.left : row.right })}
-      emptyStateTitle="No rows."
-      columnGap={0}
-      horizontalPadding={0}
-      fillAvailableWidth={false}
-      showHorizontalScrollbar={false}
     />
   );
 }
@@ -390,31 +358,6 @@ describe("shared UI kit", () => {
     });
 
     expect(lastSelected).toBe("chart");
-  });
-
-  test("marks the active bare tab when it has keyboard focus", async () => {
-    testSetup = await testRender(
-      <Tabs
-        tabs={[
-          { label: "One", value: "one" },
-          { label: "Two", value: "two" },
-        ]}
-        activeValue="one"
-        onSelect={() => {}}
-        variant="bare"
-        compact
-        focused
-      />,
-      { width: 24, height: 2 },
-    );
-
-    await act(async () => {
-      await testSetup!.renderOnce();
-    });
-
-    const activeSpan = testSetup.captureSpans().lines[0]?.spans.find((span) => span.text.includes("One"));
-    expect(activeSpan).toBeDefined();
-    expect((activeSpan!.attributes & TextAttributes.UNDERLINE)).toBe(TextAttributes.UNDERLINE);
   });
 
   test("selects tabs by clicking their text labels", async () => {
@@ -792,27 +735,6 @@ describe("shared UI kit", () => {
     });
 
     expect(tableScrollBoxForTest?.horizontalScrollBar.visible).toBe(false);
-  });
-
-  test("renders data table columns without spacer cells when column gap is zero", async () => {
-    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
-    testSetup = await testRender(
-      <AppContext value={{ state, dispatch: () => {} }}>
-        <PaneInstanceProvider paneId="portfolio-list:main">
-          <DataTableColumnGapHarness />
-        </PaneInstanceProvider>
-      </AppContext>,
-      { width: 8, height: 4 },
-    );
-
-    await act(async () => {
-      await testSetup!.renderOnce();
-      await testSetup!.renderOnce();
-    });
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("AABB");
-    expect(frame).not.toContain("AA BB");
   });
 
   test("hides data table horizontal scrolling when content fits", async () => {

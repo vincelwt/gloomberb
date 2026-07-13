@@ -24,17 +24,6 @@ export function normalizeCommandTickerSearchText(value: string): string {
   return value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
 }
 
-export function isLikelyPlainTickerSearch(query: string): boolean {
-  const trimmed = query.trim();
-  if (!trimmed || /\s/.test(trimmed)) return false;
-  if (!/^[A-Za-z0-9.^=\-/]+$/.test(trimmed)) return false;
-
-  const compact = normalizeCommandTickerSearchText(trimmed);
-  if (compact.length < 2) return false;
-  if (compact.length <= 6) return true;
-  return /[.^=\-/]/.test(trimmed) && compact.length <= 10;
-}
-
 function isExactTickerResultMatch(item: ResultItem, query: string): boolean {
   if (item.kind !== "ticker" && item.kind !== "search") return false;
   const normalizedQuery = normalizeCommandTickerSearchText(query);

@@ -87,7 +87,7 @@ export function PriceSelectorDialog({
   const inputRef = useRef<InputRenderable>(null);
 
   useEffect(() => {
-    if (mode === "input") inputRef.current?.focus();
+    if (mode === "input") inputRef.current?.focus?.();
   }, [mode]);
 
   useDialogKeyboard((event) => {
@@ -108,7 +108,7 @@ export function PriceSelectorDialog({
           setMode("input");
           setIndex(CUSTOM_INDEX);
         }
-      } else if (event.name === "return") {
+      } else if (event.name === "enter" || event.name === "return") {
         if (presets[index]) {
           resolve(String(presets[index].value));
         }
@@ -124,7 +124,7 @@ export function PriceSelectorDialog({
       if (event.name === "up" || (event.name === "tab" && presets.length > 0)) {
         setMode("list");
         setIndex(presets.length - 1);
-      } else if (event.name === "return") {
+      } else if (event.name === "enter" || event.name === "return") {
         resolve(customValue.trim());
       }
     }

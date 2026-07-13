@@ -14,6 +14,7 @@ import { FeedDataTableStackView, Spinner, useExternalLinkFooter, type FeedDataTa
 import { usePluginPaneState } from "../../runtime";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { formatCompact, formatCurrency } from "../../../utils/format";
+import { truncateWithEllipsis as truncateText } from "../../../utils/text-wrap";
 import { parseForm4Xml, type InsiderTransaction } from "./insider-data";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import {
@@ -61,13 +62,6 @@ function buildSummary(parsed: ParsedFiling[]): string {
   return parts.join("  |  ");
 }
 
-function truncateText(text: string, width: number): string {
-  if (width <= 0) return "";
-  if (text.length <= width) return text;
-  if (width <= 3) return text.slice(0, width);
-  return `${text.slice(0, width - 3)}...`;
-}
-
 function toFeedItems(parsed: ParsedFiling[]): FeedDataTableItem[] {
   return parsed.map(({ filing, transaction, isLoading }) => {
     const filingMeta = [
@@ -95,7 +89,6 @@ function toFeedItems(parsed: ParsedFiling[]): FeedDataTableItem[] {
       eyebrow: transaction.reportedName,
       title: buildInsiderTransactionTitle(transaction),
       timestamp: transaction.filingDate,
-      preview: transaction.title || undefined,
       detailTitle: transaction.reportedName,
       detailMeta: [
         ...(transaction.title ? [transaction.title] : []),

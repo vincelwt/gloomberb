@@ -9,7 +9,8 @@ import type { ChatMessage } from "../../../api-client";
 import { apiClient } from "../../../api-client";
 import { PluginRenderProvider } from "../../runtime";
 import { setSharedRegistryForTests } from "../../registry";
-import { ChatContent, ChatStatusWidget } from ".";
+import { ChatContent } from "./content";
+import { ChatStatusWidget } from "./status-widget";
 import {
   cleanupChatTest,
   createChatTestControls,

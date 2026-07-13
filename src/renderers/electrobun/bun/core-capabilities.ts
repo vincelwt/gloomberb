@@ -19,6 +19,7 @@ const NOTES_INDEX_FILE = "__quick-notes-index__.json";
 const BROKER_INVOKE_OPERATIONS = new Set([
   "validate",
   "importPositions",
+  "importPortfolioSnapshot",
   "connect",
   "disconnect",
   "getPersistedConfigUpdate",
@@ -96,6 +97,7 @@ function invokeBrokerOperation(
   switch (operation) {
     case "validate":
     case "importPositions":
+    case "importPortfolioSnapshot":
     case "connect":
     case "disconnect":
     case "getPersistedConfigUpdate":

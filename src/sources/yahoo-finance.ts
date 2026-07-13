@@ -195,13 +195,12 @@ export class YahooFinanceClient implements DataProvider {
     fromCurrency = normalized;
     if (fromCurrency === "USD") return 1;
 
-    try {
-      const { meta, history } = await this.fetchChart(`${fromCurrency}USD=X`, "1mo");
-      const rate = meta.regularMarketPrice || history[history.length - 1]?.close || 1;
-      return rate;
-    } catch {
-      return 1;
+    const { meta, history } = await this.fetchChart(`${fromCurrency}USD=X`, "1mo");
+    const rate = meta.regularMarketPrice ?? history[history.length - 1]?.close;
+    if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) {
+      throw new Error(`No exchange rate data for ${fromCurrency}/USD`);
     }
+    return rate;
   }
 
   /** Search for a ticker by name/symbol - uses direct fetch (no retry) for speed */

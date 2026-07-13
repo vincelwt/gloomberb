@@ -51,7 +51,6 @@ interface AppRemoteControllerOptions {
 }
 
 const DEFAULT_MUTATION_INCLUDE: RemoteStateInclude[] = ["app", "layout", "panes", "commandBar"];
-const DEFAULT_BATCH_INCLUDE: RemoteStateInclude[] = ["app", "layout", "panes", "commandBar"];
 
 export function createAppRemoteController({
   dispatch,
@@ -67,11 +66,6 @@ export function createAppRemoteController({
     pluginRegistry,
     uiRegistry,
   });
-
-  const getAfterMutation = async (resource: string): Promise<unknown> => {
-    await afterMutation();
-    return getResource(resource);
-  };
 
   const getAfterMutationSummary = async (extra?: Record<string, unknown>): Promise<unknown> => {
     await afterMutation();
@@ -420,7 +414,7 @@ export function createAppRemoteController({
             ok: responses.every((response) => response.ok),
             haltedAt,
             responses,
-          }, undefined, buildIncludedState(request.include, request.dryRun ? [] : DEFAULT_BATCH_INCLUDE));
+          }, undefined, buildIncludedState(request.include, request.dryRun ? [] : DEFAULT_MUTATION_INCLUDE));
         }
         default:
           throw new Error(`Unknown remote request type: ${(request as { type?: unknown }).type}`);

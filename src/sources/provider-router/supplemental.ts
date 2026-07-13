@@ -57,7 +57,7 @@ export class ProviderRouterSupplementalRoutes {
 
     const result = await firstProviderResult(this.deps, async (provider) => {
       const rate = await provider.getExchangeRate(normalizedCurrency);
-      return { provider, rate };
+      return Number.isFinite(rate) && rate > 0 ? { provider, rate } : null;
     });
     if (!result) {
       throw new Error(`No exchange rate provider available for ${normalizedCurrency}`);
@@ -164,7 +164,8 @@ export class ProviderRouterSupplementalRoutes {
     if (normalizedCurrency === "USD") return 1;
     const entityKey = `${normalizedCurrency}/USD`;
     const cached = selectCachedResource<{ rate: number }>(this.deps.resources, "exchange-rate", entityKey, [""], this.deps.getProviderSourceKeys(), allowExpired);
-    return cached?.value.rate ?? null;
+    const rate = cached?.value.rate;
+    return typeof rate === "number" && Number.isFinite(rate) && rate > 0 ? rate : null;
   }
 
   private cacheExchangeRate(currency: string, rate: number, provider: DataProvider): void {
@@ -341,7 +342,7 @@ export class ProviderRouterSupplementalRoutes {
 
     const result = await firstProviderResult(this.deps, async (provider) => {
       const rate = await provider.getExchangeRate(normalizedCurrency);
-      return { provider, rate };
+      return Number.isFinite(rate) && rate > 0 ? { provider, rate } : null;
     });
     if (!result) return;
     this.cacheExchangeRate(normalizedCurrency, result.value.rate, result.value.provider);

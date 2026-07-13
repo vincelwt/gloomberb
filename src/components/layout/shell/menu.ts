@@ -3,7 +3,6 @@ import {
   applyDrop,
   floatPane,
   removePane,
-  type LayoutBounds,
   type ResolvedPane,
 } from "../../../plugins/pane-manager";
 import type { PluginRegistry } from "../../../plugins/registry";

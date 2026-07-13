@@ -29,7 +29,10 @@ interface YahooQuoteSummaryOptions {
 }
 
 interface YahooCorporateActionsOptions extends YahooQuoteSummaryOptions {
-  fetchChart: (symbol: string, range: string, interval?: string) => Promise<ChartResult>;
+  fetchChart: (symbol: string, range: string, interval?: string) => Promise<{
+    meta: NonNullable<ChartResult["meta"]>;
+    events?: ChartResult["events"];
+  }>;
 }
 
 export async function loadYahooHolders({
