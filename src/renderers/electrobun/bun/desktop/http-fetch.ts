@@ -34,12 +34,20 @@ export async function handleHttpFetch(payload: Record<string, unknown>) {
     typeof init.body === "string" && method !== "GET" && method !== "HEAD"
       ? init.body
       : undefined;
+  const timeoutMs =
+    typeof init.timeoutMs === "number"
+      && Number.isFinite(init.timeoutMs)
+      && init.timeoutMs > 0
+      && init.timeoutMs <= 120_000
+      ? init.timeoutMs
+      : undefined;
 
   const response = await fetch(url, {
     method,
     headers: normalizeHttpFetchHeaders(init.headers),
     body,
     redirect,
+    signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
   });
   const responseHeaders: Record<string, string> = {};
   response.headers.forEach((value, key) => {

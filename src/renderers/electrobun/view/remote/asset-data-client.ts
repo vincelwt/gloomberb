@@ -3,9 +3,11 @@ import type { NewsArticle, NewsQuery } from "../../../../news/types";
 import type { DataProvider, QuoteSubscriptionTarget } from "../../../../types/data-provider";
 import type { Quote, TickerFinancials } from "../../../../types/financials";
 import { backendRequest, getElectrobunBackendInitSnapshot, onCapabilityEvent } from "../backend-rpc";
+import { createCapabilityInvoker } from "./capability-invoker";
 
 const ASSET_DATA_CAPABILITY_ID = "asset-data.asset-data-router";
 const NEWS_CAPABILITY_ID = "news.core";
+const ASSET_DATA_REQUEST_TIMEOUT_MS = 115_000;
 
 export type RemoteAssetDataClient = DataProvider & {
   getNews(query: NewsQuery): Promise<NewsArticle[]>;
@@ -64,23 +66,12 @@ function hasRendererOperation(operations: Set<string> | null, operationId: strin
   return operations === null || operations.has(operationId);
 }
 
-function createCapabilityInvoker() {
-  const inFlightRequests = new Map<string, Promise<unknown>>();
-  return function invoke<T>(capabilityId: string, operationId: string, payload: unknown): Promise<T> {
-    const requestPayload = { capabilityId, operationId, payload };
-    const key = JSON.stringify(requestPayload);
-    const inFlight = inFlightRequests.get(key);
-    if (inFlight) return inFlight as Promise<T>;
-    const promise = backendRequest<T>("capability.invoke", requestPayload).finally(() => {
-      inFlightRequests.delete(key);
-    });
-    inFlightRequests.set(key, promise);
-    return promise;
-  };
-}
-
 export function createRemoteAssetDataClient(): RemoteAssetDataClient {
-  const invoke = createCapabilityInvoker();
+  const invoke = createCapabilityInvoker({
+    request: backendRequest,
+    shouldApplyDeadline: (capabilityId) => capabilityId === ASSET_DATA_CAPABILITY_ID,
+    timeoutMs: ASSET_DATA_REQUEST_TIMEOUT_MS,
+  });
   const assetDataOperations = getRendererOperationIds(ASSET_DATA_CAPABILITY_ID);
   const newsOperations = getRendererOperationIds(NEWS_CAPABILITY_ID);
   let nextSubscriptionId = 1;

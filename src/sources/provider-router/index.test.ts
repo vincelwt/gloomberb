@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { CloudApiRequestTransport } from "../../api-client/request";
 import { AppPersistence } from "../../data/app-persistence";
 import { AssetDataRouter } from "./index";
 import { assetDataProvider } from "../../capabilities";
@@ -26,6 +27,59 @@ afterEach(() => {
 });
 
 describe("AssetDataRouter", () => {
+  test("falls through to Yahoo quotes and history when Cloud market requests never settle", async () => {
+    const cloudCalls = { quote: 0, history: 0 };
+    const yahooCalls = { quote: 0, history: 0 };
+    const cloudTransport = new CloudApiRequestTransport({
+      marketRequestTimeoutMs: 10,
+      fetchTransport: async () => new Promise<Response>(() => {}),
+    });
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "gloomberb-cloud",
+      name: "Cloud",
+      priority: 100,
+      async getQuote() {
+        cloudCalls.quote += 1;
+        await cloudTransport.request("/market/quote?symbol=AAPL");
+        throw new Error("unreachable");
+      },
+      async getPriceHistory() {
+        cloudCalls.history += 1;
+        await cloudTransport.request("/market/history?symbol=AAPL&range=1Y");
+        throw new Error("unreachable");
+      },
+    };
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getQuote() {
+        yahooCalls.quote += 1;
+        return makeQuote({ providerId: "yahoo", price: 212.5 });
+      },
+      async getPriceHistory() {
+        yahooCalls.history += 1;
+        return [
+          { date: new Date("2026-07-10T00:00:00Z"), close: 210 },
+          { date: new Date("2026-07-11T00:00:00Z"), close: 212.5 },
+        ];
+      },
+    };
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
+    console.error = () => {};
+
+    const quote = await router.getQuote("AAPL", "NASDAQ");
+    const history = await router.getPriceHistory("AAPL", "NASDAQ", "1Y");
+
+    expect(quote.providerId).toBe("yahoo");
+    expect(quote.price).toBe(212.5);
+    expect(history.map((point) => point.close)).toEqual([210, 212.5]);
+    expect(cloudCalls).toEqual({ quote: 1, history: 1 });
+    expect(yahooCalls).toEqual({ quote: 1, history: 1 });
+  });
+
   test("serves USD exchange rate locally without provider revalidation", async () => {
     let providerCalls = 0;
     const router = new AssetDataRouter({

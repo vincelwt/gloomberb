@@ -1,7 +1,9 @@
 import { httpFetch } from "../utils/http-transport";
+import { withDeadline } from "../utils/async-deadline";
 import { ApiRequestError, parseApiErrorMessage } from "./errors";
 
 const DEFAULT_API_URL = "https://api.gloom.sh";
+const DEFAULT_MARKET_REQUEST_TIMEOUT_MS = 10_000;
 const SESSION_COOKIE_NAMES = ["__Secure-gloomberb.session_token", "gloomberb.session_token"] as const;
 
 type CloudApiResponse = Pick<Response, "ok" | "status" | "headers" | "text">;
@@ -21,12 +23,27 @@ function getCloudApiBaseUrl(): string {
   return process.env.GLOOMBERB_API_URL ?? DEFAULT_API_URL;
 }
 
+function throwIfRequestAborted(signal: AbortSignal | null | undefined): void {
+  if (!signal?.aborted) return;
+  throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
+}
+
 export class CloudApiRequestTransport {
   private sessionToken: string | null = null;
   private sessionCookieName: SessionCookieName | null = null;
   private websocketToken: string | null = null;
+  private readonly fetchTransport: CloudApiFetchTransport | null;
+  private readonly marketRequestTimeoutMs: number;
 
   readonly baseUrl = getCloudApiBaseUrl();
+
+  constructor(options: {
+    fetchTransport?: CloudApiFetchTransport;
+    marketRequestTimeoutMs?: number;
+  } = {}) {
+    this.fetchTransport = options.fetchTransport ?? null;
+    this.marketRequestTimeoutMs = options.marketRequestTimeoutMs ?? DEFAULT_MARKET_REQUEST_TIMEOUT_MS;
+  }
 
   getSessionToken(): string | null {
     return this.sessionToken;
@@ -61,6 +78,37 @@ export class CloudApiRequestTransport {
   }
 
   async request<T>(path: string, options?: RequestInit): Promise<T> {
+    if (!path.startsWith("/market/")) {
+      return this.performRequest<T>(path, options);
+    }
+
+    const controller = new AbortController();
+    const callerSignal = options?.signal;
+    const abortFromCaller = () => controller.abort(callerSignal?.reason);
+    if (callerSignal?.aborted) {
+      abortFromCaller();
+    } else {
+      callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
+    }
+
+    try {
+      const request = this.performRequest<T>(path, {
+        ...options,
+        signal: controller.signal,
+      });
+      return await withDeadline(
+        request,
+        this.marketRequestTimeoutMs,
+        `Cloud market request timed out after ${this.marketRequestTimeoutMs}ms: ${path}`,
+        (error) => controller.abort(error),
+      );
+    } finally {
+      callerSignal?.removeEventListener("abort", abortFromCaller);
+    }
+  }
+
+  private async performRequest<T>(path: string, options?: RequestInit): Promise<T> {
+    throwIfRequestAborted(options?.signal);
     const headers = new Headers(options?.headers);
     if (!headers.has("Content-Type") && options?.method && options.method !== "GET") {
       headers.set("Content-Type", "application/json");
@@ -68,21 +116,21 @@ export class CloudApiRequestTransport {
     this.setSessionCookieHeader(headers);
     headers.set("Origin", this.baseUrl);
 
-    const res = await cloudApiFetchTransport(`${this.baseUrl}${path}`, {
+    const res = await (this.fetchTransport ?? cloudApiFetchTransport)(`${this.baseUrl}${path}`, {
       ...options,
       headers,
       credentials: "include",
     });
-
+    throwIfRequestAborted(options?.signal);
     this.extractSessionCookie(res);
+    const text = await res.text();
+    throwIfRequestAborted(options?.signal);
 
     if (!res.ok) {
-      const body = await res.text();
-      const msg = parseApiErrorMessage(body);
+      const msg = parseApiErrorMessage(text);
       throw new ApiRequestError(msg, res.status);
     }
 
-    const text = await res.text();
     if (!text) return undefined as T;
     const parsed = JSON.parse(text) as T & { token?: string };
     if (typeof parsed?.token === "string" && parsed.token.length > 0) {
