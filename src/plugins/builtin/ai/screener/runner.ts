@@ -4,7 +4,7 @@ import type { TickerRecord } from "../../../../types/ticker";
 import type { AppAction } from "../../../../core/state/app/types";
 import { buildGloomberbCliInstructions, resolveGloomberbCliCommand } from "../gloomberb-cli";
 import type { AiProvider } from "../providers";
-import { getAiProvider } from "../providers";
+import { getAiProvider, getAiProviderUnavailableReason } from "../providers";
 import { isAiRunCancelled, runAiPrompt, type AiRunController } from "../runner";
 import {
   buildScreenerPrompt,
@@ -56,7 +56,7 @@ export function useAiScreenerRunner({
     if (!provider.available) {
       upsertTab(tab.id, (current) => ({
         ...current,
-        lastError: `${provider.name} is not installed or not available in PATH.`,
+        lastError: getAiProviderUnavailableReason(provider),
       }));
       return;
     }

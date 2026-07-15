@@ -1,4 +1,5 @@
-import { detectProviders, getAiProvider } from "../../plugins/builtin/ai/providers";
+import { discoverAiCliProviders } from "../../plugins/builtin/ai/cli-readiness";
+import { getAiProviderUnavailableReason } from "../../plugins/builtin/ai/providers";
 import { runAiPrompt } from "../../plugins/builtin/ai/runner";
 import { createRssNewsCapability } from "../../plugins/builtin/news/wire/rss/source";
 import type { CliCommandDef } from "../../types/plugin";
@@ -91,24 +92,35 @@ export const aiCliCommand: CliCommandDef = {
   execute: async (args, ctx) => {
     const action = args[0] ?? "providers";
     if (action === "providers") {
-      ctx.printResult({ data: detectProviders().map((provider) => ({
+      const providers = await discoverAiCliProviders({ cwd: process.cwd() });
+      ctx.printResult({ data: providers.map(({ provider }) => ({
         id: provider.id,
         name: provider.name,
         command: provider.command,
         available: provider.available,
+        status: provider.status,
+        unavailableReason: provider.unavailableReason,
       })) });
       return;
     }
     if (action === "ask") {
       const rawArgs = args.slice(1);
-      const providerId = takeOption(rawArgs, "--provider") ?? detectProviders().find((provider) => provider.available)?.id;
-      const selectedProvider = getAiProvider(providerId) ?? ctx.fail("Unknown AI provider.");
-      if (!selectedProvider.available) ctx.fail(`${selectedProvider.name} is not installed or not available in PATH.`);
+      const providers = await discoverAiCliProviders({ cwd: process.cwd() });
+      const providerId = takeOption(rawArgs, "--provider")
+        ?? providers.find(({ provider }) => provider.available)?.provider.id;
+      const selected = providers.find(({ provider }) => provider.id === providerId)
+        ?? ctx.fail("Unknown AI provider.");
+      if (!selected.provider.available) ctx.fail(getAiProviderUnavailableReason(selected.provider));
       const prompt = rawArgs.join(" ").trim();
       if (!prompt) ctx.fail("Usage: gloomberb ai ask [--provider id] <prompt>");
-      const controller = runAiPrompt({ provider: selectedProvider, prompt, cwd: process.cwd() });
+      const controller = runAiPrompt({
+        provider: selected.provider,
+        prompt,
+        cwd: process.cwd(),
+        environment: selected.environment,
+      });
       const text = await controller.done;
-      ctx.printResult({ data: { provider: selectedProvider.id, text } });
+      ctx.printResult({ data: { provider: selected.provider.id, text } });
       return;
     }
     if (action === "screen") {

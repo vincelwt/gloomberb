@@ -3,7 +3,11 @@ import { useEffect } from "react";
 import { Box, Text, Textarea, type TextareaRenderable } from "../../../../ui";
 import { Button, SegmentedControl } from "../../../../components";
 import { colors } from "../../../../theme/colors";
-import type { AiProvider } from "../providers";
+import {
+  getAiProviderUnavailableLabel,
+  getAiProviderUnavailableReason,
+  type AiProvider,
+} from "../providers";
 import type { ScreenerEditorState } from "./model";
 
 function ScreenerPromptEditor({
@@ -87,7 +91,9 @@ export function AiScreenerEditorView({
           value={editorState.providerId}
           options={selectableProviders.map((provider) => ({
             value: provider.id,
-            label: provider.available ? provider.name : `${provider.name} (missing)`,
+            label: provider.available
+              ? provider.name
+              : `${provider.name} (${getAiProviderUnavailableLabel(provider)})`,
           }))}
           onChange={onProviderChange}
         />
@@ -116,7 +122,7 @@ export function AiScreenerEditorView({
       <Box flexDirection="column" paddingX={1}>
         <Text fg={colors.textDim}>
           {editorProvider?.available === false
-            ? `${editorProvider.name} is not currently installed. Save and switch later.`
+            ? `${getAiProviderUnavailableReason(editorProvider)} Save and switch later.`
             : "Click a provider chip to switch. Save to keep the draft."}
         </Text>
       </Box>

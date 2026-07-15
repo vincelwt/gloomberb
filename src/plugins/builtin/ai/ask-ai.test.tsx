@@ -120,7 +120,7 @@ describe("AskAiTab", () => {
     await flushFrame();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("No AI CLI tools detected.");
+    expect(frame).toContain("No AI CLI tools are ready:");
     expect(frame).toContain("claude");
     expect(frame).toContain("gemini");
     expect(frame).toContain("codex");

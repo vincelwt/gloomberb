@@ -17,6 +17,7 @@ export interface AiRunHost {
     provider: AiProvider;
     prompt: string;
     cwd?: string;
+    environment?: NodeJS.ProcessEnv;
     onChunk?: (output: string) => void;
   }): AiRunController;
 }
@@ -35,11 +36,13 @@ function runWithBun({
   provider,
   prompt,
   cwd = typeof process !== "undefined" ? process.cwd() : ".",
+  environment,
   onChunk,
 }: {
   provider: AiProvider;
   prompt: string;
   cwd?: string;
+  environment?: NodeJS.ProcessEnv;
   onChunk?: (output: string) => void;
 }): AiRunController {
   type BunSubprocess = ReturnType<typeof Bun.spawn>;
@@ -56,6 +59,7 @@ function runWithBun({
   const done = (async () => {
     const proc = Bun.spawn([provider.command, ...provider.buildArgs(prompt)], {
       cwd,
+      env: environment,
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
@@ -108,12 +112,14 @@ export function runAiPrompt({
   provider,
   prompt,
   cwd,
+  environment,
   onChunk,
 }: {
   provider: AiProvider;
   prompt: string;
   cwd?: string;
+  environment?: NodeJS.ProcessEnv;
   onChunk?: (output: string) => void;
 }): AiRunController {
-  return (configuredHost ?? { run: runWithBun }).run({ provider, prompt, cwd, onChunk });
+  return (configuredHost ?? { run: runWithBun }).run({ provider, prompt, cwd, environment, onChunk });
 }

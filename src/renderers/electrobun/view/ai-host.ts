@@ -5,6 +5,7 @@ import {
 import {
   getAiProviderDefinitions,
   __setDetectedProvidersForTests,
+  type AiProviderAvailability,
 } from "../../../plugins/builtin/ai/providers";
 import { AiRunCancelledError, setAiRunHost } from "../../../plugins/builtin/ai/runner";
 import { backendRequest, onCapabilityEvent } from "./backend-rpc";
@@ -12,14 +13,18 @@ import { backendRequest, onCapabilityEvent } from "./backend-rpc";
 let nextRunId = 1;
 
 export async function installElectrobunAiHost(): Promise<void> {
-  const availability = await backendRequest<Record<string, boolean>>("capability.invoke", {
+  const availability = await backendRequest<Record<string, AiProviderAvailability>>("capability.invoke", {
     capabilityId: AI_RUNNER_CAPABILITY_ID,
     operationId: "getProviderAvailability",
     payload: {},
   });
   const providers = getAiProviderDefinitions().map((definition) => ({
     ...definition,
-    available: availability[definition.id] ?? false,
+    ...(availability[definition.id] ?? {
+      available: false,
+      status: "check_failed" as const,
+      unavailableReason: `${definition.name} readiness could not be checked.`,
+    }),
   }));
 
   __setDetectedProvidersForTests(providers);
