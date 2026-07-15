@@ -18,6 +18,7 @@ export type AccountFieldKey =
   | "sharedPortfolioId"
   | "weeklyRoundupEnabled"
   | "positionAlertsEnabled"
+  | "chatEmailNotificationsEnabled"
   | "emailAlertsOffAction"
   | "upgradeAction"
   | "passwordAction"
@@ -36,6 +37,7 @@ export interface AccountDraft {
   acceptUnknownDms: boolean;
   weeklyRoundupEnabled: boolean;
   positionAlertsEnabled: boolean;
+  chatEmailNotificationsEnabled: boolean;
 }
 
 interface ProfileAnalyticsPreviewMetric {
@@ -70,6 +72,7 @@ export function profileToDraft(profile: AccountProfile | null): AccountDraft {
     acceptUnknownDms: profile?.acceptUnknownDms === true,
     weeklyRoundupEnabled: profile?.weeklyRoundupEnabled === false ? false : true,
     positionAlertsEnabled: profile?.positionAlertsEnabled === false ? false : true,
+    chatEmailNotificationsEnabled: profile?.chatEmailNotificationsEnabled === false ? false : true,
   };
 }
 

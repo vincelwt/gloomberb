@@ -54,12 +54,27 @@ describe("desktop deeplinks", () => {
     expect(resolveDesktopDeepLinkAction("gloomberb://chat/channel/everyone")).toEqual({
       type: "open-chat-channel",
       channelId: "everyone",
+      messageId: null,
       message: "Opened chat everyone.",
+    });
+    expect(resolveDesktopDeepLinkAction("gloomberb://chat/channel/dm%3Aabc?message=m%3A2")).toEqual({
+      type: "open-chat-channel",
+      channelId: "dm:abc",
+      messageId: "m:2",
+      message: "Opened chat dm:abc.",
     });
     expect(resolveDesktopDeepLinkAction("gloomberb://chat/dm?users=@vince,@alex")).toEqual({
       type: "open-chat-dm",
       participants: "@vince,@alex",
       message: "Opened DM.",
+    });
+  });
+
+  test("routes email preference links to account management", () => {
+    expect(resolveDesktopDeepLinkAction("gloomberb://cloud/emails")).toEqual({
+      type: "open-account-management",
+      route: { kind: "cloud-emails", week: null },
+      message: "Opened email settings.",
     });
   });
 

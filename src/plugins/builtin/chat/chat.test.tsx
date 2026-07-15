@@ -647,6 +647,38 @@ describe("ChatContent", () => {
     expect(bodySpan!.fg.toInts().join(",")).toBe(expectedSelectedFg);
   });
 
+  test("selects the exact message requested by a chat deep link", async () => {
+    const controller = createController({
+      messages: [makeMessage(1), makeMessage(2)],
+    });
+    let handled = 0;
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+        targetMessageId: "m1",
+        onTargetMessageHandled: () => {
+          handled += 1;
+        },
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const expectedSelectedFg = hexToRgbaInts(colors.selectedText);
+    const frame = setup().captureSpans();
+    const bodyLine = frame.lines.find((line) => lineText(line).includes("message 1"));
+    const bodySpan = bodyLine?.spans.find((span) => span.text.includes("message 1"));
+
+    expect(handled).toBe(1);
+    expect(bodySpan).toBeDefined();
+    expect(bodySpan!.fg.toInts().join(",")).toBe(expectedSelectedFg);
+  });
+
   test("grows the composer for multi-line drafts", async () => {
     const controller = createController();
 

@@ -69,6 +69,12 @@ export function useAccountManagementKeyboard({
       setDraftValue("weeklyRoundupEnabled", !draftRef.current.weeklyRoundupEnabled);
       return;
     }
+    if (!event.targetEditable && activeField === "chatEmailNotificationsEnabled" && isPlainKey(event, "space", "enter", "return")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      setDraftValue("chatEmailNotificationsEnabled", !draftRef.current.chatEmailNotificationsEnabled);
+      return;
+    }
     if (!event.targetEditable && activeField === "positionAlertsEnabled" && isPlainKey(event, "space", "enter", "return")) {
       event.preventDefault?.();
       event.stopPropagation?.();

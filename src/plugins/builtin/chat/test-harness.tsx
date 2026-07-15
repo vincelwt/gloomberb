@@ -126,6 +126,8 @@ export function createHarness(
     configureState?: (state: ReturnType<typeof createInitialState>) => void;
     withFooter?: boolean;
     runtime?: PluginRuntimeAccess;
+    targetMessageId?: string;
+    onTargetMessageHandled?: () => void;
   },
 ) {
   const width = options?.width ?? 60;
@@ -142,6 +144,8 @@ export function createHarness(
             width={width}
             height={Math.max(1, height - 1)}
             focused
+            targetMessageId={options?.targetMessageId}
+            onTargetMessageHandled={options?.onTargetMessageHandled}
           />
           <PaneFooterBar footer={footer} focused width={width} />
         </Box>
@@ -153,6 +157,8 @@ export function createHarness(
       width={width}
       height={height}
       focused
+      targetMessageId={options?.targetMessageId}
+      onTargetMessageHandled={options?.onTargetMessageHandled}
     />
   );
 

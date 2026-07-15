@@ -53,6 +53,8 @@ interface ChatContentProps {
   onChannelChange?: (channelId: string) => void;
   onChannelTitleChange?: (title: string) => void;
   controller?: ChatContentController;
+  targetMessageId?: string;
+  onTargetMessageHandled?: () => void;
 }
 
 export function ChatContent({
@@ -63,6 +65,8 @@ export function ChatContent({
   onChannelChange,
   onChannelTitleChange,
   controller = chatController,
+  targetMessageId,
+  onTargetMessageHandled,
 }: ChatContentProps) {
   const dispatch = useAppDispatch();
   const commandBarOpen = useAppSelector((state) => state.commandBarOpen);
@@ -431,6 +435,23 @@ export function ChatContent({
     stickyTranscript,
     useDefaultControllerChannel,
   });
+
+  const handledTargetMessageRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!targetMessageId || loading || messages.length === 0) return;
+    const targetKey = `${channelId}:${targetMessageId}`;
+    if (handledTargetMessageRef.current === targetKey) return;
+    handledTargetMessageRef.current = targetKey;
+    jumpToMessage(targetMessageId);
+    onTargetMessageHandled?.();
+  }, [
+    channelId,
+    jumpToMessage,
+    loading,
+    messages.length,
+    onTargetMessageHandled,
+    targetMessageId,
+  ]);
 
   useChatContentShortcuts({
     beginEditLatestMessage,

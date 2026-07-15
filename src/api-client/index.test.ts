@@ -587,6 +587,7 @@ describe("apiClient account profile", () => {
           xAccount: "vincelwt",
           sharedPortfolioId: "main",
           acceptUnknownDms: true,
+          chatEmailNotificationsEnabled: false,
           updatedAt: "2026-04-01T00:00:00.000Z",
         },
       });
@@ -598,6 +599,7 @@ describe("apiClient account profile", () => {
       profilePublic: true,
       sharedPortfolioId: "main",
       acceptUnknownDms: true,
+      chatEmailNotificationsEnabled: false,
     });
 
     expect(new URL(requestedUrl).pathname).toBe("/account/profile");
@@ -607,10 +609,12 @@ describe("apiClient account profile", () => {
       profilePublic: true,
       sharedPortfolioId: "main",
       acceptUnknownDms: true,
+      chatEmailNotificationsEnabled: false,
     });
     expect(profile.username).toBe("renamed");
     expect(apiClient.getCurrentUser()?.username).toBe("renamed");
     expect(apiClient.getCurrentUser()?.plan).toBe("pro");
+    expect(apiClient.getCurrentUser()?.chatEmailNotificationsEnabled).toBe(false);
   });
 
   test("changes password through Better Auth", async () => {

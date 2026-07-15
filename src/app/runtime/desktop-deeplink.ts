@@ -9,9 +9,10 @@ import {
 } from "../../types/config";
 import type { DesktopDeepLinkBridge } from "../../types/desktop-deeplink";
 import type { DesktopWindowBridge } from "../../types/desktop-window";
+import { requestAccountManagementTab } from "../../plugins/builtin/account-management/navigation";
 
 type CloudDeepLinkRoute = {
-  kind: "cloud-alerts" | "cloud-roundup";
+  kind: "cloud-alerts" | "cloud-emails" | "cloud-roundup";
   week: string | null;
 };
 
@@ -28,7 +29,7 @@ export type DesktopDeepLinkAction =
       values: { symbol: string; condition: AlertDeepLinkCondition; price: string };
       message: string;
     }
-  | { type: "open-chat-channel"; channelId: string; message: string }
+  | { type: "open-chat-channel"; channelId: string; messageId: string | null; message: string }
   | { type: "open-chat-dm"; participants: string; message: string }
   | { type: "open-news"; kind: NewsDeepLinkKind; symbol: string | null; message: string }
   | { type: "unsupported"; message: string };
@@ -151,6 +152,13 @@ function parseCloudDeepLink(parsed: ParsedGloomUrl): DesktopDeepLinkAction {
       message: `Opened portfolio alert settings${weekSuffix(week)}.`,
     };
   }
+  if (route === "emails") {
+    return {
+      type: "open-account-management",
+      route: { kind: "cloud-emails", week: null },
+      message: "Opened email settings.",
+    };
+  }
   return { type: "unsupported", message: "Unsupported Gloomberb cloud link." };
 }
 
@@ -194,7 +202,8 @@ function parseChatDeepLink(parsed: ParsedGloomUrl): DesktopDeepLinkAction {
   if (route === "channel") {
     const channelId = parsed.segments[1] ?? param(parsed.url, "id", "channel");
     if (!channelId) return { type: "unsupported", message: "Chat channel links need a channel id." };
-    return { type: "open-chat-channel", channelId, message: `Opened chat ${channelId}.` };
+    const messageId = param(parsed.url, "message", "messageId");
+    return { type: "open-chat-channel", channelId, messageId, message: `Opened chat ${channelId}.` };
   }
   if (route === "dm") {
     const participants = param(parsed.url, "users", "participants", "user") ?? parsed.segments.slice(1).join(",");
@@ -202,9 +211,9 @@ function parseChatDeepLink(parsed: ParsedGloomUrl): DesktopDeepLinkAction {
     return { type: "open-chat-dm", participants, message: "Opened DM." };
   }
   if (route === "default") {
-    return { type: "open-chat-channel", channelId: "", message: "Opened chat." };
+    return { type: "open-chat-channel", channelId: "", messageId: null, message: "Opened chat." };
   }
-  return { type: "open-chat-channel", channelId: route, message: `Opened chat ${route}.` };
+  return { type: "open-chat-channel", channelId: route, messageId: null, message: `Opened chat ${route}.` };
 }
 
 function parseNewsDeepLink(parsed: ParsedGloomUrl): DesktopDeepLinkAction {
@@ -389,7 +398,12 @@ function handleOpenChatChannel(
     notifyError(pluginRegistry, "Chat is unavailable.");
     return;
   }
-  const options = action.channelId ? { arg: action.channelId } : undefined;
+  const options = action.channelId
+    ? {
+        arg: action.channelId,
+        ...(action.messageId ? { values: { messageId: action.messageId } } : {}),
+      }
+    : undefined;
   void pluginRegistry.createPaneFromTemplateAsyncFn("new-chat-pane", options).then(() => {
     notifySuccess(pluginRegistry, action.message);
   }).catch((error) => {
@@ -450,6 +464,7 @@ export function handleDesktopDeepLink(rawUrl: string, options: DesktopDeepLinkHa
   switch (action.type) {
     case "open-account-management":
       if (!requirePane(options.pluginRegistry, "account-management", "Account management is unavailable.")) return;
+      if (action.route.kind === "cloud-emails") requestAccountManagementTab("emails");
       options.pluginRegistry.showPane("account-management");
       notifySuccess(options.pluginRegistry, action.message);
       return;

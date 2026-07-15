@@ -83,6 +83,7 @@ export interface AuthUser {
   xAccount?: string | null;
   sharedPortfolioId?: string | null;
   acceptUnknownDms?: boolean;
+  chatEmailNotificationsEnabled?: boolean;
   portfolioAnalytics?: PublicPortfolioAnalytics | null;
   syncEnabled?: boolean;
   weeklyRoundupEnabled?: boolean;
@@ -110,6 +111,7 @@ export interface AccountProfile {
   xAccount: string | null;
   sharedPortfolioId: string | null;
   acceptUnknownDms: boolean;
+  chatEmailNotificationsEnabled: boolean;
   portfolioAnalytics?: PublicPortfolioAnalytics | null;
   syncEnabled: boolean;
   weeklyRoundupEnabled: boolean;
@@ -168,6 +170,7 @@ export type AccountProfileUpdate = Partial<{
   xAccount: string | null;
   sharedPortfolioId: string | null;
   acceptUnknownDms: boolean;
+  chatEmailNotificationsEnabled: boolean;
   portfolioAnalytics: PublicPortfolioAnalytics | null;
   syncEnabled: boolean;
   weeklyRoundupEnabled: boolean;

@@ -47,20 +47,23 @@ import { computeDatedBeta } from "../analytics/metrics";
 import { useCloudSyncStatus } from "../../../sync/react";
 import { cloudSyncController } from "../../../sync/controller";
 import { setSyncedProfileAnalytics } from "../../../sync/profile-analytics";
+import {
+  consumeRequestedAccountManagementTab,
+  subscribeRequestedAccountManagementTab,
+  type AccountManagementTab,
+} from "./navigation";
 
 type AccountBusy = "profile" | "password" | "alerts" | "billing" | "delete" | null;
-type AccountTab = "profile" | "emails" | "pro" | "advanced";
-
 const CLOUD_UPGRADE_URL = "https://gloom.sh/cloud?upgrade=pro";
 
-const ACCOUNT_TABS: Array<{ label: string; value: AccountTab }> = [
+const ACCOUNT_TABS: Array<{ label: string; value: AccountManagementTab }> = [
   { label: "Profile", value: "profile" },
   { label: "Emails", value: "emails" },
   { label: "Pro", value: "pro" },
   { label: "Advanced", value: "advanced" },
 ];
 
-const ACCOUNT_TAB_FIELD_ORDER: Record<AccountTab, AccountFieldKey[]> = {
+const ACCOUNT_TAB_FIELD_ORDER: Record<AccountManagementTab, AccountFieldKey[]> = {
   profile: [
     "profilePublic",
     "acceptUnknownDms",
@@ -73,7 +76,12 @@ const ACCOUNT_TAB_FIELD_ORDER: Record<AccountTab, AccountFieldKey[]> = {
     "bio",
     "sharedPortfolioId",
   ],
-  emails: ["weeklyRoundupEnabled", "positionAlertsEnabled", "emailAlertsOffAction"],
+  emails: [
+    "chatEmailNotificationsEnabled",
+    "weeklyRoundupEnabled",
+    "positionAlertsEnabled",
+    "emailAlertsOffAction",
+  ],
   pro: ["upgradeAction"],
   advanced: ["passwordAction", "deleteAccountAction"],
 };
@@ -293,10 +301,20 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const [hasSession, setHasSession] = useState(() => !!apiClient.getSessionToken());
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [draft, setDraft] = useState<AccountDraft>(() => profileToDraft(null));
-  const [activeField, setActiveField] = useState<AccountFieldKey>("username");
+  const [initialTab] = useState<AccountManagementTab>(
+    () => consumeRequestedAccountManagementTab() ?? "profile",
+  );
+  const [activeField, setActiveField] = useState<AccountFieldKey>(
+    () => ACCOUNT_TAB_FIELD_ORDER[initialTab][0] ?? "username",
+  );
   const [message, setMessage] = useState<{ tone: "info" | "success" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState<AccountBusy>(null);
-  const [activeTab, setActiveTab] = useState<AccountTab>("profile");
+  const [activeTab, setActiveTab] = useState<AccountManagementTab>(initialTab);
+
+  useEffect(() => subscribeRequestedAccountManagementTab((tab) => {
+    setActiveTab(tab);
+    setActiveField(ACCOUNT_TAB_FIELD_ORDER[tab][0] ?? "username");
+  }), []);
   const syncStatus = useCloudSyncStatus();
   const bioRef = useRef<TextareaRenderable | null>(null);
   const portfolioNativeSelectRef = useRef<NativeSelectElement | null>(null);
@@ -515,7 +533,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   }, []);
 
   const selectTab = useCallback((tab: string) => {
-    const nextTab = tab as AccountTab;
+    const nextTab = tab as AccountManagementTab;
     setActiveTab(nextTab);
     setActiveField(ACCOUNT_TAB_FIELD_ORDER[nextTab][0] ?? "username");
   }, []);
@@ -615,6 +633,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
         xAccount: emptyToNull(current.xAccount),
         sharedPortfolioId: emptyToNull(current.sharedPortfolioId),
         acceptUnknownDms: current.acceptUnknownDms,
+        chatEmailNotificationsEnabled: current.chatEmailNotificationsEnabled,
         weeklyRoundupEnabled: current.weeklyRoundupEnabled,
         positionAlertsEnabled: current.positionAlertsEnabled,
       });
@@ -637,17 +656,18 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     setBusy("alerts");
     setMessage({ tone: "info", text: "Turning off email alerts..." });
     try {
-      const settings = await apiClient.updateSyncSettings({
+      const nextProfile = await apiClient.updateAccountProfile({
+        chatEmailNotificationsEnabled: false,
         weeklyRoundupEnabled: false,
         positionAlertsEnabled: false,
       });
       setDraft((current) => ({
         ...current,
-        weeklyRoundupEnabled: settings.weeklyRoundupEnabled,
-        positionAlertsEnabled: settings.positionAlertsEnabled,
+        chatEmailNotificationsEnabled: nextProfile.chatEmailNotificationsEnabled,
+        weeklyRoundupEnabled: nextProfile.weeklyRoundupEnabled,
+        positionAlertsEnabled: nextProfile.positionAlertsEnabled,
       }));
-      const nextProfile = await apiClient.getAccountProfile().catch(() => null);
-      if (nextProfile) setProfile(nextProfile);
+      setProfile(nextProfile);
       setMessage({ tone: "success", text: "Email alerts are off." });
     } catch (error) {
       setMessage({
@@ -929,6 +949,15 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
           {activeTab === "emails" ? (
             <>
               <CheckboxRow
+                label="Offline Chat"
+                checked={draft.chatEmailNotificationsEnabled}
+                active={activeField === "chatEmailNotificationsEnabled"}
+                description="Replies and private messages while offline."
+                width={formWidth}
+                onFocus={() => setActiveField("chatEmailNotificationsEnabled")}
+                onChange={(checked) => setDraftValue("chatEmailNotificationsEnabled", checked)}
+              />
+              <CheckboxRow
                 label="Weekly Roundup"
                 checked={draft.weeklyRoundupEnabled}
                 active={activeField === "weeklyRoundupEnabled"}
@@ -948,10 +977,14 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
               />
               <Box flexDirection="row" gap={1} style={{ marginTop: 8 }}>
                 <Button
-                  label={busy === "alerts" ? "Turning Off..." : "Turn Off Both"}
+                  label={busy === "alerts" ? "Turning Off..." : "Turn Off All"}
                   active={activeField === "emailAlertsOffAction"}
                   onPress={() => { void turnOffEmailAlerts(); }}
-                  disabled={!!busy || (!draft.weeklyRoundupEnabled && !draft.positionAlertsEnabled)}
+                  disabled={!!busy || (
+                    !draft.chatEmailNotificationsEnabled
+                    && !draft.weeklyRoundupEnabled
+                    && !draft.positionAlertsEnabled
+                  )}
                 />
                 <Button label={busy === "profile" ? "Saving..." : "Save"} variant="primary" onPress={() => { void saveProfile(); }} disabled={!!busy} />
               </Box>

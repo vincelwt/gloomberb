@@ -53,10 +53,14 @@ export function createGloomberbCloudPlugin({
               getPreferredChatOpenChannelId(context.config, chatController.getSnapshot()),
             );
           const channel = chatController.getChannels().find((entry) => entry.id === channelId);
+          const targetMessageId = options?.values?.messageId?.trim() || null;
           return {
             placement: "floating",
             title: formatChatPaneTitle(channel, channelId),
-            settings: { channelId },
+            settings: {
+              channelId,
+              ...(targetMessageId ? { targetMessageId } : {}),
+            },
           };
         },
       },
