@@ -166,51 +166,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
      this.events.push({
        type: "mouse",
        raw: decodeLatin1(rawBytes),
-@@ -12538,34 +12572,35 @@ function validateLinuxLibcOverride() {
-   throw new Error(`OPENTUI_LIBC must be "glibc" or "musl", got "${libc}"`);
- }
- async function resolveNativePackage() {
-+  const loadNativePackage = async (packageName) => await import(packageName);
-   if (process.platform === "darwin") {
-     if (process.arch === "x64")
--      return await import("@opentui/core-darwin-x64");
-+      return await loadNativePackage("@opentui/core-darwin-x64");
-     if (process.arch === "arm64")
--      return await import("@opentui/core-darwin-arm64");
-+      return await loadNativePackage("@opentui/core-darwin-arm64");
-   }
-   if (process.platform === "linux") {
-     validateLinuxLibcOverride();
-     if (process.arch === "x64") {
-       if (process.env.OPENTUI_LIBC === "musl") {
--        return await import("@opentui/core-linux-x64-musl");
-+        return await loadNativePackage("@opentui/core-linux-x64-musl");
-       } else {
--        return await import("@opentui/core-linux-x64");
-+        return await loadNativePackage("@opentui/core-linux-x64");
-       }
-     }
-     if (process.arch === "arm64") {
-       if (process.env.OPENTUI_LIBC === "musl") {
--        return await import("@opentui/core-linux-arm64-musl");
-+        return await loadNativePackage("@opentui/core-linux-arm64-musl");
-       } else {
--        return await import("@opentui/core-linux-arm64");
-+        return await loadNativePackage("@opentui/core-linux-arm64");
-       }
-     }
-   }
-   if (process.platform === "win32") {
-     if (process.arch === "x64")
--      return await import("@opentui/core-win32-x64");
-+      return await loadNativePackage("@opentui/core-win32-x64");
-     if (process.arch === "arm64")
--      return await import("@opentui/core-win32-arm64");
-+      return await loadNativePackage("@opentui/core-win32-arm64");
-   }
-   throw new Error(`opentui is not supported on the current platform: ${process.platform}-${process.arch}`);
- }
-@@ -17996,5 +18031,7 @@ function isGapType(value) {
+@@ -17996,5 +18030,7 @@ function isGapType(value) {
  class BoxRenderable extends Renderable {
    _backgroundColor;
 +  _hoverBackgroundColor;
@@ -218,7 +174,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
    _border;
    _borderStyle;
    _borderColor;
-@@ -18023,6 +18060,7 @@ class BoxRenderable extends Renderable {
+@@ -18023,6 +18059,7 @@ class BoxRenderable extends Renderable {
        this._focusable = true;
      }
      this._backgroundColor = parseColor(options.backgroundColor || this._defaultOptions.backgroundColor);
@@ -226,7 +182,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
      this._border = options.border ?? this._defaultOptions.border;
      if (!options.border && (options.borderStyle || options.borderColor || options.focusedBorderColor || options.customBorderChars)) {
        this._border = true;
-@@ -18064,11 +18102,26 @@ class BoxRenderable extends Renderable {
+@@ -18064,11 +18101,26 @@ class BoxRenderable extends Renderable {
    }
    set backgroundColor(value) {
      const newColor = parseColor(value ?? this._defaultOptions.backgroundColor);
@@ -254,7 +210,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
    get border() {
      return this._border;
    }
-@@ -18152,9 +18205,39 @@ class BoxRenderable extends Renderable {
+@@ -18152,9 +18204,39 @@ class BoxRenderable extends Renderable {
        this.requestRender();
      }
    }
@@ -295,7 +251,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
      if (!hasBorder && !hasVisibleFill) {
        return;
      }
-@@ -18171,7 +18254,7 @@ class BoxRenderable extends Renderable {
+@@ -18171,7 +18253,7 @@ class BoxRenderable extends Renderable {
        customBorderChars: this._customBorderChars,
        border: this._border,
        borderColor: currentBorderColor,
@@ -304,7 +260,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
        shouldFill: this.shouldFill,
        title: this._title,
        titleAlignment: this._titleAlignment,
-@@ -22288,6 +22371,8 @@ class MouseEvent {
+@@ -22288,6 +22370,8 @@ class MouseEvent {
    button;
    x;
    y;
@@ -313,7 +269,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
    source;
    modifiers;
    scroll;
-@@ -22307,6 +22392,8 @@ class MouseEvent {
+@@ -22307,6 +22391,8 @@ class MouseEvent {
      this.button = attributes.button;
      this.x = attributes.x;
      this.y = attributes.y;
@@ -322,7 +278,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
      this.modifiers = attributes.modifiers;
      this.scroll = attributes.scroll;
      this.source = attributes.source;
-@@ -22457,6 +22544,10 @@ class CliRenderer extends EventEmitter9 {
+@@ -22457,6 +22543,10 @@ class CliRenderer extends EventEmitter9 {
    resizeDebounceDelay = 100;
    enableMouseMovement = false;
    _useMouse = true;
@@ -333,7 +289,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
    autoFocus = true;
    _screenMode = "alternate-screen";
    _footerHeight = DEFAULT_FOOTER_HEIGHT;
-@@ -22491,7 +22582,7 @@ class CliRenderer extends EventEmitter9 {
+@@ -22491,7 +22581,7 @@ class CliRenderer extends EventEmitter9 {
      this.handleResize(width, height);
    }).bind(this);
    _capabilities = null;
@@ -342,7 +298,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
    _hasPointer = false;
    _lastPointerModifiers = {
      shift: false,
-@@ -22738,7 +22829,13 @@ Captured external output:
+@@ -22738,7 +22828,13 @@ Captured external output:
          privateCapabilityRepliesActive: false,
          pixelResolutionQueryActive: false,
          explicitWidthCprActive: false,
@@ -357,7 +313,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
        },
        clock: this.clock
      });
-@@ -24021,12 +24118,14 @@ Captured external output:
+@@ -24021,12 +24117,14 @@ Captured external output:
    enableMouse() {
      this._useMouse = true;
      this.lib.enableMouse(this.rendererPtr, this.enableMouseMovement);
@@ -372,7 +328,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
    }
    enableKittyKeyboard(flags = 3) {
      this.lib.enableKittyKeyboard(this.rendererPtr, flags);
-@@ -24036,6 +24135,52 @@ Captured external output:
+@@ -24036,6 +24134,52 @@ Captured external output:
      this.lib.disableKittyKeyboard(this.rendererPtr);
      this.updateStdinParserProtocolContext({ kittyKeyboardEnabled: false }, true);
    }
@@ -425,7 +381,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
    set useThread(useThread) {
      this._useThread = useThread;
      this.lib.setUseThread(this.rendererPtr, useThread);
-@@ -24141,6 +24286,7 @@ Captured external output:
+@@ -24141,6 +24285,7 @@ Captured external output:
      }
      this.lib.processCapabilityResponse(this.rendererPtr, sequence);
      this._capabilities = this.lib.getTerminalCapabilities(this.rendererPtr);
@@ -433,7 +389,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
      if (this._capabilities?.terminal?.from_xtversion) {
        this.resolveXtVersionWaiters();
      }
-@@ -24170,6 +24316,7 @@ Captured external output:
+@@ -24170,6 +24315,7 @@ Captured external output:
      if (sequence === "\x1B[I") {
        if (this.shouldRestoreModesOnNextFocus) {
          this.lib.restoreTerminalModes(this.rendererPtr);
@@ -441,7 +397,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
          this.shouldRestoreModesOnNextFocus = false;
        }
        if (this._terminalFocusState !== true) {
-@@ -24218,7 +24365,7 @@ Captured external output:
+@@ -24218,7 +24364,7 @@ Captured external output:
          this._keyHandler.processParsedKey(event.key);
          return;
        case "mouse":
@@ -450,7 +406,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
            return;
          }
          this.dispatchSequenceHandlers(event.raw);
-@@ -24264,6 +24411,7 @@ Captured external output:
+@@ -24264,6 +24410,7 @@ Captured external output:
          }
          this.waitingForPixelResolution = false;
          this.updateStdinParserProtocolContext({ pixelResolutionQueryActive: false }, true);
@@ -458,7 +414,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
          return true;
        }
        return false;
-@@ -24292,15 +24440,62 @@ Captured external output:
+@@ -24292,15 +24439,62 @@ Captured external output:
      }
      return event;
    }
@@ -521,7 +477,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
      this._hasPointer = true;
      this._lastPointerModifiers = mouseEvent.modifiers;
      if (this._console.visible) {
-@@ -24437,6 +24632,8 @@ Captured external output:
+@@ -24437,6 +24631,8 @@ Captured external output:
        return;
      }
      const baseEvent = {
@@ -530,7 +486,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
        type: "move",
        button: 0,
        x: this._latestPointer.x,
-@@ -24527,6 +24724,7 @@ Captured external output:
+@@ -24527,6 +24723,7 @@ Captured external output:
      const pendingSplitFooterTransition = this.pendingSplitFooterTransition;
      const previousGeometry = calculateRenderGeometry(this._screenMode, this._terminalWidth, this._terminalHeight, this._footerHeight);
      const prevWidth = this._terminalWidth;
@@ -538,7 +494,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
      const previousTerminalHeight = this._terminalHeight;
      const visiblePreviousSplitHeight = pendingSplitFooterTransition?.sourceHeight ?? previousGeometry.effectiveFooterHeight;
      this._terminalWidth = width;
-@@ -24832,6 +25030,11 @@ Captured external output:
+@@ -24832,6 +25029,11 @@ Captured external output:
        this.clock.clearTimeout(this.resizeTimeoutId);
        this.resizeTimeoutId = null;
      }
@@ -550,7 +506,7 @@ index b9445d2cca9477dfe06026da451b6d19268fcbdd..da790c31da185325405227329dad2ac1
      if (this.capabilityTimeoutId !== null) {
        this.clock.clearTimeout(this.capabilityTimeoutId);
        this.capabilityTimeoutId = null;
-@@ -24847,6 +25050,7 @@ Captured external output:
+@@ -24847,6 +25049,7 @@ Captured external output:
        this.renderTimeout = null;
      }
      this.themeModeState.cancelRefresh();
