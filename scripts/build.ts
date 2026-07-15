@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
 import { gzipSync } from "zlib";
 import { syncVersion } from "./sync-version";
@@ -88,16 +89,44 @@ async function smokeTestBinary(outfile: string, os: string, arch: string) {
   }
 
   console.log("Smoke testing packaged binary...");
-  await runProcess(
-    [outfile, OPEN_TUI_NATIVE_SMOKE_COMMAND],
-    `Packaged binary failed to load OpenTUI native package: ${outfile}`,
-    { stdout: "ignore" },
-  );
-  await runProcess(
-    [outfile, "help"],
-    `Packaged binary failed to launch: ${outfile}`,
-    { stdout: "ignore" },
-  );
+  const smokeDir = mkdtempSync(join(tmpdir(), "gloomberb-smoke-"));
+  const smokeBinary = join(smokeDir, os === "windows" ? "gloomberb.exe" : "gloomberb");
+  copyFileSync(outfile, smokeBinary);
+  if (os !== "windows") chmodSync(smokeBinary, 0o755);
+
+  const checks = [
+    {
+      args: [OPEN_TUI_NATIVE_SMOKE_COMMAND],
+      failureMessage: `Packaged binary failed to load OpenTUI native package: ${outfile}`,
+    },
+    {
+      args: ["help"],
+      failureMessage: `Packaged binary failed to launch: ${outfile}`,
+    },
+  ];
+  let failureMessage: string | undefined;
+
+  try {
+    for (const check of checks) {
+      const code = await runProcess(
+        [smokeBinary, ...check.args],
+        check.failureMessage,
+        { cwd: smokeDir, stdout: "ignore" },
+        true,
+      );
+      if (code !== 0) {
+        failureMessage = check.failureMessage;
+        break;
+      }
+    }
+  } finally {
+    rmSync(smokeDir, { recursive: true, force: true });
+  }
+
+  if (failureMessage) {
+    console.error(failureMessage);
+    process.exit(1);
+  }
 }
 
 function buildCompileEntrySource(nativePackageName: string): string {

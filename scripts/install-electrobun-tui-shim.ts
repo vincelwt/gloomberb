@@ -3,6 +3,17 @@ import { join } from "path";
 
 type TargetOs = "darwin" | "linux" | "win";
 
+const OPEN_TUI_NATIVE_PACKAGES = [
+  "@opentui/core-darwin-arm64",
+  "@opentui/core-darwin-x64",
+  "@opentui/core-linux-arm64",
+  "@opentui/core-linux-arm64-musl",
+  "@opentui/core-linux-x64",
+  "@opentui/core-linux-x64-musl",
+  "@opentui/core-win32-arm64",
+  "@opentui/core-win32-x64",
+];
+
 const MACOS_SHIM = `#!/bin/sh
 set -eu
 
@@ -251,6 +262,7 @@ for (const bundlePath of bundleCandidates(os)) {
       join(process.cwd(), "src", "renderers", "electrobun", "bun", "tui-entry.ts"),
       "--target=bun",
       `--outdir=${tuiBundleDir}`,
+      ...OPEN_TUI_NATIVE_PACKAGES.map((packageName) => `--external=${packageName}`),
     ],
     stdout: "inherit",
     stderr: "inherit",
