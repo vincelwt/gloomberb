@@ -554,6 +554,22 @@ export function graphRowsForFinancials(
   return buildFundamentalGraphRows(selectedStatements(financials, period), metric as FundamentalMetricKey, symbol, period);
 }
 
+export function limitGraphRowsBySymbol(
+  rows: FundamentalGraphRow[],
+  periodCount: number | null | undefined,
+): FundamentalGraphRow[] {
+  if (!Number.isInteger(periodCount) || periodCount == null || periodCount <= 0) return rows;
+  const keysToKeep = new Set<string>();
+  const symbols = [...new Set(rows.map((row) => row.symbol))];
+  for (const symbol of symbols) {
+    const symbolRows = rows
+      .filter((row) => row.symbol === symbol)
+      .sort((left, right) => left.date.localeCompare(right.date));
+    for (const row of symbolRows.slice(-periodCount)) keysToKeep.add(row.key);
+  }
+  return rows.filter((row) => keysToKeep.has(row.key));
+}
+
 export function buildFundamentalColumns(width: number, multiSymbol: boolean): FundamentalColumn[] {
   const symbolWidth = multiSymbol ? 8 : 0;
   const dateWidth = 12;

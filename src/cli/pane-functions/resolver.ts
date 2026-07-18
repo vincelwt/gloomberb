@@ -15,6 +15,13 @@ import {
   optionSettings,
   type ParsedPaneFunctionArgs,
 } from "./options";
+import {
+  capabilityPaneSettings,
+  getPaneFunctionCapability,
+  normalizeCapabilityOptions,
+  type NormalizedPaneFunctionOptions,
+  type PaneFunctionCapability,
+} from "./capabilities";
 
 export interface ResolvedPaneFunction {
   token: string;
@@ -26,6 +33,8 @@ export interface ResolvedPaneFunction {
   instance: PaneInstanceConfig;
   createOptions: PaneTemplateCreateOptions | undefined;
   optionSettings: Record<string, unknown>;
+  capability: PaneFunctionCapability;
+  options: NormalizedPaneFunctionOptions;
 }
 
 async function buildPaneInstance(
@@ -71,7 +80,6 @@ export async function resolvePaneFunction(
     throw new Error(`Unknown function or pane "${args.target}". Try one of: ${shortcuts.slice(0, 18).join(", ")}`);
   }
 
-  const settings = optionSettings(args.options);
   const template = "paneId" in entry && "description" in entry ? entry as PaneTemplateDef : undefined;
   const pane = template
     ? registry.panes.get(template.paneId)
@@ -80,6 +88,19 @@ export async function resolvePaneFunction(
     throw new Error(`Template "${template?.id}" points at missing pane "${template?.paneId}".`);
   }
   const createOptions = buildCreateOptions(template, args.arg);
+  const capability = getPaneFunctionCapability(template, pane);
+  const normalizedOptions = normalizeCapabilityOptions(capability, args.options, {
+    strict: args.requireBotSafe,
+  });
+  const settings = capability.botSafe
+    ? {
+      ...optionSettings(args.options),
+      ...capabilityPaneSettings(capability, normalizedOptions),
+    }
+    : optionSettings(args.options);
+  if (args.requireBotSafe) {
+    validateTickerCardinality(capability, createOptions);
+  }
   const resolved: ResolvedPaneFunction = {
     token: template?.shortcut?.prefix ?? template?.id ?? pane.id,
     label: template?.label ?? pane.name,
@@ -90,7 +111,35 @@ export async function resolvePaneFunction(
     instance: {} as PaneInstanceConfig,
     createOptions,
     optionSettings: settings,
+    capability,
+    options: normalizedOptions,
   };
   resolved.instance = await buildPaneInstance(resolved, context, args.arg || pane.id);
   return resolved;
+}
+
+function validateTickerCardinality(
+  capability: PaneFunctionCapability,
+  createOptions: PaneTemplateCreateOptions | undefined,
+): void {
+  if (!capability.botSafe || capability.tickerCardinality === "none") return;
+  const count = createOptions?.symbols?.length
+    ?? (createOptions?.symbol ? 1 : 0);
+  const valid = capability.tickerCardinality === "one"
+    ? count === 1
+    : capability.tickerCardinality === "one-or-more"
+      ? count >= 1
+      : capability.tickerCardinality === "two-or-more"
+        ? count >= 2
+        : count >= 1 && count <= 2;
+  if (valid) return;
+
+  const expectation = capability.tickerCardinality === "one"
+    ? "exactly one ticker"
+    : capability.tickerCardinality === "one-or-more"
+      ? "at least one ticker"
+      : capability.tickerCardinality === "two-or-more"
+        ? "at least two tickers"
+        : "one or two tickers";
+  throw new Error(`${capability.id} requires ${expectation}.`);
 }

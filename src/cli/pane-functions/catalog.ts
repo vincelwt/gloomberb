@@ -5,6 +5,11 @@ import {
   normalizeLookupToken,
   type ParsedPaneCatalogArgs,
 } from "./options";
+import {
+  capabilityOptionSummary,
+  getPaneFunctionCapability,
+  type PaneFunctionCapability,
+} from "./capabilities";
 
 export interface PaneFunctionCatalog {
   panes: ReadonlyMap<string, PaneDef>;
@@ -24,6 +29,7 @@ export interface PaneCatalogEntry {
   argPlaceholder?: string;
   keywords: string[];
   defaultSettings: Record<string, unknown>;
+  capability: PaneFunctionCapability;
 }
 
 export function buildTemplateContext(context: MarketContext, symbol: string | null) {
@@ -122,6 +128,7 @@ async function buildTemplateCatalogEntry(
     argPlaceholder: template.shortcut?.argPlaceholder,
     keywords: template.keywords ?? [],
     defaultSettings,
+    capability: getPaneFunctionCapability(template, pane),
   };
 }
 
@@ -149,6 +156,7 @@ export async function buildPaneCatalogEntries(
       paneName: pane.name,
       keywords: [],
       defaultSettings: {},
+      capability: getPaneFunctionCapability(undefined, pane),
     });
   }
 
@@ -176,23 +184,37 @@ function paneCatalogSearchScore(entry: PaneCatalogEntry, query: string): number 
     entry.argKind,
     entry.argPlaceholder,
     ...entry.keywords,
+    ...entry.capability.aliases,
+    ...entry.capability.intents,
+    entry.capability.outputKind,
+    ...entry.capability.options.flatMap((option) => [
+      option.key,
+      option.description,
+      ...(option.aliases ?? []),
+      ...(option.values ?? []).flatMap((value) => [value.value, ...(value.aliases ?? [])]),
+    ]),
     ...Object.keys(entry.defaultSettings),
   ].filter((value): value is string => !!value).join(" ").toLowerCase();
 
-  let score = searchable.includes(query.toLowerCase()) ? 4 : 0;
+  let score = searchable.includes(query.toLowerCase()) ? 12 : 0;
+  let matchedTerms = 0;
   for (const term of terms) {
     const normalized = normalizeLookupToken(term);
     if (exactTokens.includes(normalized)) {
       score += 8;
+      matchedTerms += 1;
     } else if (searchable.includes(term)) {
       score += 2;
+      matchedTerms += 1;
     } else if (searchable.includes(normalized)) {
       score += 1;
-    } else {
-      return 0;
+      matchedTerms += 1;
     }
   }
 
+  if (matchedTerms === 0) return 0;
+  score += Math.round((matchedTerms / terms.length) * 8);
+  if (entry.capability.botSafe) score += 2;
   return score;
 }
 
@@ -233,11 +255,24 @@ export function renderPaneCatalogReport(entries: PaneCatalogEntry[], args: Parse
     if (entry.shortcut) lines.push(`  Shortcut: ${entry.shortcut}`);
     if (entry.argKind) lines.push(`  Argument: ${entry.argKind}${entry.argPlaceholder ? ` (${entry.argPlaceholder})` : ""}`);
     if (entry.keywords.length > 0) lines.push(`  Keywords: ${entry.keywords.join(", ")}`);
+    lines.push(`  Bot safe: ${entry.capability.botSafe ? "yes" : "no"}`);
+    lines.push(`  Output: ${entry.capability.outputKind}`);
+    lines.push(`  Readiness: report=${entry.capability.reportReadiness}, screenshot=${entry.capability.screenshotReadiness}`);
+    if (entry.capability.aliases.length > 0) lines.push(`  Aliases: ${entry.capability.aliases.join(", ")}`);
+    if (entry.capability.intents.length > 0) lines.push(`  Intents: ${entry.capability.intents.join("; ")}`);
+    const optionSummary = capabilityOptionSummary(entry.capability);
+    if (optionSummary.length > 0) lines.push(`  Options: ${optionSummary.join(", ")}`);
+    if (entry.capability.dataRequirements.length > 0) {
+      lines.push(`  Requires: ${entry.capability.dataRequirements.join(", ")}`);
+    }
+    if (entry.capability.limitations.length > 0) {
+      lines.push(`  Limitations: ${entry.capability.limitations.join(" ")}`);
+    }
     lines.push(`  Defaults: ${formatCatalogSettings(entry.defaultSettings)}`);
     lines.push(`  Examples: gloomberb fn ${entry.token} ${arg} | gloomberb shot ${entry.token} ${arg} --output /tmp/${entry.token.toLowerCase()}.png`);
     lines.push("");
   }
 
-  lines.push("Generic screenshot state options: --tab <id>, --activeTabId <id>, --state key=value, --state.<key> value.");
+  lines.push("Use --require-bot-safe to reject unverified functions and undeclared options. Generic UI screenshots may also accept --tab, --activeTabId, and --state options.");
   return lines.join("\n").trimEnd();
 }

@@ -10,6 +10,7 @@ import {
   defaultMetric,
   graphRowsForFinancials,
   isMetricForKind,
+  limitGraphRowsBySymbol,
 } from "./fundamental-graph/model";
 import {
   FUNDAMENTAL_GRAPH_PANE_ID,
@@ -31,11 +32,12 @@ export function FundamentalGraphPane({ focused, width, height }: PaneProps) {
   const [period, setPeriod] = usePluginPaneState<FundamentalPeriod>("period", "quarterly");
   const [chartKind, setChartKind] = usePluginPaneState<GraphKind>("chartKind", configuredKind);
   const [metric, setMetric] = usePluginPaneState<GraphMetricKey>("metric", defaultMetric(configuredKind));
+  const [periodCount] = usePluginPaneState<number>("periods", 0);
   const resolvedMetric = isMetricForKind(chartKind, metric) ? metric : defaultMetric(chartKind);
   const { data, loading, error, reload } = useSymbolFinancials(symbols, exchange);
-  const rows = useMemo(() => (data ?? []).flatMap((entry) => (
+  const rows = useMemo(() => limitGraphRowsBySymbol((data ?? []).flatMap((entry) => (
     graphRowsForFinancials(entry.financials, chartKind, resolvedMetric, period, entry.symbol)
-  )), [chartKind, data, period, resolvedMetric]);
+  )), periodCount), [chartKind, data, period, periodCount, resolvedMetric]);
 
   return (
     <FundamentalGraphContent

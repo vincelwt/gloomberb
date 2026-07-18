@@ -21,6 +21,11 @@ import { defaultScreenshotPath, renderDesktopShot } from "./screenshot";
 import {
   buildPaneCatalogEntries,
 } from "./catalog";
+import {
+  capabilityPluginState,
+  getPaneFunctionCapability,
+  normalizeCapabilityOptions,
+} from "./capabilities";
 
 async function withPaneRuntime<T>(
   ctx: CliCommandContext,
@@ -47,8 +52,26 @@ async function withPaneRuntime<T>(
 export async function runPaneFunction(args: string[], ctx: CliCommandContext) {
   await runPaneCliCommand(ctx, async () => {
     await withPaneRuntime(ctx, args, async ({ parsed, context, resolved }) => {
-      const report = await buildFunctionReport(resolved, context, parsed.arg, parsed.options);
-      console.log(report);
+      if (parsed.requireBotSafe && (
+        !resolved.capability.botSafe || resolved.capability.reportReadiness !== "ready"
+      )) {
+        throw new Error(
+          `${resolved.token} is not a verified bot-safe report capability. `
+          + `Use "gloomberb catalog ${resolved.token}" to inspect readiness.`,
+        );
+      }
+      const report = await buildFunctionReport(resolved, context, parsed.arg);
+      if (parsed.requireBotSafe && (report.data.empty || !report.data.complete)) {
+        const unavailable = report.data.unavailableSymbols.length > 0
+          ? ` Missing data for ${report.data.unavailableSymbols.join(", ")}.`
+          : "";
+        throw new Error(
+          `${resolved.token} did not produce a complete bot-safe report.${unavailable}`,
+        );
+      }
+      ctx.printResult({ data: report.data }, {
+        text: () => report.text,
+      });
     });
   });
 }
@@ -56,10 +79,18 @@ export async function runPaneFunction(args: string[], ctx: CliCommandContext) {
 export async function runPaneScreenshot(args: string[], ctx: CliCommandContext) {
   await runPaneCliCommand(ctx, async () => {
     await withPaneRuntime(ctx, args, async ({ parsed, context, resolved }) => {
+      if (parsed.requireBotSafe && (
+        !resolved.capability.botSafe || resolved.capability.screenshotReadiness !== "ready"
+      )) {
+        throw new Error(
+          `${resolved.token} is not a verified bot-safe screenshot capability. `
+          + `Use "gloomberb catalog ${resolved.token}" to inspect readiness.`,
+        );
+      }
       const outputPath = parsed.outputPath
         ? resolve(process.cwd(), ensurePngExtension(parsed.outputPath))
         : defaultScreenshotPath(resolved, parsed.arg);
-      await renderDesktopShot({
+      const result = await renderDesktopShot({
         resolved,
         context,
         rawArg: parsed.arg,
@@ -68,7 +99,29 @@ export async function runPaneScreenshot(args: string[], ctx: CliCommandContext) 
         height: parsed.height,
         options: parsed.options,
       });
-      console.log(`Saved screenshot to ${outputPath}`);
+      if (parsed.requireBotSafe && !result.usable) {
+        throw new Error(
+          `${resolved.token} did not produce a usable bot-safe screenshot: `
+          + `${result.empty ? "empty render" : ""}${result.empty && !result.complete ? ", " : ""}`
+          + `${!result.complete ? `missing data for ${result.unavailableSymbols.join(", ")}` : ""}`
+          + `${result.semanticMismatch ? `${(result.empty || !result.complete) ? ", " : ""}rendered content did not match the requested capability` : ""}`,
+        );
+      }
+      ctx.printResult({ data: result }, {
+        text: (data) => [
+          `Saved screenshot to ${data.outputPath}`,
+          `Result: ${data.rowCount} semantic rows; empty=${data.empty}; complete=${data.complete}; mismatch=${data.semanticMismatch}; usable=${data.usable}`,
+          ...(data.unavailableSymbols.length > 0
+            ? [`Unavailable symbols: ${data.unavailableSymbols.join(", ")}`]
+            : []),
+          ...(data.render.emptyStateMarkers.length > 0
+            ? [`Empty markers: ${data.render.emptyStateMarkers.join(", ")}`]
+            : []),
+          ...(data.render.missingExpectedText.length > 0
+            ? [`Missing expected text: ${data.render.missingExpectedText.join(", ")}`]
+            : []),
+        ].join("\n"),
+      });
     });
   });
 }
@@ -84,7 +137,10 @@ export async function runPaneCatalog(args: string[], ctx: CliCommandContext) {
     const registry = await createPaneCatalog(context, ctx.plugins);
     try {
       const entries = await buildPaneCatalogEntries(registry, context);
-      const filtered = filterPaneCatalogEntries(entries, parsed.query);
+      const botSafeEntries = effectiveParsed.botSafeOnly
+        ? entries.filter((entry) => entry.capability.botSafe)
+        : entries;
+      const filtered = filterPaneCatalogEntries(botSafeEntries, parsed.query);
       if (ctx.cliOptions.format === "text") {
         console.log(renderPaneCatalogReport(filtered, effectiveParsed));
       } else {
@@ -118,4 +174,7 @@ export const paneFunctionTestInternals = {
   optionPaneState,
   filterPaneCatalogEntries,
   renderPaneCatalogReport,
+  getPaneFunctionCapability,
+  normalizeCapabilityOptions,
+  capabilityPluginState,
 };

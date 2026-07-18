@@ -6,6 +6,7 @@ import {
   resolveFinancialPeriodOption,
 } from "../../plugins/builtin/ticker-detail/financials/model";
 import type { PaneRuntimeState } from "../../core/state/app/state";
+import type { NormalizedPaneFunctionOptions } from "./capabilities";
 
 const DEFAULT_SHOT_WIDTH = 1280;
 const DEFAULT_SHOT_HEIGHT = 720;
@@ -22,11 +23,13 @@ export interface ParsedPaneFunctionArgs {
   outputPath: string | null;
   width: number;
   height: number;
+  requireBotSafe: boolean;
 }
 
 export interface ParsedPaneCatalogArgs {
   query: string;
   limit: number;
+  botSafeOnly: boolean;
 }
 
 function normalizeOptionKey(value: string): string {
@@ -59,6 +62,7 @@ export function parsePaneFunctionArgs(args: string[]): ParsedPaneFunctionArgs {
   let outputPath: string | null = null;
   let width = DEFAULT_SHOT_WIDTH;
   let height = DEFAULT_SHOT_HEIGHT;
+  let requireBotSafe = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index]!;
@@ -80,7 +84,9 @@ export function parsePaneFunctionArgs(args: string[]): ParsedPaneFunctionArgs {
     const nextValue = next && !next.startsWith("--") ? args[++index] : true;
     const value: string | true = inlineValue ?? nextValue ?? true;
     const normalizedKey = normalizeOptionKey(key);
-    if (normalizedKey === "output" || normalizedKey === "out" || normalizedKey === "o") {
+    if (normalizedKey === "requireBotSafe" || normalizedKey === "botSafe") {
+      requireBotSafe = value === true || String(value).toLowerCase() === "true";
+    } else if (normalizedKey === "output" || normalizedKey === "out" || normalizedKey === "o") {
       outputPath = value === true ? null : value;
     } else if (normalizedKey === "width" && value !== true) {
       const parsedWidth = Number(value);
@@ -101,12 +107,13 @@ export function parsePaneFunctionArgs(args: string[]): ParsedPaneFunctionArgs {
 
   const target = positionals[0]?.trim() ?? "";
   const arg = positionals.slice(1).join(" ").trim();
-  return { target, arg, options, outputPath, width, height };
+  return { target, arg, options, outputPath, width, height, requireBotSafe };
 }
 
 export function parsePaneCatalogArgs(args: string[]): ParsedPaneCatalogArgs {
   const queryParts: string[] = [];
   let limit = DEFAULT_CATALOG_LIMIT;
+  let botSafeOnly = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index]!;
@@ -117,6 +124,11 @@ export function parsePaneCatalogArgs(args: string[]): ParsedPaneCatalogArgs {
 
     if (token === "--all") {
       limit = Number.POSITIVE_INFINITY;
+      continue;
+    }
+
+    if (token === "--bot-safe" || token === "--botsafe") {
+      botSafeOnly = true;
       continue;
     }
 
@@ -142,12 +154,15 @@ export function parsePaneCatalogArgs(args: string[]): ParsedPaneCatalogArgs {
   return {
     query: queryParts.join(" ").trim(),
     limit,
+    botSafeOnly,
   };
 }
 
-export function optionString(options: Record<string, string | true>, key: string): string | undefined {
+type PaneOptionValues = Record<string, string | number | boolean>;
+
+export function optionString(options: PaneOptionValues, key: string): string | undefined {
   const value = options[normalizeOptionKey(key)];
-  return value === true ? undefined : value;
+  return value === true || value === undefined ? undefined : String(value);
 }
 
 const RESERVED_OPTION_KEYS = new Set(["output", "out", "o", "width", "height", "arguments", "state"]);
@@ -211,7 +226,7 @@ function normalizeFinancialSubTabOption(value: string | undefined): string | und
   ))?.key;
 }
 
-export function optionPaneState(options: Record<string, string | true>): PaneRuntimeState {
+export function optionPaneState(options: PaneOptionValues | NormalizedPaneFunctionOptions): PaneRuntimeState {
   const state: PaneRuntimeState = {};
   const rawState = optionString(options, "state");
   if (rawState) {
@@ -222,7 +237,7 @@ export function optionPaneState(options: Record<string, string | true>): PaneRun
 
   for (const [key, value] of Object.entries(options)) {
     if (!key.startsWith("state.") || value === true) continue;
-    state[key.slice("state.".length)] = coerceSettingValue(value);
+    state[key.slice("state.".length)] = typeof value === "string" ? coerceSettingValue(value) : value;
   }
 
   const activeTab = optionString(options, "activeTabId")

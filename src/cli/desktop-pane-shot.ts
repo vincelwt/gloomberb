@@ -6,6 +6,7 @@ import type { AppConfig } from "../types/config";
 import type { OptionsChain, TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
 import type { PaneRuntimeState } from "../core/state/app/state";
+import type { RemoteUiNodeSnapshot } from "../remote/types";
 import {
   electrobunViewPath,
   writeElectrobunViewPage,
@@ -22,6 +23,13 @@ export interface DesktopPaneShotPayload {
   financials: Array<[string, TickerFinancials]>;
   optionsChains: Array<[string, OptionsChain]>;
   paneState: Record<string, PaneRuntimeState>;
+}
+
+export interface DesktopPaneShotRenderResult {
+  visibleText: string;
+  emptyStateDetected: boolean;
+  emptyStateMarkers: string[];
+  semanticUi: RemoteUiNodeSnapshot[];
 }
 
 type CdpResponse = {
@@ -43,14 +51,14 @@ const SHOT_DEVICE_SCALE_FACTOR = 2;
 export async function renderDesktopPaneScreenshot(
   payload: DesktopPaneShotPayload,
   outputPath: string,
-): Promise<void> {
+): Promise<DesktopPaneShotRenderResult> {
   const tempDir = await mkdtemp(join(tmpdir(), "gloom-pane-shot-"));
   try {
     const outdir = join(tempDir, "assets");
     await mkdir(outdir, { recursive: true });
     const htmlPath = await buildShotPage(outdir, payload);
     const chrome = await findChromeExecutable();
-    await capturePageScreenshot({
+    return await capturePageScreenshot({
       chrome,
       url: pathToFileURL(htmlPath).href,
       outputPath,
@@ -119,7 +127,7 @@ async function capturePageScreenshot({
   widthPx: number;
   heightPx: number;
   userDataDir: string;
-}): Promise<void> {
+}): Promise<DesktopPaneShotRenderResult> {
   await mkdir(userDataDir, { recursive: true });
   const port = 43000 + Math.floor(Math.random() * 10000);
   const proc = Bun.spawn([
@@ -158,13 +166,15 @@ async function capturePageScreenshot({
       mobile: false,
     });
     await waitForShotReady(session);
+    const rendered = await readRenderedPaneState(session);
     const screenshot = await session.send("Page.captureScreenshot", {
       format: "png",
       fromSurface: true,
       captureBeyondViewport: false,
     }) as { data?: string };
     if (!screenshot.data) throw new Error("Chrome did not return screenshot data.");
-    await writeFile(outputPath, Buffer.from(screenshot.data, "base64"));
+    await writeFile(outputPath, Uint8Array.from(Buffer.from(screenshot.data, "base64")));
+    return rendered;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(message);
@@ -173,6 +183,55 @@ async function capturePageScreenshot({
     proc.kill();
     await proc.exited.catch(() => {});
   }
+}
+
+const EMPTY_STATE_PATTERNS = [
+  /\bNo chart data\b/gi,
+  /\bNo graph data\b/gi,
+  /\bNo historical prices\b/gi,
+  /\bNo financial statement rows\b/gi,
+  /\bNo comparison tickers configured\b/gi,
+  /\bNo relationship tickers configured\b/gi,
+  /\bNo overlapping price history\b/gi,
+  /\bLoading chart\.{0,3}\b/gi,
+  /\bRendering pane\.{0,3}\b/gi,
+  /\bNo tickers selected\b/gi,
+  /\bMarket data unavailable\b/gi,
+  /\bNo data(?: available)?\b/gi,
+];
+
+async function readRenderedPaneState(session: CdpSession): Promise<DesktopPaneShotRenderResult> {
+  const result = await session.send("Runtime.evaluate", {
+    expression: `(() => {
+      const root = document.getElementById("root") || document.body;
+      return {
+        visibleText: root.innerText || root.textContent || "",
+        error: window.__GLOOM_CLI_SHOT_ERROR__ || "",
+        semanticUi: window.__GLOOM_CLI_SHOT_SEMANTIC_UI__ || [],
+      };
+    })()`,
+    returnByValue: true,
+  }) as {
+    result?: {
+      value?: {
+        visibleText?: string;
+        error?: string;
+        semanticUi?: RemoteUiNodeSnapshot[];
+      };
+    };
+  };
+  const value = result.result?.value;
+  if (value?.error) throw new Error(value.error);
+  const visibleText = (value?.visibleText ?? "").replace(/\s+/g, " ").trim();
+  const emptyStateMarkers = [...new Set(EMPTY_STATE_PATTERNS.flatMap((pattern) => (
+    [...visibleText.matchAll(pattern)].map((match) => match[0])
+  )))];
+  return {
+    visibleText,
+    emptyStateDetected: emptyStateMarkers.length > 0,
+    emptyStateMarkers,
+    semanticUi: Array.isArray(value?.semanticUi) ? value.semanticUi : [],
+  };
 }
 
 async function waitForPageWebSocket(port: number, targetUrl: string): Promise<string> {

@@ -14,13 +14,20 @@ import { webUiHost } from "./ui-host";
 import { getLoadablePlugins } from "../../../plugins/catalog";
 import { setSharedMarketDataForTests } from "../../../plugins/registry";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../../plugins/runtime";
+import {
+  RemoteUiRegistryProvider,
+  useRemoteUiRegistry,
+} from "../../../remote/semantic-tree";
+import type { RemoteUiNodeSnapshot } from "../../../remote/types";
 import { FloatingPaneWrapper } from "../../../components/layout/floating-pane";
 import { PaneContent } from "../../../components/layout/pane/content";
 import { resolvePaneBodyFrame } from "../../../components/layout/pane/sizing";
 import { getPaneDisplayTitle } from "../../../components/layout/pane/title";
+import { subtractTimeRange } from "../../../components/chart/core/date-window";
+import type { TimeRange } from "../../../components/chart/core/types";
 import type { AppConfig } from "../../../types/config";
 import type { CachedFinancialsTarget, DataProvider, QuoteSubscriptionTarget } from "../../../types/data-provider";
-import type { OptionsChain, TickerFinancials } from "../../../types/financials";
+import type { OptionsChain, PricePoint, TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import type { AppState, PaneRuntimeState } from "../../../core/state/app/state";
 import type { PaneDef } from "../../../types/plugin";
@@ -42,10 +49,14 @@ declare global {
     __GLOOM_CLI_SHOT_READY__?: boolean;
     __GLOOM_CLI_SHOT_PENDING__?: number;
     __GLOOM_CLI_SHOT_ERROR__?: string;
+    __GLOOM_CLI_SHOT_SEMANTIC_UI__?: RemoteUiNodeSnapshot[];
   }
 }
 
-const SHOT_READY_STABLE_FRAMES = 2;
+// Effects that request pane data start after the first paint. Waiting only two
+// frames can capture the shell before those requests register, leaving a
+// loading chart or stale performance table in an otherwise valid PNG.
+const SHOT_READY_STABLE_FRAMES = 10;
 const SHOT_LOADING_TEXT_PATTERN = /\b(Loading|Rendering pane)\b/i;
 const TRACKED_RESPONSE_METHODS = new Set<PropertyKey>([
   "arrayBuffer",
@@ -71,6 +82,22 @@ const rendererHost: RendererHost = {
 
 function normalizeSymbol(value: string): string {
   return value.trim().replace(/^\$/, "").toUpperCase();
+}
+
+function clipShotPriceHistory(points: PricePoint[], range: TimeRange): PricePoint[] {
+  if (range === "ALL" || points.length === 0) return points;
+  const dated = points.flatMap((point) => {
+    const date = point.date instanceof Date ? point.date : new Date(point.date);
+    return Number.isFinite(date.getTime()) ? [{ point, date }] : [];
+  });
+  const end = dated.reduce<Date | null>((latest, entry) => (
+    !latest || entry.date.getTime() > latest.getTime() ? entry.date : latest
+  ), null);
+  if (!end) return [];
+  const start = subtractTimeRange(end, range);
+  return dated
+    .filter(({ date }) => date.getTime() >= start.getTime() && date.getTime() <= end.getTime())
+    .map(({ point }) => point);
 }
 
 function updatePendingShotWork(next: number): void {
@@ -213,11 +240,15 @@ function createShotDataProvider(payload: CliPaneShotPayload): DataProvider {
     getArticleSummary() {
       return resolveShotWork(null);
     },
-    getPriceHistory(ticker) {
-      return trackShotWork(Promise.resolve().then(() => getFinancials(ticker).priceHistory ?? []));
+    getPriceHistory(ticker, _exchange, range) {
+      return trackShotWork(Promise.resolve().then(() => (
+        clipShotPriceHistory(getFinancials(ticker).priceHistory ?? [], range)
+      )));
     },
-    getPriceHistoryForResolution(ticker) {
-      return trackShotWork(Promise.resolve().then(() => getFinancials(ticker).priceHistory ?? []));
+    getPriceHistoryForResolution(ticker, _exchange, bufferRange) {
+      return trackShotWork(Promise.resolve().then(() => (
+        clipShotPriceHistory(getFinancials(ticker).priceHistory ?? [], bufferRange)
+      )));
     },
     subscribeQuotes() {
       return () => {};
@@ -315,6 +346,22 @@ function HydratePayload({
   return children;
 }
 
+function CaptureShotSemanticUi() {
+  const registry = useRemoteUiRegistry();
+
+  useEffect(() => {
+    let frame = 0;
+    const capture = () => {
+      window.__GLOOM_CLI_SHOT_SEMANTIC_UI__ = registry?.snapshot() ?? [];
+      frame = requestAnimationFrame(capture);
+    };
+    capture();
+    return () => cancelAnimationFrame(frame);
+  }, [registry]);
+
+  return null;
+}
+
 function ShotPane({ payload }: { payload: CliPaneShotPayload }) {
   const instance = payload.config.layout.instances.find((entry) => entry.instanceId === payload.paneId);
   if (!instance) throw new Error(`Pane instance ${payload.paneId} is missing from the screenshot layout.`);
@@ -381,25 +428,28 @@ function render() {
   if (!rootElement) throw new Error("Missing root element.");
 
   createRoot(rootElement).render(
-    <UiHostProvider ui={webUiHost} renderer={rendererHost} nativeRenderer={webNativeRenderer}>
-      <WebInputHostProvider>
-        <WebToastHostProvider>
-          <WebDialogHostProvider>
-            <AppProvider config={payload.config} desktopSnapshot={{
-              config: payload.config,
-              paneState: payload.paneState,
-              focusedPaneId: payload.paneId,
-              activePanel: "right",
-              statusBarVisible: false,
-            }}>
-              <HydratePayload payload={payload}>
-                <ShotPane payload={payload} />
-              </HydratePayload>
-            </AppProvider>
-          </WebDialogHostProvider>
-        </WebToastHostProvider>
-      </WebInputHostProvider>
-    </UiHostProvider>,
+    <RemoteUiRegistryProvider>
+      <CaptureShotSemanticUi />
+      <UiHostProvider ui={webUiHost} renderer={rendererHost} nativeRenderer={webNativeRenderer}>
+        <WebInputHostProvider>
+          <WebToastHostProvider>
+            <WebDialogHostProvider>
+              <AppProvider config={payload.config} desktopSnapshot={{
+                config: payload.config,
+                paneState: payload.paneState,
+                focusedPaneId: payload.paneId,
+                activePanel: "right",
+                statusBarVisible: false,
+              }}>
+                <HydratePayload payload={payload}>
+                  <ShotPane payload={payload} />
+                </HydratePayload>
+              </AppProvider>
+            </WebDialogHostProvider>
+          </WebToastHostProvider>
+        </WebInputHostProvider>
+      </UiHostProvider>
+    </RemoteUiRegistryProvider>,
   );
 }
 
