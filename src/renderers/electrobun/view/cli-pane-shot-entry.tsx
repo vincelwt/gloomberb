@@ -139,6 +139,17 @@ function isShotLoadingTextVisible(): boolean {
   return SHOT_LOADING_TEXT_PATTERN.test(document.body.textContent ?? "");
 }
 
+function hasUnresolvedChartData(): boolean {
+  return (window.__GLOOM_CLI_SHOT_SEMANTIC_UI__ ?? []).some((node) => (
+    node.role === "chart-data"
+    && (node.metadata?.kind === "stock-price" || node.metadata?.kind === "price-comparison")
+    && (
+      typeof node.metadata.projectedPointCount !== "number"
+      || node.metadata.projectedPointCount <= 0
+    )
+  ));
+}
+
 function waitForShotReadiness(): () => void {
   let cancelled = false;
   let mutationVersion = 0;
@@ -158,7 +169,12 @@ function waitForShotReadiness(): () => void {
     if (cancelled || window.__GLOOM_CLI_SHOT_READY__) return;
     const changedSinceLastFrame = mutationVersion !== lastSeenMutationVersion;
     lastSeenMutationVersion = mutationVersion;
-    if (pendingShotWork === 0 && !isShotLoadingTextVisible() && !changedSinceLastFrame) {
+    if (
+      pendingShotWork === 0
+      && !isShotLoadingTextVisible()
+      && !hasUnresolvedChartData()
+      && !changedSinceLastFrame
+    ) {
       stableFrames += 1;
     } else {
       stableFrames = 0;

@@ -5,6 +5,7 @@ import { blendHex, colors } from "../../../theme/colors";
 import { useThemeColors } from "../../../theme/theme-context";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { useQuoteStreaming } from "../../../state/hooks/quote-streaming";
+import { useRemoteUiNode } from "../../../remote/semantic-tree";
 import {
   appendQuoteToPriceReturnHistory,
   buildPriceReturnFields,
@@ -50,6 +51,22 @@ interface ComparisonStockChartViewProps extends ComparisonStockChartProps {
   defaultRenderMode: string | undefined;
   preferredRenderer: ChartRendererPreference;
   symbolSources: ComparisonChartSymbolSource[];
+}
+
+function comparisonSeriesEvidence(
+  points: Array<{ date: Date | string | number; close: number }>,
+) {
+  const dated = points.flatMap((point) => {
+    const date = new Date(point.date);
+    return Number.isFinite(date.getTime()) ? [{ point, date }] : [];
+  }).sort((left, right) => left.date.getTime() - right.date.getTime());
+  const first = dated[0];
+  const last = dated.at(-1);
+  return {
+    pointCount: dated.length,
+    first: first ? { date: first.date.toISOString(), close: first.point.close } : null,
+    last: last ? { date: last.date.toISOString(), close: last.point.close } : null,
+  };
 }
 
 function useComparisonChartRendererRuntime(
@@ -498,6 +515,34 @@ function ComparisonStockChartView({
     staticScene,
     symbolCount: symbols.length,
     useCanvasChart,
+  });
+  useRemoteUiNode({
+    role: "chart-data",
+    label: "Rendered price comparison chart data",
+    metadata: {
+      kind: "price-comparison",
+      symbols: projection.series.map((entry) => entry.symbol),
+      rangePreset: activePreset,
+      selectedResolution: viewState.resolution,
+      effectiveResolution,
+      requestedAxisMode: projection.requestedAxisMode,
+      effectiveAxisMode: projection.effectiveAxisMode,
+      sourceSeries: series.map((entry) => ({
+        symbol: entry.symbol,
+        ...comparisonSeriesEvidence(entry.points),
+      })),
+      projectedPointCount: projection.dates.length,
+      projectedStart: projection.dates[0]?.toISOString() ?? null,
+      projectedEnd: projection.dates.at(-1)?.toISOString() ?? null,
+      projectionSeries: projection.series.map((entry) => ({
+        symbol: entry.symbol,
+        baseValue: entry.baseValue,
+        latestRawValue: entry.latestRawValue,
+        latestValue: entry.latestValue,
+        pointCount: entry.points.length,
+      })),
+      renderMode: projection.effectiveMode,
+    },
   });
 
   if (symbols.length === 0) {

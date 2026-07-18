@@ -42,8 +42,7 @@
     "@types/react-dom": "^19.2.3",
     "electrobun": "^1.18.1",
     "png-to-ico": "^2.1.8",
-    "rcedit": "^4.0.1",
-    "react-dom": "19.2.7"
+    "rcedit": "^4.0.1"
   },
   "peerDependencies": {
     "typescript": "^5.9.2"
@@ -58,6 +57,7 @@
     "jimp": "1.6.1",
     "opentui-spinner": "^0.0.6",
     "react": "19.2.7",
+    "react-dom": "19.2.7",
     "rxjs": "^7.8.2",
     "web-tree-sitter": "0.25.10"
   },

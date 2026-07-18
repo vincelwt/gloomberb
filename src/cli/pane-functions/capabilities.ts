@@ -199,7 +199,7 @@ const CAPABILITIES: Record<string, PaneFunctionCapability> = {
     intents: ["compare market price performance for multiple securities"],
     outputKind: "price-performance",
     reportReadiness: "ready",
-    screenshotReadiness: "partial",
+    screenshotReadiness: "ready",
     dataRequirements: ["price history"],
     limitations: ["Compares market prices or percentage returns, never company financial statements."],
     options: [

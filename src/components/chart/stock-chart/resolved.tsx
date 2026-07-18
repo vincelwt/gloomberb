@@ -7,12 +7,21 @@ import { useStockChartSurfaceRuntime } from "./surface-runtime";
 import { StockChartView } from "./view";
 import { useResolvedStockChartRuntime } from "./resolved/runtime";
 import { getChartResolutionStepMs } from "../core/resolution";
+import { useRemoteUiNode } from "../../../remote/semantic-tree";
 import type { ResolvedStockChartProps } from "./types";
 
 type StockChartViewProps = ComponentProps<typeof StockChartView>;
 type ResolvedStockChartRuntime = ReturnType<typeof useResolvedStockChartRuntime>;
 type ResolvedStockChartRender = ReturnType<typeof useResolvedStockChartRender>;
 type ResolvedStockChartSurface = ReturnType<typeof useResolvedStockChartSurface>;
+
+function chartPointEvidence(point: { date: Date | string | number; close: number } | undefined) {
+  if (!point) return null;
+  const date = new Date(point.date);
+  return Number.isFinite(date.getTime())
+    ? { date: date.toISOString(), close: point.close }
+    : null;
+}
 
 function useResolvedStockChartKeyboard(runtime: ResolvedStockChartRuntime): void {
   const {
@@ -354,6 +363,24 @@ export const ResolvedStockChart = memo(function ResolvedStockChart(props: Resolv
   const render = useResolvedStockChartRender(runtime);
   useResolvedStockChartControls(props, runtime, render);
   const surface = useResolvedStockChartSurface(runtime, render);
+  const sourcePoints = runtime.projectionModel.chartWindow.points;
+  useRemoteUiNode({
+    role: "chart-data",
+    label: "Rendered stock price chart data",
+    metadata: {
+      kind: "stock-price",
+      symbols: [props.ticker?.metadata.ticker ?? props.financials?.quote?.symbol].filter(Boolean),
+      rangePreset: runtime.viewportRuntime.activePreset,
+      axisMode: runtime.axisMode,
+      selectedResolution: runtime.dataRuntime.selectedResolution,
+      effectiveResolution: runtime.dataRuntime.effectiveResolution,
+      sourcePointCount: sourcePoints.length,
+      sourceFirst: chartPointEvidence(sourcePoints[0]),
+      sourceLast: chartPointEvidence(sourcePoints.at(-1)),
+      projectedPointCount: runtime.projectionModel.projection.points.length,
+      renderMode: runtime.projectionModel.projection.effectiveMode,
+    },
+  });
 
   return <StockChartView {...createResolvedStockChartViewProps(runtime, render, surface)} />;
 });

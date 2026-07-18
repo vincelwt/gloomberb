@@ -29,6 +29,8 @@ import type {
   GraphMetricKey,
 } from "../../plugins/builtin/ticker-detail/data-panes/fundamental-graph/types";
 import type { TimeRange } from "../../components/chart/core/types";
+import { appendLiveQuotePoint } from "../../components/chart/core/data";
+import { subtractTimeRange } from "../../components/chart/core/date-window";
 import {
   collectShotSymbols,
   clipPriceHistoryToRange,
@@ -46,6 +48,30 @@ export interface PaneScreenshotExpectedSelection {
   control: "metric" | "statement" | "period";
   value?: string;
   label?: string;
+}
+
+export interface PaneScreenshotChartPointEvidence {
+  date: string;
+  close: number;
+}
+
+export interface PaneScreenshotChartSeriesEvidence {
+  symbol: string;
+  pointCount: number;
+  first: PaneScreenshotChartPointEvidence | null;
+  last: PaneScreenshotChartPointEvidence | null;
+  projectionBaseValue?: number | null;
+  projectionLatestRawValue?: number | null;
+  projectionLatestValue?: number | null;
+}
+
+export interface PaneScreenshotExpectedChartEvidence {
+  kind: "stock-price" | "price-comparison";
+  symbols: string[];
+  rangePreset: string;
+  axisMode: string;
+  resolution?: string;
+  sourceSeries: PaneScreenshotChartSeriesEvidence[];
 }
 
 export interface PaneScreenshotResult {
@@ -72,6 +98,8 @@ export interface PaneScreenshotResult {
     missingExpectedText: string[];
     expectedSelections: PaneScreenshotExpectedSelection[];
     missingExpectedSelections: PaneScreenshotExpectedSelection[];
+    expectedChart: PaneScreenshotExpectedChartEvidence | null;
+    chartEvidenceMismatches: string[];
   };
 }
 
@@ -229,7 +257,13 @@ export async function renderDesktopShot({
     render.semanticUi,
     expectedSelections,
   );
-  const semanticMismatch = missingExpectedText.length > 0 || missingExpectedSelections.length > 0;
+  const expectedChart = shotExpectedChart(resolved, payload);
+  const chartEvidenceMismatches = expectedChart
+    ? chartEvidenceMismatchesFor(render.semanticUi, expectedChart)
+    : [];
+  const semanticMismatch = missingExpectedText.length > 0
+    || missingExpectedSelections.length > 0
+    || chartEvidenceMismatches.length > 0;
   const empty = render.emptyStateDetected || rowCount === 0 || semanticMismatch;
   const usable = resolved.capability.botSafe
     && resolved.capability.screenshotReadiness === "ready"
@@ -260,8 +294,245 @@ export async function renderDesktopShot({
       missingExpectedText,
       expectedSelections,
       missingExpectedSelections,
+      expectedChart,
+      chartEvidenceMismatches,
     },
   };
+}
+
+function normalizeChartSeries(
+  symbol: string,
+  financials: TickerFinancials,
+  range: TimeRange,
+): {
+  evidence: PaneScreenshotChartSeriesEvidence;
+  points: Array<{ date: Date; close: number }>;
+} {
+  const sorted = clipPriceHistoryToRange(financials.priceHistory, range)
+    .flatMap((point) => {
+      const date = new Date(point.date);
+      return Number.isFinite(date.getTime()) ? [{ ...point, date }] : [];
+    })
+    .sort((left, right) => left.date.getTime() - right.date.getTime());
+  const points = appendLiveQuotePoint(sorted, financials.quote)
+    .slice()
+    .sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime());
+  const evidence = (point: typeof points[number] | undefined): PaneScreenshotChartPointEvidence | null => {
+    if (!point) return null;
+    const date = new Date(point.date);
+    return Number.isFinite(date.getTime())
+      ? { date: date.toISOString(), close: point.close }
+      : null;
+  };
+  return {
+    points,
+    evidence: {
+      symbol,
+      pointCount: points.length,
+      first: evidence(points[0]),
+      last: evidence(points.at(-1)),
+    },
+  };
+}
+
+function shotExpectedChart(
+  resolved: ResolvedPaneFunction,
+  payload: DesktopPaneShotPayload,
+): PaneScreenshotExpectedChartEvidence | null {
+  if (resolved.capability.id === "price-chart") {
+    const range = String(resolved.options.rangePreset ?? "5Y") as TimeRange;
+    const sourceSeries = payload.financials.slice(0, 1).map(([symbol, financials]) => (
+      normalizeChartSeries(symbol, financials, range).evidence
+    ));
+    return {
+      kind: "stock-price",
+      symbols: sourceSeries.map(({ symbol }) => symbol),
+      rangePreset: range,
+      axisMode: "price",
+      sourceSeries,
+    };
+  }
+  if (resolved.capability.id === "price-comparison") {
+    const range = String(resolved.options.rangePreset ?? "1Y") as TimeRange;
+    const normalizedSeries = payload.financials.map(([symbol, financials]) => (
+      normalizeChartSeries(symbol, financials, range)
+    ));
+    const latestTimestamp = Math.max(
+      ...normalizedSeries.flatMap(({ points }) => points.map(({ date }) => date.getTime())),
+    );
+    const projectionStart = Number.isFinite(latestTimestamp)
+      ? subtractTimeRange(new Date(latestTimestamp), range).getTime()
+      : Number.NaN;
+    const axisMode = String(resolved.options.axisMode ?? "percent");
+    const sourceSeries = normalizedSeries.map(({ evidence, points }) => {
+      const projectionPoints = points.filter(({ date }) => date.getTime() >= projectionStart);
+      const baseValue = projectionPoints[0]?.close ?? null;
+      const latestRawValue = projectionPoints.at(-1)?.close ?? null;
+      const latestValue = baseValue == null || latestRawValue == null
+        ? null
+        : axisMode === "percent"
+          ? ((latestRawValue - baseValue) / baseValue) * 100
+          : latestRawValue;
+      return {
+        ...evidence,
+        projectionBaseValue: baseValue,
+        projectionLatestRawValue: latestRawValue,
+        projectionLatestValue: latestValue,
+      };
+    });
+    return {
+      kind: "price-comparison",
+      symbols: sourceSeries.map(({ symbol }) => symbol),
+      rangePreset: range,
+      axisMode,
+      resolution: String(resolved.options.chartResolution ?? "1d"),
+      sourceSeries,
+    };
+  }
+  return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function readStringArray(value: unknown): string[] | null {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string")
+    ? value
+    : null;
+}
+
+function closeEnough(actual: unknown, expected: number): boolean {
+  return typeof actual === "number"
+    && Number.isFinite(actual)
+    && Math.abs(actual - expected) <= Math.max(1e-8, Math.abs(expected) * 1e-8);
+}
+
+function pointEvidenceMatches(
+  actual: unknown,
+  expected: PaneScreenshotChartPointEvidence | null,
+): boolean {
+  if (expected === null) return actual === null;
+  return isRecord(actual)
+    && actual.date === expected.date
+    && closeEnough(actual.close, expected.close);
+}
+
+function sourceSeriesMismatches(
+  actual: unknown,
+  expected: PaneScreenshotChartSeriesEvidence[],
+): string[] {
+  if (!Array.isArray(actual)) return ["chart source-series evidence is missing"];
+  if (actual.length !== expected.length) return ["chart source-series count does not match"];
+  const mismatches: string[] = [];
+  expected.forEach((expectedSeries, index) => {
+    const actualSeries = actual[index];
+    if (!isRecord(actualSeries) || actualSeries.symbol !== expectedSeries.symbol) {
+      mismatches.push(`chart source symbol ${index + 1} does not match`);
+      return;
+    }
+    if (actualSeries.pointCount !== expectedSeries.pointCount) {
+      mismatches.push(`${expectedSeries.symbol} chart source point count does not match`);
+    }
+    if (!pointEvidenceMatches(actualSeries.first, expectedSeries.first)) {
+      mismatches.push(`${expectedSeries.symbol} chart source first value does not match`);
+    }
+    if (!pointEvidenceMatches(actualSeries.last, expectedSeries.last)) {
+      mismatches.push(`${expectedSeries.symbol} chart source last value does not match`);
+    }
+  });
+  return mismatches;
+}
+
+export function chartEvidenceMismatchesFor(
+  semanticUi: RemoteUiNodeSnapshot[],
+  expected: PaneScreenshotExpectedChartEvidence,
+): string[] {
+  const node = semanticUi.find((candidate) => (
+    candidate.role === "chart-data"
+    && candidate.metadata?.kind === expected.kind
+  ));
+  const metadata = node?.metadata;
+  if (!metadata) return ["rendered chart-data semantic evidence is missing"];
+
+  const mismatches: string[] = [];
+  const symbols = readStringArray(metadata.symbols);
+  if (!symbols || symbols.join("\0") !== expected.symbols.join("\0")) {
+    mismatches.push("rendered chart symbols do not match");
+  }
+  if (metadata.rangePreset !== expected.rangePreset) {
+    mismatches.push("rendered chart range does not match");
+  }
+
+  if (expected.kind === "stock-price") {
+    if (metadata.axisMode !== expected.axisMode) {
+      mismatches.push("rendered chart axis mode does not match");
+    }
+    const expectedSeries = expected.sourceSeries[0];
+    if (!expectedSeries) return [...mismatches, "expected stock chart source evidence is missing"];
+    mismatches.push(...sourceSeriesMismatches([{
+      symbol: symbols?.[0],
+      pointCount: metadata.sourcePointCount,
+      first: metadata.sourceFirst,
+      last: metadata.sourceLast,
+    }], expected.sourceSeries));
+    if (typeof metadata.projectedPointCount !== "number" || metadata.projectedPointCount <= 0) {
+      mismatches.push("rendered stock chart projection is empty");
+    }
+    return mismatches;
+  }
+
+  if (metadata.requestedAxisMode !== expected.axisMode || metadata.effectiveAxisMode !== expected.axisMode) {
+    mismatches.push("rendered comparison axis mode does not match");
+  }
+  if (
+    expected.resolution != null
+    && (
+      metadata.selectedResolution !== expected.resolution
+      || metadata.effectiveResolution !== expected.resolution
+    )
+  ) {
+    mismatches.push("rendered comparison resolution does not match");
+  }
+  mismatches.push(...sourceSeriesMismatches(metadata.sourceSeries, expected.sourceSeries));
+
+  const projectionSeries = Array.isArray(metadata.projectionSeries)
+    ? metadata.projectionSeries
+    : [];
+  if (projectionSeries.length !== expected.sourceSeries.length) {
+    mismatches.push("rendered comparison projection-series count does not match");
+  } else {
+    expected.sourceSeries.forEach((expectedSeries, index) => {
+      const actualSeries = projectionSeries[index];
+      if (!isRecord(actualSeries) || actualSeries.symbol !== expectedSeries.symbol) {
+        mismatches.push(`${expectedSeries.symbol} comparison projection is missing`);
+        return;
+      }
+      const baseValue = expectedSeries.projectionBaseValue;
+      const latestRawValue = expectedSeries.projectionLatestRawValue;
+      if (baseValue == null || latestRawValue == null) {
+        mismatches.push(`${expectedSeries.symbol} expected comparison values are empty`);
+        return;
+      }
+      const latestValue = expectedSeries.projectionLatestValue;
+      if (!closeEnough(actualSeries.baseValue, baseValue)) {
+        mismatches.push(`${expectedSeries.symbol} comparison base value does not match`);
+      }
+      if (!closeEnough(actualSeries.latestRawValue, latestRawValue)) {
+        mismatches.push(`${expectedSeries.symbol} comparison latest value does not match`);
+      }
+      if (latestValue == null || !closeEnough(actualSeries.latestValue, latestValue)) {
+        mismatches.push(`${expectedSeries.symbol} comparison transformed value does not match`);
+      }
+      if (actualSeries.pointCount !== metadata.projectedPointCount) {
+        mismatches.push(`${expectedSeries.symbol} comparison projection point count does not match`);
+      }
+    });
+  }
+  if (typeof metadata.projectedPointCount !== "number" || metadata.projectedPointCount <= 0) {
+    mismatches.push("rendered comparison projection is empty");
+  }
+  return mismatches;
 }
 
 function shotUnavailableSymbols(

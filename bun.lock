@@ -14,6 +14,7 @@
         "jimp": "1.6.1",
         "opentui-spinner": "^0.0.6",
         "react": "19.2.7",
+        "react-dom": "19.2.7",
         "rxjs": "^7.8.2",
         "web-tree-sitter": "0.25.10",
       },
@@ -23,7 +24,6 @@
         "electrobun": "^1.18.1",
         "png-to-ico": "^2.1.8",
         "rcedit": "^4.0.1",
-        "react-dom": "19.2.7",
       },
       "peerDependencies": {
         "typescript": "^5.9.2",
@@ -32,8 +32,8 @@
   },
   "patchedDependencies": {
     "@opentui/core@0.3.2": "patches/@opentui%2Fcore@0.3.2.patch",
-    "electrobun@1.18.1": "patches/electrobun@1.18.1.patch",
     "react-reconciler@0.33.0": "patches/react-reconciler@0.33.0.patch",
+    "electrobun@1.18.1": "patches/electrobun@1.18.1.patch",
   },
   "packages": {
     "@babylonjs/core": ["@babylonjs/core@7.54.3", "", {}, "sha512-P5ncXVd8GEUJLhwloP9V0oVwQYIrvZztguVeLlvd5Rx+9aQnenKjpV8auJ6SRsUlAmNZU4pFTKzwF6o2EUfhAw=="],
