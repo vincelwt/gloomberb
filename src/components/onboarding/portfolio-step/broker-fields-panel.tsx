@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 import { Box, Text, TextAttributes, type InputRenderable } from "../../../ui";
 import { colors } from "../../../theme/colors";
+import { t } from "../../../i18n";
 import type { BrokerConfigField } from "../../../types/broker";
 import { TextField, type ListViewItem } from "../../ui";
 import { formatBrokerFieldValue, getBrokerLabel } from "./utils";
@@ -32,7 +33,7 @@ export function BrokerFieldsPanel({
     <Box flexDirection="column" paddingX={2}>
       <Box height={1}>
         <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-          {"Connect "}{getBrokerLabel(choices, selectedBrokerId)}
+          {t("Connect ")}{getBrokerLabel(choices, selectedBrokerId)}
         </Text>
       </Box>
       <Box height={1} />
@@ -131,7 +132,7 @@ export function BrokerFieldsPanel({
 
       <Box height={2} />
       <Box height={1}>
-        <Text fg={colors.textDim}>{"Credentials are saved locally."}</Text>
+        <Text fg={colors.textDim}>{t("Credentials are saved locally.")}</Text>
       </Box>
       <Box height={1} />
       <Box height={1}>

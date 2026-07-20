@@ -265,6 +265,21 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `CR` | Cycle chart renderer |
 | `PL <plugin>` | Manage plugins |
 
+## 中文界面 (Chinese UI)
+
+本地版本内置了简体中文界面支持（English UI is unchanged and remains the default）：
+
+- **自动检测**：终端 `LANG`/`LC_ALL` 为 `zh_*` 时自动启用中文。
+- **命令切换**：命令栏（Ctrl+P）输入 `LANG` 在 自动 / English / 中文 间循环，选择会持久化到配置文件（`config.json` 的 `language` 字段）。
+- **单次覆盖**：`GLOOMBERB_LANG=zh-CN gloomberb`（或 `=en` 强制英文），优先级最高。
+
+实现说明：
+
+- 词典在 [src/i18n/zh-cn.ts](src/i18n/zh-cn.ts)，以英文原文为键；查不到的词条自动回退英文，因此可以增量补充翻译，不影响任何功能。
+- 渲染出口统一经过 `t()`（[src/i18n/index.ts](src/i18n/index.ts)），面板标题、命令栏、右键菜单、设置对话框、页签、帮助与引导页均已接入。
+- 表格列头（BID/ASK/CHG% 等金融缩写）刻意保留英文，符合行情终端惯例并保证定宽列对齐。
+- 中日韩宽字符的截断与排版由 [src/utils/text-width.ts](src/utils/text-width.ts) 按终端单元格宽度处理。
+
 ## License
 
 MIT

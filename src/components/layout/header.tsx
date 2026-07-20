@@ -12,6 +12,7 @@ import {
   selectUpdateProgress,
 } from "../../state/selectors-ui";
 import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
+import { t } from "../../i18n";
 import { useQuoteEntry, useResolvedEntryValue } from "../../market-data/hooks";
 import { formatPercentRaw } from "../../utils/format";
 import { formatMarketPrice } from "../../market-data/market/format";
@@ -158,7 +159,7 @@ export function Header() {
 
   // Market status
   const mktState = spyQuote?.marketState;
-  const mktLabel = mktState ? marketStateLabel(mktState) : "";
+  const mktLabel = mktState ? t(marketStateLabel(mktState)) : "";
   const mktColor = mktState ? marketStateColor(mktState) : colors.headerText;
 
   if (titleBarOverlay) {

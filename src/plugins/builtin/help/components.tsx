@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Box, Text, TextAttributes } from "../../../ui";
 import { colors, hoverBg } from "../../../theme/colors";
+import { t } from "../../../i18n";
 
 export interface HelpShortcutEntry {
   id: string;
@@ -32,7 +33,7 @@ export function ShortcutRow({
         {badges.map((badge, index) => <ShortcutBadge key={`${badge}:${index}`} label={badge} />)}
       </Box>
       <Box flexGrow={1}>
-        <Text fg={colors.text} wrapText>{description}</Text>
+        <Text fg={colors.text} wrapText>{t(description)}</Text>
       </Box>
     </Box>
   );
@@ -41,7 +42,7 @@ export function ShortcutRow({
 export function HelpSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{title}</Text>
+      <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{t(title)}</Text>
       {children}
     </Box>
   );
@@ -71,7 +72,7 @@ export function ActionButton({
         onPress();
       }}
     >
-      <Text fg={hovered ? colors.textBright : colors.text}>{` ${label} `}</Text>
+      <Text fg={hovered ? colors.textBright : colors.text}>{` ${t(label)} `}</Text>
     </Box>
   );
 }
@@ -79,7 +80,7 @@ export function ActionButton({
 export function ShortcutGroup({ title, entries }: { title: string; entries: HelpShortcutEntry[] }) {
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>{title}</Text>
+      <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>{t(title)}</Text>
       {entries.map((entry) => (
         <ShortcutRow
           key={entry.id}

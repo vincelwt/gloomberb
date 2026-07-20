@@ -1,6 +1,7 @@
 import { Box, Span, Text, TextAttributes, contextMenuDivider, useContextMenu, useUiCapabilities } from "../../ui";
 import { useCallback, useEffect, useState } from "react";
 import { blendHex, colors, hoverBg } from "../../theme/colors";
+import { tf } from "../../i18n";
 import { useThemeColors } from "../../theme/theme-context";
 import { useAppDispatch, useAppSelector } from "../../state/app/context";
 import {
@@ -155,7 +156,7 @@ export function StatusBar() {
     if (!active) {
       items.push({
         id: "layout:switch",
-        label: `Switch to ${layout.name}`,
+        label: tf("Switch to {name}", { name: layout.name }),
         onSelect: () => dispatch({ type: "SWITCH_LAYOUT", index }),
       });
       items.push(contextMenuDivider("layout:switch-divider"));

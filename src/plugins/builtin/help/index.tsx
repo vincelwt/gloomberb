@@ -5,6 +5,7 @@ import { Tabs } from "../../../components";
 import { ExternalLinkText } from "../../../components/ui";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
+import { t } from "../../../i18n";
 import { getSharedRegistry } from "../../registry";
 import { usePluginAppActions } from "../../runtime";
 import { detectShortcutPlatform, formatPrimaryShortcut, getShortcutDisplayMode } from "../../../utils/shortcut-labels";
@@ -100,7 +101,7 @@ function HelpPane({ focused, width, height }: PaneProps) {
                   entries={group.entries}
                 />
               )) : (
-                <Text fg={colors.textDim}>No shortcut window templates are currently registered.</Text>
+                <Text fg={colors.textDim}>{t("No shortcut window templates are currently registered.")}</Text>
               )}
             </HelpSection>
 
@@ -279,13 +280,13 @@ function HelpPane({ focused, width, height }: PaneProps) {
               />
               <ExternalLinkText
                 url={GLOOMBERB_ISSUES_URL}
-                label="GitHub Issues"
+                label={t("GitHub Issues")}
               />
             </Box>
 
             <HelpSection title="If There Is A Bug">
-              <Text fg={colors.text} wrapText>Open Debug Log, then run Export Debug Log from the command bar.</Text>
-              <Text fg={colors.text} wrapText>The file lands in ~/Downloads. Include steps, ticker or layout, plugin, and a screenshot if it is visual.</Text>
+              <Text fg={colors.text} wrapText>{t("Open Debug Log, then run Export Debug Log from the command bar.")}</Text>
+              <Text fg={colors.text} wrapText>{t("The file lands in ~/Downloads. Include steps, ticker or layout, plugin, and a screenshot if it is visual.")}</Text>
             </HelpSection>
           </>
         );
@@ -295,10 +296,10 @@ function HelpPane({ focused, width, height }: PaneProps) {
         return (
           <>
             <Box flexDirection="column" gap={1}>
-              <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>How To Use Gloomberb</Text>
+              <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{t("How To Use Gloomberb")}</Text>
               <Box flexDirection="column">
-                <Text fg={colors.textDim}>Gloomberb is command-bar first.</Text>
-                <Text fg={colors.textDim}>Use the keyboard for speed, and the mouse for windows.</Text>
+                <Text fg={colors.textDim}>{t("Gloomberb is command-bar first.")}</Text>
+                <Text fg={colors.textDim}>{t("Use the keyboard for speed, and the mouse for windows.")}</Text>
               </Box>
             </Box>
 
@@ -368,9 +369,9 @@ function HelpPane({ focused, width, height }: PaneProps) {
             </HelpSection>
 
             <HelpSection title="Layout Basics">
-              <Text fg={colors.text}>Docked panes stay in the saved layout.</Text>
-              <Text fg={colors.text} wrapText>Floating panes can be dragged by the title bar and resized from the lower-right corner.</Text>
-              <Text fg={colors.text} wrapText>Use Layout Actions for split, move, duplicate, close all floating panes, undo, redo, and layout presets.</Text>
+              <Text fg={colors.text}>{t("Docked panes stay in the saved layout.")}</Text>
+              <Text fg={colors.text} wrapText>{t("Floating panes can be dragged by the title bar and resized from the lower-right corner.")}</Text>
+              <Text fg={colors.text} wrapText>{t("Use Layout Actions for split, move, duplicate, close all floating panes, undo, redo, and layout presets.")}</Text>
             </HelpSection>
           </>
         );

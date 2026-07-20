@@ -1,4 +1,5 @@
 import { Box, Text, useUiHost } from "../../ui";
+import { t } from "../../i18n";
 import { type AlertContext, useDialogKeyboard } from "../../ui/dialog";
 import { useEffect, useRef, useState } from "react";
 import type {
@@ -106,7 +107,7 @@ function useTextFieldDialogController({
       await onApply(value);
       dismiss();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save this value.");
+      setError(err instanceof Error ? err.message : t("Could not save this value."));
     }
   };
 
@@ -143,7 +144,7 @@ function DesktopTextFieldDialog(props: TextFieldDialogProps) {
           <Text fg={colors.negative} wrapText style={desktopText(600)}>{error}</Text>
         )}
         <Box flexDirection="row" justifyContent="flex-end" style={{ marginTop: 12 }}>
-          <Button label="Save" variant="primary" onPress={() => { void submit(); }} />
+          <Button label={t("Save")} variant="primary" onPress={() => { void submit(); }} />
         </Box>
       </Box>
     </DesktopDialogSurface>
@@ -178,8 +179,8 @@ function TuiTextFieldDialog(props: TextFieldDialogProps) {
           </Box>
         )}
         <Box flexDirection="row" gap={1}>
-          <Button label="Apply" variant="primary" onPress={() => { void submit(); }} />
-          <Button label="Cancel" variant="ghost" onPress={dismiss} />
+          <Button label={t("Apply")} variant="primary" onPress={() => { void submit(); }} />
+          <Button label={t("Cancel")} variant="ghost" onPress={dismiss} />
         </Box>
       </Box>
     </DialogFrame>

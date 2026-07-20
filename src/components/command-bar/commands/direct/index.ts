@@ -1,4 +1,5 @@
 import type { Dispatch } from "react";
+import { applyLanguagePreference, t } from "../../../../i18n";
 import { exportConfig, importConfig, resetAllData } from "../../../../data/config/store";
 import type { PluginRegistry } from "../../../../plugins/registry";
 import {
@@ -224,6 +225,26 @@ export function runDirectCommandAction(options: {
       };
       dispatch({ type: "SET_CONFIG", config: nextConfig });
       persistConfig(nextConfig);
+      closeAll({ revertThemePreview: false });
+      return;
+    }
+    case "language": {
+      const cycle: Array<"auto" | "en" | "zh-CN"> = ["auto", "en", "zh-CN"];
+      const current = state.config.language ?? "auto";
+      const requested = arg.trim().toLowerCase();
+      const next = requested === "en" || requested === "english"
+        ? "en" as const
+        : requested === "zh" || requested === "zh-cn" || requested === "中文"
+          ? "zh-CN" as const
+          : requested === "auto"
+            ? "auto" as const
+            : cycle[(cycle.indexOf(current) + 1) % cycle.length] ?? "auto";
+      const nextConfig = { ...state.config, language: next };
+      dispatch({ type: "SET_CONFIG", config: nextConfig });
+      persistConfig(nextConfig);
+      applyLanguagePreference(next);
+      const labels: Record<string, string> = { auto: "Auto", en: "English", "zh-CN": "中文" };
+      notify(`${t("Language")}: ${t(labels[next] ?? next)} · ${t("Restart to apply everywhere")}`, { type: "success" });
       closeAll({ revertThemePreview: false });
       return;
     }

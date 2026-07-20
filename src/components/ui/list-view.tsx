@@ -2,6 +2,7 @@ import { Box, ScrollBox, Text, useUiHost } from "../../ui";
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import { colors, hoverBg } from "../../theme/colors";
+import { t } from "../../i18n";
 import { useRemoteUiNode } from "../../remote/semantic-tree";
 import { resolveRemoteItemIndex } from "../../remote/semantic-helpers";
 
@@ -71,11 +72,11 @@ function DefaultRow({
           fg={selected ? colors.text : colors.textDim}
           attributes={selected ? TextAttributes.BOLD : 0}
         >
-          {item.label}
+          {t(item.label)}
         </Text>
       </Box>
       {item.detail && (
-        <Text fg={selected ? colors.textMuted : colors.textMuted}>{item.detail}</Text>
+        <Text fg={selected ? colors.textMuted : colors.textMuted}>{t(item.detail)}</Text>
       )}
     </Box>
   );
@@ -213,7 +214,7 @@ export function ListView({
   if (items.length === 0) {
     return (
       <Box height={1}>
-        <Text fg={colors.textDim}>{emptyMessage}</Text>
+        <Text fg={colors.textDim}>{t(emptyMessage)}</Text>
       </Box>
     );
   }
@@ -270,7 +271,7 @@ export function ListView({
         <>
           <Box height={1} />
           <Box>
-            <Text fg={colors.textDim}>{"    "}{selectedItem.description}</Text>
+            <Text fg={colors.textDim}>{"    "}{t(selectedItem.description)}</Text>
           </Box>
         </>
       )}

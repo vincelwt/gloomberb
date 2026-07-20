@@ -1,4 +1,5 @@
 import type { PaneSettingField } from "../../types/plugin";
+import { t } from "../../i18n";
 
 export function isSpaceKey(event: { name?: string; sequence?: string }): boolean {
   return event.name === "space" || event.name === " " || event.sequence === " ";
@@ -7,19 +8,19 @@ export function isSpaceKey(event: { name?: string; sequence?: string }): boolean
 export function summarizePaneSettingValue(field: PaneSettingField, value: unknown): string {
   switch (field.type) {
     case "toggle":
-      return value === true ? "On" : "Off";
+      return value === true ? t("On") : t("Off");
     case "text":
-      return typeof value === "string" && value.trim().length > 0 ? value : "Unset";
+      return typeof value === "string" && value.trim().length > 0 ? value : t("Unset");
     case "select": {
       const option = field.options.find((entry) => entry.value === value);
-      return option?.label ?? "Unset";
+      return option?.label ? t(option.label) : t("Unset");
     }
     case "multi-select":
     case "ordered-multi-select": {
       const selectedValues = coerceSelectedPaneSettingValues(value);
-      if (selectedValues.length === 0) return "None";
+      if (selectedValues.length === 0) return t("None");
       const labels = selectedValues
-        .map((selectedValue) => field.options.find((entry) => entry.value === selectedValue)?.label ?? selectedValue)
+        .map((selectedValue) => { const label = field.options.find((entry) => entry.value === selectedValue)?.label; return label ? t(label) : selectedValue; })
         .slice(0, 3);
       const suffix = selectedValues.length > 3 ? ` +${selectedValues.length - 3}` : "";
       return `${labels.join(", ")}${suffix}`;

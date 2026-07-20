@@ -135,6 +135,7 @@ export interface AppConfig {
   chartPreferences: ChartPreferences;
   valueFlashingEnabled: boolean;
   recentTickers: string[];
+  language?: "auto" | "en" | "zh-CN";
   onboardingComplete?: boolean;
 }
 

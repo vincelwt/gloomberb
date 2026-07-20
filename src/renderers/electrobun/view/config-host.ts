@@ -1,6 +1,7 @@
 import { setConfigStoreHost, type ConfigStoreHost } from "../../../data/config/store";
 import type { AppConfig } from "../../../types/config";
 import { backendRequest, getElectrobunBackendInitSnapshot } from "./backend-rpc";
+import { applyLanguageFromConfig } from "../../../i18n";
 
 const electrobunConfigStoreHost: ConfigStoreHost = {
   async getDataDir() {
@@ -32,4 +33,5 @@ const electrobunConfigStoreHost: ConfigStoreHost = {
 
 export function installElectrobunConfigStoreHost(): void {
   setConfigStoreHost(electrobunConfigStoreHost);
+  applyLanguageFromConfig(getElectrobunBackendInitSnapshot()?.config ?? null);
 }

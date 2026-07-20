@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import { Box } from "../../ui";
+import { t } from "../../i18n";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { PaneSettingField } from "../../types/plugin";
 import { Button } from "../ui";
@@ -60,7 +61,7 @@ export function getVisibleMultiSelectPickerOptions(
 ): CommandBarPickerOption[] {
   if (route.pickerId !== "field-multi-select") {
     return route.query
-      ? fuzzyFilter(route.options, route.query, (option) => `${option.label} ${option.detail || ""} ${option.description || ""}`)
+      ? fuzzyFilter(route.options, route.query, (option) => `${option.label} ${t(option.label)} ${option.detail || ""} ${option.description || ""}`)
       : route.options;
   }
 
@@ -68,7 +69,7 @@ export function getVisibleMultiSelectPickerOptions(
   const optionById = new Map(route.options.map((option) => [option.id, option]));
   const knownSelectedValues = selectedValues.filter((value) => optionById.has(value));
   const filteredOptions = route.query
-    ? fuzzyFilter(route.options, route.query, (option) => `${option.label} ${option.detail || ""} ${option.description || ""}`)
+    ? fuzzyFilter(route.options, route.query, (option) => `${option.label} ${t(option.label)} ${option.detail || ""} ${option.description || ""}`)
     : route.options;
 
   return filteredOptions.map((option) => {
@@ -178,9 +179,9 @@ export function CommandBarMultiSelectBody({
   const options = getVisibleMultiSelectPickerOptions(route);
   const items = options.map((option) => ({
     id: option.id,
-    label: option.label,
+    label: t(option.label),
     enabled: selectedValues.includes(option.id),
-    description: option.description || option.detail,
+    description: (option.description || option.detail) ? t(option.description || option.detail || "") : undefined,
   }));
   const selectedIdx = items.length === 0
     ? 0
@@ -206,7 +207,7 @@ export function CommandBarMultiSelectBody({
         }}
       />
       <Box flexDirection="row" gap={1}>
-        <Button label="Done" variant="primary" onPress={onCommit} />
+        <Button label={t("Done")} variant="primary" onPress={onCommit} />
       </Box>
     </Box>
   );

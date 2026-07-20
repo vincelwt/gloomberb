@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import { t } from "../../../i18n";
 import { useEffect } from "react";
 import {
   Box,
@@ -148,7 +149,7 @@ export function CommandBarWorkflowBody({
       )}
       {!nativePaneChrome && <Box flexGrow={1} />}
       <Box flexDirection="row" gap={1} justifyContent={visibleFields.some((field) => field.type === "textarea") ? "flex-end" : "flex-start"}>
-        <Button label={route.submitLabel} variant="primary" onPress={() => { void onSubmit(route); }} disabled={route.pending} />
+        <Button label={t(route.submitLabel)} variant="primary" onPress={() => { void onSubmit(route); }} disabled={route.pending} />
       </Box>
     </>
   );

@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import { t } from "../../../i18n";
 import {
   Box,
   Text,
@@ -164,7 +165,7 @@ export function CommandBarWorkflowFieldRow({
                 key={field.id}
                 ref={getWorkflowInputRef(field.id) as RefObject<TextareaRenderable | null>}
                 initialValue={coerceFieldString(value)}
-                placeholder={field.placeholder || ""}
+                placeholder={field.placeholder ? t(field.placeholder) : ""}
                 focused={!route.pending}
                 textColor={paletteText}
                 placeholderColor={paletteSubtleText}
@@ -232,7 +233,7 @@ export function CommandBarWorkflowFieldRow({
 
 function buildTextareaPreviewLines(value: string, placeholder: string | undefined, queryDisplayWidth: number): string[] {
   const preview = value.trim();
-  return (preview || placeholder || "Unset")
+  return (preview || placeholder || t("Unset"))
     .split("\n")
     .flatMap((line) => line.match(new RegExp(`.{1,${Math.max(1, queryDisplayWidth - 8)}}`, "g")) ?? [""])
     .slice(0, 4);

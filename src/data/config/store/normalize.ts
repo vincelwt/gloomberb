@@ -98,6 +98,7 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     chartPreferences: sanitizeChartPreferences(saved.chartPreferences, defaults.chartPreferences),
     valueFlashingEnabled: typeof saved.valueFlashingEnabled === "boolean" ? saved.valueFlashingEnabled : defaults.valueFlashingEnabled,
     recentTickers: sanitizeStringArray(saved.recentTickers, defaults.recentTickers),
+    language: saved.language === "en" || saved.language === "zh-CN" || saved.language === "auto" ? saved.language : undefined,
     onboardingComplete: typeof saved.onboardingComplete === "boolean" ? saved.onboardingComplete : defaults.onboardingComplete,
   };
 

@@ -13,6 +13,7 @@ import {
   type ShortcutDisplayMode,
 } from "../../../utils/shortcut-labels";
 import { PANE_MANAGEMENT_ACCELERATORS } from "./shortcuts";
+import { truncateToDisplayWidth } from "../../../utils/text-width";
 
 const MENU_MIN_WIDTH = 18;
 const MENU_MAX_WIDTH = 44;
@@ -138,8 +139,5 @@ export function actionMenuWidth(
 }
 
 export function truncateMenuText(text: string, width: number): string {
-  if (width <= 0) return "";
-  if (text.length <= width) return text;
-  if (width <= 3) return ".".repeat(width);
-  return `${text.slice(0, width - 3)}...`;
+  return truncateToDisplayWidth(text, width);
 }

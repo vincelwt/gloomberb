@@ -2,6 +2,7 @@ import { Box, Text, useUiHost } from "../../ui";
 import { TextAttributes } from "../../ui";
 import { type ComponentType } from "react";
 import { colors } from "../../theme/colors";
+import { t } from "../../i18n";
 import { useRemoteUiNode } from "../../remote/semantic-tree";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
@@ -39,7 +40,7 @@ function resolveButtonColors(variant: ButtonVariant, active: boolean, disabled: 
 }
 
 export function Button({
-  label,
+  label: rawLabel,
   onPress,
   variant = "secondary",
   disabled = false,
@@ -48,6 +49,7 @@ export function Button({
   width,
   height,
 }: ButtonProps) {
+  const label = t(rawLabel);
   useRemoteUiNode({
     role: "button",
     label,

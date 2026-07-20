@@ -2,6 +2,7 @@ import { Box, ScrollBox, Text, useUiCapabilities } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { useViewport } from "../../../react/input";
 import { useFxRatesMap } from "../../../market-data/hooks";
+import { t } from "../../../i18n";
 import { useAppSelector } from "../../../state/app/context";
 import { colors, priceColor } from "../../../theme/colors";
 import { convertCurrency, formatPercentRaw } from "../../../utils/format";
@@ -141,7 +142,7 @@ export function OverviewTab({
               )}
               {quote?.marketState && (
                 <Text fg={marketStateColor(quote.marketState)}>
-                  {" "}{marketStateLabel(quote.marketState)}
+                  {" "}{t(marketStateLabel(quote.marketState))}
                 </Text>
               )}
             </Box>
