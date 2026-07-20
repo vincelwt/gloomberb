@@ -1,4 +1,4 @@
-export type LocalAgentProviderId = "claude" | "codex";
+export type LocalAgentProviderId = "claude" | "codex" | "pi";
 
 export interface LocalAgentAttachmentMetadata {
   id: string;
@@ -41,9 +41,14 @@ export const EMPTY_LOCAL_AGENT_WORKSPACE: LocalAgentWorkspaceState = {
 
 const MAX_THREADS = 50;
 const MAX_MESSAGES_PER_THREAD = 100;
+const PROVIDER_TITLES: Record<LocalAgentProviderId, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  pi: "Pi",
+};
 
 function isProviderId(value: unknown): value is LocalAgentProviderId {
-  return value === "claude" || value === "codex";
+  return value === "claude" || value === "codex" || value === "pi";
 }
 
 function normalizeMessage(value: unknown): LocalAgentMessage | null {
@@ -121,7 +126,7 @@ export function createLocalAgentThread(
   const thread: LocalAgentThread = {
     id,
     providerId,
-    title: `New ${providerId === "claude" ? "Claude" : "Codex"} thread`,
+    title: `New ${PROVIDER_TITLES[providerId]} thread`,
     createdAt: now,
     updatedAt: now,
     messages: [],

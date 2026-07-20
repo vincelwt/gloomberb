@@ -32,4 +32,32 @@ describe("AI structured stream parser", () => {
     const malformed = new AiStructuredStreamParser("claude");
     expect(() => malformed.push("not-json\n")).toThrow("Claude returned malformed structured output");
   });
+
+  test("renders Pi text deltas while ignoring envelope events", () => {
+    const parser = new AiStructuredStreamParser("pi");
+    parser.push([
+      JSON.stringify({ type: "session", id: "session-1" }),
+      JSON.stringify({ type: "agent_start" }),
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "ok" } }),
+      JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } }),
+      JSON.stringify({ type: "turn_end" }),
+      JSON.stringify({ type: "agent_settled" }),
+      "",
+    ].join("\n"));
+
+    expect(parser.finish()).toEqual({ transcript: "ok", terminalError: null });
+  });
+
+  test("reports Pi terminal errors", () => {
+    const parser = new AiStructuredStreamParser("pi");
+    parser.push('{"type":"error","message":"boom"}\n');
+
+    expect(parser.finish().terminalError).toBe("boom");
+  });
+
+  test("labels malformed Pi output", () => {
+    const parser = new AiStructuredStreamParser("pi");
+
+    expect(() => parser.push("not-json\n")).toThrow("Pi returned malformed structured output");
+  });
 });

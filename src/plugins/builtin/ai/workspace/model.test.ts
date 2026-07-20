@@ -37,6 +37,25 @@ describe("local agent workspace model", () => {
     expect(codex.threads.find((thread) => thread.id === "claude-1")?.messages[0]?.content).toBe("Original answer");
   });
 
+  test("normalizes and creates Pi threads with the Pi title", () => {
+    const normalized = normalizeLocalAgentWorkspace({
+      activeThreadId: "pi-1",
+      threads: [{
+        id: "pi-1",
+        providerId: "pi",
+        title: "Pi research",
+        createdAt: 1,
+        updatedAt: 1,
+        messages: [],
+      }],
+    });
+    const created = createLocalAgentThread(EMPTY_LOCAL_AGENT_WORKSPACE, "pi", { id: "pi-2", now: 2 });
+
+    expect(normalized.threads[0]?.providerId).toBe("pi");
+    expect(created.threads[0]?.providerId).toBe("pi");
+    expect(created.threads[0]?.title).toContain("Pi");
+  });
+
   test("sends no financial context unless the user selected an attachment", () => {
     const state = createLocalAgentThread(EMPTY_LOCAL_AGENT_WORKSPACE, "codex", { id: "thread-1", now: 10 });
     const thread = state.threads[0];

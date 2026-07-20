@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { getAiProviderDefinitions } from "./providers";
+import { getAiProviderDefinitions, getLocalWorkspaceProviders } from "./providers";
 
 describe("local workspace provider contracts", () => {
   test("uses supported isolated structured modes for Claude and Codex", () => {
@@ -21,5 +21,25 @@ describe("local workspace provider contracts", () => {
     expect(codexArgs).toContain("--disable");
     expect(codexArgs).toContain("shell_tool");
     expect(codexArgs).toContain("--json");
+  });
+
+  test("defines Pi structured mode without an auth-status contract", () => {
+    const definitions = getAiProviderDefinitions();
+    const pi = definitions.find((provider) => provider.id === "pi");
+    if (!pi?.buildStructuredArgs) throw new Error("Expected a structured Pi definition");
+
+    const args = pi.buildStructuredArgs("PROMPT");
+    expect(pi.name).toBe("Pi");
+    expect(pi.command).toBe("pi");
+    expect(args).toContain("--mode");
+    expect(args).toContain("json");
+    expect(args.at(-1)).toBe("PROMPT");
+    expect(pi.authCheckArgs).toBeUndefined();
+  });
+
+  test("includes Pi in the local workspace runtimes", () => {
+    const providers = getAiProviderDefinitions().map((provider) => ({ ...provider, available: true }));
+
+    expect(getLocalWorkspaceProviders(providers).map((provider) => provider.id)).toEqual(["claude", "codex", "pi"]);
   });
 });

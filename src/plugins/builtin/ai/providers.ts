@@ -63,6 +63,15 @@ const PROVIDER_DEFS: AiProviderDefinition[] = [
     authCheckArgs: ["login", "status"],
     authLoginCommand: "codex login",
   },
+  {
+    id: "pi",
+    name: "Pi",
+    command: "pi",
+    buildArgs: (prompt) => ["-p", "--mode", "text", "--offline", "--no-tools", "--no-session", "-nc", "-ne", "-ns", prompt],
+    buildStructuredArgs: (prompt) => ["-p", "--mode", "json", "--offline", "--no-tools", "--no-session", "-nc", "-ne", "-ns", prompt],
+    // No authCheckArgs: pi authenticates via config/env (no auth-status subcommand);
+    // an inconclusive/unauthenticated state surfaces at run time.
+  },
 ];
 
 let detectedProviders: AiProvider[] | null = null;
@@ -90,7 +99,7 @@ export function getAvailableProviders(providers = detectProviders()): AiProvider
 }
 
 export function getLocalWorkspaceProviders(providers = detectProviders()): AiProvider[] {
-  return providers.filter((provider) => provider.id === "claude" || provider.id === "codex");
+  return providers.filter((provider) => provider.id === "claude" || provider.id === "codex" || provider.id === "pi");
 }
 
 export function getAiProvider(providerId: string | null | undefined, providers = detectProviders()): AiProvider | null {

@@ -64,7 +64,7 @@ export const aiPlugin: GloomPlugin = {
       }],
       createInstance: (_context, options) => {
         const providerId = options?.values?.providerId;
-        if (providerId !== "claude" && providerId !== "codex") return null;
+        if (providerId !== "claude" && providerId !== "codex" && providerId !== "pi") return null;
         return {
           title: "Local AI",
           placement: "floating",

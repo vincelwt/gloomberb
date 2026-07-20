@@ -23,6 +23,8 @@ export class AiStructuredStreamParser {
   private buffer = "";
   private claudeTranscript = "";
   private claudeSawDeltas = false;
+  private piTranscript = "";
+  private piSawDeltas = false;
   private readonly codexItems = new Map<string, string>();
   private readonly codexItemOrder: string[] = [];
   private terminalError: string | null = null;
@@ -49,12 +51,20 @@ export class AiStructuredStreamParser {
     try {
       parsed = JSON.parse(line);
     } catch {
-      throw new Error(`${this.providerId === "claude" ? "Claude" : "Codex"} returned malformed structured output.`);
+      const label = this.providerId === "claude"
+        ? "Claude"
+        : this.providerId === "codex"
+          ? "Codex"
+          : this.providerId === "pi"
+            ? "Pi"
+            : this.providerId;
+      throw new Error(`${label} returned malformed structured output.`);
     }
     const event = objectValue(parsed);
     if (!event) return;
     if (this.providerId === "claude") this.parseClaude(event);
     if (this.providerId === "codex") this.parseCodex(event);
+    if (this.providerId === "pi") this.parsePi(event);
   }
 
   private parseClaude(event: Record<string, unknown>): void {
@@ -98,10 +108,37 @@ export class AiStructuredStreamParser {
     this.codexItems.set(id, stringValue(item.text) ?? "");
   }
 
+  private parsePi(event: Record<string, unknown>): void {
+    if (event.type === "message_update") {
+      const assistantMessageEvent = objectValue(event.assistantMessageEvent);
+      if (assistantMessageEvent?.type === "text_delta") {
+        this.piSawDeltas = true;
+        this.piTranscript += stringValue(assistantMessageEvent.delta) ?? "";
+      }
+      return;
+    }
+    if (event.type === "message_end" && !this.piSawDeltas) {
+      const message = objectValue(event.message);
+      if (message?.role === "assistant") {
+        const snapshot = contentText(message.content);
+        if (snapshot) this.piTranscript = snapshot;
+      }
+      return;
+    }
+    if (event.type === "error") {
+      this.terminalError = stringValue(event.message) ?? "Pi failed to complete the request.";
+    }
+  }
+
   private result(): StructuredEventResult {
-    const transcript = this.providerId === "codex"
-      ? this.codexItemOrder.map((id) => this.codexItems.get(id) ?? "").filter(Boolean).join("\n\n")
-      : this.claudeTranscript;
+    let transcript: string;
+    if (this.providerId === "codex") {
+      transcript = this.codexItemOrder.map((id) => this.codexItems.get(id) ?? "").filter(Boolean).join("\n\n");
+    } else if (this.providerId === "pi") {
+      transcript = this.piTranscript;
+    } else {
+      transcript = this.claudeTranscript;
+    }
     return { transcript, terminalError: this.terminalError };
   }
 }
