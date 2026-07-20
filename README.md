@@ -11,6 +11,8 @@ Desktop app for macOS and Windows. Terminal UI for macOS, Linux, and Windows.
 <a href="https://gloomberb.com/download/desktop"><strong>Download desktop</strong></a>
 &nbsp;&middot;&nbsp;
 <a href="#install"><strong>Install the TUI</strong></a>
+&nbsp;&middot;&nbsp;
+<a href="README.zh-CN.md">简体中文</a>
 
 <br />
 <br />
