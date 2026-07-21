@@ -63,10 +63,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: gloomberb-windows-x64-verification-artifacts
+          name: gloomberb-windows-x64-package
           path: |
             artifacts/*
-            build/stable-win-x64/Gloomberb-inno-source/Gloomberb/**
+            node_modules/electrobun/dist-win-x64/zig-zstd.exe
 
   desktop-arm64-compat:
     needs: desktop
@@ -76,8 +76,12 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: gloomberb-windows-x64-verification-artifacts
+          name: gloomberb-windows-x64-package
           path: .
+
+      - name: Extract x64 desktop package
+        shell: pwsh
+        run: ./scripts/build-windows-installer.ps1 -ExtractOnly
 
       - name: Verify x64 desktop package on Windows ARM64
         shell: pwsh

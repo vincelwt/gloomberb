@@ -1,3 +1,7 @@
+param(
+  [switch]$ExtractOnly
+)
+
 $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -44,6 +48,11 @@ $Launcher = Join-Path $SourceDir "bin\launcher"
 $LauncherExe = Join-Path $SourceDir "bin\launcher.exe"
 if ((Test-Path $Launcher) -and (-not (Test-Path $LauncherExe))) {
   Rename-Item -Path $Launcher -NewName "launcher.exe"
+}
+
+if ($ExtractOnly) {
+  Write-Host "Extracted Windows desktop package: $SourceDir"
+  return
 }
 
 $Candidates = @()
