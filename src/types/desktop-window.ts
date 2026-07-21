@@ -7,6 +7,7 @@ export interface DesktopSharedStateSnapshot {
   focusedPaneId: string | null;
   activePanel: "left" | "right";
   statusBarVisible: boolean;
+  mainStateRevision?: number;
   layoutChanged?: boolean;
 }
 

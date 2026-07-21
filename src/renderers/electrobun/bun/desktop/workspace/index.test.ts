@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createDefaultConfig } from "../../../../../types/config";
+import { cloneLayout, createDefaultConfig } from "../../../../../types/config";
 import { createDesktopWorkspace } from "./index";
 
 describe("desktop workspace", () => {
@@ -59,5 +59,36 @@ describe("desktop workspace", () => {
     expect(snapshot.config.layout.detached).toEqual([
       { instanceId: "chat:main", x: 220, y: 260, width: 640, height: 480 },
     ]);
+  });
+
+  test("ignores main-window state that arrives behind a newer layout revision", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-desktop-layout-revision");
+    const workspace = createDesktopWorkspace(config, null);
+    const initialSnapshot = workspace.getSnapshot();
+    const monitorLayout = config.layouts[1]!;
+
+    const newerSnapshot = {
+      ...initialSnapshot,
+      config: {
+        ...initialSnapshot.config,
+        layout: cloneLayout(monitorLayout.layout),
+        activeLayoutIndex: 1,
+      },
+      paneState: monitorLayout.paneState ?? {},
+      focusedPaneId: monitorLayout.focusedPaneId ?? null,
+      activePanel: monitorLayout.activePanel ?? "left" as const,
+      mainStateRevision: 2,
+    };
+    const staleSnapshot = {
+      ...initialSnapshot,
+      mainStateRevision: 1,
+    };
+
+    workspace.syncMainState(newerSnapshot);
+    const result = workspace.syncMainState(staleSnapshot);
+
+    expect(result.mainStateRevision).toBe(2);
+    expect(result.config.activeLayoutIndex).toBe(1);
+    expect(result.config.layout).toEqual(monitorLayout.layout);
   });
 });

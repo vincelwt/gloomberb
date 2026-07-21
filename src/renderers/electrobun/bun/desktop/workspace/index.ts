@@ -62,6 +62,7 @@ export function createDesktopWorkspace(
     focusedPaneId: initialFocusedPaneId,
     activePanel: initialActivePanel,
     statusBarVisible: sessionSnapshot?.statusBarVisible !== false,
+    mainStateRevision: 0,
   };
 
   const updateConfig = (nextConfig: AppConfig, options?: { layoutChanged?: boolean }) => {
@@ -94,12 +95,20 @@ export function createDesktopWorkspace(
     focusedPaneId: sharedState.focusedPaneId,
     activePanel: sharedState.activePanel,
     statusBarVisible: sharedState.statusBarVisible,
+    mainStateRevision: sharedState.mainStateRevision,
     layoutChanged: sharedState.layoutChanged,
   });
 
   return {
     getSnapshot,
     syncMainState(snapshot) {
+      const currentRevision = sharedState.mainStateRevision ?? 0;
+      if (
+        typeof snapshot.mainStateRevision === "number"
+        && snapshot.mainStateRevision <= currentRevision
+      ) {
+        return getSnapshot();
+      }
       const syncedConfig = syncConfigActiveLayoutState(
         snapshot.config,
         snapshot.paneState,
@@ -116,6 +125,7 @@ export function createDesktopWorkspace(
         focusedPaneId: snapshot.focusedPaneId,
         activePanel: snapshot.activePanel,
         statusBarVisible: snapshot.statusBarVisible,
+        mainStateRevision: snapshot.mainStateRevision ?? currentRevision,
         layoutChanged: snapshot.layoutChanged,
       };
       return getSnapshot();

@@ -50,11 +50,17 @@ function ThemeSelectorHarness() {
   return <text>{`${focusedPaneId ?? "none"}:${themeId}`}</text>;
 }
 
+function ActiveLayoutHarness() {
+  const activeLayoutIndex = useAppSelector((state) => state.config.activeLayoutIndex);
+  return <text>{`layout:${activeLayoutIndex}`}</text>;
+}
+
 function createDesktopBridge(
   kind: "main" | "detached",
   calls: {
     mainSnapshots?: DesktopSharedStateSnapshot[];
     themePreviews?: DesktopThemePreviewState[];
+    onStateSubscribe?: (listener: (snapshot: DesktopSharedStateSnapshot) => void) => void;
     onThemePreviewSubscribe?: (listener: (preview: DesktopThemePreviewState) => void) => void;
   } = {},
 ): DesktopWindowBridge {
@@ -71,7 +77,10 @@ function createDesktopBridge(
         calls.themePreviews?.push(preview);
       }
       : undefined,
-    subscribeState: () => () => {},
+    subscribeState: (listener) => {
+      calls.onStateSubscribe?.(listener);
+      return () => {};
+    },
     subscribeThemePreview: kind === "detached"
       ? (listener) => {
         calls.onThemePreviewSubscribe?.(listener);
@@ -263,6 +272,58 @@ describe("pane selectors", () => {
     expect(mainSnapshots).toHaveLength(1);
     expect(mainSnapshots[0]?.config.theme).toBe("green");
     expect(themePreviews).toHaveLength(0);
+  });
+
+  test("does not hydrate a stale desktop echo after a newer layout switch", async () => {
+    const mainSnapshots: DesktopSharedStateSnapshot[] = [];
+    let stateListener: ((snapshot: DesktopSharedStateSnapshot) => void) | null = null;
+    const bridge = createDesktopBridge("main", {
+      mainSnapshots,
+      onStateSubscribe: (listener) => {
+        stateListener = listener;
+      },
+    });
+
+    testSetup = await testRender(
+      <AppProvider config={createDefaultConfig("/tmp/gloomberb-layout-race")} desktopBridge={bridge}>
+        <DispatchCapture />
+        <ActiveLayoutHarness />
+      </AppProvider>,
+      { width: 24, height: 4 },
+    );
+
+    await testSetup.renderOnce();
+    const matchingNewerSnapshot = {
+      ...mainSnapshots.at(-1)!,
+      mainStateRevision: 10,
+    };
+    await act(() => {
+      stateListener?.(matchingNewerSnapshot);
+    });
+    await act(() => {
+      capturedDispatch?.({ type: "SWITCH_LAYOUT", index: 1 });
+    });
+    await testSetup.renderOnce();
+    await testSetup.renderOnce();
+    const staleSnapshot = mainSnapshots.at(-1)!;
+    expect(staleSnapshot.config.activeLayoutIndex).toBe(1);
+    expect(staleSnapshot.mainStateRevision).toBe(11);
+
+    await act(() => {
+      capturedDispatch?.({ type: "SWITCH_LAYOUT", index: 0 });
+    });
+    await testSetup.renderOnce();
+    await testSetup.renderOnce();
+    expect(mainSnapshots.at(-1)?.config.activeLayoutIndex).toBe(0);
+    expect(mainSnapshots.at(-1)!.mainStateRevision).toBeGreaterThan(staleSnapshot.mainStateRevision!);
+
+    await act(() => {
+      stateListener?.(staleSnapshot);
+    });
+    await testSetup.renderOnce();
+    await testSetup.renderOnce();
+
+    expect(testSetup.captureCharFrame()).toContain("layout:0");
   });
 
   test("desktop detached windows apply theme preview messages locally", async () => {

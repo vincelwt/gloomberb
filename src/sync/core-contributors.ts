@@ -329,14 +329,12 @@ function mergeConfigPayload(
   assign("recentTickers");
   assign("onboardingComplete");
 
+  const layoutStateUntouched = config.layout === baselineConfig.layout
+    && config.layouts === baselineConfig.layouts
+    && config.activeLayoutIndex === baselineConfig.activeLayoutIndex;
   if (
-    ["layout", "layouts", "activeLayoutIndex"].every((key) => (
-      key in payload &&
-      valuesEqual(
-        config[key as keyof AppConfig],
-        baselineConfig[key as keyof AppConfig],
-      )
-    ))
+    layoutStateUntouched
+    && ["layout", "layouts", "activeLayoutIndex"].every((key) => key in payload)
   ) {
     next.layout = payload.layout as unknown as AppConfig["layout"];
     next.layouts = payload.layouts as AppConfig["layouts"];
