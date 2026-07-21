@@ -6,6 +6,8 @@ export interface AiProvider {
   status?: AiProviderStatus;
   unavailableReason?: string;
   buildArgs: (prompt: string) => string[];
+  buildStructuredArgs?: (prompt: string) => string[];
+  authLoginCommand?: string;
 }
 
 export type AiProviderStatus = "ready" | "missing" | "not_authenticated" | "check_failed";
@@ -24,6 +26,21 @@ const PROVIDER_DEFS: AiProviderDefinition[] = [
     name: "Claude",
     command: "claude",
     buildArgs: (prompt) => ["-p", prompt],
+    buildStructuredArgs: (prompt) => [
+      "--print",
+      prompt,
+      "--verbose",
+      "--output-format",
+      "stream-json",
+      "--include-partial-messages",
+      "--no-session-persistence",
+      "--safe-mode",
+      "--tools",
+      "",
+      "--permission-mode",
+      "manual",
+    ],
+    authLoginCommand: "claude auth login",
   },
   {
     id: "gemini",
@@ -36,6 +53,29 @@ const PROVIDER_DEFS: AiProviderDefinition[] = [
     name: "Codex",
     command: "codex",
     buildArgs: (prompt) => ["exec", "--skip-git-repo-check", prompt],
+    buildStructuredArgs: (prompt) => [
+      "exec",
+      "--skip-git-repo-check",
+      "--ephemeral",
+      "--ignore-user-config",
+      "--ignore-rules",
+      "--disable",
+      "shell_tool",
+      "--sandbox",
+      "read-only",
+      "--json",
+      prompt,
+    ],
+    authLoginCommand: "codex login",
+  },
+  {
+    id: "pi",
+    name: "Pi",
+    command: "pi",
+    buildArgs: (prompt) => ["-p", "--mode", "text", "--offline", "--no-tools", "--no-session", "-nc", "-ne", "-ns", prompt],
+    buildStructuredArgs: (prompt) => ["-p", "--mode", "json", "--offline", "--no-tools", "--no-session", "-nc", "-ne", "-ns", prompt],
+    // Pi authenticates via config/env (no auth-status subcommand), so readiness
+    // is based on executable discovery and authentication errors surface at run time.
   },
 ];
 
@@ -77,6 +117,10 @@ function availabilityFromCommand(
 
 export function getAvailableProviders(providers = detectProviders()): AiProvider[] {
   return providers.filter((provider) => provider.available);
+}
+
+export function getLocalWorkspaceProviders(providers = detectProviders()): AiProvider[] {
+  return providers.filter((provider) => provider.id === "claude" || provider.id === "codex" || provider.id === "pi");
 }
 
 export function getAiProvider(providerId: string | null | undefined, providers = detectProviders()): AiProvider | null {

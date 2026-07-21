@@ -3,8 +3,8 @@ import {
   type AiRunnerEvent,
 } from "../../../capabilities";
 import {
-  getAiProviderDefinitions,
   __setDetectedProvidersForTests,
+  getAiProviderDefinitions,
   type AiProviderAvailability,
 } from "../../../plugins/builtin/ai/providers";
 import { AiRunCancelledError, setAiRunHost } from "../../../plugins/builtin/ai/runner";
@@ -29,7 +29,14 @@ export async function installElectrobunAiHost(): Promise<void> {
 
   __setDetectedProvidersForTests(providers);
   setAiRunHost({
-    run({ provider, prompt, cwd, onChunk }) {
+    checkStatus(provider) {
+      return backendRequest("capability.invoke", {
+        capabilityId: AI_RUNNER_CAPABILITY_ID,
+        operationId: "checkProviderStatus",
+        payload: { providerId: provider.id },
+      });
+    },
+    run({ provider, prompt, cwd, onChunk, outputMode, isolatedWorkspace }) {
       const subscriptionId = `ai-run:${nextRunId++}`;
       let disposed = false;
       let settled = false;
@@ -74,7 +81,7 @@ export async function installElectrobunAiHost(): Promise<void> {
         }
       });
 
-      void backendRequest("capability.subscribe", {
+      const subscribePromise = backendRequest("capability.subscribe", {
         subscriptionId,
         capabilityId: AI_RUNNER_CAPABILITY_ID,
         operationId: "run",
@@ -82,10 +89,19 @@ export async function installElectrobunAiHost(): Promise<void> {
           providerId: provider.id,
           prompt,
           cwd,
+          outputMode,
+          isolatedWorkspace,
         },
       }).catch((error) => {
         settle(() => rejectDone(error));
+      }).finally(() => {
+        // Cancellation can race the async subscribe. Unsubscribe again after it
+        // settles so a late backend subscription cannot outlive this run.
+        if (disposed) {
+          void backendRequest("capability.unsubscribe", { subscriptionId }).catch(() => {});
+        }
       });
+      void subscribePromise;
 
       return {
         done,

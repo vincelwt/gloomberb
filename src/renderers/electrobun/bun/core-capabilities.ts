@@ -10,7 +10,7 @@ import {
 import type { AppServices } from "../../../core/app-services";
 import { discoverAiCliProviders } from "../../../plugins/builtin/ai/cli-readiness";
 import type { AiProviderAvailability } from "../../../plugins/builtin/ai/providers";
-import { isAiRunCancelled, runAiPrompt } from "../../../plugins/builtin/ai/runner";
+import { isAiRunCancelled, runAiPrompt, type AiProviderStatus } from "../../../plugins/builtin/ai/runner";
 import type { BrokerAdapter } from "../../../types/broker";
 import type { AppConfig, BrokerInstanceConfig } from "../../../types/config";
 
@@ -268,8 +268,8 @@ function createNotesFilesCapability(): PluginCapability {
 
 function createAiRunnerCapability(options: CoreCapabilityOptions): PluginCapability {
   let providersPromise: ReturnType<typeof discoverAiCliProviders> | null = null;
-  const getProviders = () => {
-    providersPromise ??= discoverAiCliProviders({
+  const getProviders = (refresh = false) => {
+    if (refresh || !providersPromise) providersPromise = discoverAiCliProviders({
       cwd: options.getConfig().dataDir,
       recoverLoginShellPath: process.platform === "darwin",
     });
@@ -292,6 +292,34 @@ function createAiRunnerCapability(options: CoreCapabilityOptions): PluginCapabil
           } satisfies AiProviderAvailability,
         ]));
       }),
+      checkProviderStatus: op(async (input: any) => {
+        const providerId = requireString(input.providerId, "AI provider");
+        const resolved = (await getProviders(true)).find(({ provider }) => provider.id === providerId)?.provider;
+        if (!resolved) throw new Error(`Unknown AI provider: ${providerId}`);
+        if (resolved.status === "ready") {
+          return { available: true, authenticated: true, message: null } satisfies AiProviderStatus;
+        }
+        if (resolved.status === "missing") {
+          return {
+            available: false,
+            authenticated: false,
+            message: resolved.unavailableReason ?? `${resolved.name} is not installed.`,
+          } satisfies AiProviderStatus;
+        }
+        if (resolved.status === "not_authenticated") {
+          return {
+            available: true,
+            authenticated: false,
+            message: resolved.unavailableReason ?? `${resolved.name} is not authenticated.`,
+          } satisfies AiProviderStatus;
+        }
+        return {
+          available: true,
+          authenticated: false,
+          inconclusive: true,
+          message: resolved.unavailableReason ?? `${resolved.name} readiness could not be verified.`,
+        } satisfies AiProviderStatus;
+      }),
       run: stream(async (input: any, emit) => {
         const providerId = requireString(input.providerId, "AI provider");
         const prompt = requireString(input.prompt, "AI prompt");
@@ -299,7 +327,7 @@ function createAiRunnerCapability(options: CoreCapabilityOptions): PluginCapabil
         if (!resolvedProvider) {
           throw new Error(`Unknown AI provider: ${providerId}`);
         }
-        if (!resolvedProvider.provider.available) {
+        if (!resolvedProvider.provider.available && resolvedProvider.provider.status !== "check_failed") {
           throw new Error(
             resolvedProvider.provider.unavailableReason
               ?? `${resolvedProvider.provider.name} is not ready.`,
@@ -312,6 +340,8 @@ function createAiRunnerCapability(options: CoreCapabilityOptions): PluginCapabil
           prompt,
           cwd: optionalString(input.cwd) ?? options.getConfig().dataDir,
           environment: resolvedProvider.environment,
+          outputMode: input.outputMode === "structured" ? "structured" : "plain",
+          isolatedWorkspace: input.isolatedWorkspace === true,
           onChunk: (output) => {
             if (!disposed) emit({ kind: "chunk", output });
           },

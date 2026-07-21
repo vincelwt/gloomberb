@@ -1,0 +1,236 @@
+export type LocalAgentProviderId = "claude" | "codex" | "pi";
+
+export interface LocalAgentAttachmentMetadata {
+  id: string;
+  kind: "ticker";
+  label: string;
+  preview: string;
+}
+
+export interface LocalAgentAttachmentPayload extends LocalAgentAttachmentMetadata {
+  content: string;
+}
+
+export interface LocalAgentMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: number;
+  status?: "complete" | "cancelled" | "error";
+  attachments?: LocalAgentAttachmentMetadata[];
+}
+
+export interface LocalAgentThread {
+  id: string;
+  providerId: LocalAgentProviderId;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: LocalAgentMessage[];
+}
+
+export interface LocalAgentWorkspaceState {
+  activeThreadId: string | null;
+  threads: LocalAgentThread[];
+}
+
+export const EMPTY_LOCAL_AGENT_WORKSPACE: LocalAgentWorkspaceState = {
+  activeThreadId: null,
+  threads: [],
+};
+
+const MAX_THREADS = 50;
+const MAX_MESSAGES_PER_THREAD = 100;
+const PROVIDER_TITLES: Record<LocalAgentProviderId, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  pi: "Pi",
+};
+
+function isProviderId(value: unknown): value is LocalAgentProviderId {
+  return value === "claude" || value === "codex" || value === "pi";
+}
+
+function normalizeMessage(value: unknown): LocalAgentMessage | null {
+  if (!value || typeof value !== "object") return null;
+  const message = value as Partial<LocalAgentMessage>;
+  if (
+    typeof message.id !== "string"
+    || (message.role !== "user" && message.role !== "assistant")
+    || typeof message.content !== "string"
+    || typeof message.createdAt !== "number"
+  ) return null;
+  const attachments = Array.isArray(message.attachments)
+    ? message.attachments.filter((attachment): attachment is LocalAgentAttachmentMetadata => (
+      !!attachment
+      && typeof attachment === "object"
+      && typeof attachment.id === "string"
+      && attachment.kind === "ticker"
+      && typeof attachment.label === "string"
+      && typeof attachment.preview === "string"
+    ))
+    : undefined;
+  const status = message.status === "complete" || message.status === "cancelled" || message.status === "error"
+    ? message.status
+    : undefined;
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    createdAt: message.createdAt,
+    ...(status ? { status } : {}),
+    ...(attachments?.length ? { attachments } : {}),
+  };
+}
+
+function isThread(value: unknown): value is LocalAgentThread {
+  if (!value || typeof value !== "object") return false;
+  const thread = value as Partial<LocalAgentThread>;
+  return typeof thread.id === "string"
+    && isProviderId(thread.providerId)
+    && typeof thread.title === "string"
+    && typeof thread.createdAt === "number"
+    && typeof thread.updatedAt === "number"
+    && Array.isArray(thread.messages);
+}
+
+export function normalizeLocalAgentWorkspace(value: unknown): LocalAgentWorkspaceState {
+  if (!value || typeof value !== "object") return EMPTY_LOCAL_AGENT_WORKSPACE;
+  const candidate = value as Partial<LocalAgentWorkspaceState>;
+  const threads = Array.isArray(candidate.threads)
+    ? candidate.threads
+      .filter(isThread)
+      .map((thread) => ({
+        ...thread,
+        messages: thread.messages
+          .map(normalizeMessage)
+          .filter((message): message is LocalAgentMessage => message !== null)
+          .slice(-MAX_MESSAGES_PER_THREAD),
+      }))
+      .slice(0, MAX_THREADS)
+    : [];
+  const activeThreadId = typeof candidate.activeThreadId === "string"
+    && threads.some((thread) => thread.id === candidate.activeThreadId)
+    ? candidate.activeThreadId
+    : threads[0]?.id ?? null;
+  return { activeThreadId, threads };
+}
+
+export function createLocalAgentThread(
+  state: LocalAgentWorkspaceState,
+  providerId: LocalAgentProviderId,
+  options: { id?: string; now?: number } = {},
+): LocalAgentWorkspaceState {
+  const now = options.now ?? Date.now();
+  const id = options.id ?? crypto.randomUUID();
+  const thread: LocalAgentThread = {
+    id,
+    providerId,
+    title: `New ${PROVIDER_TITLES[providerId]} thread`,
+    createdAt: now,
+    updatedAt: now,
+    messages: [],
+  };
+  return {
+    activeThreadId: id,
+    threads: [thread, ...state.threads].slice(0, MAX_THREADS),
+  };
+}
+
+export function selectLocalAgentThread(
+  state: LocalAgentWorkspaceState,
+  threadId: string,
+): LocalAgentWorkspaceState {
+  return state.threads.some((thread) => thread.id === threadId)
+    ? { ...state, activeThreadId: threadId }
+    : state;
+}
+
+export function updateLocalAgentThread(
+  state: LocalAgentWorkspaceState,
+  threadId: string,
+  updater: (thread: LocalAgentThread) => LocalAgentThread,
+): LocalAgentWorkspaceState {
+  let changed = false;
+  const threads = state.threads.map((thread) => {
+    if (thread.id !== threadId) return thread;
+    const updated = updater(thread);
+    changed = updated !== thread;
+    // Provider identity is a creation-time property. Ignore accidental mutation.
+    return updated.providerId === thread.providerId
+      ? updated
+      : { ...updated, providerId: thread.providerId };
+  });
+  return changed ? { ...state, threads } : state;
+}
+
+export function appendLocalAgentMessages(
+  state: LocalAgentWorkspaceState,
+  threadId: string,
+  messages: LocalAgentMessage[],
+): LocalAgentWorkspaceState {
+  if (messages.length === 0) return state;
+  return updateLocalAgentThread(state, threadId, (thread) => {
+    const nextMessages = [...thread.messages, ...messages].slice(-MAX_MESSAGES_PER_THREAD);
+    const firstUserMessage = nextMessages.find((message) => message.role === "user")?.content.trim();
+    return {
+      ...thread,
+      title: firstUserMessage
+        ? firstUserMessage.replace(/\s+/g, " ").slice(0, 42)
+        : thread.title,
+      updatedAt: Math.max(thread.updatedAt, ...messages.map((message) => message.createdAt)),
+      messages: nextMessages,
+    };
+  });
+}
+
+export function replaceLocalAgentMessage(
+  state: LocalAgentWorkspaceState,
+  threadId: string,
+  messageId: string,
+  update: Pick<LocalAgentMessage, "content"> & Pick<Partial<LocalAgentMessage>, "status">,
+  now = Date.now(),
+): LocalAgentWorkspaceState {
+  return updateLocalAgentThread(state, threadId, (thread) => ({
+    ...thread,
+    updatedAt: now,
+    messages: thread.messages.map((message) => (
+      message.id === messageId ? { ...message, ...update } : message
+    )),
+  }));
+}
+
+export function removeLocalAgentMessages(
+  state: LocalAgentWorkspaceState,
+  threadId: string,
+  messageIds: readonly string[],
+): LocalAgentWorkspaceState {
+  const removed = new Set(messageIds);
+  return updateLocalAgentThread(state, threadId, (thread) => ({
+    ...thread,
+    messages: thread.messages.filter((message) => !removed.has(message.id)),
+  }));
+}
+
+export function buildLocalAgentPrompt(
+  thread: LocalAgentThread,
+  userText: string,
+  attachments: LocalAgentAttachmentPayload[],
+): string {
+  const transcript = thread.messages
+    .filter((message) => message.role === "user" || message.status === "complete")
+    .map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.content}`)
+    .join("\n\n");
+  const sections = [
+    "Continue this local research conversation. Answer the current user request directly.",
+  ];
+  if (transcript) sections.push(`Conversation so far:\n${transcript}`);
+  if (attachments.length > 0) {
+    sections.push([
+      "Context explicitly attached by the user for this request:",
+      ...attachments.map((attachment) => `\n[${attachment.label}]\n${attachment.content}`),
+    ].join("\n"));
+  }
+  sections.push(`Current user request:\n${userText.trim()}`);
+  return sections.join("\n\n");
+}

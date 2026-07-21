@@ -1,5 +1,3 @@
-import { homedir } from "os";
-import { delimiter, join } from "path";
 import { withDeadline } from "../../../utils/async-deadline";
 import {
   getAiProviderDefinitions,
@@ -10,7 +8,7 @@ import {
 
 const LOGIN_SHELL_ENV_MARKER = "__GLOOMBERB_LOGIN_ENV__";
 const LOGIN_SHELL_TIMEOUT_MS = 3_000;
-const AUTH_PROBE_TIMEOUT_MS = 8_000;
+const AUTH_PROBE_TIMEOUT_MS = 15_000;
 
 interface CommandResult {
   exitCode: number;
@@ -36,7 +34,7 @@ interface AuthProbe {
   isReady(result: CommandResult): boolean;
 }
 
-const AUTH_PROBES: Record<string, AuthProbe> = {
+const AUTH_PROBES: Record<string, AuthProbe | null> = {
   claude: {
     args: ["auth", "status", "--json"],
     loginCommand: "claude auth login",
@@ -65,6 +63,9 @@ const AUTH_PROBES: Record<string, AuthProbe> = {
     loginCommand: "codex login",
     isReady: (result) => result.exitCode === 0,
   },
+  // Pi has no side-effect-free authentication status command. Treat an
+  // installed executable as runnable and surface credential failures at run time.
+  pi: null,
 };
 
 export interface ResolvedAiProvider {
@@ -84,7 +85,10 @@ export interface DiscoverAiCliProvidersOptions {
   loadLoginShellEnvironment?: (basePath: string) => Promise<NodeJS.ProcessEnv | null>;
 }
 
-function mergeSearchPaths(paths: Array<string | null | undefined>): string {
+function mergeSearchPaths(
+  paths: Array<string | null | undefined>,
+  delimiter: string,
+): string {
   const entries: string[] = [];
   const seen = new Set<string>();
   for (const path of paths) {
@@ -96,6 +100,13 @@ function mergeSearchPaths(paths: Array<string | null | undefined>): string {
     }
   }
   return entries.join(delimiter);
+}
+
+function appendPath(base: string, platform: NodeJS.Platform, ...segments: string[]): string {
+  const separator = platform === "win32" ? "\\" : "/";
+  const trimmedBase = base.replace(/[\\/]+$/, "");
+  const trimmedSegments = segments.map((segment) => segment.replace(/^[\\/]+|[\\/]+$/g, ""));
+  return [trimmedBase, ...trimmedSegments].filter(Boolean).join(separator);
 }
 
 async function runCommand(
@@ -166,7 +177,7 @@ export async function resolveAiCliEnvironment(
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
   const basePath = options.searchPath ?? env.PATH ?? "";
-  const home = options.homeDir ?? env.HOME ?? homedir();
+  const home = options.homeDir ?? env.HOME ?? env.USERPROFILE ?? "";
   const runner = options.runCommand ?? runCommand;
   let loginEnvironment: NodeJS.ProcessEnv | null = null;
 
@@ -180,21 +191,28 @@ export async function resolveAiCliEnvironment(
     }
   }
 
-  const commonUserPaths = options.recoverLoginShellPath && platform !== "win32"
+  const delimiter = platform === "win32" ? ";" : ":";
+  const commonUserPaths = platform === "win32"
     ? [
-        join(home, ".local", "bin"),
-        join(home, ".bun", "bin"),
-        join(home, ".claude", "local"),
-        join(home, ".volta", "bin"),
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
+        home ? appendPath(home, platform, ".local", "bin") : null,
+        home ? appendPath(home, platform, ".bun", "bin") : null,
+        env.APPDATA ? appendPath(env.APPDATA, platform, "npm") : null,
       ]
-    : [];
+    : [
+        home ? appendPath(home, platform, ".local", "bin") : null,
+        home ? appendPath(home, platform, ".bun", "bin") : null,
+        home ? appendPath(home, platform, ".npm-global", "bin") : null,
+        home ? appendPath(home, platform, ".claude", "local") : null,
+        home ? appendPath(home, platform, ".volta", "bin") : null,
+        ...(platform === "darwin"
+          ? ["/opt/homebrew/bin", "/usr/local/bin"]
+          : ["/home/linuxbrew/.linuxbrew/bin", "/usr/local/bin"]),
+      ];
 
   return {
     ...env,
     ...loginEnvironment,
-    PATH: mergeSearchPaths([loginEnvironment?.PATH, ...commonUserPaths, basePath]),
+    PATH: mergeSearchPaths([loginEnvironment?.PATH, ...commonUserPaths, basePath], delimiter),
   };
 }
 
@@ -249,6 +267,17 @@ export async function discoverAiCliProviders(
     }
 
     const probe = AUTH_PROBES[definition.id];
+    if (probe === null) {
+      return {
+        provider: {
+          ...definition,
+          command: executable,
+          available: true,
+          status: "ready" as const,
+        },
+        environment,
+      };
+    }
     if (!probe) {
       return {
         provider: { ...definition, command: executable, ...failedCheckAvailability(definition) },

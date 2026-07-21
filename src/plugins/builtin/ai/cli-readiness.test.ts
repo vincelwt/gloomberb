@@ -3,7 +3,7 @@ import { delimiter } from "path";
 import { discoverAiCliProviders, resolveAiCliSearchPath } from "./cli-readiness";
 
 describe("AI CLI readiness", () => {
-  test("recovers GUI paths and verifies every provider without sending prompts", async () => {
+  test("recovers GUI paths and verifies providers without sending prompts", async () => {
     const userBin = "/Users/test/.local/bin";
     const basePath = ["/usr/bin", "/bin"].join(delimiter);
     const recoveredPath = [userBin, basePath].join(delimiter);
@@ -39,6 +39,7 @@ describe("AI CLI readiness", () => {
       { id: "claude", available: true, command: `${userBin}/claude` },
       { id: "gemini", available: true, command: `${userBin}/gemini` },
       { id: "codex", available: true, command: `${userBin}/codex` },
+      { id: "pi", available: true, command: `${userBin}/pi` },
     ]);
     expect(commands).toEqual([
       [`${userBin}/claude`, "auth", "status", "--json"],
@@ -62,8 +63,9 @@ describe("AI CLI readiness", () => {
       ["claude", "not_authenticated"],
       ["gemini", "missing"],
       ["codex", "not_authenticated"],
+      ["pi", "ready"],
     ]);
-    expect(providers.every(({ provider }) => !provider.available)).toBe(true);
+    expect(providers.filter(({ provider }) => provider.id !== "pi").every(({ provider }) => !provider.available)).toBe(true);
   });
 
   test("falls back to common user install directories when shell startup fails", async () => {
@@ -80,11 +82,31 @@ describe("AI CLI readiness", () => {
     expect(searchPath.split(delimiter)).toEqual(expect.arrayContaining([
       "/Users/test/.local/bin",
       "/Users/test/.bun/bin",
+      "/Users/test/.npm-global/bin",
       "/Users/test/.claude/local",
       "/opt/homebrew/bin",
       "/usr/bin",
       "/bin",
     ]));
     expect(searchPath.split(delimiter).filter((entry) => entry === "/usr/bin")).toHaveLength(1);
+  });
+
+  test("finds Windows user-local and npm-installed CLIs", async () => {
+    const searchPath = await resolveAiCliSearchPath({
+      env: {
+        PATH: "C:\\Windows\\System32",
+        USERPROFILE: "C:\\Users\\example",
+        APPDATA: "C:\\Users\\example\\AppData\\Roaming",
+      },
+      homeDir: "C:\\Users\\example",
+      platform: "win32",
+    });
+
+    expect(searchPath.split(";")).toEqual(expect.arrayContaining([
+      "C:\\Users\\example\\.local\\bin",
+      "C:\\Users\\example\\.bun\\bin",
+      "C:\\Users\\example\\AppData\\Roaming\\npm",
+      "C:\\Windows\\System32",
+    ]));
   });
 });
