@@ -245,6 +245,7 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `ALRT` | Price alerts |
 | `SA <symbol condition price>` | Create a price alert |
 | `AI <prompt>` | AI screener |
+| `AGENT` | Local AI research workspace |
 | `CHAT [channel]` | Gloom Cloud chat |
 | `DM @user [@user...]` | Open or start a direct or group chat |
 | `ACM` | Gloom Cloud account settings |

@@ -12,7 +12,14 @@ import { MarkdownText } from "../../../components/markdown-text";
 import { getMessageComposerBlockHeight, MessageComposer, Spinner, usePaneFooter } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { buildTickerAiContext } from "./ticker-context";
-import { detectProviders, getAvailableProviders, resolveDefaultAiProviderId, __setDetectedProvidersForTests, type AiProvider } from "./providers";
+import {
+  detectProviders,
+  getAiProviderUnavailableLabel,
+  getAvailableProviders,
+  resolveDefaultAiProviderId,
+  __setDetectedProvidersForTests,
+  type AiProvider,
+} from "./providers";
 import { runAiPrompt } from "./runner";
 
 interface ChatMessage {
@@ -283,11 +290,19 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
   if (availableProviders.length === 0) {
     return (
       <Box flexDirection="column" paddingX={1} flexGrow={1}>
-        <Text fg={colors.textDim}>No AI CLI tools detected. Install one of:</Text>
+        <Text fg={colors.textDim}>No AI CLI tools are ready:</Text>
         <Box height={1} />
-        <Text fg={colors.text}>  claude  - Claude Code (claude.ai/claude-code)</Text>
-        <Text fg={colors.text}>  gemini  - Gemini CLI (github.com/google-gemini/gemini-cli)</Text>
-        <Text fg={colors.text}>  codex   - OpenAI Codex (github.com/openai/codex)</Text>
+        {providers.length > 0 ? providers.map((provider) => (
+          <Text key={provider.id} fg={colors.text}>
+            {`  ${provider.command.padEnd(7)} - ${provider.name}: ${getAiProviderUnavailableLabel(provider)}`}
+          </Text>
+        )) : (
+          <>
+            <Text fg={colors.text}>  claude  - Claude: missing</Text>
+            <Text fg={colors.text}>  gemini  - Gemini: missing</Text>
+            <Text fg={colors.text}>  codex   - Codex: missing</Text>
+          </>
+        )}
       </Box>
     );
   }

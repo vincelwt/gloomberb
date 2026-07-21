@@ -369,6 +369,7 @@ export function AppProvider({
   const listenersRef = useRef(new Set<() => void>());
   const storeRef = useRef<AppContextStoreValue | null>(null);
   const lastMainSyncRef = useRef<string | null>(null);
+  const latestMainStateRevisionRef = useRef(desktopSnapshot?.mainStateRevision ?? 0);
   const lastDetachedPaneSyncRef = useRef<string | null>(null);
   const lastThemePreviewSyncRef = useRef<string | null | undefined>(undefined);
 
@@ -437,6 +438,13 @@ export function AppProvider({
   useEffect(() => {
     if (!desktopBridge) return;
     return desktopBridge.subscribeState((snapshot) => {
+      if (desktopBridge.kind === "main" && typeof snapshot.mainStateRevision === "number") {
+        if (snapshot.mainStateRevision < latestMainStateRevisionRef.current) return;
+        latestMainStateRevisionRef.current = Math.max(
+          latestMainStateRevisionRef.current,
+          snapshot.mainStateRevision,
+        );
+      }
       const currentSignature = serializeDesktopSnapshot(buildDesktopSnapshot(stateRef.current));
       const nextSignature = serializeDesktopSnapshot(snapshot);
       if (currentSignature === nextSignature) return;
@@ -455,7 +463,11 @@ export function AppProvider({
     const signature = serializeDesktopSnapshot(snapshot);
     if (signature === lastMainSyncRef.current) return;
     lastMainSyncRef.current = signature;
-    void desktopBridge.syncMainState(snapshot);
+    latestMainStateRevisionRef.current += 1;
+    void desktopBridge.syncMainState({
+      ...snapshot,
+      mainStateRevision: latestMainStateRevisionRef.current,
+    });
   }, [
     buildDesktopSnapshot,
     desktopBridge,

@@ -8,7 +8,7 @@ import { resolveTickerForPane, useAppDispatch, useAppSelector, usePaneInstance }
 import { useInlineTickers } from "../../../../state/hooks/inline-tickers";
 import type { PaneProps } from "../../../../types/plugin";
 import { colors, hoverBg } from "../../../../theme/colors";
-import { usePluginState } from "../../../runtime";
+import { usePluginPaneState, usePluginState } from "../../../runtime";
 import { buildTickerAiContext } from "../ticker-context";
 import { detectProviders, getLocalWorkspaceProviders, type AiProvider } from "../providers";
 import { checkAiProviderStatus, isAiRunCancelled, runAiPrompt, type AiRunController } from "../runner";
@@ -19,7 +19,6 @@ import {
   createLocalAgentThread,
   normalizeLocalAgentWorkspace,
   removeLocalAgentMessages,
-  selectLocalAgentThread,
   type LocalAgentAttachmentPayload,
   type LocalAgentProviderId,
   type LocalAgentWorkspaceState,
@@ -29,7 +28,9 @@ export const LOCAL_AGENT_WORKSPACE_STATE_KEY = "local-agent-workspace";
 export const LOCAL_AGENT_WORKSPACE_SCHEMA_VERSION = 1;
 
 function providerLabel(providerId: LocalAgentProviderId): string {
-  return providerId === "claude" ? "Claude Code" : "Codex";
+  if (providerId === "claude") return "Claude Code";
+  if (providerId === "codex") return "Codex";
+  return "Pi";
 }
 
 function providerPrerequisite(provider: AiProvider): string {
@@ -102,7 +103,10 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
     { schemaVersion: LOCAL_AGENT_WORKSPACE_SCHEMA_VERSION },
   );
   const workspace = useMemo(() => normalizeLocalAgentWorkspace(persistedWorkspace), [persistedWorkspace]);
-  const activeThread = workspace.threads.find((thread) => thread.id === workspace.activeThreadId) ?? null;
+  const [paneThreadId, setPaneThreadId] = usePluginPaneState<string | null>("activeThreadId", null);
+  const activeThread = workspace.threads.find((thread) => thread.id === paneThreadId)
+    ?? workspace.threads.find((thread) => thread.id === workspace.activeThreadId)
+    ?? null;
   const [creating, setCreating] = useState(() => workspace.threads.length === 0);
   const [selectedProviderIndex, setSelectedProviderIndex] = useState(0);
   const [checkingProviderId, setCheckingProviderId] = useState<string | null>(null);
@@ -118,6 +122,11 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
   const runRef = useRef<{ controller: AiRunController; threadId: string; assistantMessageId: string } | null>(null);
   const busyRef = useRef(false);
   const seededRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    if (!paneThreadId && activeThread) setPaneThreadId(activeThread.id);
+  }, [activeThread, paneThreadId, setPaneThreadId]);
 
   const previousSymbol = useAppSelector((state) => {
     const previous = state.previousFocusedPaneId
@@ -147,6 +156,7 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
     setStatusMessage(null);
     try {
       const status = await checkAiProviderStatus(provider);
+      if (!mountedRef.current) return;
       if (!status.available || (!status.authenticated && !status.inconclusive)) {
         setStatusMessage(status.message ?? `${provider.name} is not ready.`);
         return;
@@ -154,20 +164,24 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
       if (status.inconclusive) {
         setStatusMessage(status.message ?? `Couldn't verify ${provider.name} sign-in; attempting anyway.`);
       }
+      const nextThreadId = threadId ?? crypto.randomUUID();
       updateWorkspace((current) => createLocalAgentThread(
         current,
         provider.id as LocalAgentProviderId,
-        threadId ? { id: threadId } : {},
+        { id: nextThreadId },
       ));
+      setPaneThreadId(nextThreadId);
       clearDraft();
       setCreating(false);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : `${provider.name} status check failed.`);
+      if (mountedRef.current) {
+        setStatusMessage(error instanceof Error ? error.message : `${provider.name} status check failed.`);
+      }
     } finally {
       busyRef.current = false;
-      setCheckingProviderId(null);
+      if (mountedRef.current) setCheckingProviderId(null);
     }
-  }, [clearDraft, updateWorkspace]);
+  }, [clearDraft, setPaneThreadId, updateWorkspace]);
 
   useEffect(() => {
     if (seededRef.current) return;
@@ -179,25 +193,25 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
     if (provider && typeof threadId === "string") {
       setSelectedProviderIndex(providerIndex);
       if (workspace.threads.some((thread) => thread.id === threadId)) {
-        updateWorkspace((current) => selectLocalAgentThread(current, threadId));
+        setPaneThreadId(threadId);
         setCreating(false);
       } else {
         void createThread(provider, threadId);
       }
     }
-  }, [createThread, paneInstance?.params?.providerId, paneInstance?.params?.threadId, providers, updateWorkspace, workspace.threads]);
+  }, [createThread, paneInstance?.params?.providerId, paneInstance?.params?.threadId, providers, setPaneThreadId, workspace.threads]);
 
   useEffect(() => {
     if (!focused) return;
     const scroll = scrollRef.current;
-    if (!scroll || !activeThread?.messages.length) return;
+    if (!scroll?.viewport || !activeThread?.messages.length) return;
     scroll.scrollTo({ x: 0, y: Math.max(0, scroll.scrollHeight - scroll.viewport.height) });
   }, [activeThread?.messages, focused]);
 
   const focusInput = useCallback(() => {
     setInputFocused(true);
     dispatch({ type: "SET_INPUT_CAPTURED", captured: true });
-    inputRef.current?.focus();
+    inputRef.current?.focus?.();
   }, [dispatch]);
 
   const blurInput = useCallback(() => {
@@ -215,10 +229,10 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
     const nextIndex = (currentIndex + direction + workspace.threads.length) % workspace.threads.length;
     const nextThread = workspace.threads[nextIndex];
     if (!nextThread) return;
-    updateWorkspace((current) => selectLocalAgentThread(current, nextThread.id));
+    setPaneThreadId(nextThread.id);
     clearDraft();
     setStatusMessage(null);
-  }, [activeThread, clearDraft, updateWorkspace, workspace.threads]);
+  }, [activeThread, clearDraft, setPaneThreadId, workspace.threads]);
 
   const attachSelectedTicker = useCallback(() => {
     if (!selectedTicker || !previousSymbol) {
@@ -257,17 +271,20 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
     setCheckingProviderId(provider.id);
     try {
       const providerStatus = await checkAiProviderStatus(provider);
+      if (!mountedRef.current) return;
       if (!providerStatus.available || (!providerStatus.authenticated && !providerStatus.inconclusive)) {
         setStatusMessage(providerStatus.message ?? `${provider.name} is not ready.`);
         busyRef.current = false;
         return;
       }
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : `${provider.name} status check failed.`);
+      if (mountedRef.current) {
+        setStatusMessage(error instanceof Error ? error.message : `${provider.name} status check failed.`);
+      }
       busyRef.current = false;
       return;
     } finally {
-      setCheckingProviderId(null);
+      if (mountedRef.current) setCheckingProviderId(null);
     }
 
     const now = Date.now();
@@ -297,12 +314,14 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
         outputMode: "structured",
         isolatedWorkspace: true,
         onChunk: (output) => {
+          if (!mountedRef.current) return;
           streamedOutput = output;
           setStreamingOutput(output);
         },
       });
       runRef.current = { controller, threadId: activeThread.id, assistantMessageId };
       const output = await controller.done;
+      if (!mountedRef.current) return;
       updateWorkspace((current) => appendLocalAgentMessages(current, activeThread.id, [{
         id: assistantMessageId,
         role: "assistant",
@@ -311,6 +330,7 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
         status: "complete",
       }]));
     } catch (error) {
+      if (!mountedRef.current) return;
       if (isAiRunCancelled(error)) {
         updateWorkspace((current) => appendLocalAgentMessages(current, activeThread.id, [{
           id: assistantMessageId,
@@ -343,8 +363,10 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
     } finally {
       runRef.current = null;
       busyRef.current = false;
-      setRunningMessageId(null);
-      setStreamingOutput("");
+      if (mountedRef.current) {
+        setRunningMessageId(null);
+        setStreamingOutput("");
+      }
     }
   }, [activeThread, attachments, providers, updateWorkspace]);
 
@@ -378,9 +400,14 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
     if (event.name === "]") cycleThread(1);
   }, { allowEditable: true });
 
-  useEffect(() => () => {
-    runRef.current?.controller.cancel();
-    dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      busyRef.current = false;
+      runRef.current?.controller.cancel();
+      dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
+    };
   }, [dispatch]);
 
   usePaneFooter("local-agent-workspace", () => ({
@@ -447,7 +474,7 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
                   onMouseOut={() => setHoveredThreadId((current) => current === thread.id ? null : current)}
                   onMouseDown={() => {
                     if (busyRef.current) return;
-                    updateWorkspace((current) => selectLocalAgentThread(current, thread.id));
+                    setPaneThreadId(thread.id);
                     clearDraft();
                     setStatusMessage(null);
                   }}

@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import type { AiProvider } from "./providers";
-import { checkStatusWithBun, isAiRunCancelled, runAiPrompt, setAiRunHost } from "./runner";
+import { isAiRunCancelled, runAiPrompt, setAiRunHost } from "./runner";
 
 function shellProvider(script: string): AiProvider {
   return {
@@ -17,56 +17,42 @@ function shellProvider(script: string): AiProvider {
   };
 }
 
-async function fakeAuthProvider(id: string, script: string): Promise<{ provider: AiProvider; tmpPath: string }> {
-  const tmpPath = await mkdtemp(join(tmpdir(), "gloomberb-auth-check-"));
-  const command = join(tmpPath, `${id}-auth`);
-  await Bun.write(command, `#!/bin/sh\n${script}\n`);
-  chmodSync(command, 0o755);
-  return {
-    tmpPath,
-    provider: {
-      id,
-      name: id === "claude" ? "Claude" : "Codex",
-      command,
-      available: true,
-      authCheckArgs: ["auth", "status"],
-      buildArgs: () => [],
-    },
-  };
-}
+afterEach(() => {
+  setAiRunHost(null);
+});
 
-describe("AI provider status checks", () => {
-  test("marks a timed-out auth check as inconclusive", async () => {
-    const { provider, tmpPath } = await fakeAuthProvider("codex", "exec sleep 1");
+describe("AI runner", () => {
+  test("passes the recovered environment to the resolved executable", async () => {
+    if (process.platform === "win32") return;
+    const directory = await mkdtemp(join(tmpdir(), "gloomberb-ai-runner-"));
     try {
-      const result = await checkStatusWithBun(provider, 50);
-      expect(result).toMatchObject({ available: true, authenticated: false, inconclusive: true });
-      expect(result.message).toBeTruthy();
-    } finally {
-      await rm(tmpPath, { recursive: true, force: true });
-    }
-  });
+      const interpreter = join(directory, "gloomberb-test-interpreter");
+      const executable = join(directory, "fake-ai");
+      await writeFile(interpreter, "#!/bin/sh\nexec /bin/sh \"$@\"\n");
+      await writeFile(executable, "#!/usr/bin/env gloomberb-test-interpreter\nprintf ready\n");
+      await chmod(interpreter, 0o755);
+      await chmod(executable, 0o755);
 
-  test("keeps a confirmed unauthenticated check conclusive", async () => {
-    const { provider, tmpPath } = await fakeAuthProvider("codex", "exit 1");
-    try {
-      const result = await checkStatusWithBun(provider, 500);
-      expect(result.available).toBe(true);
-      expect(result.authenticated).toBe(false);
-      expect(result.inconclusive).toBeFalsy();
-    } finally {
-      await rm(tmpPath, { recursive: true, force: true });
-    }
-  });
+      const provider: AiProvider = {
+        id: "fake",
+        name: "Fake",
+        command: executable,
+        available: true,
+        status: "ready",
+        buildArgs: () => [],
+      };
+      const run = runAiPrompt({
+        provider,
+        prompt: "unused",
+        environment: {
+          ...process.env,
+          PATH: [directory, "/usr/bin", "/bin"].join(delimiter),
+        },
+      });
 
-  test("accepts Claude's authenticated JSON status", async () => {
-    const { provider, tmpPath } = await fakeAuthProvider("claude", `printf '%s\\n' '{"loggedIn":true}'`);
-    try {
-      const result = await checkStatusWithBun(provider, 500);
-      expect(result.authenticated).toBe(true);
-      expect(result.inconclusive).toBeFalsy();
+      expect(await run.done).toBe("ready");
     } finally {
-      await rm(tmpPath, { recursive: true, force: true });
+      await rm(directory, { recursive: true, force: true });
     }
   });
 });
@@ -123,12 +109,13 @@ describe("AI runner structured mode", () => {
     expect(existsSync(isolatedPath)).toBe(false);
   });
 
-  test("forwards structured isolation and cancellation through a configured host", async () => {
-    let received: Parameters<NonNullable<import("./runner").AiRunHost["run"]>>[0] | null = null;
+  test("forwards environment, structured isolation, and cancellation through a configured host", async () => {
+    type RunOptions = Parameters<NonNullable<import("./runner").AiRunHost["run"]>>[0];
+    const received: RunOptions[] = [];
     let cancelled = false;
     setAiRunHost({
       run(options) {
-        received = options;
+        received.push(options);
         return {
           done: Promise.resolve("host output"),
           cancel: () => { cancelled = true; },
@@ -136,21 +123,20 @@ describe("AI runner structured mode", () => {
       },
     });
 
-    try {
-      const run = runAiPrompt({
-        provider: shellProvider("unused"),
-        prompt: "selected context only",
-        outputMode: "structured",
-        isolatedWorkspace: true,
-      });
-      run.cancel();
-      expect(await run.done).toBe("host output");
-      expect(received?.prompt).toBe("selected context only");
-      expect(received?.outputMode).toBe("structured");
-      expect(received?.isolatedWorkspace).toBe(true);
-      expect(cancelled).toBe(true);
-    } finally {
-      setAiRunHost(null);
-    }
+    const environment = { ...process.env, GLOOMBERB_AI_TEST: "ready" };
+    const run = runAiPrompt({
+      provider: shellProvider("unused"),
+      prompt: "selected context only",
+      environment,
+      outputMode: "structured",
+      isolatedWorkspace: true,
+    });
+    run.cancel();
+    expect(await run.done).toBe("host output");
+    expect(received[0]?.prompt).toBe("selected context only");
+    expect(received[0]?.environment).toBe(environment);
+    expect(received[0]?.outputMode).toBe("structured");
+    expect(received[0]?.isolatedWorkspace).toBe(true);
+    expect(cancelled).toBe(true);
   });
 });

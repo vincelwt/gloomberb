@@ -149,3 +149,70 @@ test("keeps startup layout changes while serializing pull and push", async () =>
   expect(state.config.layout.instances).toContainEqual(startupPane);
   expect(pushedConfig.layout.instances).toContainEqual(startupPane);
 });
+
+test("keeps the latest layout when switching away and back during a pull", async () => {
+  let state = createInitialState(createDefaultConfig("/tmp/gloomberb-sync-layout-roundtrip-test"));
+  const dispatch = (action: AppAction) => {
+    state = appReducer(state, action);
+  };
+  dispatch({ type: "SWITCH_LAYOUT", index: 1 });
+  dispatch({ type: "SWITCH_LAYOUT", index: 0 });
+
+  let resolvePull!: (response: SyncSnapshotResponse) => void;
+  const deferredPull = new Promise<SyncSnapshotResponse>((resolve) => {
+    resolvePull = resolve;
+  });
+  const pushes: SyncSnapshot[] = [];
+  const transport: SyncTransport = {
+    id: "deferred-layout-pull",
+    isAvailable: () => true,
+    pullSnapshot: () => deferredPull,
+    pushSnapshot: async (snapshot) => {
+      pushes.push(snapshot);
+      return { revision: 12, updatedAt: "2026-07-21T10:00:12.000Z" };
+    },
+  };
+  const controller = new CloudSyncController();
+  controller.setRuntime({
+    getState: () => state,
+    dispatch,
+    tickerRepository: {} as TickerRepository,
+    getContributors: () => [{ pluginId: "test", contributor: coreConfigSyncContributor }],
+    getTransport: () => ({ pluginId: "test", transport }),
+  });
+
+  const startupSync = controller.requestSync({ reason: "startup" });
+  dispatch({ type: "SWITCH_LAYOUT", index: 1 });
+  dispatch({ type: "SWITCH_LAYOUT", index: 0 });
+  const queuedPush = controller.requestSync({ reason: "state-change" });
+
+  const remoteConfig = createDefaultConfig("/remote/path-is-not-synced");
+  remoteConfig.theme = "green";
+  remoteConfig.layout = remoteConfig.layouts[1]!.layout;
+  remoteConfig.activeLayoutIndex = 1;
+  resolvePull({
+    snapshot: {
+      schemaVersion: SYNC_SNAPSHOT_SCHEMA_VERSION,
+      appId: "gloomberb",
+      clientId: "remote-client",
+      createdAt: "2026-07-21T10:00:11.000Z",
+      contributors: {
+        "core.config": {
+          schemaVersion: 1,
+          updatedAt: "2026-07-21T10:00:11.000Z",
+          payload: __syncContributorInternalsForTests.collectCoreConfigPayload(remoteConfig),
+        },
+      },
+    },
+    revision: 11,
+    updatedAt: "2026-07-21T10:00:11.000Z",
+  });
+  await Promise.all([startupSync, queuedPush]);
+
+  const pushedConfig = pushes[0]?.contributors["core.config"]?.payload as {
+    activeLayoutIndex: number;
+  };
+  expect(state.config.theme).toBe("green");
+  expect(state.config.activeLayoutIndex).toBe(0);
+  expect(pushedConfig.activeLayoutIndex).toBe(0);
+});

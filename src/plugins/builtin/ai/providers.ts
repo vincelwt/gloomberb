@@ -1,17 +1,24 @@
-import { resolveAiCliCommand } from "./command-resolution";
-
 export interface AiProvider {
   id: string;
   name: string;
   command: string;
   available: boolean;
+  status?: AiProviderStatus;
+  unavailableReason?: string;
   buildArgs: (prompt: string) => string[];
   buildStructuredArgs?: (prompt: string) => string[];
-  authCheckArgs?: string[];
   authLoginCommand?: string;
 }
 
-export interface AiProviderDefinition extends Omit<AiProvider, "available"> {}
+export type AiProviderStatus = "ready" | "missing" | "not_authenticated" | "check_failed";
+
+export interface AiProviderAvailability {
+  available: boolean;
+  status: AiProviderStatus;
+  unavailableReason?: string;
+}
+
+export interface AiProviderDefinition extends Omit<AiProvider, "available" | "status" | "unavailableReason"> {}
 
 const PROVIDER_DEFS: AiProviderDefinition[] = [
   {
@@ -33,7 +40,6 @@ const PROVIDER_DEFS: AiProviderDefinition[] = [
       "--permission-mode",
       "manual",
     ],
-    authCheckArgs: ["auth", "status"],
     authLoginCommand: "claude auth login",
   },
   {
@@ -60,7 +66,6 @@ const PROVIDER_DEFS: AiProviderDefinition[] = [
       "--json",
       prompt,
     ],
-    authCheckArgs: ["login", "status"],
     authLoginCommand: "codex login",
   },
   {
@@ -69,8 +74,8 @@ const PROVIDER_DEFS: AiProviderDefinition[] = [
     command: "pi",
     buildArgs: (prompt) => ["-p", "--mode", "text", "--offline", "--no-tools", "--no-session", "-nc", "-ne", "-ns", prompt],
     buildStructuredArgs: (prompt) => ["-p", "--mode", "json", "--offline", "--no-tools", "--no-session", "-nc", "-ne", "-ns", prompt],
-    // No authCheckArgs: pi authenticates via config/env (no auth-status subcommand);
-    // an inconclusive/unauthenticated state surfaces at run time.
+    // Pi authenticates via config/env (no auth-status subcommand), so readiness
+    // is based on executable discovery and authentication errors surface at run time.
   },
 ];
 
@@ -78,10 +83,13 @@ let detectedProviders: AiProvider[] | null = null;
 
 function commandExists(command: string): boolean {
   try {
-    return resolveAiCliCommand(command) !== null;
+    if (typeof Bun !== "undefined" && typeof Bun.which === "function") {
+      return !!Bun.which(command);
+    }
   } catch {
     return false;
   }
+  return false;
 }
 
 export function detectProviders(): AiProvider[] {
@@ -89,9 +97,22 @@ export function detectProviders(): AiProvider[] {
 
   detectedProviders = PROVIDER_DEFS.map((definition) => ({
     ...definition,
-    available: commandExists(definition.command),
+    ...availabilityFromCommand(definition, commandExists(definition.command)),
   }));
   return detectedProviders;
+}
+
+function availabilityFromCommand(
+  provider: AiProviderDefinition,
+  available: boolean,
+): AiProviderAvailability {
+  return available
+    ? { available: true, status: "ready" }
+    : {
+        available: false,
+        status: "missing",
+        unavailableReason: `${provider.name} is not installed or was not found in PATH.`,
+      };
 }
 
 export function getAvailableProviders(providers = detectProviders()): AiProvider[] {
@@ -109,6 +130,17 @@ export function getAiProvider(providerId: string | null | undefined, providers =
 
 export function resolveDefaultAiProviderId(providers = detectProviders()): string {
   return getAvailableProviders(providers)[0]?.id ?? providers[0]?.id ?? "claude";
+}
+
+export function getAiProviderUnavailableReason(provider: AiProvider): string {
+  return provider.unavailableReason
+    ?? `${provider.name} is not installed, not authenticated, or not available in PATH.`;
+}
+
+export function getAiProviderUnavailableLabel(provider: AiProvider): string {
+  if (provider.status === "not_authenticated") return "sign in";
+  if (provider.status === "check_failed") return "unavailable";
+  return "missing";
 }
 
 export function __setDetectedProvidersForTests(providers: AiProvider[] | null): void {

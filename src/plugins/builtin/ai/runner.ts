@@ -1,11 +1,9 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveAiCliCommand } from "./command-resolution";
+import { discoverAiCliProviders } from "./cli-readiness";
 import type { AiProvider } from "./providers";
 import { AiStructuredStreamParser } from "./stream-events";
-
-const AUTH_CHECK_TIMEOUT_MS = 15_000;
 
 export class AiRunCancelledError extends Error {
   constructor() {
@@ -24,6 +22,7 @@ export interface AiRunHost {
     provider: AiProvider;
     prompt: string;
     cwd?: string;
+    environment?: NodeJS.ProcessEnv;
     onChunk?: (output: string) => void;
     outputMode?: "plain" | "structured";
     isolatedWorkspace?: boolean;
@@ -67,64 +66,43 @@ function sanitizeRuntimeError(value: string): string {
 
 export async function checkStatusWithBun(
   provider: AiProvider,
-  timeoutMs: number = AUTH_CHECK_TIMEOUT_MS,
 ): Promise<AiProviderStatus> {
   if (typeof Bun === "undefined" || typeof Bun.spawn !== "function") {
     return { available: false, authenticated: false, message: "Local AI status checks require a native Bun host." };
   }
-  const resolvedCommand = resolveAiCliCommand(provider.command);
-  if (!resolvedCommand) {
-    return { available: false, authenticated: false, message: remediationFor(provider, "unavailable") };
-  }
-  if (!provider.authCheckArgs) {
-    return { available: true, authenticated: true, message: null };
-  }
-
-  let timer: ReturnType<typeof setTimeout> | null = null;
   try {
-    const proc = Bun.spawn([resolvedCommand.executable, ...provider.authCheckArgs], {
-      env: resolvedCommand.env,
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        try { proc.kill(); } catch { /* ignore cleanup failures */ }
-        reject(new Error(`${provider.name} authentication check timed out.`));
-      }, timeoutMs);
-    });
-    const exitCode = await Promise.race([proc.exited, timeout]);
-    const statusText = await new Response(proc.stdout).text();
-    const errorText = await new Response(proc.stderr).text();
-    let authenticated = exitCode === 0;
-    if (provider.id === "claude" && exitCode === 0) {
-      try {
-        // Claude's JSON includes account metadata. Read only this boolean and discard the payload.
-        authenticated = JSON.parse(statusText)?.loggedIn === true;
-      } catch {
-        authenticated = false;
-      }
+    const resolved = (await discoverAiCliProviders({
+      cwd: typeof process !== "undefined" ? process.cwd() : undefined,
+      recoverLoginShellPath: false,
+    })).find(({ provider: candidate }) => candidate.id === provider.id)?.provider;
+    if (!resolved || resolved.status === "missing") {
+      return { available: false, authenticated: false, message: remediationFor(provider, "unavailable") };
     }
-    if (authenticated) {
+    if (resolved.status === "ready") {
       return { available: true, authenticated: true, message: null };
     }
-    const stderrSuffix = errorText.trim() ? ` (${sanitizeRuntimeError(errorText)})` : "";
-    return {
-      available: true,
-      authenticated: false,
-      message: `${remediationFor(provider, "unauthenticated")}${stderrSuffix}`,
-    };
-  } catch (error) {
-    const fallbackMessage = `${provider.name} authentication check failed.`;
+    if (resolved.status === "not_authenticated") {
+      return {
+        available: true,
+        authenticated: false,
+        message: resolved.unavailableReason ?? remediationFor(provider, "unauthenticated"),
+      };
+    }
     return {
       available: true,
       authenticated: false,
       inconclusive: true,
-      message: sanitizeRuntimeError(error instanceof Error ? error.message : fallbackMessage),
+      message: resolved.unavailableReason ?? `${provider.name} authentication check failed.`,
     };
-  } finally {
-    if (timer) clearTimeout(timer);
+  } catch (error) {
+    return {
+      available: true,
+      authenticated: false,
+      inconclusive: true,
+      message: sanitizeRuntimeError(error instanceof Error
+        ? error.message
+        : `${provider.name} authentication check failed.`),
+    };
   }
 }
 
@@ -136,6 +114,7 @@ function runWithBun({
   provider,
   prompt,
   cwd = typeof process !== "undefined" ? process.cwd() : ".",
+  environment,
   onChunk,
   outputMode = "plain",
   isolatedWorkspace = false,
@@ -143,6 +122,7 @@ function runWithBun({
   provider: AiProvider;
   prompt: string;
   cwd?: string;
+  environment?: NodeJS.ProcessEnv;
   onChunk?: (output: string) => void;
   outputMode?: "plain" | "structured";
   isolatedWorkspace?: boolean;
@@ -160,10 +140,6 @@ function runWithBun({
 
   const done = (async () => {
     if (cancelled) throw new AiRunCancelledError();
-    const resolvedCommand = resolveAiCliCommand(provider.command);
-    if (!resolvedCommand) {
-      throw new Error(`${provider.name} is not installed or not available in PATH.`);
-    }
 
     const args = outputMode === "structured"
       ? provider.buildStructuredArgs?.(prompt)
@@ -178,9 +154,9 @@ function runWithBun({
     let proc: BunSubprocess | null = null;
     try {
       if (cancelled) throw new AiRunCancelledError();
-      proc = Bun.spawn([resolvedCommand.executable, ...args], {
+      proc = Bun.spawn([provider.command, ...args], {
         cwd: isolatedCwd ?? cwd,
-        env: resolvedCommand.env,
+        env: environment,
         stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
@@ -266,6 +242,7 @@ export function runAiPrompt({
   provider,
   prompt,
   cwd,
+  environment,
   onChunk,
   outputMode,
   isolatedWorkspace,
@@ -273,9 +250,18 @@ export function runAiPrompt({
   provider: AiProvider;
   prompt: string;
   cwd?: string;
+  environment?: NodeJS.ProcessEnv;
   onChunk?: (output: string) => void;
   outputMode?: "plain" | "structured";
   isolatedWorkspace?: boolean;
 }): AiRunController {
-  return (configuredHost ?? { run: runWithBun }).run({ provider, prompt, cwd, onChunk, outputMode, isolatedWorkspace });
+  return (configuredHost ?? { run: runWithBun }).run({
+    provider,
+    prompt,
+    cwd,
+    environment,
+    onChunk,
+    outputMode,
+    isolatedWorkspace,
+  });
 }

@@ -23,7 +23,7 @@ describe("local workspace provider contracts", () => {
     expect(codexArgs).toContain("--json");
   });
 
-  test("defines Pi structured mode without an auth-status contract", () => {
+  test("defines Pi structured mode", () => {
     const definitions = getAiProviderDefinitions();
     const pi = definitions.find((provider) => provider.id === "pi");
     if (!pi?.buildStructuredArgs) throw new Error("Expected a structured Pi definition");
@@ -34,7 +34,6 @@ describe("local workspace provider contracts", () => {
     expect(args).toContain("--mode");
     expect(args).toContain("json");
     expect(args.at(-1)).toBe("PROMPT");
-    expect(pi.authCheckArgs).toBeUndefined();
   });
 
   test("includes Pi in the local workspace runtimes", () => {
