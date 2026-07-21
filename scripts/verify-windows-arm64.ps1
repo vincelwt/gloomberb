@@ -8,6 +8,8 @@ $BundledNativeDir = Join-Path $BundleDir "Resources\gloomberb-tui\node_modules\@
 $InstallDir = Join-Path $env:TEMP "GloomberbArm64Install-$PID"
 $InstallLog = Join-Path $env:TEMP "gloomberb-arm64-install-$PID.log"
 $UninstallLog = Join-Path $env:TEMP "gloomberb-arm64-uninstall-$PID.log"
+$GuiStdoutLog = Join-Path $env:TEMP "gloomberb-arm64-gui-stdout-$PID.log"
+$GuiStderrLog = Join-Path $env:TEMP "gloomberb-arm64-gui-stderr-$PID.log"
 
 function Assert-CommandSucceeds {
   param(
@@ -80,6 +82,8 @@ try {
   $GuiProcess = Start-Process `
     -FilePath $InstalledLauncher `
     -WorkingDirectory (Join-Path $InstallDir "bin") `
+    -RedirectStandardOutput $GuiStdoutLog `
+    -RedirectStandardError $GuiStderrLog `
     -PassThru
   Start-Sleep -Seconds 15
   $GuiProcess.Refresh()
@@ -90,9 +94,13 @@ try {
   )
   $PackageProcessIds = @($PackageProcesses | Select-Object -ExpandProperty ProcessId)
   if ($GuiProcess.HasExited -and $GuiProcess.ExitCode -ne 0) {
+    Get-Content $GuiStdoutLog -ErrorAction SilentlyContinue
+    Get-Content $GuiStderrLog -ErrorAction SilentlyContinue
     throw "Windows ARM64 desktop GUI exited with code $($GuiProcess.ExitCode)"
   }
   if ($GuiProcess.HasExited -and $PackageProcesses.Count -eq 0) {
+    Get-Content $GuiStdoutLog -ErrorAction SilentlyContinue
+    Get-Content $GuiStderrLog -ErrorAction SilentlyContinue
     throw "Windows ARM64 desktop GUI did not remain running after launch"
   }
 
@@ -119,4 +127,5 @@ try {
   }
 
   Remove-Item -Path $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item -Path $GuiStdoutLog, $GuiStderrLog -Force -ErrorAction SilentlyContinue
 }
