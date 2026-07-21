@@ -11,14 +11,7 @@ permissions:
 
 jobs:
   cli:
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            asset: gloomberb-windows-x64.exe.gz
-          - os: windows-11-arm
-            asset: gloomberb-windows-arm64.exe.gz
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -37,8 +30,8 @@ jobs:
       - name: Verify standalone CLI artifact
         shell: pwsh
         run: |
-          if (-not (Test-Path "dist\${{ matrix.asset }}")) {
-            throw "Missing standalone Windows CLI archive: ${{ matrix.asset }}"
+          if (-not (Test-Path "dist\gloomberb-windows-x64.exe.gz")) {
+            throw "Missing standalone Windows CLI archive"
           }
 
   desktop:

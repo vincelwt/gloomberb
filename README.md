@@ -64,9 +64,9 @@ Install the desktop app:
 
 - [Download GloomberbSetup.exe for Windows](https://github.com/vincelwt/gloomberb/releases/latest/download/stable-win-x64-GloomberbSetup.exe)
 
-The installer supports Windows 11 on x64 and ARM64. On ARM64, the desktop app uses Windows' built-in x64 emulation. It adds the app and a `gloomberb` terminal command.
+The installer supports Windows 11 on x64 and ARM64. On ARM64, the desktop app and its bundled `gloomberb` terminal command use Windows' built-in x64 emulation.
 
-For a native ARM64 terminal-only setup, install Bun and use the package:
+For a terminal-only setup on x64, install Bun and use the package:
 
 ```powershell
 bun install -g gloomberb
