@@ -216,6 +216,7 @@ export function buildLocalAgentPrompt(
   thread: LocalAgentThread,
   userText: string,
   attachments: LocalAgentAttachmentPayload[],
+  options: { appControlInstructions?: string } = {},
 ): string {
   const transcript = thread.messages
     .filter((message) => message.role === "user" || message.status === "complete")
@@ -232,5 +233,7 @@ export function buildLocalAgentPrompt(
     ].join("\n"));
   }
   sections.push(`Current user request:\n${userText.trim()}`);
+  const appControlInstructions = options.appControlInstructions?.trim();
+  if (appControlInstructions) sections.push(appControlInstructions);
   return sections.join("\n\n");
 }

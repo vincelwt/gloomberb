@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from "react";
-import type { Dispatch } from "react";
+import { createContext, useContext, useEffect, useMemo } from "react";
+import type { Dispatch, ReactNode } from "react";
 import type { PluginRegistry } from "../plugins/registry";
 import type { AppAction, AppState } from "../state/app/context";
 import type { DesktopWindowBridge } from "../types/desktop-window";
@@ -9,6 +9,12 @@ import type { RemoteControlRequest, RemoteControlResponse } from "./types";
 
 export type RemoteControlHandler = (request: RemoteControlRequest) => Promise<RemoteControlResponse>;
 
+const RemoteControlHandlerContext = createContext<RemoteControlHandler | null>(null);
+
+export function useRemoteControlHandler(): RemoteControlHandler | null {
+  return useContext(RemoteControlHandlerContext);
+}
+
 export interface RemoteControlAdapter {
   startServer?(options: { dataDir: string; handle: RemoteControlHandler }): void | (() => void | Promise<void>);
   registerHandler?(handler: RemoteControlHandler | null): void | (() => void);
@@ -16,6 +22,7 @@ export interface RemoteControlAdapter {
 
 interface RemoteControlHostProps {
   adapter?: RemoteControlAdapter;
+  children: ReactNode;
   dispatch: Dispatch<AppAction>;
   getState: () => AppState;
   pluginRegistry: PluginRegistry;
@@ -24,6 +31,7 @@ interface RemoteControlHostProps {
 
 export function RemoteControlHost({
   adapter,
+  children,
   dispatch,
   getState,
   pluginRegistry,
@@ -73,5 +81,9 @@ export function RemoteControlHost({
     };
   }, [adapter, controller]);
 
-  return null;
+  return (
+    <RemoteControlHandlerContext value={adapter ? controller.handle : null}>
+      {children}
+    </RemoteControlHandlerContext>
+  );
 }

@@ -75,6 +75,20 @@ describe("local agent workspace model", () => {
     expect(withContext).toContain("Company: Apple Inc. (AAPL)");
   });
 
+  test("appends app-control instructions only when explicitly enabled", () => {
+    const state = createLocalAgentThread(EMPTY_LOCAL_AGENT_WORKSPACE, "codex", { id: "thread-1", now: 10 });
+    const thread = state.threads[0];
+    if (!thread) throw new Error("Expected a created thread");
+
+    const disabled = buildLocalAgentPrompt(thread, "Open the ticker", []);
+    const enabled = buildLocalAgentPrompt(thread, "Open the ticker", [], {
+      appControlInstructions: "APP CONTROL POLICY",
+    });
+
+    expect(disabled).not.toContain("APP CONTROL POLICY");
+    expect(enabled.endsWith("APP CONTROL POLICY")).toBe(true);
+  });
+
   test("drops malformed persisted threads and preserves ordered messages", () => {
     const normalized = normalizeLocalAgentWorkspace({
       activeThreadId: "thread-1",

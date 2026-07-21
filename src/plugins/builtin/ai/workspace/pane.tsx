@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes, useUiCapabilities } from "../../../../ui";
 import type { ScrollBoxRenderable, TextareaRenderable } from "../../../../ui";
+import { type PromptContext, useDialog } from "../../../../ui/dialog";
 import { MarkdownText } from "../../../../components/markdown-text";
-import { MessageComposer, Spinner, usePaneFooter } from "../../../../components";
+import { ConfirmDialog, MessageComposer, Spinner, usePaneFooter } from "../../../../components";
+import { useRemoteControlHandler } from "../../../../remote/app-host";
 import { useShortcut } from "../../../../react/input";
 import { resolveTickerForPane, useAppDispatch, useAppSelector, usePaneInstance } from "../../../../state/app/context";
 import { useInlineTickers } from "../../../../state/hooks/inline-tickers";
@@ -12,6 +14,12 @@ import { usePluginPaneState, usePluginState } from "../../../runtime";
 import { buildTickerAiContext } from "../ticker-context";
 import { detectProviders, getLocalWorkspaceProviders, type AiProvider } from "../providers";
 import { checkAiProviderStatus, isAiRunCancelled, runAiPrompt, type AiRunController } from "../runner";
+import {
+  LOCAL_AGENT_APP_CONTROL_INSTRUCTIONS,
+  resolveLocalAgentAppControlOutput,
+  summarizeLocalAgentAppAction,
+  visibleLocalAgentOutput,
+} from "./app-control";
 import {
   EMPTY_LOCAL_AGENT_WORKSPACE,
   appendLocalAgentMessages,
@@ -94,6 +102,8 @@ function WorkspaceProviderChooser({
 
 export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
   const { nativePaneChrome } = useUiCapabilities();
+  const dialog = useDialog();
+  const remoteControlHandler = useRemoteControlHandler();
   const dispatch = useAppDispatch();
   const paneInstance = usePaneInstance();
   const [providers] = useState(() => getLocalWorkspaceProviders(detectProviders()));
@@ -291,7 +301,9 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
     const userMessageId = crypto.randomUUID();
     const assistantMessageId = crypto.randomUUID();
     const attachmentMetadata = attachments.map(({ content: _content, ...metadata }) => metadata);
-    const prompt = buildLocalAgentPrompt(activeThread, text, attachments);
+    const prompt = buildLocalAgentPrompt(activeThread, text, attachments, {
+      appControlInstructions: remoteControlHandler ? LOCAL_AGENT_APP_CONTROL_INSTRUCTIONS : undefined,
+    });
     updateWorkspace((current) => appendLocalAgentMessages(current, activeThread.id, [{
       id: userMessageId,
       role: "user",
@@ -315,19 +327,49 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
         isolatedWorkspace: true,
         onChunk: (output) => {
           if (!mountedRef.current) return;
-          streamedOutput = output;
-          setStreamingOutput(output);
+          streamedOutput = visibleLocalAgentOutput(output);
+          setStreamingOutput(streamedOutput);
         },
       });
       runRef.current = { controller, threadId: activeThread.id, assistantMessageId };
       const output = await controller.done;
       if (!mountedRef.current) return;
+      setRunningMessageId(null);
+      setStreamingOutput("");
+      const outcome = await resolveLocalAgentAppControlOutput(output, {
+        handler: remoteControlHandler,
+        isActive: () => mountedRef.current,
+        requestApproval: (proposal) => dialog.prompt<boolean>({
+          closeOnClickOutside: false,
+          content: (context: PromptContext<boolean>) => (
+            <ConfirmDialog
+              {...context}
+              title="Allow app action?"
+              body={[
+                `The local AI wants to ${summarizeLocalAgentAppAction(proposal)}.`,
+                `Reason: ${proposal.reason}`,
+                `Operation: ${proposal.operation}`,
+                `Input: ${JSON.stringify(proposal.input)}`,
+                "This approves one action only.",
+              ]}
+              confirmLabel="Allow Once"
+              cancelLabel="Cancel"
+              confirmVariant="primary"
+              width={64}
+              footer="Enter allow once · Esc cancel"
+            />
+          ),
+        }),
+      });
+      if (!mountedRef.current) return;
+      const outcomeIsError = outcome.kind === "invalid" || outcome.kind === "unavailable" || outcome.kind === "failed";
+      if (outcomeIsError) setStatusMessage(outcome.content);
       updateWorkspace((current) => appendLocalAgentMessages(current, activeThread.id, [{
         id: assistantMessageId,
         role: "assistant",
-        content: output,
+        content: outcome.content,
         createdAt: Date.now(),
-        status: "complete",
+        status: outcome.kind === "cancelled" ? "cancelled" : outcomeIsError ? "error" : "complete",
       }]));
     } catch (error) {
       if (!mountedRef.current) return;
@@ -368,7 +410,7 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
         setStreamingOutput("");
       }
     }
-  }, [activeThread, attachments, providers, updateWorkspace]);
+  }, [activeThread, attachments, dialog, providers, remoteControlHandler, updateWorkspace]);
 
   const submitInput = useCallback(() => {
     const value = inputRef.current?.editBuffer.getText() ?? inputValue;

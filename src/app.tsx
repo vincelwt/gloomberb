@@ -331,14 +331,15 @@ function AppInner({
           getState={getRemoteState}
           pluginRegistry={pluginRegistry}
           desktopWindowBridge={desktopWindowBridge}
-        />
-        <ThemedAppRoot>
-          <DetachedPaneShell
-            pluginRegistry={pluginRegistry}
-            desktopWindowBridge={{ ...desktopWindowBridge, kind: "detached", paneId: desktopWindowBridge.paneId }}
-          />
-          <ToastViewport position="bottom-right" />
-        </ThemedAppRoot>
+        >
+          <ThemedAppRoot>
+            <DetachedPaneShell
+              pluginRegistry={pluginRegistry}
+              desktopWindowBridge={{ ...desktopWindowBridge, kind: "detached", paneId: desktopWindowBridge.paneId }}
+            />
+            <ToastViewport position="bottom-right" />
+          </ThemedAppRoot>
+        </RemoteControlHost>
       </ContextMenuProvider>
     );
   }
@@ -351,30 +352,31 @@ function AppInner({
         getState={getRemoteState}
         pluginRegistry={pluginRegistry}
         desktopWindowBridge={desktopWindowBridge}
-      />
-      <ThemedAppRoot>
-        <Header />
-        <TransientLayoutProvider>
-          <Shell
-            pluginRegistry={pluginRegistry}
-            desktopWindowBridge={desktopWindowBridge}
-            desktopDockPreview={desktopDockPreview}
-            commandBarNativeOccluder={commandBarNativeOccluder}
-          />
-          <StatusBar />
-        </TransientLayoutProvider>
-        {state.commandBarOpen && (
-          <CommandBar
-            dataProvider={dataProvider}
-            tickerRepository={tickerRepository}
-            pluginRegistry={pluginRegistry}
-            quitApp={() => rendererHost.requestExit()}
-            onCheckForUpdates={() => runUpdateCheck(true)}
-            onNativeOccluderChange={setCommandBarNativeOccluder}
-          />
-        )}
-        <ToastViewport position="bottom-right" />
-      </ThemedAppRoot>
+      >
+        <ThemedAppRoot>
+          <Header />
+          <TransientLayoutProvider>
+            <Shell
+              pluginRegistry={pluginRegistry}
+              desktopWindowBridge={desktopWindowBridge}
+              desktopDockPreview={desktopDockPreview}
+              commandBarNativeOccluder={commandBarNativeOccluder}
+            />
+            <StatusBar />
+          </TransientLayoutProvider>
+          {state.commandBarOpen && (
+            <CommandBar
+              dataProvider={dataProvider}
+              tickerRepository={tickerRepository}
+              pluginRegistry={pluginRegistry}
+              quitApp={() => rendererHost.requestExit()}
+              onCheckForUpdates={() => runUpdateCheck(true)}
+              onNativeOccluderChange={setCommandBarNativeOccluder}
+            />
+          )}
+          <ToastViewport position="bottom-right" />
+        </ThemedAppRoot>
+      </RemoteControlHost>
     </ContextMenuProvider>
   );
 }
