@@ -1279,6 +1279,20 @@ function Capture-OnboardingScreenshot {
   }
 }
 
+function Assert-TuiStarts {
+  param([string]$CliPath)
+
+  & $CliPath __gloomberb-smoke-opentui-native
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+
+  & $CliPath help
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+}
+
 $RequiredPaths = @(
   (Join-Path $BundleDir "bin\launcher.exe"),
   (Join-Path $BundleDir "bin\bun.exe"),
@@ -1320,10 +1334,7 @@ if (-not $NativeLibraries) {
   throw "Missing OpenTUI Windows native DLL in $CoreDir"
 }
 
-& (Join-Path $BundleDir "bin\gloomberb.cmd") help
-if ($LASTEXITCODE -ne 0) {
-  exit $LASTEXITCODE
-}
+Assert-TuiStarts (Join-Path $BundleDir "bin\gloomberb.cmd")
 
 $InstallDir = Join-Path $env:TEMP "GloomberbInstall-$PID"
 $InstallLog = Join-Path $env:TEMP "gloomberb-install-$PID.log"
@@ -1362,10 +1373,7 @@ try {
     throw "Installed TUI command was not found: $InstalledCli"
   }
 
-  & $InstalledCli help
-  if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
-  }
+  Assert-TuiStarts $InstalledCli
 
   Disable-InstalledDesktopUpdates -InstallDir $InstallDir
 

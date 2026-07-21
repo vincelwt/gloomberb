@@ -15,7 +15,10 @@ export function desktopTitleBarStyle(): DesktopTitleBarStyle {
 }
 
 export function desktopWindowRenderer(): DesktopWindowRenderer {
-  if (process.platform === "win32") return "cef";
+  if (process.platform === "win32") {
+    const hostArchitecture = process.env.PROCESSOR_ARCHITEW6432 ?? process.env.PROCESSOR_ARCHITECTURE;
+    return hostArchitecture?.toLowerCase() === "arm64" ? "native" : "cef";
+  }
   return "native";
 }
 
