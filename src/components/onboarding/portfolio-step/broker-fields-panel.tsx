@@ -1,7 +1,7 @@
 import type { RefObject } from "react";
 import { Box, Text, TextAttributes, type InputRenderable } from "../../../ui";
 import { colors } from "../../../theme/colors";
-import { t } from "../../../i18n";
+import { t, tf } from "../../../i18n";
 import type { BrokerConfigField } from "../../../types/broker";
 import { TextField, type ListViewItem } from "../../ui";
 import { formatBrokerFieldValue, getBrokerLabel } from "./utils";
@@ -60,9 +60,9 @@ export function BrokerFieldsPanel({
               {index > 0 && <Box height={1} />}
               <Box height={1}>
                 <Text fg={colors.text} attributes={TextAttributes.BOLD}>
-                  {`Step ${index + 1}: `}
+                  {tf("Step {step}: ", { step: index + 1 })}
                 </Text>
-                <Text fg={colors.text}>{field.label}</Text>
+                <Text fg={colors.text}>{t(field.label)}</Text>
               </Box>
               <Box height={1}>
                 {field.type !== "select" && (editing ? (
@@ -70,7 +70,7 @@ export function BrokerFieldsPanel({
                     inputRef={inputRef}
                     value={value}
                     type={field.type === "password" ? "password" : "text"}
-                    placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
+                    placeholder={field.placeholder ? t(field.placeholder) : tf("Enter {field}", { field: field.label.toLowerCase() })}
                     focused
                     backgroundColor={colors.panel}
                     textColor={colors.text}
@@ -81,14 +81,14 @@ export function BrokerFieldsPanel({
                 ) : (
                   <Text fg={effectiveValue ? colors.positive : colors.textMuted}>
                     {effectiveValue
-                      ? `\u2713 ${field.label}: ${formatBrokerFieldValue(field, effectiveValue)}`
-                      : "Press enter to type..."}
+                      ? `\u2713 ${t(field.label)}: ${formatBrokerFieldValue(field, effectiveValue)}`
+                      : t("Press enter to type...")}
                   </Text>
                 ))}
               </Box>
               {field.type !== "select" && !value && field.defaultValue && (
                 <Box height={1}>
-                  <Text fg={colors.textMuted}>{`Press enter to use ${field.defaultValue}`}</Text>
+                  <Text fg={colors.textMuted}>{tf("Press enter to use {value}", { value: field.defaultValue })}</Text>
                 </Box>
               )}
               {field.type === "select" && (
@@ -103,12 +103,12 @@ export function BrokerFieldsPanel({
                             fg={selected ? colors.text : colors.textDim}
                             attributes={selected ? TextAttributes.BOLD : 0}
                           >
-                            {option.label}
+                            {t(option.label)}
                           </Text>
                         </Box>
                         {option.description && (
                           <Box height={1}>
-                            <Text fg={colors.textMuted}>{`  ${option.description}`}</Text>
+                            <Text fg={colors.textMuted}>{`  ${t(option.description)}`}</Text>
                           </Box>
                         )}
                       </Box>
@@ -119,7 +119,9 @@ export function BrokerFieldsPanel({
               {field.type === "select" && (
                 <Box height={1}>
                   <Text fg={colors.textMuted}>
-                    {activeSelectValue ? `Selected: ${field.options?.find((option) => option.value === activeSelectValue)?.label ?? activeSelectValue}` : "Use \u2191\u2193 to choose"}
+                    {activeSelectValue
+                      ? tf("Selected: {value}", { value: t(field.options?.find((option) => option.value === activeSelectValue)?.label ?? activeSelectValue) })
+                      : t("Use \u2191\u2193 to choose")}
                   </Text>
                 </Box>
               )}
@@ -137,7 +139,7 @@ export function BrokerFieldsPanel({
       <Box height={1} />
       <Box height={1}>
         <Text fg={colors.textMuted}>
-          {`Field ${brokerFieldIdx + 1} of ${brokerFields.length}`}
+          {tf("Field {current} of {total}", { current: brokerFieldIdx + 1, total: brokerFields.length })}
         </Text>
       </Box>
     </Box>

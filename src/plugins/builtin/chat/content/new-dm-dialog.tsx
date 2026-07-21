@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ListView, TextField, type ListViewItem } from "../../../../components/ui";
 import { useShortcut } from "../../../../react/input";
 import { colors, hoverBg } from "../../../../theme/colors";
+import { t } from "../../../../i18n";
 import { Box, Text, TextAttributes, type InputRenderable } from "../../../../ui";
 import type { ChatUserSummary } from "../../../../api-client";
 import { isPlainKey } from "../../../../utils/keyboard";
@@ -124,7 +125,7 @@ export function NewDmDialog({
     const submittedValue = valueRef.current;
     const submittedUsernames = parseDmUsernames(submittedValue);
     if (!hasOnlyDmUsernameArgs(submittedValue) || submittedUsernames.length === 0 || submitting) {
-      setError("Enter at least one @username.");
+      setError(t("Enter at least one @username."));
       return;
     }
     setSubmitting(true);
@@ -132,7 +133,7 @@ export function NewDmDialog({
     try {
       await onSubmit(submittedUsernames);
     } catch {
-      setError("Could not start conversation.");
+      setError(t("Could not start conversation."));
       setSubmitting(false);
     }
   };
@@ -187,7 +188,7 @@ export function NewDmDialog({
       style={{ zIndex: 8 }}
     >
       <Box height={1} flexDirection="row">
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>New DM</Text>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{t("New DM")}</Text>
         <Box flexGrow={1} />
         <Box width={3} height={1} backgroundColor={colors.panel} onMouseDown={onCancel} style={{ cursor: "pointer" }}>
           <Text fg={colors.text}> x </Text>
@@ -208,7 +209,7 @@ export function NewDmDialog({
       />
       <Box height={1}>
         <Text fg={selectedUsernames.length > 0 ? colors.textMuted : colors.textDim}>
-          {selectedUsernames.length > 0 ? usernamesLabel(selectedUsernames, contentWidth) : "Recent users"}
+          {selectedUsernames.length > 0 ? usernamesLabel(selectedUsernames, contentWidth) : t("Recent users")}
         </Text>
       </Box>
       <ListView
@@ -218,7 +219,7 @@ export function NewDmDialog({
         bgColor={colors.bg}
         selectedBgColor={colors.selected}
         hoverBgColor={hoverBg()}
-        emptyMessage="No recent users"
+        emptyMessage={t("No recent users")}
         selectOnHover
         onSelect={setSelectedIndex}
         onActivate={(item) => toggleCandidate(item.id)}
@@ -244,7 +245,7 @@ export function NewDmDialog({
         {error ? (
           <Text fg={colors.negative}>{truncateChannelLabel(error, contentWidth)}</Text>
         ) : (
-          <Text fg={colors.textDim}>{selectedUsernames.length > 1 ? "Group chat" : "Direct message"}</Text>
+          <Text fg={colors.textDim}>{selectedUsernames.length > 1 ? t("Group chat") : t("Direct message")}</Text>
         )}
         <Box flexGrow={1} />
         <Box
@@ -255,7 +256,7 @@ export function NewDmDialog({
           style={{ cursor: canSubmit ? "pointer" : "default" }}
         >
           <Text fg={canSubmit ? colors.selectedText : colors.textDim}>
-            {submitting ? " Starting " : " Start "}
+            {submitting ? ` ${t("Starting")} ` : ` ${t("Start")} `}
           </Text>
         </Box>
       </Box>

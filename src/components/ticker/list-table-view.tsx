@@ -15,6 +15,7 @@ import {
   type ScrollBoxRenderable,
 } from "../../ui";
 import { colors } from "../../theme/colors";
+import { t } from "../../i18n";
 import { getSharedRegistry } from "../../plugins/registry";
 import type { ColumnConfig } from "../../types/config";
 import type { TickerFinancials, PricePoint } from "../../types/financials";
@@ -133,8 +134,8 @@ export function TickerListTableView({
   sortDirection = "asc",
   onHeaderClick,
   onRowActivate,
-  emptyTitle = "No tickers.",
-  emptyHint = "Press Ctrl+P to add one.",
+  emptyTitle = t("No tickers."),
+  emptyHint = t("Press Ctrl+P to add one."),
   virtualize = true,
   overscan = 4,
 }: TickerListTableViewProps) {

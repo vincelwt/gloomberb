@@ -12,6 +12,7 @@ import { getBrokerInstance } from "../../../../utils/broker-instances";
 import { resolvePortfolioAccountMetrics, resolvePortfolioMarketValue } from "../account-metrics";
 import { calculatePortfolioSummaryTotals, type PortfolioSummaryTotals } from "./totals";
 import { getMostRecentQuoteUpdate } from "../../../../market-data/quotes/time";
+import { t } from "../../../../i18n";
 
 export interface PortfolioSummarySegment {
   id: string;
@@ -372,7 +373,7 @@ export function renderSummarySegments(segments: PortfolioSummarySegment[], width
                 fg={part.color ?? (part.tone === "label" || part.tone === "muted" ? colors.textDim : colors.text)}
                 attributes={part.bold ? TextAttributes.BOLD : 0}
               >
-                {part.text}
+                {t(part.text)}
               </Text>
             </Box>
           ))}

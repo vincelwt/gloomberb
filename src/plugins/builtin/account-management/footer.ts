@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { usePaneFooter, type PaneHint } from "../../../components";
 import type { AccountProfile } from "../../../api-client";
 import { formatPlan, type AccountDraft } from "./model";
+import { t } from "../../../i18n";
 
 export function useAccountManagementFooter({
   busy,
@@ -19,7 +20,7 @@ export function useAccountManagementFooter({
   saveProfile: () => Promise<void>;
 }) {
   const footerHints = useMemo<PaneHint[]>(() => [
-    { id: "save", key: "Ctrl+S", label: "save", onPress: () => { void saveProfile(); }, disabled: !!busy || !hasSession },
+    { id: "save", key: "Ctrl+S", label: t("save"), onPress: () => { void saveProfile(); }, disabled: !!busy || !hasSession },
   ], [busy, hasSession, saveProfile]);
 
   usePaneFooter("account-management", () => ({
@@ -28,7 +29,7 @@ export function useAccountManagementFooter({
       ...(profile ? [
         { id: "account", parts: [{ text: profile.email, tone: "muted" as const }] },
         { id: "plan", parts: [{ text: formatPlan(profile.plan), tone: profile.plan === "pro" ? "positive" as const : "muted" as const }] },
-        { id: "visibility", parts: [{ text: draft.profilePublic ? "public" : "private", tone: "muted" as const }] },
+        { id: "visibility", parts: [{ text: draft.profilePublic ? t("public") : t("private"), tone: "muted" as const }] },
       ] : []),
     ],
     hints: footerHints,

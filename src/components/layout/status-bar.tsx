@@ -1,7 +1,7 @@
 import { Box, Span, Text, TextAttributes, contextMenuDivider, useContextMenu, useUiCapabilities } from "../../ui";
 import { useCallback, useEffect, useState } from "react";
 import { blendHex, colors, hoverBg } from "../../theme/colors";
-import { tf } from "../../i18n";
+import { t, tf } from "../../i18n";
 import { useThemeColors } from "../../theme/theme-context";
 import { useAppDispatch, useAppSelector } from "../../state/app/context";
 import {
@@ -369,7 +369,7 @@ function CommandBarHint({
       onMouseDown={openCommandBar}
       {...(nativePaneChrome ? { "data-gloom-interactive": "true" } : {})}
     >
-      <Span fg={colors.text}>Ctrl+P</Span> command bar
+      <Span fg={colors.text}>Ctrl+P</Span> {t("command bar")}
     </Text>
   );
 }
@@ -382,7 +382,7 @@ function NativeGridlockTip({
 }: Pick<StatusBarViewProps, "dismissGridlockTip" | "handleGridlockTip" | "hoveredControl" | "setHoveredControl">) {
   return (
     <Box paddingLeft={2} flexShrink={0} flexDirection="row" alignItems="center" gap={1}>
-      <Text fg={colors.textDim}>Snapped a window?</Text>
+      <Text fg={colors.textDim}>{t("Snapped a window?")}</Text>
       <Text
         fg={hoveredControl === "gridlock-tip" ? colors.textBright : colors.borderFocused}
         attributes={TextAttributes.BOLD}
@@ -390,7 +390,7 @@ function NativeGridlockTip({
         onMouseDown={handleGridlockTip}
         data-gloom-interactive="true"
       >
-        Gridlock All
+        {t("Gridlock All")}
       </Text>
       <Text
         fg={hoveredControl === "gridlock-tip-dismiss" ? colors.text : colors.textDim}
@@ -398,7 +398,7 @@ function NativeGridlockTip({
         onMouseDown={dismissGridlockTip}
         data-gloom-interactive="true"
       >
-        Dismiss
+        {t("Dismiss")}
       </Text>
     </Box>
   );
@@ -412,14 +412,14 @@ function TerminalGridlockTip({
 }: Pick<StatusBarViewProps, "dismissGridlockTip" | "handleGridlockTip" | "hoveredControl" | "setHoveredControl">) {
   return (
     <Box paddingLeft={1} flexShrink={0} flexDirection="row">
-      <Text fg={colors.textDim}>Snapped a window?</Text>
+      <Text fg={colors.textDim}>{t("Snapped a window?")}</Text>
       <Box width={1} />
       <Box
         backgroundColor={hoveredControl === "gridlock-tip" ? hoverBg() : colors.header}
         onMouseOver={() => setHoveredControl((current) => (current === "gridlock-tip" ? current : "gridlock-tip"))}
         onMouseDown={handleGridlockTip}
       >
-        <Text fg={colors.headerText}> Gridlock All </Text>
+        <Text fg={colors.headerText}> {t("Gridlock All")} </Text>
       </Box>
       <Text
         fg={hoveredControl === "gridlock-tip-dismiss" ? colors.text : colors.textDim}

@@ -9,13 +9,14 @@ import type { BrokerAdapter, BrokerConfigField, BrokerProfileAction } from "../.
 import type { BrokerInstanceConfig } from "../../../types/config";
 import type { BrokerAccount } from "../../../types/trading";
 import { formatCurrency } from "../../../utils/format";
+import { t, tf } from "../../../i18n";
 import { formatBrokerUpdatedAt, type BrokerProfileRow } from "./model";
 import { isBrokerErrorMessage, stateColor, truncate } from "./table";
 
 export type BrokerEditKey = "label" | "enabled" | string;
 
 function brokerFieldLabel(field: BrokerConfigField, focused: boolean): string {
-  return focused ? `> ${field.label}` : `  ${field.label}`;
+  return focused ? `> ${t(field.label)}` : `  ${t(field.label)}`;
 }
 
 function BrokerConfigFieldEditor({
@@ -50,7 +51,7 @@ function BrokerConfigFieldEditor({
         </Text>
         <SegmentedControl
           value={value}
-          options={(field.options ?? []).map((option) => ({ label: option.label, value: option.value }))}
+          options={(field.options ?? []).map((option) => ({ label: t(option.label), value: option.value }))}
           onChange={(nextValue) => onChange(field.key, nextValue)}
         />
       </Box>
@@ -66,8 +67,8 @@ function BrokerConfigFieldEditor({
         focused={focused}
         width={34}
         type={field.type === "password" ? "password" : "text"}
-        placeholder={field.type === "password" && previousPassword ? PRESERVED_PASSWORD_HINT : field.placeholder}
-        hint={field.placeholder}
+        placeholder={field.type === "password" && previousPassword ? t(PRESERVED_PASSWORD_HINT) : field.placeholder ? t(field.placeholder) : undefined}
+        hint={field.placeholder ? t(field.placeholder) : undefined}
         onChange={(nextValue) => onChange(field.key, nextValue)}
         onSubmit={onSubmit}
       />
@@ -78,8 +79,8 @@ function BrokerConfigFieldEditor({
 function accountDetail(account: BrokerAccount): string {
   const parts = [
     account.accountId,
-    account.netLiquidation != null ? `${formatCurrency(account.netLiquidation, account.currency || "USD")} net liq` : null,
-    account.buyingPower != null ? `${formatCurrency(account.buyingPower, account.currency || "USD")} buying power` : null,
+    account.netLiquidation != null ? tf("{value} net liq", { value: formatCurrency(account.netLiquidation, account.currency || "USD") }) : null,
+    account.buyingPower != null ? tf("{value} buying power", { value: formatCurrency(account.buyingPower, account.currency || "USD") }) : null,
   ];
   return parts.filter(Boolean).join(" · ");
 }
@@ -129,7 +130,7 @@ export function BrokerDetailContent({
 }) {
   if (!row) return <Box flexGrow={1} />;
 
-  const detailStatusMessage = isBrokerErrorMessage(message) ? message : row.message || "No status message.";
+  const detailStatusMessage = isBrokerErrorMessage(message) ? message : row.message || t("No status message.");
 
   return (
     <ScrollBox flexGrow={1} scrollY>
@@ -147,16 +148,16 @@ export function BrokerDetailContent({
         >
           {detailStatusMessage}
         </Text>
-        <Text fg={colors.textMuted}>{`Last sync ${formatBrokerUpdatedAt(row.lastSyncedAt)}`}</Text>
-        <Text fg={colors.textMuted}>{`Status updated ${formatBrokerUpdatedAt(row.updatedAt)}`}</Text>
+        <Text fg={colors.textMuted}>{tf("Last sync {time}", { time: formatBrokerUpdatedAt(row.lastSyncedAt) })}</Text>
+        <Text fg={colors.textMuted}>{tf("Status updated {time}", { time: formatBrokerUpdatedAt(row.updatedAt) })}</Text>
         <Box height={1} />
 
         {editDraft && row.adapter ? (
           <Box flexDirection="column" gap={1}>
-            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Edit Profile</Text>
+            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{t("Edit Profile")}</Text>
             <Box onMouseDown={() => onActiveEditKeyChange("label")}>
               <TextField
-                label={activeEditKey === "label" ? "> Profile Label" : "  Profile Label"}
+                label={activeEditKey === "label" ? `> ${t("Profile Label")}` : `  ${t("Profile Label")}`}
                 value={editDraft.label}
                 focused={activeEditKey === "label"}
                 width={34}
@@ -166,13 +167,13 @@ export function BrokerDetailContent({
             </Box>
             <Box flexDirection="column" onMouseDown={() => onActiveEditKeyChange("enabled")}>
               <Text fg={activeEditKey === "enabled" ? colors.textBright : colors.textDim} attributes={activeEditKey === "enabled" ? TextAttributes.BOLD : 0}>
-                {activeEditKey === "enabled" ? "> Enabled" : "  Enabled"}
+                {activeEditKey === "enabled" ? `> ${t("Enabled")}` : `  ${t("Enabled")}`}
               </Text>
               <SegmentedControl
                 value={editDraft.enabled ? "yes" : "no"}
                 options={[
-                  { label: "Enabled", value: "yes" },
-                  { label: "Disabled", value: "no" },
+                  { label: t("Enabled"), value: "yes" },
+                  { label: t("Disabled"), value: "no" },
                 ]}
                 onChange={(value) => onDraftEnabledChange(value === "yes")}
               />
@@ -191,38 +192,38 @@ export function BrokerDetailContent({
               />
             ))}
             <Box flexDirection="row" gap={1}>
-              <Button label="Save" variant="primary" onPress={onSaveEdit} disabled={!!busy} />
-              <Button label="Cancel" variant="secondary" onPress={onCancelEdit} disabled={!!busy} />
+              <Button label={t("Save")} variant="primary" onPress={onSaveEdit} disabled={!!busy} />
+              <Button label={t("Cancel")} variant="secondary" onPress={onCancelEdit} disabled={!!busy} />
             </Box>
           </Box>
         ) : (
           <Box flexDirection="column">
-            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Accounts</Text>
+            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{t("Accounts")}</Text>
             {accounts.length === 0 ? (
-              <Text fg={colors.textDim}>No accounts loaded. Test/connect or sync this profile.</Text>
+              <Text fg={colors.textDim}>{t("No accounts loaded. Test/connect or sync this profile.")}</Text>
             ) : accounts.map((account) => (
               <Text key={account.accountId} fg={colors.textDim}>
                 {truncate(accountDetail(account), width)}
               </Text>
             ))}
             <Box height={1} />
-            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Actions</Text>
+            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{t("Actions")}</Text>
             <Box flexDirection="row" gap={1}>
-              <Button label="Edit" onPress={onStartEdit} disabled={!row.adapter || !!busy} />
-              <Button label="Test" onPress={onConnect} disabled={!row.adapter || !!busy} />
-              <Button label="Sync" onPress={onSync} disabled={!row.adapter || !!busy} />
+              <Button label={t("Edit")} onPress={onStartEdit} disabled={!row.adapter || !!busy} />
+              <Button label={t("Test")} onPress={onConnect} disabled={!row.adapter || !!busy} />
+              <Button label={t("Sync")} onPress={onSync} disabled={!row.adapter || !!busy} />
             </Box>
             <Box height={1} />
             <Box flexDirection="row" gap={1}>
               {actions.map((action) => (
                 <Button
                   key={action.id}
-                  label={action.label}
+                  label={t(action.label)}
                   onPress={() => onOpenAction(action)}
                   disabled={!!busy || !!action.disabled}
                 />
               ))}
-              <Button label="Disconnect" variant="danger" onPress={onRemove} disabled={!!busy} />
+              <Button label={t("Disconnect")} variant="danger" onPress={onRemove} disabled={!!busy} />
             </Box>
           </Box>
         )}

@@ -1,4 +1,5 @@
 import type { ChatChannel } from "../../../api-client";
+import { t } from "../../../i18n";
 import { normalizeChannelId } from "./controller/state";
 
 function normalizeMentionUsername(username: string | null | undefined): string | null {
@@ -25,7 +26,7 @@ function formatDirectChannelLabel(channel: ChatChannel, fallbackId: string) {
       : channelName;
   }
 
-  return fallbackId.startsWith("dm:") ? "DM" : fallbackId;
+  return fallbackId.startsWith("dm:") ? t("DM") : fallbackId;
 }
 
 export function formatChannelLabel(channel: ChatChannel | undefined, fallbackId: string) {
@@ -34,7 +35,7 @@ export function formatChannelLabel(channel: ChatChannel | undefined, fallbackId:
     return formatDirectChannelLabel(channel, fallbackId);
   }
   if (channel.kind === "group") {
-    return channel.name?.trim() || "Group";
+    return channel.name?.trim() || t("Group");
   }
   return channel.name?.trim() || fallbackId;
 }
@@ -47,7 +48,7 @@ export function formatChatPaneTitle(channel: ChatChannel | undefined, fallbackId
   if (channel?.kind === "group") {
     return formatChannelLabel(channel, normalizedFallbackId);
   }
-  if (!channel && normalizedFallbackId.startsWith("dm:")) return "DM";
-  if (!channel && (normalizedFallbackId.startsWith("grp:") || normalizedFallbackId.startsWith("group:"))) return "Group";
+  if (!channel && normalizedFallbackId.startsWith("dm:")) return t("DM");
+  if (!channel && (normalizedFallbackId.startsWith("grp:") || normalizedFallbackId.startsWith("group:"))) return t("Group");
   return `#${formatChannelLabel(channel, normalizedFallbackId)}`;
 }

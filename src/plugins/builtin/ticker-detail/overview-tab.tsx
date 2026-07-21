@@ -46,7 +46,7 @@ export function OverviewTab({
   const { width: termWidth } = useViewport();
   const { fractionalViewport = false } = useUiCapabilities();
 
-  if (!ticker) return <EmptyState title="No ticker selected." />;
+  if (!ticker) return <EmptyState title={t("No ticker selected.")} />;
 
   const quote = financials?.quote;
   const fundamentals = financials?.fundamentals;
@@ -159,7 +159,7 @@ export function OverviewTab({
             )}
             {quote && (quote.marketState === "PRE" || quote.marketState === "PREPRE") && quote.preMarketPrice != null && (
               <Box flexDirection="row" gap={2}>
-                <Text fg={colors.textDim}>Pre-Market:</Text>
+                <Text fg={colors.textDim}>{t("Pre-Market")}:</Text>
                 <Text fg={priceColor(quote.preMarketChange ?? 0)}>
                   {formatMarketPriceWithCurrency(quote.preMarketPrice, quote.currency, { assetCategory: ticker.metadata.assetCategory })}
                 </Text>
@@ -170,7 +170,7 @@ export function OverviewTab({
             )}
             {quote && (quote.marketState === "POST" || quote.marketState === "POSTPOST") && quote.postMarketPrice != null && (
               <Box flexDirection="row" gap={2}>
-                <Text fg={colors.textDim}>After-Hours:</Text>
+                <Text fg={colors.textDim}>{t("After-Hours")}:</Text>
                 <Text fg={priceColor(quote.postMarketChange ?? 0)}>
                   {formatMarketPriceWithCurrency(quote.postMarketPrice, quote.currency, { assetCategory: ticker.metadata.assetCategory })}
                 </Text>
@@ -231,21 +231,21 @@ export function OverviewTab({
 
         {hasPerformance && (
           <Box flexDirection="column">
-            <SectionHeader title="Price Return" />
+            <SectionHeader title={t("Price Return")} />
             <PriceReturnStrip fields={performanceFields} width={contentWidth} />
           </Box>
         )}
 
         {stats.length > 0 && (
           <Box flexDirection="column">
-            <SectionHeader title="Fundamentals" />
+            <SectionHeader title={t("Fundamentals")} />
             <StatGrid fields={stats} width={contentWidth} />
           </Box>
         )}
 
         {positionRows.length > 0 && (
           <Box flexDirection="column">
-            <SectionHeader title="Positions" />
+            <SectionHeader title={t("Positions")} />
             <PositionTable rows={positionRows} width={contentWidth} />
           </Box>
         )}
@@ -255,19 +255,19 @@ export function OverviewTab({
           <Box flexDirection="row" height={1} gap={3}>
             {ticker.metadata.assetCategory && (
               <Box flexDirection="row">
-                <Text fg={colors.textDim}>Type: </Text>
+                <Text fg={colors.textDim}>{t("Type")}: </Text>
                 <Text fg={colors.text}>{ticker.metadata.assetCategory}</Text>
               </Box>
             )}
             {sector && (
               <Box flexDirection="row">
-                <Text fg={colors.textDim}>Sector: </Text>
+                <Text fg={colors.textDim}>{t("Sector")}: </Text>
                 <Text fg={colors.text}>{sector}</Text>
               </Box>
             )}
             {industry && (
               <Box flexDirection="row">
-                <Text fg={colors.textDim}>Industry: </Text>
+                <Text fg={colors.textDim}>{t("Industry")}: </Text>
                 <Text fg={colors.text}>{industry}</Text>
               </Box>
             )}
@@ -277,7 +277,7 @@ export function OverviewTab({
         {/* ISIN */}
         {ticker.metadata.isin && (
           <Box flexDirection="row" height={1}>
-            <Text fg={colors.textDim}>ISIN: </Text>
+            <Text fg={colors.textDim}>{t("ISIN")}: </Text>
             <Text fg={colors.text}>{ticker.metadata.isin}</Text>
           </Box>
         )}
@@ -285,7 +285,7 @@ export function OverviewTab({
         {/* Description — last, collapsed */}
         {description && (
           <Box flexDirection="column" width={contentWidth}>
-            <SectionHeader title="Description" />
+            <SectionHeader title={t("Description")} />
             <Text fg={colors.text} width={contentWidth} wrapMode="word" wrapText>{description}</Text>
           </Box>
         )}

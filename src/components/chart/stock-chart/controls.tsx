@@ -1,6 +1,7 @@
 import { Box, Text } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { colors } from "../../../theme/colors";
+import { t } from "../../../i18n";
 import {
   getChartResolutionLabel,
   isRangePresetSupported,
@@ -104,7 +105,7 @@ export function StockChartHeaderControls({
             </Text>
           ))}
           {isUpdating && (
-            <Text fg={colors.textDim}>updating</Text>
+            <Text fg={colors.textDim}>{t("updating")}</Text>
           )}
           {fallbackResolutionLabel && (
             <Text fg={colors.textDim}>{fallbackResolutionLabel}</Text>
@@ -130,7 +131,7 @@ export function StockChartHeaderControls({
               <Text fg={colors.textDim}>{fallbackModeLabel}</Text>
             )}
             {showNativeUnavailable && (
-              <Text fg={colors.textDim}>native unavailable</Text>
+              <Text fg={colors.textDim}>{t("native unavailable")}</Text>
             )}
           </Box>
         ) : (
@@ -139,7 +140,7 @@ export function StockChartHeaderControls({
               <Text fg={colors.textDim}>{fallbackModeLabel}</Text>
             )}
             {showNativeUnavailable && (
-              <Text fg={colors.textDim}>native unavailable</Text>
+              <Text fg={colors.textDim}>{t("native unavailable")}</Text>
             )}
           </Box>
         )}

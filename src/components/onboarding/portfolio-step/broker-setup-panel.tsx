@@ -1,6 +1,6 @@
 import { Box, Span, Strong, Text, TextAttributes, Underline } from "../../../ui";
 import { colors } from "../../../theme/colors";
-import { t } from "../../../i18n";
+import { t, tf } from "../../../i18n";
 import { ExternalLink, type ListViewItem } from "../../ui";
 import { getBrokerLabel } from "./utils";
 
@@ -21,7 +21,7 @@ export function BrokerSetupPanel({
     <Box flexDirection="column" paddingX={2}>
       <Box height={1}>
         <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-          {`Setup Guide - ${brokerLabel}`}
+          {tf("Setup Guide - {broker}", { broker: brokerLabel })}
         </Text>
       </Box>
       <Box height={1} />
@@ -65,7 +65,7 @@ export function BrokerSetupPanel({
             <Text fg={colors.textDim}>{t("3. In ")}<Underline><Span fg={colors.text}>{t("Configuration > API > Settings")}</Span></Underline>{":"}</Text>
           </Box>
           <Box height={1}>
-            <Text fg={colors.textDim}>{"   Enable \"ActiveX and Socket Clients\""}</Text>
+            <Text fg={colors.textDim}>{t("   Enable \"ActiveX and Socket Clients\"")}</Text>
           </Box>
           <Box height={1}>
             <Text fg={colors.textDim}>{t("   Gloomberb can auto-detect local API ports (4001, 4002, 7496, 7497)")}</Text>
@@ -84,7 +84,7 @@ export function BrokerSetupPanel({
       {selectedBrokerId !== "ibkr" && (
         <>
           <Box height={1}>
-            <Text fg={colors.textDim}>{`You'll need your ${brokerLabel} API credentials.`}</Text>
+            <Text fg={colors.textDim}>{tf("You'll need your {broker} API credentials.", { broker: brokerLabel })}</Text>
           </Box>
           <Box height={1}>
             <Text fg={colors.textDim}>{t("Check your broker's documentation for setup instructions.")}</Text>

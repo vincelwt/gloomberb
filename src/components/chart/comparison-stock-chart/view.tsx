@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { Text } from "../../../ui";
+import { t } from "../../../i18n";
 import { useNativeRenderer, useUiCapabilities } from "../../../ui";
 import { blendHex, colors } from "../../../theme/colors";
 import { useThemeColors } from "../../../theme/theme-context";
@@ -546,7 +547,7 @@ function ComparisonStockChartView({
   });
 
   if (symbols.length === 0) {
-    return <Text fg={colors.textDim}>No comparison tickers configured.</Text>;
+    return <Text fg={colors.textDim}>{t("No comparison tickers configured.")}</Text>;
   }
 
   return (

@@ -6,6 +6,7 @@ import {
   formatInlinePreview,
 } from "../layout";
 import { parseChatComposerCommand } from "../composer-commands";
+import { t, tf } from "../../../../i18n";
 import type { ChatContentController } from "./types";
 import { getComposerCursorOffset, moveComposerCursorToOffset } from "./composer-cursor";
 
@@ -360,7 +361,11 @@ export function useChatComposerRuntime({
       Math.max(contentWidth - " editing: ".length - COMPOSER_ACTION_WIDTH - 1, 0),
     )
     : "";
-  const inputPlaceholder = editingMessage ? "Edit message..." : replyTo ? `Reply to @${replyTo.user.username}...` : "Type a message...";
+  const inputPlaceholder = editingMessage
+    ? t("Edit message...")
+    : replyTo
+      ? tf("Reply to @{username}...", { username: replyTo.user.username })
+      : t("Type a message...");
 
   return {
     beginEditLatestMessage,

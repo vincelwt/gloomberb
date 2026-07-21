@@ -1,4 +1,5 @@
 import type { ChatChannel, ChatMessage } from "../../../../api-client";
+import { t, tf } from "../../../../i18n";
 
 const ISO_TIMESTAMP_CURSOR = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 const USERNAME_MENTION = /(^|[^A-Za-z0-9_])@([A-Za-z][A-Za-z0-9_]{2,29})(?![A-Za-z0-9_])/g;
@@ -25,30 +26,30 @@ function formatMessageSnippet(content: string): string {
 }
 
 export function formatMentionToast(message: ChatMessage): string {
-  const author = message.user.username || "Someone";
+  const author = message.user.username || t("Someone");
   const snippet = formatMessageSnippet(message.content);
   if (!snippet) {
-    return `@${author} mentioned you in chat.`;
+    return tf("@{author} mentioned you in chat.", { author });
   }
-  return `@${author} mentioned you: ${snippet}`;
+  return tf("@{author} mentioned you: {snippet}", { author, snippet });
 }
 
 export function formatReplyToast(message: ChatMessage): string {
-  const author = message.user.username || "Someone";
+  const author = message.user.username || t("Someone");
   const snippet = formatMessageSnippet(message.content);
   if (!snippet) {
-    return `@${author} replied to you.`;
+    return tf("@{author} replied to you.", { author });
   }
-  return `@${author} replied to you: ${snippet}`;
+  return tf("@{author} replied to you: {snippet}", { author, snippet });
 }
 
 export function formatChannelToast(channelTitle: string, message: ChatMessage, channelKind?: ChatChannel["kind"]): string {
-  const author = message.user.username || "Someone";
+  const author = message.user.username || t("Someone");
   const snippet = formatMessageSnippet(message.content);
   if (channelKind === "direct") {
-    return snippet ? `@${author}: ${snippet}` : `@${author} sent a message.`;
+    return snippet ? `@${author}: ${snippet}` : tf("@{author} sent a message.", { author });
   }
-  return snippet ? `${channelTitle} @${author}: ${snippet}` : `${channelTitle} @${author} sent a message.`;
+  return snippet ? `${channelTitle} @${author}: ${snippet}` : tf("{channel} @{author} sent a message.", { channel: channelTitle, author });
 }
 
 export function isLegacyTimestampCursor(cursor: string | null): boolean {

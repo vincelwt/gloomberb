@@ -3,6 +3,7 @@ import { Box, Input, Text, type InputRenderable } from "../../../../ui";
 import { useShortcut } from "../../../../react/input";
 import { useAppDispatch, useAppSelector } from "../../../../state/app/context";
 import { useAppInputCapture } from "../../../../state/app/input-capture";
+import { t, tf } from "../../../../i18n";
 import { getSharedRegistry } from "../../../registry";
 import { usePluginAppActions } from "../../../runtime";
 import { colors, priceColor } from "../../../../theme/colors";
@@ -35,7 +36,7 @@ function QuickAddPreview({
   submitting: boolean;
 }) {
   if (submitting) {
-    return <Text fg={colors.textDim}>adding...</Text>;
+    return <Text fg={colors.textDim}>{t("adding...")}</Text>;
   }
 
   if (validation.status === "idle") {
@@ -43,15 +44,18 @@ function QuickAddPreview({
   }
 
   if (validation.status === "checking") {
-    return <Text fg={colors.textDim}>{`${validation.query} checking...`}</Text>;
+    return <Text fg={colors.textDim}>{tf("{query} checking...", { query: validation.query })}</Text>;
   }
 
   if (validation.status === "missing" || validation.status === "error") {
-    return <Text fg={colors.textMuted}>{validation.message}</Text>;
+    return <Text fg={colors.textMuted}>{t(validation.message)}</Text>;
   }
 
   if (validation.status === "duplicate") {
-    return <Text fg={colors.textMuted}>{`${validation.symbol} already in ${collectionKind}`}</Text>;
+    return <Text fg={colors.textMuted}>{tf("{symbol} already in {collection}", {
+      symbol: validation.symbol,
+      collection: t(collectionKind === "portfolio" ? "Portfolio" : "Watchlist"),
+    })}</Text>;
   }
 
   const quote = validation.quote;
@@ -182,7 +186,13 @@ export function QuickAddTickerInput({
       setValidation(currentValidation);
 
       if (currentValidation.status === "duplicate") {
-        notify({ type: "info", body: `${currentValidation.symbol} is already in ${collectionName}.` });
+        notify({
+          type: "info",
+          body: tf("{symbol} is already in {collection}.", {
+            symbol: currentValidation.symbol,
+            collection: collectionName,
+          }),
+        });
         return;
       }
       if (currentValidation.status !== "ready") {
@@ -192,7 +202,7 @@ export function QuickAddTickerInput({
 
       const registry = getSharedRegistry();
       if (!registry) {
-        notify({ type: "error", body: "Ticker lookup unavailable." });
+        notify({ type: "error", body: t("Ticker lookup unavailable.") });
         return;
       }
 
@@ -211,7 +221,13 @@ export function QuickAddTickerInput({
         : addTickerToWatchlist(ticker, collectionId);
 
       if (!result.changed) {
-        notify({ type: "info", body: `${ticker.metadata.ticker} is already in ${collectionName}.` });
+        notify({
+          type: "info",
+          body: tf("{symbol} is already in {collection}.", {
+            symbol: ticker.metadata.ticker,
+            collection: collectionName,
+          }),
+        });
         return;
       }
 
@@ -225,12 +241,18 @@ export function QuickAddTickerInput({
       }
 
       onAdded(result.ticker.metadata.ticker);
-      notify({ type: "success", body: `Added ${result.ticker.metadata.ticker} to ${collectionName}.` });
+      notify({
+        type: "success",
+        body: tf("Added {symbol} to {collection}.", {
+          symbol: result.ticker.metadata.ticker,
+          collection: collectionName,
+        }),
+      });
       resetInput();
       queueMicrotask(() => inputRef.current?.focus?.());
     } catch {
       setValidation({ status: "error", query, message: "Ticker add failed" });
-      notify({ type: "error", body: `Failed to add ${query}.` });
+      notify({ type: "error", body: tf("Failed to add {symbol}.", { symbol: query }) });
     } finally {
       setSubmitting(false);
     }
@@ -297,7 +319,7 @@ export function QuickAddTickerInput({
           ref={inputRef}
           value={inputValue}
           focused={inputFocused && focused}
-          placeholder="ticker"
+          placeholder={t("ticker")}
           placeholderColor={colors.textMuted}
           textColor={colors.text}
           backgroundColor={colors.panel}

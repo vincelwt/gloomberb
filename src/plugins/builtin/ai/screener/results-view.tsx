@@ -5,6 +5,7 @@ import type { ColumnConfig } from "../../../../types/config";
 import type { TickerFinancials } from "../../../../types/financials";
 import type { TickerRecord } from "../../../../types/ticker";
 import { colors } from "../../../../theme/colors";
+import { t } from "../../../../i18n";
 import { getColumnValue, type ColumnContext } from "../../portfolio-list/metrics";
 import type { ValidatedScreenerResult } from "./contract";
 import type { AiScreenerTab, ScreenerSortPreference } from "./model";
@@ -109,11 +110,11 @@ export function AiScreenerResultsView({
       <Box flexGrow={1} minHeight={contentHeight}>
         {!activeTab ? (
           <Box padding={1} flexGrow={1}>
-            <EmptyState title="No AI screeners yet." hint="Click + to create one." />
+            <EmptyState title={t("No AI screeners yet.")} hint={t("Click + to create one.")} />
           </Box>
         ) : isRunningActiveTab && activeTab.results.length === 0 ? (
           <Box padding={1} flexGrow={1}>
-            <Spinner label="Running AI screener..." />
+            <Spinner label={t("Running AI screener...")} />
           </Box>
         ) : (
           <TickerListTableView

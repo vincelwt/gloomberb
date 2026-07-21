@@ -161,7 +161,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
     const isEmptyFollowCollection = paneInstance?.binding?.kind === "follow" && !!collectionId && collectionTickerCount === 0;
     const message = isEmptyFollowCollection
       ? tf("No tickers in {name}.", { name: collectionName || t("this collection") })
-      : "No ticker selected.";
+      : t("No ticker selected.");
 
     return (
       <Box flexDirection="column" flexGrow={1} paddingX={1}>
@@ -174,7 +174,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
     <Box flexDirection="column" flexGrow={1} flexBasis={0} overflow="hidden">
       {!paneSettings.hideTabs && (
         <Tabs
-          tabs={allTabs.map((tab) => ({ label: tab.name, value: tab.id }))}
+          tabs={allTabs.map((tab) => ({ label: t(tab.name), value: tab.id }))}
           activeValue={resolvedTabId}
           onSelect={setActiveTabId}
           focused={focused && !pluginCaptured}

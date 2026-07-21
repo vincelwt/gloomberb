@@ -2,6 +2,7 @@ import { TextAttributes } from "../../../ui";
 import type { DataTableCell, DataTableColumn } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { formatBrokerUpdatedAt, type BrokerDisplayState, type BrokerProfileRow } from "./model";
+import { t } from "../../../i18n";
 
 type BrokerColumnId = "profile" | "status" | "broker" | "mode" | "accounts" | "updated";
 export type BrokerColumn = DataTableColumn & { id: BrokerColumnId };
@@ -52,12 +53,12 @@ export function buildBrokerColumns(width: number): BrokerColumn[] {
   );
 
   return [
-    { id: "profile", label: "PROFILE", width: profileWidth, align: "left" },
-    { id: "status", label: "STATUS", width: statusWidth, align: "left" },
-    { id: "broker", label: "BROKER", width: brokerWidth, align: "left" },
-    { id: "mode", label: "MODE", width: modeWidth, align: "left" },
-    { id: "accounts", label: "ACCOUNTS", width: accountWidth, align: "right" },
-    { id: "updated", label: "SYNCED", width: updatedWidth, align: "right" },
+    { id: "profile", label: t("PROFILE"), width: profileWidth, align: "left" },
+    { id: "status", label: t("STATUS"), width: statusWidth, align: "left" },
+    { id: "broker", label: t("BROKER"), width: brokerWidth, align: "left" },
+    { id: "mode", label: t("MODE"), width: modeWidth, align: "left" },
+    { id: "accounts", label: t("ACCOUNTS"), width: accountWidth, align: "right" },
+    { id: "updated", label: t("SYNCED"), width: updatedWidth, align: "right" },
   ];
 }
 

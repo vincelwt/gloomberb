@@ -47,6 +47,7 @@ import { computeDatedBeta } from "../analytics/metrics";
 import { useCloudSyncStatus } from "../../../sync/react";
 import { cloudSyncController } from "../../../sync/controller";
 import { setSyncedProfileAnalytics } from "../../../sync/profile-analytics";
+import { t } from "../../../i18n";
 import {
   consumeRequestedAccountManagementTab,
   subscribeRequestedAccountManagementTab,
@@ -56,7 +57,7 @@ import {
 type AccountBusy = "profile" | "password" | "alerts" | "billing" | "delete" | null;
 const CLOUD_UPGRADE_URL = "https://gloom.sh/cloud?upgrade=pro";
 
-const ACCOUNT_TABS: Array<{ label: string; value: AccountManagementTab }> = [
+const ACCOUNT_TAB_DEFS: Array<{ label: string; value: AccountManagementTab }> = [
   { label: "Profile", value: "profile" },
   { label: "Emails", value: "emails" },
   { label: "Pro", value: "pro" },
@@ -151,14 +152,14 @@ function PlanComparison({
           }}
         >
           <Text fg={colors.textDim} style={{ ...desktopText, fontWeight: 650 }}>
-            Capability
+            {t("Capability")}
           </Text>
           <Text
             fg={activePlan === "free" ? colors.textBright : colors.textDim}
             attributes={activePlan === "free" ? TextAttributes.BOLD : 0}
             style={{ ...desktopText, fontWeight: activePlan === "free" ? 700 : 650 }}
           >
-            Free
+            {t("Free")}
           </Text>
           <Box flexDirection="row" alignItems="baseline" gap={1}>
             <Text
@@ -166,10 +167,10 @@ function PlanComparison({
               attributes={TextAttributes.BOLD}
               style={{ ...desktopText, fontWeight: 750 }}
             >
-              Pro
+              {t("Pro")}
             </Text>
             <Text fg={colors.textBright} style={desktopText}>
-              $49/mo
+              {t("$49/mo")}
             </Text>
           </Box>
         </Box>
@@ -198,11 +199,11 @@ function PlanComparison({
                   }}
                 />
                 <Text fg={colors.textBright} style={{ ...desktopText, fontWeight: 520 }}>
-                  {row.capability}
+                  {t(row.capability)}
                 </Text>
               </Box>
               <Text fg={freeFg} style={desktopText}>
-                {row.free}
+                {t(row.free)}
               </Text>
               <Box
                 flexDirection="row"
@@ -227,7 +228,7 @@ function PlanComparison({
                     fontWeight: row.proTone === "positive" ? 720 : 560,
                   }}
                 >
-                  {row.pro}
+                  {t(row.pro)}
                 </Text>
               </Box>
             </Box>
@@ -252,23 +253,23 @@ function PlanComparison({
   return (
     <Box flexDirection="column" width={rowWidth}>
       <Box height={1} flexDirection="row" gap={1}>
-        <Text width={capabilityWidth} fg={colors.textDim}>Capability</Text>
+        <Text width={capabilityWidth} fg={colors.textDim}>{t("Capability")}</Text>
         <Text width={valueWidth} fg={activePlan === "free" ? colors.textBright : colors.textDim} attributes={activePlan === "free" ? TextAttributes.BOLD : 0}>
-          Free
+          {t("Free")}
         </Text>
         <Box width={valueWidth} backgroundColor={proCellBg} paddingX={1}>
           <Text fg={proHeadingFg} attributes={TextAttributes.BOLD}>
-            Pro $49/mo
+            {`${t("Pro")} ${t("$49/mo")}`}
           </Text>
         </Box>
       </Box>
       {PLAN_COMPARISON_ROWS.map((row) => (
         <Box key={row.capability} height={1} flexDirection="row" gap={1}>
-          <Text width={capabilityWidth} fg={colors.textDim}>{row.capability}</Text>
-          <Text width={valueWidth} fg={freeFg}>{row.free}</Text>
+          <Text width={capabilityWidth} fg={colors.textDim}>{t(row.capability)}</Text>
+          <Text width={valueWidth} fg={freeFg}>{t(row.free)}</Text>
           <Box width={valueWidth} backgroundColor={proCellBg} paddingX={1}>
             <Text fg={proValueColor(row.proTone)} attributes={row.proTone === "positive" ? TextAttributes.BOLD : 0}>
-              {row.pro}
+              {t(row.pro)}
             </Text>
           </Box>
         </Box>
@@ -329,6 +330,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const formLabelWidth = accountFieldLabelWidth(formWidth);
   const bodyHeight = Math.max(5, height);
   const fieldOrder = ACCOUNT_TAB_FIELD_ORDER[activeTab];
+  const accountTabs = ACCOUNT_TAB_DEFS.map((tab) => ({ ...tab, label: t(tab.label) }));
 
   const portfolioHoldingCounts = useMemo(() => countPortfolioHoldings(tickers), [tickers]);
   const portfolioChoices = useMemo(
@@ -452,18 +454,18 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     ],
   );
   const profileAnalyticsDetail = useMemo(() => {
-    if (!draft.sharedPortfolioId) return "No public portfolio analytics";
-    if (!profile) return "Loading published metrics";
+    if (!draft.sharedPortfolioId) return t("No public portfolio analytics");
+    if (!profile) return t("Loading published metrics");
     if (
       draft.profilePublic !== profile.profilePublic
       || draft.sharedPortfolioId !== (profile.sharedPortfolioId ?? "")
     ) {
-      return "Save profile to update published metrics";
+      return t("Save profile to update published metrics");
     }
-    if (profile.profilePublic !== true) return "Public profile is off";
-    if (syncStatus.phase === "syncing") return "Syncing published metrics";
-    if (!profile.portfolioAnalytics) return "Waiting for published metrics";
-    return "Published public metrics";
+    if (profile.profilePublic !== true) return t("Public profile is off");
+    if (syncStatus.phase === "syncing") return t("Syncing published metrics");
+    if (!profile.portfolioAnalytics) return t("Waiting for published metrics");
+    return t("Published public metrics");
   }, [
     draft.profilePublic,
     draft.sharedPortfolioId,
@@ -487,7 +489,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
       return;
     }
 
-    setMessage({ tone: "info", text: "Loading account profile..." });
+    setMessage({ tone: "info", text: t("Loading account profile...") });
     try {
       const nextProfile = await apiClient.getAccountProfile();
       setProfile(nextProfile);
@@ -496,7 +498,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     } catch (error) {
       setMessage({
         tone: "error",
-        text: error instanceof Error ? error.message : "Failed to load account profile.",
+        text: error instanceof Error ? error.message : t("Failed to load account profile."),
       });
     }
   }, []);
@@ -548,14 +550,14 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
           {...context}
           onChangePassword={async (currentPassword, newPassword) => {
             setBusy("password");
-            setMessage({ tone: "info", text: "Changing password..." });
+            setMessage({ tone: "info", text: t("Changing password...") });
             try {
               await apiClient.changePassword(currentPassword, newPassword);
-              setMessage({ tone: "success", text: "Password changed." });
+              setMessage({ tone: "success", text: t("Password changed.") });
             } catch (error) {
               setMessage({
                 tone: "error",
-                text: error instanceof Error ? error.message : "Failed to change password.",
+                text: error instanceof Error ? error.message : t("Failed to change password."),
               });
               throw error;
             } finally {
@@ -575,7 +577,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
       content: (context: PromptContext<string>) => (
         <ChoiceDialog
           {...context}
-          title="Public Stats"
+          title={t("Public Stats")}
           choices={portfolioChoices}
           selectedChoiceId={currentPortfolioChoiceId}
         />
@@ -615,12 +617,12 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     const current = draftRef.current;
     const bio = bioRef.current?.editBuffer.getText() ?? current.bio;
     if (!current.username.trim() || !current.name.trim()) {
-      setMessage({ tone: "error", text: "Username and full name are required." });
+      setMessage({ tone: "error", text: t("Username and full name are required.") });
       return;
     }
 
     setBusy("profile");
-    setMessage({ tone: "info", text: "Saving account profile..." });
+    setMessage({ tone: "info", text: t("Saving account profile...") });
     try {
       const nextProfile = await apiClient.updateAccountProfile({
         username: current.username,
@@ -640,11 +642,11 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
       setProfile(nextProfile);
       setDraft(profileToDraft(nextProfile));
       await chatController.refreshSession().catch(() => {});
-      setMessage({ tone: "success", text: "Account profile saved." });
+      setMessage({ tone: "success", text: t("Account profile saved.") });
     } catch (error) {
       setMessage({
         tone: "error",
-        text: error instanceof Error ? error.message : "Failed to save account profile.",
+        text: error instanceof Error ? error.message : t("Failed to save account profile."),
       });
     } finally {
       setBusy(null);
@@ -654,7 +656,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const turnOffEmailAlerts = useCallback(async () => {
     setActiveField("emailAlertsOffAction");
     setBusy("alerts");
-    setMessage({ tone: "info", text: "Turning off email alerts..." });
+    setMessage({ tone: "info", text: t("Turning off email alerts...") });
     try {
       const nextProfile = await apiClient.updateAccountProfile({
         chatEmailNotificationsEnabled: false,
@@ -668,11 +670,11 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
         positionAlertsEnabled: nextProfile.positionAlertsEnabled,
       }));
       setProfile(nextProfile);
-      setMessage({ tone: "success", text: "Email alerts are off." });
+      setMessage({ tone: "success", text: t("Email alerts are off.") });
     } catch (error) {
       setMessage({
         tone: "error",
-        text: error instanceof Error ? error.message : "Failed to update alert settings.",
+        text: error instanceof Error ? error.message : t("Failed to update alert settings."),
       });
     } finally {
       setBusy(null);
@@ -682,13 +684,13 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const openUpgrade = useCallback(() => {
     setActiveField("upgradeAction");
     setBusy("billing");
-    setMessage({ tone: "info", text: "Opening Pro upgrade..." });
+    setMessage({ tone: "info", text: t("Opening Pro upgrade...") });
     void renderer.openExternal(CLOUD_UPGRADE_URL)
       .then(() => setMessage(null))
       .catch((error) => {
         setMessage({
           tone: "error",
-          text: error instanceof Error ? error.message : "Failed to open upgrade page.",
+          text: error instanceof Error ? error.message : t("Failed to open upgrade page."),
         });
       })
       .finally(() => setBusy(null));
@@ -702,12 +704,12 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
       content: (context: PromptContext<boolean>) => (
         <ConfirmDialog
           {...context}
-          title="Delete Account"
+          title={t("Delete Account")}
           body={[
-            "Delete your Gloom Cloud account?",
-            "This removes cloud profile, chat, sync, and billing-linked account data.",
+            t("Delete your Gloom Cloud account?"),
+            t("This removes cloud profile, chat, sync, and billing-linked account data."),
           ]}
-          confirmLabel="Delete Account"
+          confirmLabel={t("Delete Account")}
           confirmVariant="danger"
         />
       ),
@@ -715,18 +717,18 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     if (!confirmed) return;
 
     setBusy("delete");
-    setMessage({ tone: "info", text: "Deleting account..." });
+    setMessage({ tone: "info", text: t("Deleting account...") });
     try {
       await apiClient.deleteAccount();
       setProfile(null);
       setDraft(profileToDraft(null));
       setHasSession(false);
       await chatController.refreshSession().catch(() => {});
-      setMessage({ tone: "success", text: "Account deleted." });
+      setMessage({ tone: "success", text: t("Account deleted.") });
     } catch (error) {
       setMessage({
         tone: "error",
-        text: error instanceof Error ? error.message : "Failed to delete account.",
+        text: error instanceof Error ? error.message : t("Failed to delete account."),
       });
     } finally {
       setBusy(null);
@@ -760,7 +762,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   if (!hasSession && !apiClient.getSessionToken()) {
     return (
       <Box padding={1}>
-        <CloudAuthNotice message="Log in to manage your Gloom Cloud account." />
+        <CloudAuthNotice message={t("Log in to manage your Gloom Cloud account.")} />
       </Box>
     );
   }
@@ -768,7 +770,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   return (
     <Box flexDirection="column" width={width} height={height} paddingX={1} gap={1}>
       <Tabs
-        tabs={ACCOUNT_TABS}
+        tabs={accountTabs}
         activeValue={activeTab}
         onSelect={selectTab}
         focused={focused}
@@ -782,7 +784,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
             <>
               <FieldRow twoColumns={twoColumns}>
                 <CheckboxRow
-                  label="Public Profile"
+                  label={t("Public Profile")}
                   checked={draft.profilePublic}
                   active={activeField === "profilePublic"}
                   width={fieldWidth}
@@ -790,7 +792,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                   onChange={(checked) => setDraftValue("profilePublic", checked)}
                 />
                 <CheckboxRow
-                  label="Incoming DMs"
+                  label={t("Incoming DMs")}
                   checked={draft.acceptUnknownDms}
                   active={activeField === "acceptUnknownDms"}
                   width={fieldWidth}
@@ -802,9 +804,9 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
               <FieldRow twoColumns={twoColumns}>
                 <AccountTextField
                   fieldKey="username"
-                  label="Username"
+                  label={t("Username")}
                   value={draft.username}
-                  placeholder="username"
+                  placeholder={t("username")}
                   activeField={activeField}
                   focused={focused}
                   width={fieldWidth}
@@ -814,9 +816,9 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                 />
                 <AccountTextField
                   fieldKey="name"
-                  label="Full Name"
+                  label={t("Full Name")}
                   value={draft.name}
-                  placeholder="Full name"
+                  placeholder={t("Full name")}
                   activeField={activeField}
                   focused={focused}
                   width={fieldWidth}
@@ -829,9 +831,9 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
               <FieldRow twoColumns={twoColumns}>
                 <AccountTextField
                   fieldKey="company"
-                  label="Company"
+                  label={t("Company")}
                   value={draft.company}
-                  placeholder="Company"
+                  placeholder={t("Company")}
                   activeField={activeField}
                   focused={focused}
                   width={fieldWidth}
@@ -841,9 +843,9 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                 />
                 <AccountTextField
                   fieldKey="title"
-                  label="Title"
+                  label={t("Title")}
                   value={draft.title}
-                  placeholder="Title"
+                  placeholder={t("Title")}
                   activeField={activeField}
                   focused={focused}
                   width={fieldWidth}
@@ -856,7 +858,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
               <FieldRow twoColumns={twoColumns}>
                 <AccountTextField
                   fieldKey="publicEmail"
-                  label="Public Email"
+                  label={t("Public Email")}
                   value={draft.publicEmail}
                   placeholder="public@example.com"
                   activeField={activeField}
@@ -868,9 +870,9 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                 />
                 <AccountTextField
                   fieldKey="xAccount"
-                  label="X Account"
+                  label={t("X Account")}
                   value={draft.xAccount}
-                  placeholder="handle"
+                  placeholder={t("handle")}
                   activeField={activeField}
                   focused={focused}
                   width={fieldWidth}
@@ -891,7 +893,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                   fg={activeField === "bio" ? colors.textBright : colors.textDim}
                   attributes={activeField === "bio" ? TextAttributes.BOLD : 0}
                 >
-                  {activeField === "bio" ? "> Bio" : "  Bio"}
+                  {activeField === "bio" ? `> ${t("Bio")}` : `  ${t("Bio")}`}
                 </Text>
                 <Box
                   height={3}
@@ -908,7 +910,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                     key={`bio:${profile?.updatedAt ?? "empty"}`}
                     ref={bioRef}
                     initialValue={draft.bio}
-                    placeholder="Short profile bio"
+                    placeholder={t("Short profile bio")}
                     focused={focused && activeField === "bio"}
                     textColor={colors.text}
                     placeholderColor={colors.textDim}
@@ -928,7 +930,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                 detail={profileAnalyticsDetail}
                 active={activeField === "sharedPortfolioId"}
                 width={formWidth}
-                disclaimer={draft.sharedPortfolioId ? "Only 1Y return and SPY Beta are shared. Positions are not shared." : null}
+                disclaimer={draft.sharedPortfolioId ? t("Only 1Y return and SPY Beta are shared. Positions are not shared.") : null}
                 selectRef={(element) => {
                   portfolioNativeSelectRef.current = element;
                 }}
@@ -941,7 +943,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
               />
 
               <Box flexDirection="row" gap={1}>
-                <Button label={busy === "profile" ? "Saving..." : "Save Profile"} variant="primary" onPress={() => { void saveProfile(); }} disabled={!!busy} />
+                <Button label={busy === "profile" ? t("Saving...") : t("Save Profile")} variant="primary" onPress={() => { void saveProfile(); }} disabled={!!busy} />
               </Box>
             </>
           ) : null}
@@ -949,35 +951,35 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
           {activeTab === "emails" ? (
             <>
               <CheckboxRow
-                label="Offline Chat"
+                label={t("Offline Chat")}
                 checked={draft.chatEmailNotificationsEnabled}
                 active={activeField === "chatEmailNotificationsEnabled"}
-                description="Replies and private messages while offline."
+                description={t("Replies and private messages while offline.")}
                 width={formWidth}
                 onFocus={() => setActiveField("chatEmailNotificationsEnabled")}
                 onChange={(checked) => setDraftValue("chatEmailNotificationsEnabled", checked)}
               />
               <CheckboxRow
-                label="Weekly Roundup"
+                label={t("Weekly Roundup")}
                 checked={draft.weeklyRoundupEnabled}
                 active={activeField === "weeklyRoundupEnabled"}
-                description="Friday after market close."
+                description={t("Friday after market close.")}
                 width={formWidth}
                 onFocus={() => setActiveField("weeklyRoundupEnabled")}
                 onChange={(checked) => setDraftValue("weeklyRoundupEnabled", checked)}
               />
               <CheckboxRow
-                label="Smart Alerts"
+                label={t("Smart Alerts")}
                 checked={draft.positionAlertsEnabled}
                 active={activeField === "positionAlertsEnabled"}
-                description="Unusual portfolio or watchlist moves."
+                description={t("Unusual portfolio or watchlist moves.")}
                 width={formWidth}
                 onFocus={() => setActiveField("positionAlertsEnabled")}
                 onChange={(checked) => setDraftValue("positionAlertsEnabled", checked)}
               />
               <Box flexDirection="row" gap={1} style={{ marginTop: 8 }}>
                 <Button
-                  label={busy === "alerts" ? "Turning Off..." : "Turn Off All"}
+                  label={busy === "alerts" ? t("Turning Off...") : t("Turn Off All")}
                   active={activeField === "emailAlertsOffAction"}
                   onPress={() => { void turnOffEmailAlerts(); }}
                   disabled={!!busy || (
@@ -986,7 +988,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                     && !draft.positionAlertsEnabled
                   )}
                 />
-                <Button label={busy === "profile" ? "Saving..." : "Save"} variant="primary" onPress={() => { void saveProfile(); }} disabled={!!busy} />
+                <Button label={busy === "profile" ? t("Saving...") : t("Save")} variant="primary" onPress={() => { void saveProfile(); }} disabled={!!busy} />
               </Box>
             </>
           ) : null}
@@ -994,7 +996,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
           {activeTab === "pro" ? (
             <>
               <Box flexDirection="row" gap={1}>
-                <Text fg={colors.textDim}>Status</Text>
+                <Text fg={colors.textDim}>{t("Status")}</Text>
                 <Text fg={profile?.plan === "pro" ? colors.positive : colors.textBright} attributes={TextAttributes.BOLD}>
                   {formatPlan(profile?.plan)}
                 </Text>
@@ -1005,7 +1007,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                 activePlan={profile?.plan === "pro" ? "pro" : "free"}
                 upgradeButton={(
                   <Button
-                    label={profile?.plan === "pro" ? "Manage Pro" : busy === "billing" ? "Opening..." : "Upgrade to Pro"}
+                    label={profile?.plan === "pro" ? t("Manage Pro") : busy === "billing" ? t("Opening...") : t("Upgrade to Pro")}
                     variant={profile?.plan === "pro" ? "secondary" : "primary"}
                     width={isDesktop ? 28 : undefined}
                     height={isDesktop ? "28px" : undefined}
@@ -1022,13 +1024,13 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
             <>
               <Box flexDirection="row" gap={1}>
                 <Button
-                  label="Change Password"
+                  label={t("Change Password")}
                   active={activeField === "passwordAction"}
                   onPress={openPasswordDialog}
                   disabled={!!busy}
                 />
                 <Button
-                  label={busy === "delete" ? "Deleting..." : "Delete Account"}
+                  label={busy === "delete" ? t("Deleting...") : t("Delete Account")}
                   variant="danger"
                   active={activeField === "deleteAccountAction"}
                   onPress={() => { void deleteAccount(); }}

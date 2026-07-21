@@ -8,6 +8,7 @@ import {
 } from "../../../brokers/profile-form";
 import type { BrokerProfileAction } from "../../../types/broker";
 import { useDialog, type PromptContext } from "../../../ui/dialog";
+import { t, tf } from "../../../i18n";
 import { usePluginAppActions, usePluginBrokerActions } from "../../runtime";
 import type { BrokerEditKey } from "./detail";
 import type { BrokerProfileRow } from "./model";
@@ -44,7 +45,7 @@ export function useBrokerManagerActions({
 
   const startEdit = useCallback(() => {
     if (!selectedRow?.adapter) {
-      setMessage("Broker plugin is not available.");
+      setMessage(t("Broker plugin is not available."));
       return;
     }
     const draft = createBrokerProfileDraft(selectedRow.adapter, selectedRow.instance);
@@ -61,7 +62,7 @@ export function useBrokerManagerActions({
     if (!selectedRow?.adapter || !editDraft) return;
     const label = editDraft.label.trim();
     if (!label) {
-      setMessage("Profile label is required.");
+      setMessage(t("Profile label is required."));
       return;
     }
     const validationError = validateBrokerProfileValues(selectedRow.adapter, editDraft.values, selectedRow.instance);
@@ -71,7 +72,7 @@ export function useBrokerManagerActions({
     }
 
     try {
-      setBusy("Saving…");
+      setBusy(t("Saving…"));
       const nextConfig = buildBrokerProfileConfig(selectedRow.adapter, editDraft.values, selectedRow.instance);
       await updateBrokerInstance(selectedRow.id, nextConfig, {
         label,
@@ -79,9 +80,9 @@ export function useBrokerManagerActions({
         replaceConfig: true,
       });
       setEditDraft(null);
-      setMessage(`Saved ${label}.`);
+      setMessage(tf("Saved {label}.", { label }));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to save broker profile.");
+      setMessage(error instanceof Error ? error.message : t("Failed to save broker profile."));
     } finally {
       setBusy(null);
     }
@@ -90,12 +91,12 @@ export function useBrokerManagerActions({
   const connectSelected = useCallback(async () => {
     if (!selectedRow) return;
     try {
-      setBusy("Testing…");
+      setBusy(t("Testing…"));
       await connectBrokerInstance(selectedRow.id);
       refreshStatuses();
-      setMessage(`Tested ${selectedRow.label}.`);
+      setMessage(tf("Tested {label}.", { label: selectedRow.label }));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : `Failed to test ${selectedRow.label}.`);
+      setMessage(error instanceof Error ? error.message : tf("Failed to test {label}.", { label: selectedRow.label }));
     } finally {
       setBusy(null);
     }
@@ -104,12 +105,12 @@ export function useBrokerManagerActions({
   const syncSelected = useCallback(async () => {
     if (!selectedRow) return;
     try {
-      setBusy("Syncing…");
+      setBusy(t("Syncing…"));
       await syncBrokerInstance(selectedRow.id);
       refreshStatuses();
-      setMessage(`Synced ${selectedRow.label}.`);
+      setMessage(tf("Synced {label}.", { label: selectedRow.label }));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : `Failed to sync ${selectedRow.label}.`);
+      setMessage(error instanceof Error ? error.message : tf("Failed to sync {label}.", { label: selectedRow.label }));
     } finally {
       setBusy(null);
     }
@@ -124,7 +125,7 @@ export function useBrokerManagerActions({
   const openProfileAction = useCallback((action: BrokerProfileAction | null = primaryProfileAction) => {
     if (!action) return;
     if (action.disabled) {
-      setMessage(action.disabledReason ?? `${action.label} is unavailable for this profile.`);
+      setMessage(action.disabledReason ?? tf("{action} is unavailable for this profile.", { action: t(action.label) }));
       return;
     }
     if (action.paneId) showPane(action.paneId);
@@ -137,28 +138,28 @@ export function useBrokerManagerActions({
       content: (ctx: PromptContext<boolean>) => (
         <ConfirmDialog
           {...ctx}
-          title="Disconnect broker?"
+          title={t("Disconnect broker?")}
           body={[
-            `Remove "${selectedRow.label}" and imported broker data?`,
-            "Broker-managed portfolios, positions, and contracts will be removed.",
+            tf('Remove "{label}" and imported broker data?', { label: selectedRow.label }),
+            t("Broker-managed portfolios, positions, and contracts will be removed."),
           ]}
-          confirmLabel="Disconnect"
-          cancelLabel="Back"
+          confirmLabel={t("Disconnect")}
+          cancelLabel={t("Back")}
           width={58}
-          footer="Enter disconnect · Esc cancel"
+          footer={t("Enter disconnect · Esc cancel")}
         />
       ),
     }).catch(() => false);
     if (confirmed !== true) return;
 
     try {
-      setBusy("Disconnecting…");
+      setBusy(t("Disconnecting…"));
       await removeBrokerInstance(selectedRow.id);
       setEditDraft(null);
       setDetailOpen(false);
-      setMessage(`Removed ${selectedRow.label}.`);
+      setMessage(tf("Removed {label}.", { label: selectedRow.label }));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : `Failed to remove ${selectedRow.label}.`);
+      setMessage(error instanceof Error ? error.message : tf("Failed to remove {label}.", { label: selectedRow.label }));
     } finally {
       setBusy(null);
     }

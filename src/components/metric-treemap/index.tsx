@@ -2,6 +2,7 @@ import { useMemo, useState, type CSSProperties } from "react";
 import { Box, Text, TextAttributes, useUiCapabilities } from "../../ui";
 import { blendHex, colors, priceColor } from "../../theme/colors";
 import { blendForContrast, higherContrast } from "../../theme/color-utils";
+import { t } from "../../i18n";
 import { padTo } from "../../utils/format";
 import {
   buildMetricTreemap,
@@ -217,7 +218,7 @@ function DesktopMetricTreemapSurface<T>({ items, width, height, selectedId, onSe
   if (tiles.length === 0) {
     return (
       <Box width={width} height={height} paddingX={1} paddingY={1}>
-        <Text fg={colors.textDim}>{emptyStateTitle ?? "No chart data"}</Text>
+        <Text fg={colors.textDim}>{t(emptyStateTitle ?? "No chart data")}</Text>
       </Box>
     );
   }
@@ -294,7 +295,7 @@ export function MetricTreemapSurface<T>({
   if (tiles.length === 0) {
     return (
       <Box width={width} height={height} paddingX={1} paddingY={1}>
-        <Text fg={colors.textDim}>{emptyStateTitle ?? "No chart data"}</Text>
+        <Text fg={colors.textDim}>{t(emptyStateTitle ?? "No chart data")}</Text>
       </Box>
     );
   }

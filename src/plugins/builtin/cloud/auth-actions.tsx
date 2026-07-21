@@ -58,8 +58,8 @@ export function CloudAuthNotice({
   if (/verification/i.test(message)) {
     return (
       <Box flexDirection="column" padding={1} gap={1}>
-        <Text fg={colors.positive}>Verify your email to use Cloud tweets.</Text>
-        <Button label="Resend Verification Email" variant="secondary" onPress={() => openCommandBar("Resend Verification Email")} />
+        <Text fg={colors.positive}>{t("Verify your email to use Cloud tweets.")}</Text>
+        <Button label={t("Resend Verification Email")} variant="secondary" onPress={() => openCommandBar("Resend Verification Email")} />
       </Box>
     );
   }

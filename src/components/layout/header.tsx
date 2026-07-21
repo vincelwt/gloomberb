@@ -12,7 +12,7 @@ import {
   selectUpdateProgress,
 } from "../../state/selectors-ui";
 import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
-import { t } from "../../i18n";
+import { t, tf } from "../../i18n";
 import { useQuoteEntry, useResolvedEntryValue } from "../../market-data/hooks";
 import { formatPercentRaw } from "../../utils/format";
 import { formatMarketPrice } from "../../market-data/market/format";
@@ -71,7 +71,10 @@ function UpdateStatus() {
         <Box flexDirection="row" gap={1}>
           <SpinnerMark name="dots" color={colors.headerText} />
           <Text fg={colors.headerText}>
-            Downloading v{updateAvailable?.version}: {updateProgress.percent ?? 0}%
+            {tf("Downloading v{version}: {percent}%", {
+              version: updateAvailable?.version ?? "",
+              percent: updateProgress.percent ?? 0,
+            })}
           </Text>
         </Box>
       );
@@ -80,15 +83,15 @@ function UpdateStatus() {
       return (
         <Box flexDirection="row" gap={1}>
           <SpinnerMark name="dots" color={colors.headerText} />
-          <Text fg={colors.headerText}>Installing update...</Text>
+          <Text fg={colors.headerText}>{t("Installing update...")}</Text>
         </Box>
       );
     }
     if (updateProgress.phase === "done") {
-      return <Text fg={colors.headerText}>{updateProgress.message ?? "Update installed, restart to apply"}</Text>;
+      return <Text fg={colors.headerText}>{t(updateProgress.message ?? "Update installed, restart to apply")}</Text>;
     }
     if (updateProgress.phase === "error") {
-      return <Text fg={colors.headerText}>Update failed: {updateProgress.error}</Text>;
+      return <Text fg={colors.headerText}>{tf("Update failed: {error}", { error: updateProgress.error })}</Text>;
     }
   }
 
@@ -96,7 +99,7 @@ function UpdateStatus() {
     return (
       <Box flexDirection="row" gap={1}>
         <SpinnerMark name="dots" color={colors.headerText} />
-        <Text fg={colors.headerText}>Checking for updates...</Text>
+        <Text fg={colors.headerText}>{t("Checking for updates...")}</Text>
       </Box>
     );
   }
@@ -105,13 +108,16 @@ function UpdateStatus() {
     if (updateAvailable.updateAction.kind === "manual") {
       return (
         <Text fg={colors.headerText}>
-          v{updateAvailable.version} available — run {updateAvailable.updateAction.command}
+          {tf("v{version} available — run {command}", {
+            version: updateAvailable.version,
+            command: updateAvailable.updateAction.command,
+          })}
         </Text>
       );
     }
     return (
       <Text fg={colors.headerText}>
-        v{updateAvailable.version} available — starting download...
+        {tf("v{version} available — starting download...", { version: updateAvailable.version })}
       </Text>
     );
   }
