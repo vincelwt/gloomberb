@@ -22,6 +22,8 @@ jobs:
             asset: gloomberb-linux-arm64
           - os: windows-latest
             asset: gloomberb-windows-x64
+          - os: windows-11-arm
+            asset: gloomberb-windows-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

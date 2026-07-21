@@ -11,7 +11,14 @@ permissions:
 
 jobs:
   cli:
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            asset: gloomberb-windows-x64.exe.gz
+          - os: windows-11-arm
+            asset: gloomberb-windows-arm64.exe.gz
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,8 +37,8 @@ jobs:
       - name: Verify standalone CLI artifact
         shell: pwsh
         run: |
-          if (-not (Test-Path "dist\gloomberb-windows-x64.exe.gz")) {
-            throw "Missing standalone Windows CLI archive"
+          if (-not (Test-Path "dist\${{ matrix.asset }}")) {
+            throw "Missing standalone Windows CLI archive: ${{ matrix.asset }}"
           }
 
   desktop:
@@ -63,5 +70,22 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: gloomberb-windows-verification-artifacts
-          path: artifacts/*
+          name: gloomberb-windows-x64-verification-artifacts
+          path: |
+            artifacts/*
+            build/stable-win-x64/Gloomberb-inno-source/Gloomberb/**
+
+  desktop-arm64-compat:
+    needs: desktop
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: gloomberb-windows-x64-verification-artifacts
+          path: .
+
+      - name: Verify x64 desktop package on Windows ARM64
+        shell: pwsh
+        run: ./scripts/verify-windows-desktop.ps1
