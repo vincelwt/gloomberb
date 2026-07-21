@@ -85,4 +85,4 @@ jobs:
 
       - name: Verify x64 desktop package on Windows ARM64
         shell: pwsh
-        run: ./scripts/verify-windows-desktop.ps1
+        run: ./scripts/verify-windows-arm64.ps1
