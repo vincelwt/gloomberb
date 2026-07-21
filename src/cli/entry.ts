@@ -23,7 +23,7 @@ export async function runCliEntrypoint(rawArgs = process.argv.slice(2)): Promise
 
   if (command === OPEN_TUI_NATIVE_SMOKE_COMMAND) {
     await smokeOpenTuiNative();
-    return;
+    process.exit(0);
   }
 
   const externalPlugins = await loadExternalPlugins();
