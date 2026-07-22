@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { usePaneFooter } from "../../../components";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { PaneProps } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { colors, blendHex } from "../../../theme/colors";
 import { useAssetData } from "../../runtime";
 import { MAJOR_CURRENCIES, formatRate, type MajorCurrency } from "./pairs";
@@ -144,13 +145,7 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
   );
 }
 
-export const fxMatrixPlugin: GloomPlugin = {
-  id: "fx-matrix",
-  name: "FX Cross Rates",
-  version: "1.0.0",
-  description: "Currency cross-rate matrix for major FX pairs",
-  toggleable: true,
-
+export const fxMatrixModule: PluginModule = {
   panes: [
     {
       id: "fx-matrix",

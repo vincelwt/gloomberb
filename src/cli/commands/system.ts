@@ -242,6 +242,9 @@ export function createSystemCliCommands(allCommands: () => CliCommandDef[]): Cli
         }
         if (action === "enable" || action === "disable") {
           const id = requireArg(args[1], `Usage: gloomberb plugin ${action} <id>`, ctx);
+          const plugin = services.services.pluginRegistry.allPlugins.get(id);
+          if (!plugin) ctx.fail(`Plugin "${id}" is not available.`);
+          if (plugin?.toggleable !== true) ctx.fail(`Plugin "${id}" is part of the application and cannot be disabled.`);
           const disabled = new Set(services.config.disabledPlugins ?? []);
           const before = disabled.has(id);
           if (action === "enable") disabled.delete(id);
@@ -291,7 +294,7 @@ export function createSystemCliCommands(allCommands: () => CliCommandDef[]): Cli
             kind: "pane",
             id,
             name: pane.name,
-            owner: "",
+            owner: services.services.pluginRegistry.getPanePluginId(id) ?? "",
           })),
           ...[...services.services.pluginRegistry.paneTemplates.entries()].map(([id, template]) => ({
             kind: "template",

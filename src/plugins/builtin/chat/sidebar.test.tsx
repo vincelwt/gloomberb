@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { act, type ReactElement, useCallback, useMemo, useRef, useState } from "react";
+import { act, useCallback, useMemo, useRef, useState } from "react";
 import { testRender } from "../../../renderers/opentui/test-utils";
 import { AppContext, appReducer, createInitialState, PaneInstanceProvider } from "../../../state/app/context";
 import { createConfigBackedTestPluginRuntime, createTestPluginRuntime } from "../../../test-support/plugin-runtime";
@@ -475,17 +475,14 @@ describe("ChatContent channel sidebar", () => {
   });
 
   test("persists a pane channel selection without the last-visited write reverting it", async () => {
-    const registeredPanes: Array<{ id: string; component: (props: any) => ReactElement | null }> = [];
-    gloomberbCloudPlugin.setup!({
+    await gloomberbCloudPlugin.setup!({
       persistence: new MemoryPersistence(),
       resume: {
         getState: () => null,
         setState: () => {},
         deleteState: () => {},
       },
-      registerPane: (pane: { id: string; component: (props: any) => ReactElement | null }) => {
-        registeredPanes.push(pane);
-      },
+      registerPane: () => {},
       registerPaneTemplate: () => {},
       registerTickerResearchTab: () => {},
       registerSyncTransport: () => {},
@@ -495,7 +492,7 @@ describe("ChatContent channel sidebar", () => {
       hidePane: () => {},
       notify: () => {},
     } as any);
-    const ChatPaneComponent = registeredPanes.find((pane) => pane.id === "chat")?.component;
+    const ChatPaneComponent = gloomberbCloudPlugin.panes?.find((pane) => pane.id === "chat")?.component;
     expect(ChatPaneComponent).toBeDefined();
     const ResolvedChatPaneComponent = ChatPaneComponent!;
 

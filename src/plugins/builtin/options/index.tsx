@@ -1,14 +1,8 @@
-import type { GloomPlugin } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { OptionsView } from "./view";
 
-export const optionsPlugin: GloomPlugin = {
-  id: "options",
-  name: "Options",
-  version: "1.0.0",
-  description: "View options chain for tickers",
-  toggleable: true,
-
+export const optionsModule: PluginModule = {
   panes: [
     {
       id: "options",

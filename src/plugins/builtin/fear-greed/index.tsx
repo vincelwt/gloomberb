@@ -1,17 +1,11 @@
-import type { GloomPlugin } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import {
   attachFearGreedPersistence,
   resetFearGreedPersistence,
 } from "./cache";
 import { FearGreedPane } from "./pane";
 
-export const fearGreedPlugin: GloomPlugin = {
-  id: "fear-greed",
-  name: "Fear & Greed",
-  version: "1.0.0",
-  description: "CNN Fear & Greed sentiment gauge and market indicator charts.",
-  toggleable: true,
-
+export const fearGreedModule: PluginModule = {
   setup(ctx) {
     attachFearGreedPersistence(ctx.persistence);
   },

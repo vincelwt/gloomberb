@@ -2,6 +2,7 @@ import { findPaneInstance, type AppConfig } from "../../types/config";
 import type { BrokerContractRef } from "../../types/instrument";
 import type { TickerRecord } from "../../types/ticker";
 import { getDockedPaneIds } from "../../plugins/pane-manager";
+import { normalizeBuiltinPaneStatePluginOwners } from "../../plugins/ownership";
 import { canonicalExchange, normalizeSymbol } from "../../utils/exchanges";
 
 export const APP_SESSION_SCHEMA_VERSION = 1;
@@ -158,9 +159,9 @@ export function reconcileAppSessionSnapshot(
 
   const validPaneIds = new Set(config.layout.instances.map((instance) => instance.instanceId));
   const validBrokerInstanceIds = new Set(config.brokerInstances.map((instance) => instance.id));
-  const paneState = Object.fromEntries(
+  const paneState = normalizeBuiltinPaneStatePluginOwners(Object.fromEntries(
     Object.entries(snapshot.paneState ?? {}).filter(([paneId]) => validPaneIds.has(paneId)),
-  );
+  ));
   const openPaneIds = (snapshot.openPaneIds ?? []).filter((paneId) => validPaneIds.has(paneId));
   const defaultOpenPaneId = getDockedPaneIds(config.layout)[0] ?? config.layout.floating[0]?.instanceId ?? null;
   const focusedPaneId = snapshot.focusedPaneId && validPaneIds.has(snapshot.focusedPaneId)

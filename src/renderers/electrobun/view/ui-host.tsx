@@ -18,6 +18,7 @@ import {
 import { WebBox } from "./host/box";
 import { WebChartSurface } from "./host/chart-surface";
 import { WebInput, WebTextarea } from "./host/input";
+import { WebMediaSurface } from "./host/media-surface";
 import {
   NATIVE_CONTEXT_MENU_SUPPORTED,
   showDesktopContextMenu,
@@ -124,6 +125,7 @@ export function createWebUiHost(desktopPlatform?: string): UiHost {
         </div>
       );
     },
+    MediaSurface: WebMediaSurface,
     SpinnerMark: ({ color, ...props }) => (
       <span
         {...cleanDomProps(props)}
@@ -198,4 +200,7 @@ export const webRendererHost: RendererHost = {
     }).catch(() => {});
   },
   showContextMenu: showDesktopContextMenu,
+  resolveLiveStream(request) {
+    return backendRequest("media.resolveLiveStream", request);
+  },
 };

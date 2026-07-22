@@ -12,7 +12,8 @@ import {
 import { colors } from "../../../theme/colors";
 import { t, tf } from "../../../i18n";
 import type { BrokerAdapter } from "../../../types/broker";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { PaneProps } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { usePluginBrokerActions } from "../../runtime";
 import {
   buildBrokerProfileRows,
@@ -299,11 +300,7 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
   );
 }
 
-export const brokerManagerPlugin: GloomPlugin = {
-  id: "broker-manager",
-  name: "Broker Manager",
-  version: "1.0.0",
-  description: "Manage broker profiles and connection status",
+export const brokerManagerModule: PluginModule = {
   panes: [
     {
       id: "brokers",

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DataTableView, usePaneFooter, type DataTableKeyEvent } from "../../../components";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { PaneProps } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import type { EarningsEvent } from "../../../types/data-provider";
 import { useAppSelector, getFocusedCollectionId, usePaneInstance } from "../../../state/app/context";
 import { getCollectionTickers } from "../../../state/selectors";
@@ -150,13 +151,7 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   );
 }
 
-export const earningsPlugin: GloomPlugin = {
-  id: "earnings-calendar",
-  name: "Earnings Calendar",
-  version: "1.0.0",
-  description: "Upcoming earnings dates for tracked tickers",
-  toggleable: true,
-
+export const earningsModule: PluginModule = {
   setup(ctx) {
     attachEarningsCalendarPersistence(ctx.persistence);
     ctx.registerCommand({

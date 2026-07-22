@@ -14,7 +14,8 @@ import {
 import { MarkdownText } from "../../../components/markdown-text";
 import { fetchChangelogReleases, type ChangelogRelease } from "../../../updater/github-releases";
 import { colors } from "../../../theme/colors";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { PaneProps } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { isPlainKey } from "../../../utils/keyboard";
 import {
   DEFAULT_CHANGELOG_SORT,
@@ -351,13 +352,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
   );
 }
 
-export const changelogPlugin: GloomPlugin = {
-  id: "changelog",
-  name: "Changelog",
-  version: "1.0.0",
-  description: "Browse Gloomberb release notes.",
-  toggleable: true,
-
+export const changelogModule: PluginModule = {
   panes: [
     {
       id: "changelog",

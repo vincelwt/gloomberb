@@ -11,7 +11,8 @@ import {
 } from "../../../components";
 import { useShortcut } from "../../../react/input";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { PaneProps } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { priceColor } from "../../../theme/colors";
 import { formatCompact, formatCurrency, formatPercentRaw } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
@@ -284,13 +285,7 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
   );
 }
 
-export const marketHeatmapPlugin: GloomPlugin = {
-  id: "market-heatmap",
-  name: "Market Heatmap",
-  version: "1.0.0",
-  description: "Public market heatmap for the largest US stocks and ETFs.",
-  toggleable: true,
-
+export const marketHeatmapModule: PluginModule = {
   dispose() {
     resetMarketHeatmapCache();
   },

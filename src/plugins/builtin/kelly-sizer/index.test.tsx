@@ -39,7 +39,7 @@ describe("KellySizerPane", () => {
     const config = {
       ...createSizerConfig(),
       pluginConfig: {
-        "kelly-sizer": {
+        portfolio: {
           "commonAssumptions:v1": {
             kellyFraction: 0.5,
             maxLossFraction: 0.02,
@@ -63,7 +63,7 @@ describe("KellySizerPane", () => {
     const config = {
       ...createSizerConfig(),
       pluginConfig: {
-        "kelly-sizer": {
+        portfolio: {
           "commonAssumptions:v1": {
             kellyFraction: 0.5,
             maxLossFraction: 0.02,

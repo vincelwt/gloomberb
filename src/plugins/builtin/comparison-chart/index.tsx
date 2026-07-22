@@ -11,7 +11,8 @@ import {
 import { usePluginAppActions, usePluginTickerActions } from "../../runtime";
 import { usePaneInstance } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
-import type { GloomPlugin, PaneProps, PaneSettingsDef } from "../../../types/plugin";
+import type { PaneProps, PaneSettingsDef } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { formatTickerListInput, MAX_TICKER_LIST_SIZE, parseTickerListInput } from "../../../tickers/list";
 
 export const COMPARISON_CHART_PANE_ID = "comparison-chart";
@@ -138,10 +139,7 @@ function ComparisonChartPane({ paneId, focused, width, height }: PaneProps) {
   );
 }
 
-export const comparisonChartPlugin: GloomPlugin = {
-  id: "comparison-chart",
-  name: "Comparison Chart",
-  version: "1.0.0",
+export const comparisonChartModule: PluginModule = {
   panes: [
     {
       id: COMPARISON_CHART_PANE_ID,

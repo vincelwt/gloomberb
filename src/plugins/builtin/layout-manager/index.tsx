@@ -1,5 +1,6 @@
 import { findPaneInstance, type LayoutConfig } from "../../../types/config";
-import type { AppNotificationRequest, GloomPlugin, GloomPluginContext } from "../../../types/plugin";
+import type { AppNotificationRequest, GloomPluginContext } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import type { AppAction } from "../../../state/app/context";
 import { notifyGridlockComplete } from "../../gridlock-notification";
 import {
@@ -39,12 +40,7 @@ function getFocusedPane(layout: LayoutConfig, focusedPaneId: string | null) {
   return focusedPaneId ? findPaneInstance(layout, focusedPaneId) ?? null : null;
 }
 
-export const layoutManagerPlugin: GloomPlugin = {
-  id: "layout-manager",
-  name: "Layout Manager",
-  version: "1.0.0",
-  description: "Pane layout management commands",
-
+export const layoutManagerModule: PluginModule = {
   setup(ctx) {
     const notify = (body: string, options?: Omit<AppNotificationRequest, "body">) => {
       ctx.notify({ body, ...options });

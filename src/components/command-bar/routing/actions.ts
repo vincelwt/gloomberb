@@ -265,8 +265,24 @@ function buildPluginToggleItems({
   const toggleable = [...pluginRegistry.allPlugins.values()].filter((plugin) => plugin.toggleable);
   const filtered = pluginQuery
     ? toggleable.filter((plugin) => (
-      plugin.name.toLowerCase().includes(pluginQuery)
-      || plugin.id.includes(pluginQuery)
+      [
+        plugin.name,
+        plugin.id,
+        plugin.description,
+        ...pluginRegistry.getPluginPaneIds(plugin.id).flatMap((paneId) => [
+          paneId,
+          pluginRegistry.panes.get(paneId)?.name,
+        ]),
+        ...pluginRegistry.getPluginPaneTemplateIds(plugin.id).flatMap((templateId) => {
+          const template = pluginRegistry.paneTemplates.get(templateId);
+          return [
+            templateId,
+            template?.label,
+            template?.description,
+            ...(template?.keywords ?? []),
+          ];
+        }),
+      ].some((term) => typeof term === "string" && term.toLowerCase().includes(pluginQuery))
     ))
     : toggleable;
 

@@ -1,4 +1,4 @@
-import type { GloomPlugin } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { parseTickerListInput, formatTickerListInput } from "../../../tickers/list";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { AnalystResearchView } from "./analyst-pane";
@@ -9,13 +9,7 @@ function EarningsEstimatesAliasPane(props: { focused: boolean; width: number; he
   return <CorporateActionsView {...props} footerPaneId="earnings-estimates" />;
 }
 
-export const researchPlugin: GloomPlugin = {
-  id: "research",
-  name: "Research",
-  version: "1.0.0",
-  description: "Analyst research, corporate actions, and relative valuation",
-  toggleable: true,
-
+export const researchModule: PluginModule = {
   setup(ctx) {
     ctx.registerTickerResearchTab({
       id: "analyst-research",

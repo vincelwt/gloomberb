@@ -285,16 +285,41 @@ describe("loadConfig", () => {
     expect(config.disabledPlugins).toEqual(["chat", "news"]);
   });
 
-  test("migrates disabled built-in feature plugins to grouped plugin ids", async () => {
+  test("migrates disabled built-in modules to their owning plugin ids", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
       configVersion: CURRENT_CONFIG_VERSION - 1,
-      disabledPlugins: ["options", "sec", "world-indices", "earnings-calendar", "ibkr", "broker-manager", "options"],
+      disabledPlugins: [
+        "options",
+        "sec",
+        "thirteenf",
+        "world-indices",
+        "market-heatmap",
+        "fear-greed",
+        "earnings-calendar",
+        "macro-tv",
+        "ibkr",
+        "broker-manager",
+        "analytics",
+        "kelly-sizer",
+        "portfolio-list",
+        "changelog",
+        "help",
+        "layout-manager",
+        "application",
+      ],
     }));
 
     const config = await loadConfig(dataDir);
 
-    expect(config.disabledPlugins).toEqual(["ticker-research", "market-overview", "macro", "ibkr", "broker"]);
+    expect(config.disabledPlugins).toEqual([
+      "ticker-research",
+      "market-overview",
+      "macro",
+      "ibkr",
+      "broker",
+      "portfolio",
+    ]);
   });
 
   test("migrates grouped built-in plugin config keys", async () => {
@@ -308,6 +333,16 @@ describe("loadConfig", () => {
         "company-research": {
           preferredTab: "analyst-research",
         },
+        "kelly-sizer": {
+          inherited: true,
+          shared: "legacy",
+        },
+        portfolio: {
+          shared: "canonical",
+        },
+        changelog: {
+          dismissedVersion: "1.2.3",
+        },
       },
     }));
 
@@ -318,7 +353,26 @@ describe("loadConfig", () => {
         selectedExpiration: "2026-06-19",
         preferredTab: "analyst-research",
       },
+      portfolio: {
+        inherited: true,
+        shared: "canonical",
+      },
+      application: {
+        dismissedVersion: "1.2.3",
+      },
     });
+  });
+
+  test("does not repeat the legacy Cloud-to-Macro disable migration", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: CURRENT_CONFIG_VERSION - 1,
+      disabledPlugins: ["gloomberb-cloud"],
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.disabledPlugins).toEqual(["gloomberb-cloud"]);
   });
 
   test("enables Gloom Cloud when migrating older default configs", async () => {
@@ -368,7 +422,13 @@ describe("loadConfig", () => {
         name: "Chart",
         layout: DEFAULT_LAYOUT,
         paneState: {
-          "ticker-detail:main": { activeTabId: "chart" },
+          "ticker-detail:main": {
+            activeTabId: "chart",
+            pluginState: {
+              "ticker-detail": { detailMetric: "revenue", shared: "legacy" },
+              "ticker-research": { shared: "canonical" },
+            },
+          },
           "missing:pane": { activeTabId: "overview" },
         },
         focusedPaneId: "ticker-detail:main",
@@ -379,7 +439,12 @@ describe("loadConfig", () => {
     const config = await loadConfig(dataDir);
 
     expect(config.layouts[0]?.paneState).toEqual({
-      "ticker-detail:main": { activeTabId: "chart" },
+      "ticker-detail:main": {
+        activeTabId: "chart",
+        pluginState: {
+          "ticker-research": { detailMetric: "revenue", shared: "canonical" },
+        },
+      },
     });
     expect(config.layouts[0]?.focusedPaneId).toBe("ticker-detail:main");
     expect(config.layouts[0]?.activePanel).toBe("right");
@@ -389,7 +454,12 @@ describe("loadConfig", () => {
       layouts: Array<{ paneState?: Record<string, unknown>; focusedPaneId?: string | null; activePanel?: string }>;
     };
     expect(persisted.layouts[0]?.paneState).toEqual({
-      "ticker-detail:main": { activeTabId: "chart" },
+      "ticker-detail:main": {
+        activeTabId: "chart",
+        pluginState: {
+          "ticker-research": { detailMetric: "revenue", shared: "canonical" },
+        },
+      },
     });
     expect(persisted.layouts[0]?.focusedPaneId).toBe("ticker-detail:main");
     expect(persisted.layouts[0]?.activePanel).toBe("right");
@@ -424,6 +494,37 @@ describe("loadConfig", () => {
     expect(findPaneInstance(config.layout, "portfolio-list:main")?.settings?.columnIds).toEqual(DEFAULT_PORTFOLIO_COLUMN_IDS);
     expect(findPaneInstance(config.layouts[0]?.layout ?? DEFAULT_LAYOUT, "portfolio-list:main")?.settings?.columnIds)
       .toEqual(DEFAULT_PORTFOLIO_COLUMN_IDS);
+  });
+
+  test("does not replay the portfolio column migration for version 19 configs", async () => {
+    const dataDir = await createTempConfigDir();
+    const selectedColumnIds = DEFAULT_COLUMNS.map((column) => column.id);
+    const layout = {
+      ...DEFAULT_LAYOUT,
+      instances: DEFAULT_LAYOUT.instances.map((instance) => (
+        instance.instanceId === "portfolio-list:main"
+          ? {
+            ...instance,
+            settings: {
+              ...(instance.settings ?? {}),
+              columnIds: selectedColumnIds,
+            },
+          }
+          : instance
+      )),
+    };
+
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 19,
+      layout,
+      layouts: [{ name: "Default", layout }],
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(findPaneInstance(config.layout, "portfolio-list:main")?.settings?.columnIds).toEqual(selectedColumnIds);
+    expect(findPaneInstance(config.layouts[0]?.layout ?? DEFAULT_LAYOUT, "portfolio-list:main")?.settings?.columnIds)
+      .toEqual(selectedColumnIds);
   });
 
   test("falls back to the default layout when persisted layouts use the obsolete column shape", async () => {

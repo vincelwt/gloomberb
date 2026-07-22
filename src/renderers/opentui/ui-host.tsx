@@ -61,6 +61,7 @@ const OpenTuiScrollBox = createOpenTuiPrimitive("scrollbox");
 const OpenTuiInput = createOpenTuiPrimitive("input");
 const OpenTuiTextarea = createOpenTuiPrimitive("textarea");
 const OpenTuiSpinnerMark = createOpenTuiPrimitive("spinner");
+const OpenTuiMediaSurface = createOpenTuiPrimitive("box");
 
 const OpenTuiText = forwardRef<unknown, TextProps>(function OpenTuiText({ children, ...props }, ref) {
   const textProps = stripTextProps(props);
@@ -103,6 +104,7 @@ export const openTuiUiHost: UiHost = {
   Textarea: OpenTuiTextarea as UiHost["Textarea"],
   ChartSurface: OpenTuiChartSurface,
   ImageSurface: OpenTuiImageSurface,
+  MediaSurface: OpenTuiMediaSurface as UiHost["MediaSurface"],
   SpinnerMark: OpenTuiSpinnerMark as UiHost["SpinnerMark"],
   AsciiText: ({ text, font = "tiny", color, fg, bg, backgroundColor, selectable = false, ...props }) => {
     const resolvedColor = color ?? fg;

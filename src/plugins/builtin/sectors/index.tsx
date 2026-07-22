@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Box } from "../../../ui";
 import { DataTableView, Tabs, usePaneFooter, type DataTableCell, type DataTableKeyEvent } from "../../../components";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { PaneProps } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import type { Quote } from "../../../types/financials";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatPercentRaw } from "../../../utils/format";
@@ -304,13 +305,7 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
   );
 }
 
-export const sectorsPlugin: GloomPlugin = {
-  id: "sectors",
-  name: "Sector Performance",
-  version: "1.0.0",
-  description: "S&P 500 sector and industry performance via ETF proxies",
-  toggleable: true,
-
+export const sectorsModule: PluginModule = {
   panes: [
     {
       id: "sectors",

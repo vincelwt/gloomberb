@@ -1,4 +1,5 @@
-import type { GloomPlugin, PaneTemplateCreateOptions, PaneTemplateContext } from "../../../types/plugin";
+import type { PaneTemplateCreateOptions, PaneTemplateContext } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import {
   THIRTEENF_PANE_ID,
   THIRTEENF_TEMPLATE_ID,
@@ -19,13 +20,7 @@ function initialCikFromQuery(query: string): string | undefined {
   return isCikQuery(query) ? query.padStart(10, "0") : undefined;
 }
 
-export const thirteenFPlugin: GloomPlugin = {
-  id: "thirteenf",
-  name: "13F Funds",
-  version: "1.0.0",
-  description: "Browse 13F fund filings, estimated long-book performance, holdings, changes, and filing history.",
-  toggleable: true,
-
+export const thirteenFModule: PluginModule = {
   setup(ctx) {
     attachThirteenFApiPersistence(ctx.persistence);
   },

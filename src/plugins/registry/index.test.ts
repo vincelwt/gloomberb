@@ -5,6 +5,11 @@ import { createDefaultConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type { GloomPlugin, GloomPluginContext } from "../../types/plugin";
 import { assetDataProvider } from "../../capabilities";
+import {
+  applicationPlugin,
+  macroPlugin,
+  portfolioPlugin,
+} from "../builtin/composite-plugins";
 import { PluginRegistry } from "./index";
 
 const dataProvider: DataProvider = {
@@ -71,6 +76,18 @@ afterEach(() => {
 });
 
 describe("PluginRegistry lifecycle", () => {
+  test("rejects retired built-in module ids", async () => {
+    const registry = createRegistry();
+
+    await expect(registry.register({
+      id: "analytics",
+      name: "Conflicting Analytics",
+      version: "1.0.0",
+    })).rejects.toThrow("Plugin id is reserved by a built-in module: analytics");
+
+    expect(registry.allPlugins.has("analytics")).toBe(false);
+  });
+
   test("rolls back rejected registrations and always removes owned contributions", async () => {
     const registry = createRegistry();
     const pane = {
@@ -110,6 +127,40 @@ describe("PluginRegistry lifecycle", () => {
     expect(() => registry.unregister("throwing-dispose")).toThrow("dispose failed");
     expect(registry.allPlugins.has("throwing-dispose")).toBe(false);
     expect(registry.panes.has("disposable-pane")).toBe(false);
+  });
+});
+
+describe("built-in composite plugin ownership", () => {
+  test("registers modules through their one top-level owner", async () => {
+    const registry = createRegistry();
+    await registry.register(portfolioPlugin);
+    await registry.register(applicationPlugin);
+    await registry.register(macroPlugin);
+
+    expect(registry.getPluginPaneIds("portfolio")).toEqual(expect.arrayContaining([
+      "portfolio-list",
+      "analytics",
+      "kelly-sizer",
+    ]));
+    expect(registry.getPluginPaneIds("application")).toEqual(expect.arrayContaining([
+      "help",
+      "changelog",
+    ]));
+    expect(registry.getPluginPaneIds("macro")).toEqual(expect.arrayContaining([
+      "econ-calendar",
+      "yield-curve",
+      "earnings-calendar",
+      "macro-tv",
+    ]));
+    expect(registry.getPaneTemplatePluginId("macro-tv-pane")).toBe("macro");
+    expect(registry.getPanePluginId("analytics")).toBe("portfolio");
+    expect(registry.getPanePluginId("help")).toBe("application");
+    expect(registry.getPanePluginId("macro-tv")).toBe("macro");
+    expect(registry.getCommandPluginId("earnings-monitor-shortcut")).toBe("macro");
+    expect(registry.getCommandPluginId("gridlock-all")).toBe("application");
+    expect(registry.allPlugins.has("analytics")).toBe(false);
+    expect(registry.allPlugins.has("kelly-sizer")).toBe(false);
+    expect(registry.allPlugins.has("changelog")).toBe(false);
   });
 });
 

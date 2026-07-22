@@ -1,4 +1,5 @@
-import type { GloomPlugin, PaneTemplateContext, PaneTemplateCreateOptions } from "../../../types/plugin";
+import type { PaneTemplateContext, PaneTemplateCreateOptions } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { DEFAULT_FLOATING_SIZE, KELLY_PANE_ID } from "./constants";
 import { KellySizerPane } from "./pane";
 
@@ -10,12 +11,7 @@ function resolveTemplateSymbol(context: PaneTemplateContext, options?: PaneTempl
     ?? null;
 }
 
-export const kellySizerPlugin: GloomPlugin = {
-  id: KELLY_PANE_ID,
-  name: "Position Sizer",
-  version: "1.0.0",
-  description: "Size positions from Kelly, risk budget, and asymmetric payoff assumptions.",
-  toggleable: true,
+export const positionSizerModule: PluginModule = {
   panes: [
     {
       id: KELLY_PANE_ID,

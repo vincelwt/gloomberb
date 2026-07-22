@@ -2,7 +2,8 @@ import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { DataTableStackView, usePaneFooter, type DataTableCell } from "../../../components";
-import type { GloomPluginContext, PaneProps } from "../../../types/plugin";
+import type { PaneProps } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { colors, blendHex } from "../../../theme/colors";
 import type { EconEvent } from "./types";
 import { EconDetailView } from "./detail-view";
@@ -350,11 +351,8 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
   );
 }
 
-export function registerEconCalendarFeature(ctx: GloomPluginContext): void {
-  attachEconCalendarPersistence(ctx.persistence);
-  attachEconFredPersistence(ctx.persistence);
-
-  ctx.registerPane({
+export const economicCalendarModule: PluginModule = {
+  panes: [{
     id: "econ-calendar",
     name: "Economic Calendar",
     icon: "E",
@@ -362,19 +360,21 @@ export function registerEconCalendarFeature(ctx: GloomPluginContext): void {
     defaultPosition: "right",
     defaultMode: "floating",
     defaultFloatingSize: { width: 100, height: 30 },
-  });
-
-  ctx.registerPaneTemplate({
+  }],
+  paneTemplates: [{
     id: "econ-calendar-pane",
     paneId: "econ-calendar",
     label: "Economic Calendar",
     description: "Upcoming economic events, releases, and indicators.",
     keywords: ["econ", "economic", "calendar", "events", "macro", "releases", "fed", "cpi", "gdp"],
     shortcut: { prefix: "ECON" },
-  });
-}
-
-export function resetEconCalendarFeature(): void {
-  resetEconCalendarPersistence();
-  resetEconFredPersistence();
-}
+  }],
+  setup(ctx) {
+    attachEconCalendarPersistence(ctx.persistence);
+    attachEconFredPersistence(ctx.persistence);
+  },
+  dispose() {
+    resetEconCalendarPersistence();
+    resetEconFredPersistence();
+  },
+};

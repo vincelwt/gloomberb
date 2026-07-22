@@ -1,7 +1,8 @@
 import { Box, ScrollBox, Text } from "../../../ui";
 import { useCallback, useMemo, useState } from "react";
 import { usePaneFooter } from "../../../components";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { PaneProps } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { colors } from "../../../theme/colors";
 import { usePluginTickerActions } from "../../runtime";
@@ -217,13 +218,7 @@ function CorrelationMatrixPane({ width, height }: PaneProps) {
   );
 }
 
-export const correlationPlugin: GloomPlugin = {
-  id: "correlation",
-  name: "Correlation Matrix",
-  version: "1.0.0",
-  description: "NxN Pearson correlation matrix for tickers in portfolios/watchlists",
-  toggleable: true,
-
+export const correlationModule: PluginModule = {
   panes: [
     {
       id: "correlation",

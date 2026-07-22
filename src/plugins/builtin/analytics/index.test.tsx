@@ -14,7 +14,7 @@ import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import type { BrokerAccount } from "../../../types/trading";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../runtime";
-import { analyticsPlugin } from "./index";
+import { portfolioAnalyticsModule } from "./index";
 
 const TEST_PANE_ID = "analytics:test";
 const BROKER_PORTFOLIO_ID = "broker:ibkr-flex:DU12345";
@@ -23,7 +23,7 @@ const GATEWAY_PORTFOLIO_ID = "broker:ibkr-live:DU12345";
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let harnessState: ReturnType<typeof createInitialState> | null = null;
 
-const AnalyticsPane = analyticsPlugin.panes![0]!.component as (props: {
+const AnalyticsPane = portfolioAnalyticsModule.panes![0]!.component as (props: {
   paneId: string;
   paneType: string;
   focused: boolean;
@@ -175,7 +175,7 @@ function AnalyticsHarness({
   return (
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
-        <PluginRenderProvider pluginId={analyticsPlugin.id} runtime={runtime}>
+        <PluginRenderProvider pluginId="portfolio" runtime={runtime}>
           <AnalyticsPane
             paneId={TEST_PANE_ID}
             paneType="analytics"

@@ -1,6 +1,6 @@
 import { Text } from "../../../ui";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { GloomPlugin } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import type { SecFilingDocument, SecFilingItem } from "../../../types/data-provider";
 import { useResolvedEntryValue, useSecFilingContent, useSecFilingDocuments, useSecFilingsQuery } from "../../../market-data/hooks";
 import { instrumentFromTicker } from "../../../market-data/request-types";
@@ -409,13 +409,7 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
   );
 }
 
-export const secPlugin: GloomPlugin = {
-  id: "sec",
-  name: "SEC",
-  version: "1.0.0",
-  description: "Recent SEC filings for US equities",
-  toggleable: true,
-
+export const secModule: PluginModule = {
   panes: [
     {
       id: "sec",

@@ -92,6 +92,8 @@ On macOS and Windows, desktop updates replace the installed app in place and kee
 
 For the best terminal experience, use a [Kitty](https://sw.kovidgoyal.net/kitty/)-compatible terminal such as Ghostty, Kitty, or WezTerm.
 
+Live TV in the terminal also requires `mpv` with Kitty video output. Gloomberb resolves the stream in JavaScript and runs `mpv` with its `yt-dlp` integration disabled, so `yt-dlp` is not required.
+
 ## Start
 
 Open command mode with `Ctrl+P`, then type a command. Press `` ` `` to open ticker search directly.
@@ -236,6 +238,7 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `ECON` | Economic events and releases |
 | `GC` | Yield curve |
 | `ERN` | Earnings calendar |
+| `TV` | Live Bloomberg, CNBC, and Yahoo Finance television |
 | `BI` / `SP` | S&P 500 sector performance |
 | `FXC` | Major FX cross rates |
 | `FNG` | Fear and greed market gauge |
