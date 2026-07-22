@@ -1,7 +1,7 @@
 import { dirname, resolve } from "path";
 import { mkdir } from "fs/promises";
 import type { PaneRuntimeState } from "../../core/state/app/state";
-import type { OptionsChain, TickerFinancials } from "../../types/financials";
+import type { OptionsChain, PricePoint, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { slugifyName } from "../../utils/slugify";
 import {
@@ -30,7 +30,11 @@ import type {
 } from "../../plugins/builtin/ticker-detail/data-panes/fundamental-graph/types";
 import type { TimeRange } from "../../components/chart/core/types";
 import { appendLiveQuotePoint } from "../../components/chart/core/data";
-import { subtractTimeRange } from "../../components/chart/core/date-window";
+import {
+  buildPresetDateWindow,
+  getVisibleWindowForDateRange,
+  subtractTimeRange,
+} from "../../components/chart/core/date-window";
 import {
   collectShotSymbols,
   clipPriceHistoryToRange,
@@ -529,7 +533,7 @@ function normalizeChartSeries(
 
 function chartSeriesEvidence(
   symbol: string,
-  points: Array<{ date: Date; close: number }>,
+  points: PricePoint[],
 ): PaneScreenshotChartSeriesEvidence {
   const pointEvidence = (
     point: typeof points[number] | undefined,
@@ -548,18 +552,12 @@ function chartSeriesEvidence(
 
 export function chartSeriesEvidenceWithinRange(
   symbol: string,
-  points: Array<{ date: Date; close: number }>,
+  points: PricePoint[],
   range: TimeRange,
 ): PaneScreenshotChartSeriesEvidence {
-  if (range === "ALL" || points.length === 0) {
-    return chartSeriesEvidence(symbol, points);
-  }
-  const latestTimestamp = points.at(-1)!.date.getTime();
-  const rangeStart = subtractTimeRange(new Date(latestTimestamp), range).getTime();
-  return chartSeriesEvidence(
-    symbol,
-    points.filter(({ date }) => date.getTime() >= rangeStart),
-  );
+  const dateWindow = buildPresetDateWindow(points.map(({ date }) => date), range);
+  const visiblePoints = getVisibleWindowForDateRange(points, dateWindow, 0).points;
+  return chartSeriesEvidence(symbol, visiblePoints);
 }
 
 function shotExpectedChart(
