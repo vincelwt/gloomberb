@@ -226,6 +226,26 @@ describe("appendLiveQuotePoint", () => {
     expect(extended.at(-1)?.close).toBe(131);
   });
 
+  test("does not bridge a missing intraday history window with one synthetic candle", () => {
+    const history: PricePoint[] = [
+      { date: new Date("2026-07-22T14:49:00Z"), close: 347.73 },
+      { date: new Date("2026-07-22T14:50:00Z"), close: 347.76 },
+      { date: new Date("2026-07-22T14:51:00Z"), close: 347.68 },
+    ];
+
+    const extended = appendLiveQuotePoint(
+      history,
+      quoteFixture({
+        symbol: "GOOG",
+        price: 346.27,
+        lastUpdated: Date.parse("2026-07-22T18:52:00Z"),
+      }),
+      Date.parse("2026-07-22T18:53:00Z"),
+    );
+
+    expect(extended).toBe(history);
+  });
+
   test("does not append a live quote tail with a likely unit mismatch", () => {
     const history: PricePoint[] = [
       { date: new Date("2026-05-18T00:00:00Z"), close: 405 },
