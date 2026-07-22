@@ -521,22 +521,45 @@ function normalizeChartSeries(
   const points = appendLiveQuotePoint(sorted, financials.quote)
     .slice()
     .sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime());
-  const evidence = (point: typeof points[number] | undefined): PaneScreenshotChartPointEvidence | null => {
-    if (!point) return null;
-    const date = new Date(point.date);
-    return Number.isFinite(date.getTime())
-      ? { date: date.toISOString(), close: point.close }
-      : null;
-  };
   return {
     points,
-    evidence: {
-      symbol,
-      pointCount: points.length,
-      first: evidence(points[0]),
-      last: evidence(points.at(-1)),
-    },
+    evidence: chartSeriesEvidence(symbol, points),
   };
+}
+
+function chartSeriesEvidence(
+  symbol: string,
+  points: Array<{ date: Date; close: number }>,
+): PaneScreenshotChartSeriesEvidence {
+  const pointEvidence = (
+    point: typeof points[number] | undefined,
+  ): PaneScreenshotChartPointEvidence | null => (
+    point && Number.isFinite(point.date.getTime())
+      ? { date: point.date.toISOString(), close: point.close }
+      : null
+  );
+  return {
+    symbol,
+    pointCount: points.length,
+    first: pointEvidence(points[0]),
+    last: pointEvidence(points.at(-1)),
+  };
+}
+
+export function chartSeriesEvidenceWithinRange(
+  symbol: string,
+  points: Array<{ date: Date; close: number }>,
+  range: TimeRange,
+): PaneScreenshotChartSeriesEvidence {
+  if (range === "ALL" || points.length === 0) {
+    return chartSeriesEvidence(symbol, points);
+  }
+  const latestTimestamp = points.at(-1)!.date.getTime();
+  const rangeStart = subtractTimeRange(new Date(latestTimestamp), range).getTime();
+  return chartSeriesEvidence(
+    symbol,
+    points.filter(({ date }) => date.getTime() >= rangeStart),
+  );
 }
 
 function shotExpectedChart(
@@ -545,9 +568,10 @@ function shotExpectedChart(
 ): PaneScreenshotExpectedChartEvidence | null {
   if (resolved.capability.id === "price-chart") {
     const range = String(resolved.options.rangePreset ?? "5Y") as TimeRange;
-    const sourceSeries = payload.financials.slice(0, 1).map(([symbol, financials]) => (
-      normalizeChartSeries(symbol, financials, range).evidence
-    ));
+    const sourceSeries = payload.financials.slice(0, 1).map(([symbol, financials]) => {
+      const { points } = normalizeChartSeries(symbol, financials, range);
+      return chartSeriesEvidenceWithinRange(symbol, points, range);
+    });
     return {
       kind: "stock-price",
       symbols: sourceSeries.map(({ symbol }) => symbol),

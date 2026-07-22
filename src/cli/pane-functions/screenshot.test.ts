@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { RemoteUiNodeSnapshot } from "../../remote/types";
 import {
+  chartSeriesEvidenceWithinRange,
   chartEvidenceMismatchesFor,
   missingActiveTabSelections,
   shotDataEvidenceFor,
@@ -63,6 +64,19 @@ describe("pane screenshot chart-data verification", () => {
   test("fetches the requested comparison range instead of a coarser five-year series", () => {
     expect(shotPriceHistoryRange(resolved("price-comparison", { rangePreset: "1Y" })))
       .toBe("1Y");
+  });
+
+  test("matches the exact chart window when the latest point is later in the day", () => {
+    expect(chartSeriesEvidenceWithinRange("MSFT", [
+      { date: new Date("2021-07-22T13:30:00.000Z"), close: 286.14 },
+      { date: new Date("2021-07-23T13:30:00.000Z"), close: 289.67 },
+      { date: new Date("2026-07-22T18:39:00.000Z"), close: 505.12 },
+    ], "5Y")).toEqual({
+      symbol: "MSFT",
+      pointCount: 2,
+      first: { date: "2021-07-23T13:30:00.000Z", close: 289.67 },
+      last: { date: "2026-07-22T18:39:00.000Z", close: 505.12 },
+    });
   });
 
   test("rejects a wrong range or rendered value even when symbols are visible", () => {
