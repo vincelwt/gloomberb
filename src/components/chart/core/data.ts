@@ -16,6 +16,8 @@ export type {
 
 const MAX_LIVE_QUOTE_TAIL_AGE_MS = 7 * 24 * 60 * 60_000;
 const MAX_LIVE_QUOTE_CLOCK_SKEW_MS = 5 * 60_000;
+const MAX_INTRADAY_BAR_INTERVAL_MS = 6 * 60 * 60_000;
+const MIN_LIVE_QUOTE_TAIL_GAP_MS = 5 * 60_000;
 const MS_DAY = 86400_000;
 
 function coerceDate(value: Date | string | number): Date {
@@ -60,6 +62,16 @@ export function appendLiveQuotePoint(
 
   const latestTime = getPointTime(latest);
   if (!Number.isFinite(latestTime) || quoteTime <= latestTime) return points;
+
+  const previous = points.at(-2);
+  const latestInterval = previous ? latestTime - getPointTime(previous) : Number.NaN;
+  if (
+    latestInterval > 0
+    && latestInterval <= MAX_INTRADAY_BAR_INTERVAL_MS
+    && quoteTime - latestTime > Math.max(MIN_LIVE_QUOTE_TAIL_GAP_MS, latestInterval * 3)
+  ) {
+    return points;
+  }
 
   const latestClose = latest.close;
   if (hasLikelyQuoteUnitMismatch(
