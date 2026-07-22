@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, type InputRenderable } from "../../ui";
 import { useViewport } from "../../react/input";
 import { colors, applyTheme } from "../../theme/colors";
+import { t } from "../../i18n";
 import { getThemeIds } from "../../theme/themes";
 import type { AppConfig } from "../../types/config";
 import type { PluginRegistry } from "../../plugins/registry";
@@ -56,7 +57,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
 
   const portfolioChoices = useMemo<ListViewItem[]>(() => {
     const choices: ListViewItem[] = [
-      { id: "manual", label: "Create Manual Portfolio", description: "Add tickers and positions by hand" },
+      { id: "manual", label: t("Create Manual Portfolio"), description: t("Add tickers and positions by hand") },
     ];
     for (const broker of brokerOptions) {
       choices.push({
@@ -220,14 +221,14 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
     ? brokerOptions.find((broker) => broker.id === selectedBrokerId)?.name
     : null;
 
-  let hintText = "enter ->";
+  let hintText = t("enter ->");
   if (step === "ready") {
-    hintText = "enter to launch";
+    hintText = t("enter to launch");
   }
   if (step === "portfolio" && portfolioSub === "broker-sync") {
     hintText = isBrokerSyncing ? "syncing broker..." : "enter to retry";
   } else if (isFinishing) {
-    hintText = "launching...";
+    hintText = t("launching...");
   }
 
   return (

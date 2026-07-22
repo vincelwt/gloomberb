@@ -13,6 +13,7 @@ import {
   DEFAULT_PORTFOLIO_COLUMN_IDS,
 } from "../../../types/config";
 import type { Portfolio, Watchlist } from "../../../types/ticker";
+import { isLanguagePreference } from "../../../i18n/languages";
 import { isLayoutConfig, sanitizeLayout } from "../layout";
 
 const LEGACY_MAIN_PORTFOLIO_COLUMN_IDS = DEFAULT_COLUMNS.map((column) => column.id);
@@ -98,6 +99,7 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     chartPreferences: sanitizeChartPreferences(saved.chartPreferences, defaults.chartPreferences),
     valueFlashingEnabled: typeof saved.valueFlashingEnabled === "boolean" ? saved.valueFlashingEnabled : defaults.valueFlashingEnabled,
     recentTickers: sanitizeStringArray(saved.recentTickers, defaults.recentTickers),
+    language: isLanguagePreference(saved.language) ? saved.language : undefined,
     onboardingComplete: typeof saved.onboardingComplete === "boolean" ? saved.onboardingComplete : defaults.onboardingComplete,
   };
 
@@ -110,6 +112,7 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     || !Array.isArray(saved.disabledSources)
     || !isPluginConfigMap(saved.pluginConfig)
     || !isChartPreferences(saved.chartPreferences)
+    || (saved.language !== undefined && !isLanguagePreference(saved.language))
     || typeof saved.valueFlashingEnabled !== "boolean"
     || typeof saved.activeLayoutIndex !== "number";
 

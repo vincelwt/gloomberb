@@ -2,6 +2,7 @@ import type { ChoiceDialogChoice } from "../../../components";
 import type { AccountProfile, PublicPortfolioAnalytics } from "../../../api-client";
 import type { Portfolio, TickerRecord } from "../../../types/ticker";
 import { formatNumber } from "../../../utils/format";
+import { t, tf } from "../../../i18n";
 
 export { truncateWithEllipsis as truncate } from "../../../utils/text-wrap";
 
@@ -82,7 +83,7 @@ export function emptyToNull(value: string): string | null {
 }
 
 export function formatPlan(plan: AccountProfile["plan"] | null | undefined): string {
-  return plan === "pro" ? "Pro" : "Free";
+  return plan === "pro" ? t("Pro") : t("Free");
 }
 
 export function countPortfolioHoldings(tickers: ReadonlyMap<string, TickerRecord>): Record<string, number> {
@@ -97,12 +98,12 @@ export function countPortfolioHoldings(tickers: ReadonlyMap<string, TickerRecord
 
 export function buildPortfolioChoices(portfolios: Portfolio[], holdingCounts: Record<string, number>): ChoiceDialogChoice[] {
   return [
-    { id: NO_PORTFOLIO_VALUE, label: "None", detail: "Off", description: "Do not show portfolio analytics on your public profile." },
+    { id: NO_PORTFOLIO_VALUE, label: t("None"), detail: t("Off"), description: t("Do not show portfolio analytics on your public profile.") },
     ...portfolios.map((portfolio) => ({
       id: portfolio.id,
       label: portfolio.name,
-      detail: `${holdingCounts[portfolio.id] ?? 0} tickers`,
-      description: "Shares this portfolio's 1Y return and SPY Beta on your public profile.",
+      detail: tf("{count} tickers", { count: holdingCounts[portfolio.id] ?? 0 }),
+      description: t("Shares this portfolio's 1Y return and SPY Beta on your public profile."),
     })),
   ];
 }
@@ -112,7 +113,7 @@ export function portfolioOptionIds(portfolios: Portfolio[]): string[] {
 }
 
 export function selectedPortfolioLabel(portfolios: Portfolio[], value: string): string {
-  if (!value) return "None";
+  if (!value) return t("None");
   return portfolios.find((portfolio) => portfolio.id === value)?.name ?? value;
 }
 
@@ -199,8 +200,8 @@ export function buildProfileAnalyticsPreview({
   if (!selectedPortfolioId) {
     return {
       status: "off",
-      title: "No public portfolio analytics",
-      subtitle: "Choose a portfolio to preview the public profile metrics.",
+      title: t("No public portfolio analytics"),
+      subtitle: t("Choose a portfolio to preview the public profile metrics."),
       metrics: [],
       publicAnalytics: null,
     };
@@ -209,7 +210,7 @@ export function buildProfileAnalyticsPreview({
   if (!portfolio) {
     return {
       status: "missing",
-      title: "Portfolio not found",
+      title: t("Portfolio not found"),
       subtitle: selectedPortfolioId,
       metrics: [],
       publicAnalytics: null,
@@ -220,7 +221,7 @@ export function buildProfileAnalyticsPreview({
     return {
       status: "empty",
       title: portfolio.name,
-      subtitle: "No positions to preview yet.",
+      subtitle: t("No positions to preview yet."),
       metrics: [],
       publicAnalytics: null,
     };
@@ -241,15 +242,15 @@ export function buildProfileAnalyticsPreview({
       {
         id: "one-year",
         label: "1Y",
-        value: oneYearReturn == null ? "Pending" : signedReturn(oneYearReturn),
-        detail: oneYearReturn == null ? "needs price history" : undefined,
+        value: oneYearReturn == null ? t("Pending") : signedReturn(oneYearReturn),
+        detail: oneYearReturn == null ? t("needs price history") : undefined,
         tone: signedTone(oneYearReturn),
       },
       {
         id: "beta",
         label: "SPY Beta",
-        value: beta == null ? "Pending" : formatNumber(beta, 2),
-        detail: beta == null ? "needs SPY overlap" : undefined,
+        value: beta == null ? t("Pending") : formatNumber(beta, 2),
+        detail: beta == null ? t("needs SPY overlap") : undefined,
         tone: beta == null ? "muted" : undefined,
       },
     ],
@@ -278,8 +279,8 @@ export function buildPublishedProfileAnalyticsPreview({
   if (!selectedPortfolioId) {
     return {
       status: "off",
-      title: "No public portfolio analytics",
-      subtitle: "Choose a portfolio to publish 1Y return and SPY Beta.",
+      title: t("No public portfolio analytics"),
+      subtitle: t("Choose a portfolio to publish 1Y return and SPY Beta."),
       metrics: [],
       publicAnalytics: null,
     };
@@ -288,7 +289,7 @@ export function buildPublishedProfileAnalyticsPreview({
   if (!portfolio) {
     return {
       status: "missing",
-      title: "Portfolio not found",
+      title: t("Portfolio not found"),
       subtitle: selectedPortfolioId,
       metrics: [],
       publicAnalytics: null,
@@ -299,7 +300,7 @@ export function buildPublishedProfileAnalyticsPreview({
     return {
       status: "pending",
       title: portfolio.name,
-      subtitle: "Loading published metrics.",
+      subtitle: t("Loading published metrics."),
       metrics: [],
       publicAnalytics: null,
     };
@@ -309,7 +310,7 @@ export function buildPublishedProfileAnalyticsPreview({
     return {
       status: "pending",
       title: portfolio.name,
-      subtitle: "Save profile to update published metrics.",
+      subtitle: t("Save profile to update published metrics."),
       metrics: [],
       publicAnalytics: null,
     };
@@ -318,8 +319,8 @@ export function buildPublishedProfileAnalyticsPreview({
   if (!savedProfilePublic) {
     return {
       status: "off",
-      title: "No public portfolio analytics",
-      subtitle: "Public profile is off.",
+      title: t("No public portfolio analytics"),
+      subtitle: t("Public profile is off."),
       metrics: [],
       publicAnalytics: null,
     };
@@ -330,7 +331,7 @@ export function buildPublishedProfileAnalyticsPreview({
     return {
       status: "pending",
       title: portfolio.name,
-      subtitle: syncing ? "Syncing published metrics." : "Waiting for published metrics.",
+      subtitle: syncing ? t("Syncing published metrics.") : t("Waiting for published metrics."),
       metrics: [],
       publicAnalytics: null,
     };

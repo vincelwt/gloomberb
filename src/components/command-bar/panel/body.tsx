@@ -18,6 +18,7 @@ import type {
 import { CommandBarWorkflowBody } from "../workflow/body";
 import type { CommandBarConfirmRoute, CommandBarRoute } from "../workflow/types";
 import { truncateText } from "../view-model";
+import { t } from "../../../i18n";
 
 type CommandBarPanelBodyProps = Omit<
   CommandBarPanelProps,
@@ -100,12 +101,12 @@ export function CommandBarPanelBody({
         >
           {currentRoute && (
             <Box marginRight={1}>
-              <Button label="Back" variant="ghost" onPress={onBack} />
+              <Button label={t("Back")} variant="ghost" onPress={onBack} />
             </Box>
           )}
           <Box flexGrow={1}>
             <Text fg={paletteText} attributes={TextAttributes.BOLD}>
-              {getCommandBarPanelTitle(currentRoute)}
+              {t(getCommandBarPanelTitle(currentRoute))}
             </Text>
           </Box>
         </Box>
@@ -123,7 +124,7 @@ export function CommandBarPanelBody({
               }}
               data-gloom-interactive="true"
             >
-              ← Back
+              {`← ${t("Back")}`}
             </Text>
           </Box>
         )}
@@ -284,7 +285,7 @@ function CommandBarConfirmBody({
     <Box flexDirection="column" height={bodyHeight} paddingX={contentPadding}>
       {route.body.map((line, index) => (
         <Box key={`confirm:${index}`} height={1}>
-          <Text fg={paletteText}>{truncateText(line, queryDisplayWidth)}</Text>
+          <Text fg={paletteText}>{truncateText(t(line), queryDisplayWidth)}</Text>
         </Box>
       ))}
       <Box height={1} />
@@ -295,13 +296,13 @@ function CommandBarConfirmBody({
       )}
       {route.pending && (
         <Box height={1}>
-          <Spinner label="Working…" />
+          <Spinner label={t("Working…")} />
         </Box>
       )}
       <Box flexGrow={1} />
       <Box flexDirection="row" gap={1}>
         <Button
-          label={route.confirmLabel}
+          label={t(route.confirmLabel)}
           variant={route.tone === "danger" ? "danger" : "primary"}
           onPress={onConfirm}
           disabled={route.pending}

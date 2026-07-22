@@ -2,6 +2,7 @@
 /** @jsxImportSource react */
 import { createRoot } from "react-dom/client";
 import { App } from "../../../app";
+import { applyLanguageFromConfig } from "../../../i18n";
 import { UiHostProvider } from "../../../ui/host";
 import { debugLog } from "../../../utils/debug-log";
 import { measurePerfAsync } from "../../../utils/perf-marks";
@@ -87,6 +88,7 @@ async function boot() {
     ? prepareDetachedSnapshot(init.desktopSnapshot, init.paneId)
     : init.desktopSnapshot;
   const config = desktopSnapshot?.config ?? init.config;
+  applyLanguageFromConfig(config);
   const desktopWindowBridge = createDesktopWindowBridge(init.windowKind, init.paneId);
   const desktopApplicationMenuBridge = createApplicationMenuBridge();
   const desktopDeepLinkBridge = createDesktopDeepLinkBridge();

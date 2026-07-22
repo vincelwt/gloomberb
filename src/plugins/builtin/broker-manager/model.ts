@@ -3,6 +3,7 @@ import type { AppConfig, BrokerInstanceConfig } from "../../../types/config";
 import type { BrokerAccount } from "../../../types/trading";
 import { formatCurrency } from "../../../utils/format";
 import { formatRelativeAge } from "../../../utils/relative-time";
+import { t } from "../../../i18n";
 
 export type BrokerDisplayState =
   | "disabled"
@@ -38,7 +39,7 @@ function titleCase(value: string): string {
 
 function formatBrokerMode(value: unknown): string {
   const text = typeof value === "string" ? value.trim() : "";
-  return text ? titleCase(text) : "Configured";
+  return text ? titleCase(text) : t("Configured");
 }
 
 export function formatBrokerUpdatedAt(updatedAt: number | undefined, now = Date.now()): string {
@@ -76,28 +77,28 @@ function resolveState(
   status: BrokerConnectionStatus | null,
 ): { state: BrokerDisplayState; label: string; message: string; updatedAt: number } {
   if (instance.enabled === false) {
-    return { state: "disabled", label: "Disabled", message: "Profile is disabled", updatedAt: 0 };
+    return { state: "disabled", label: t("Disabled"), message: t("Profile is disabled"), updatedAt: 0 };
   }
   if (!adapter) {
-    return { state: "unavailable", label: "Unavailable", message: "Broker plugin is not available", updatedAt: 0 };
+    return { state: "unavailable", label: t("Unavailable"), message: t("Broker plugin is not available"), updatedAt: 0 };
   }
   if (mode.toLowerCase() === "flex") {
     return {
       state: "configured",
-      label: "Sync only",
-      message: "Flex profiles sync on demand",
+      label: t("Sync only"),
+      message: t("Flex profiles sync on demand"),
       updatedAt: status?.updatedAt ?? 0,
     };
   }
   if (!status) {
-    return { state: "configured", label: "Configured", message: "Ready to test or sync", updatedAt: 0 };
+    return { state: "configured", label: t("Configured"), message: t("Ready to test or sync"), updatedAt: 0 };
   }
 
   const labels: Record<BrokerConnectionStatus["state"], string> = {
-    disconnected: "Disconnected",
-    connecting: "Connecting",
-    connected: "Connected",
-    error: "Error",
+    disconnected: t("Disconnected"),
+    connecting: t("Connecting"),
+    connected: t("Connected"),
+    error: t("Error"),
   };
   return {
     state: status.state,

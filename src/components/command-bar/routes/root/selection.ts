@@ -172,6 +172,19 @@ export function buildImmediateRootSelection(options: RootSelectionCommandOptions
     };
   }
 
+  if (match.command.id === "language") {
+    return {
+      id: `command:${match.command.id}`,
+      label: match.command.label,
+      detail: match.command.description,
+      category: match.command.category,
+      kind: "command",
+      right: match.arg || match.command.prefix,
+      shortcutQuery: match.command.prefix,
+      action: () => options.runDirectCommand(match.command, match.arg),
+    };
+  }
+
   if (match.command.id === "plugins") {
     return {
       id: "plugins-route",

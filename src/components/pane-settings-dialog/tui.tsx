@@ -1,4 +1,5 @@
 import { Box, Text } from "../../ui";
+import { t } from "../../i18n";
 import { TextAttributes } from "../../ui";
 import type { PaneSettingField } from "../../types/plugin";
 import { colors } from "../../theme/colors";
@@ -7,8 +8,8 @@ import { summarizePaneSettingValue } from "./value";
 
 export function TuiUnavailablePaneSettingsDialog() {
   return (
-    <DialogFrame title="Pane Settings" footer="Press esc to cancel">
-      <Text fg={colors.textDim}>This pane is no longer configurable.</Text>
+    <DialogFrame title={t("Pane Settings")} footer={t("Press esc to cancel")}>
+      <Text fg={colors.textDim}>{t("This pane is no longer configurable.")}</Text>
     </DialogFrame>
   );
 }
@@ -29,12 +30,12 @@ export function TuiPaneSettingsDialogBody({
   onActivate: (field: PaneSettingField | undefined) => void;
 }) {
   return (
-    <DialogFrame title={title}>
+    <DialogFrame title={t(title)}>
       <ListView
         items={fields.map((field) => ({
           id: field.key,
-          label: field.label,
-          description: field.description,
+          label: t(field.label),
+          description: field.description ? t(field.description) : field.description,
           detail: summarizePaneSettingValue(field, settings[field.key]),
         }))}
         selectedIndex={selectedIndex}
@@ -65,7 +66,7 @@ export function TuiPaneSettingsDialogBody({
       />
       {fields.length === 0 && (
         <Box height={1}>
-          <Text fg={colors.textDim}>No settings available.</Text>
+          <Text fg={colors.textDim}>{t("No settings available.")}</Text>
         </Box>
       )}
     </DialogFrame>

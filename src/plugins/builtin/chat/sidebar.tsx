@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Box, Span, Text, useUiCapabilities } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { blendHex, colors, hoverBg } from "../../../theme/colors";
+import { t, tf } from "../../../i18n";
 import type { ChatChannel } from "../../../api-client";
 import type { ChatController } from "./controller";
 import {
@@ -289,13 +290,13 @@ export function ChannelSidebar({
         <Box flexGrow={1} />
         {loading && focused && (
           <Box height={1} width={listWidth} flexDirection="row">
-            <Text fg={colors.textDim}> syncing</Text>
+            <Text fg={colors.textDim}>{` ${t("syncing")}`}</Text>
           </Box>
         )}
         <Box height={1} width={listWidth} flexDirection="row" paddingX={onlineCountPaddingX}>
           <Text fg={colors.positive}>●</Text>
           <Text fg={colors.textDim}>
-            {` ${truncateChannelLabel(`${onlineCount} online`, Math.max(listWidth - 2 - onlineCountPaddingX * 2, 1))}`}
+            {` ${truncateChannelLabel(tf("{count} online", { count: onlineCount }), Math.max(listWidth - 2 - onlineCountPaddingX * 2, 1))}`}
           </Text>
         </Box>
       </Box>

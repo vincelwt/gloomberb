@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import {
   forwardRef,
   memo,
@@ -247,7 +248,7 @@ export const ThemePicker = memo(forwardRef<ThemePickerHandle, ThemePickerProps>(
       bgColor={nativePaneChrome ? panelBg : paletteBg}
       selectedBgColor={paletteSelectedBg}
       hoverBgColor={paletteHoverBg}
-      emptyMessage={truncateText("No themes match", queryDisplayWidth)}
+      emptyMessage={truncateText(t("No themes match"), queryDisplayWidth)}
       showSelectedDescription={false}
       onSelect={handleSelect}
       onActivate={handleActivate}

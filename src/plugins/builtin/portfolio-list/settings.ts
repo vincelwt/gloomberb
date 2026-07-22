@@ -1,6 +1,7 @@
 import type { PaneSettingOption, PaneSettingsDef, PaneTemplateContext } from "../../../types/plugin";
 import { DEFAULT_COLUMNS, DEFAULT_PORTFOLIO_COLUMN_IDS, type AppConfig, type ColumnConfig } from "../../../types/config";
 import { PRICE_SPARKLINE_COLUMN_ID, PRICE_SPARKLINE_PERIOD_LABEL } from "../../../components/price-sparkline/view";
+import { t } from "../../../i18n";
 
 type CollectionScope = "all" | "portfolios" | "watchlists" | "custom";
 export type PortfolioViewMode = "table" | "grid";
@@ -137,7 +138,7 @@ function resolveCollectionOptions(entries: CollectionEntry[]): PaneSettingOption
   return entries.map((entry) => ({
     value: entry.id,
     label: entry.name,
-    description: entry.kind === "portfolio" ? "Portfolio" : "Watchlist",
+    description: t(entry.kind === "portfolio" ? "Portfolio" : "Watchlist"),
   }));
 }
 
@@ -228,13 +229,14 @@ export function resolveVisibleColumns(columnIds: string[], isPortfolioTab: boole
     .filter((column) => isPortfolioTab || !PORTFOLIO_ONLY_COLUMN_IDS.has(column.id));
 
   if (resolved.length > 0) {
-    return resolved;
+    return resolved.map((column) => ({ ...column, label: t(column.label) }));
   }
 
   return DEFAULT_PORTFOLIO_COLUMN_IDS
     .map((columnId) => PORTFOLIO_COLUMNS_BY_ID.get(columnId))
     .filter((column): column is ColumnConfig => column != null)
-    .filter((column) => isPortfolioTab || !PORTFOLIO_ONLY_COLUMN_IDS.has(column.id));
+    .filter((column) => isPortfolioTab || !PORTFOLIO_ONLY_COLUMN_IDS.has(column.id))
+    .map((column) => ({ ...column, label: t(column.label) }));
 }
 
 export function buildPortfolioPaneSettingsDef(

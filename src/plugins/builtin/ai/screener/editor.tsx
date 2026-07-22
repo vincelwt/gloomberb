@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { Box, Text, Textarea, type TextareaRenderable } from "../../../../ui";
 import { Button, SegmentedControl } from "../../../../components";
 import { colors } from "../../../../theme/colors";
+import { t } from "../../../../i18n";
 import {
   getAiProviderUnavailableLabel,
   getAiProviderUnavailableReason,
@@ -39,7 +40,7 @@ function ScreenerPromptEditor({
         key={editorKey}
         ref={textareaRef}
         initialValue={initialValue}
-        placeholder="Examples: humanoid robot suppliers, defense software compounders, EM payment rails, obesity-drug picks-and-shovels..."
+        placeholder={t("Examples: humanoid robot suppliers, defense software compounders, EM payment rails, obesity-drug picks-and-shovels...")}
         focused={focused}
         textColor={colors.text}
         placeholderColor={colors.textDim}
@@ -77,15 +78,15 @@ export function AiScreenerEditorView({
   return (
     <>
       <Box flexDirection="row" height={1} gap={1}>
-        <Button label="Save" variant="primary" onPress={onSave} />
-        <Button label="Cancel" variant="ghost" onPress={onCancel} />
+        <Button label={t("Save")} variant="primary" onPress={onSave} />
+        <Button label={t("Cancel")} variant="ghost" onPress={onCancel} />
       </Box>
 
       <Box flexDirection="column" paddingX={1} paddingTop={1} gap={1}>
         <Text fg={colors.textDim}>
           {editorState.mode === "create"
-            ? "Describe the companies or setups you want this screener to discover."
-            : "Update the screener prompt or provider. Saving does not rerun it automatically."}
+            ? t("Describe the companies or setups you want this screener to discover.")
+            : t("Update the screener prompt or provider. Saving does not rerun it automatically.")}
         </Text>
         <SegmentedControl
           value={editorState.providerId}

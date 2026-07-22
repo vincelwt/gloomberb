@@ -1,5 +1,6 @@
 import { Box, SpinnerMark, Text } from "../../ui";
 import { colors } from "../../theme/colors";
+import { t } from "../../i18n";
 
 export interface SpinnerProps {
   label?: string;
@@ -9,7 +10,7 @@ export function Spinner({ label }: SpinnerProps) {
   return (
     <Box flexDirection="row" gap={1}>
       <SpinnerMark name="dots" color={colors.textDim} />
-      {label && <Text fg={colors.textDim}>{label}</Text>}
+      {label && <Text fg={colors.textDim}>{t(label)}</Text>}
     </Box>
   );
 }

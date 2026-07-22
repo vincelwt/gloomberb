@@ -1,5 +1,6 @@
 import { Box, ScrollBox, Text } from "../../../ui";
 import { useEffect, useMemo, useState } from "react";
+import { t } from "../../../i18n";
 import { TextAttributes } from "../../../ui";
 import type { AppState } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
@@ -100,7 +101,7 @@ export function PortfolioCashMarginDrawer({
           event.stopPropagation();
         }}
       >
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"▸ Cash & Margin"}</Text>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{`▸ ${t("Cash & Margin")}`}</Text>
         <Box flexGrow={1} />
         <Text fg={colors.textDim}>{padTo(previewText, Math.max(0, width - 17), "right")}</Text>
       </Box>
@@ -127,7 +128,7 @@ export function PortfolioCashMarginDrawer({
           event.stopPropagation();
         }}
       >
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"▾ Cash & Margin"}</Text>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{`▾ ${t("Cash & Margin")}`}</Text>
         <Box flexGrow={1} />
         <Text fg={colors.textDim}>{accountState.sourceLabel}</Text>
       </Box>
@@ -136,7 +137,7 @@ export function PortfolioCashMarginDrawer({
       </Box>
       <ScrollBox height={currencyRowsHeight} scrollY focusable={false}>
         {accountState.visibleCashBalances.length === 0 ? (
-          <Text fg={colors.textDim}>No non-zero cash balances.</Text>
+          <Text fg={colors.textDim}>{t("No non-zero cash balances.")}</Text>
         ) : (
           accountState.visibleCashBalances.map((balance) => (
             <Box key={balance.currency} height={1} flexDirection="row">

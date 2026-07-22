@@ -2,6 +2,7 @@ import { Box, Text, TextAttributes } from "../../../../ui";
 import { colors, priceColor } from "../../../../theme/colors";
 import { displayWidth, formatNumber, padTo } from "../../../../utils/format";
 import { formatMarketPriceWithCurrency } from "../../../../market-data/market/format";
+import { t } from "../../../../i18n";
 import type { Quote } from "../../../../types/financials";
 import type { PositionTableRow, StatField } from "./types";
 
@@ -115,9 +116,9 @@ export function QuoteBook({ quote, assetCategory, width }: { quote: Quote; asset
 
   return (
     <Box flexDirection="column" width={width} flexShrink={0}>
-      <BookRow label="Bid" value={bidText} width={width} valueColor={colors.borderFocused} />
-      <BookRow label="Ask" value={askText} width={width} valueColor={colors.negative} />
-      <BookRow label="Spr" value={spreadText} width={width} valueColor={colors.textDim} />
+      <BookRow label={t("Bid")} value={bidText} width={width} valueColor={colors.borderFocused} />
+      <BookRow label={t("Ask")} value={askText} width={width} valueColor={colors.negative} />
+      <BookRow label={t("Spr")} value={spreadText} width={width} valueColor={colors.textDim} />
     </Box>
   );
 }
@@ -154,7 +155,7 @@ export function StatGrid({ fields, width }: { fields: StatField[]; width: number
                 {j > 0 && <Box width={STAT_COLUMN_GAP} />}
                 <Box width={colWidth} flexDirection="row">
                   <Box width={labelWidth} overflow="hidden">
-                    <Text fg={colors.textDim}>{field.label}</Text>
+                    <Text fg={colors.textDim}>{t(field.label)}</Text>
                   </Box>
                   <Box flexDirection="row" width={valueWidth} justifyContent="flex-end" overflow="hidden">
                     <Text fg={field.valueColor ?? colors.text}>{field.value}</Text>
@@ -219,7 +220,7 @@ export function PositionTable({ rows, width }: { rows: PositionTableRow[]; width
         {columns.map((column, index) => (
           <Box key={column.key} flexDirection="row">
             {index > 0 && <Box width={POSITION_COLUMN_GAP} />}
-            <Text fg={colors.textDim}>{padTo(column.label, column.width, column.align)}</Text>
+            <Text fg={colors.textDim}>{padTo(t(column.label), column.width, column.align)}</Text>
           </Box>
         ))}
       </Box>

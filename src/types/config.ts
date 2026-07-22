@@ -1,4 +1,5 @@
 import type { Portfolio, Watchlist } from "./ticker";
+import type { LanguagePreference } from "../i18n/languages";
 
 export const CURRENT_CONFIG_VERSION = 19;
 
@@ -135,6 +136,7 @@ export interface AppConfig {
   chartPreferences: ChartPreferences;
   valueFlashingEnabled: boolean;
   recentTickers: string[];
+  language?: LanguagePreference;
   onboardingComplete?: boolean;
 }
 

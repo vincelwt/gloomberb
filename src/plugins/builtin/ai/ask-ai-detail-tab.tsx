@@ -11,6 +11,7 @@ import { useInlineTickers } from "../../../state/hooks/inline-tickers";
 import { MarkdownText } from "../../../components/markdown-text";
 import { getMessageComposerBlockHeight, MessageComposer, Spinner, usePaneFooter } from "../../../components";
 import { colors } from "../../../theme/colors";
+import { t } from "../../../i18n";
 import { buildTickerAiContext } from "./ticker-context";
 import {
   detectProviders,
@@ -285,12 +286,12 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
       : [],
   }), [availableProviders.length, currentProvider?.available, currentProvider?.name, cycleProvider, messages.length, thinking]);
 
-  if (!ticker) return <Text fg={colors.textDim}>Select a ticker to ask AI.</Text>;
+  if (!ticker) return <Text fg={colors.textDim}>{t("Select a ticker to ask AI.")}</Text>;
 
   if (availableProviders.length === 0) {
     return (
       <Box flexDirection="column" paddingX={1} flexGrow={1}>
-        <Text fg={colors.textDim}>No AI CLI tools are ready:</Text>
+        <Text fg={colors.textDim}>{t("No AI CLI tools are ready:")}</Text>
         <Box height={1} />
         {providers.length > 0 ? providers.map((provider) => (
           <Text key={provider.id} fg={colors.text}>
@@ -344,7 +345,7 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
             {messages.length === 0 ? (
               <Box paddingTop={1}>
                 <Text fg={colors.textDim}>
-                  Ask questions about {ticker.metadata.ticker}. Financial data will be included as context.
+                  {t("Ask questions about {ticker}. Financial data will be included as context.").replace("{ticker}", ticker.metadata.ticker)}
                 </Text>
               </Box>
             ) : (
@@ -355,8 +356,8 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
                       attributes={TextAttributes.BOLD}
                       fg={message.role === "user" ? colors.textBright : colors.positive}
                     >
-                      {message.role === "user" ? "You" : currentProvider?.name || "AI"}
-                      {message.loading ? " (thinking...)" : ""}
+                      {message.role === "user" ? t("You") : currentProvider?.name || t("AI")}
+                      {message.loading ? ` (${t("thinking...")})` : ""}
                     </Text>
                   </Box>
                   <Box>
@@ -369,7 +370,7 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
                         openTicker={openTicker}
                       />
                     ) : message.loading ? (
-                      <Spinner label="Generating..." />
+                      <Spinner label={t("Generating...")} />
                     ) : (
                       <Text fg={colors.text}>{""}</Text>
                     )}
@@ -385,7 +386,7 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
         inputRef={inputRef}
         initialValue={inputValue}
         focused={inputFocused && focused}
-        placeholder="Ask a question..."
+        placeholder={t("Ask a question...")}
         terminalPrefix=" > "
         terminalBottomInset={terminalFooterClearance}
         width={nativePaneChrome ? "100%" : contentWidth}

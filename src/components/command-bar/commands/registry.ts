@@ -198,6 +198,15 @@ export const commands: Command[] = [
     description: "Cycle chart rendering between Auto, Kitty, and Braille",
     category: "Config",
   },
+  {
+    id: "language",
+    prefix: "LANG",
+    label: "Change Language",
+    description: "Switch the interface language",
+    hasArg: true,
+    argPlaceholder: "locale",
+    category: "Config",
+  },
 
   // Plugins
   {

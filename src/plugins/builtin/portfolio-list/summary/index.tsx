@@ -7,11 +7,12 @@ import type { BrokerConnectionStatus } from "../../../../types/broker";
 import type { TickerFinancials } from "../../../../types/financials";
 import type { Portfolio, TickerRecord } from "../../../../types/ticker";
 import type { BrokerAccount, BrokerCashBalance } from "../../../../types/trading";
-import { formatCompact, formatPercentRaw } from "../../../../utils/format";
+import { displayWidth, formatCompact, formatPercentRaw } from "../../../../utils/format";
 import { getBrokerInstance } from "../../../../utils/broker-instances";
 import { resolvePortfolioAccountMetrics, resolvePortfolioMarketValue } from "../account-metrics";
 import { calculatePortfolioSummaryTotals, type PortfolioSummaryTotals } from "./totals";
 import { getMostRecentQuoteUpdate } from "../../../../market-data/quotes/time";
+import { t } from "../../../../i18n";
 
 export interface PortfolioSummarySegment {
   id: string;
@@ -46,7 +47,7 @@ function createSummarySegment(
   return {
     id,
     parts,
-    length: parts.reduce((sum, part) => sum + part.text.length, 0) + Math.max(0, parts.length - 1),
+    length: parts.reduce((sum, part) => sum + displayWidth(t(part.text)), 0) + Math.max(0, parts.length - 1),
   };
 }
 
@@ -372,7 +373,7 @@ export function renderSummarySegments(segments: PortfolioSummarySegment[], width
                 fg={part.color ?? (part.tone === "label" || part.tone === "muted" ? colors.textDim : colors.text)}
                 attributes={part.bold ? TextAttributes.BOLD : 0}
               >
-                {part.text}
+                {t(part.text)}
               </Text>
             </Box>
           ))}

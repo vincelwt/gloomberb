@@ -3,6 +3,7 @@ import { Box, Text } from "../../../ui";
 import { Button } from "../../../components";
 import { usePluginAppActions } from "../../runtime";
 import { colors, hoverBg } from "../../../theme/colors";
+import { t } from "../../../i18n";
 
 function openAuthCommand(
   openCommandBar: (query?: string) => void,
@@ -26,7 +27,7 @@ export function InlineAuthActions({ showSignup = true }: { showSignup?: boolean 
         onMouseOut={() => setHoveredAction((current) => (current === "login" ? null : current))}
         onMouseDown={(event: any) => openAuthCommand(openCommandBar, "Log In", event)}
       >
-        <Text fg={hoveredAction === "login" ? colors.text : colors.textDim}> Log In </Text>
+        <Text fg={hoveredAction === "login" ? colors.text : colors.textDim}>{` ${t("Log In")} `}</Text>
       </Box>
       {showSignup && (
         <>
@@ -37,7 +38,7 @@ export function InlineAuthActions({ showSignup = true }: { showSignup?: boolean 
             onMouseOut={() => setHoveredAction((current) => (current === "signup" ? null : current))}
             onMouseDown={(event: any) => openAuthCommand(openCommandBar, "Sign Up", event)}
           >
-            <Text fg={hoveredAction === "signup" ? colors.text : colors.textDim}> Sign Up </Text>
+            <Text fg={hoveredAction === "signup" ? colors.text : colors.textDim}>{` ${t("Sign Up")} `}</Text>
           </Box>
         </>
       )}
@@ -57,8 +58,8 @@ export function CloudAuthNotice({
   if (/verification/i.test(message)) {
     return (
       <Box flexDirection="column" padding={1} gap={1}>
-        <Text fg={colors.positive}>Verify your email to use Cloud tweets.</Text>
-        <Button label="Resend Verification Email" variant="secondary" onPress={() => openCommandBar("Resend Verification Email")} />
+        <Text fg={colors.positive}>{t("Verify your email to use Cloud tweets.")}</Text>
+        <Button label={t("Resend Verification Email")} variant="secondary" onPress={() => openCommandBar("Resend Verification Email")} />
       </Box>
     );
   }

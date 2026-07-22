@@ -1,6 +1,7 @@
 import { Box, Span, Text, useNativeRenderer, useUiCapabilities } from "../../../ui";
 import { useCallback, useRef, type ReactNode } from "react";
 import { blendHex, colors, floatingPaneTitleBg, paneTitleBg, paneTitleText } from "../../../theme/colors";
+import { displayWidth, truncateToDisplayWidth } from "../../../utils/format";
 
 const PANE_HEADER_HEIGHT = 1;
 const PANE_HEADER_GRIP = ":: ";
@@ -24,10 +25,7 @@ interface PaneHeaderProps {
 }
 
 function truncateTitle(title: string, maxWidth: number): string {
-  if (maxWidth <= 0) return "";
-  if (title.length <= maxWidth) return title;
-  if (maxWidth <= 2) return ".".repeat(maxWidth);
-  return `${title.slice(0, maxWidth - 2)}..`;
+  return truncateToDisplayWidth(title, maxWidth);
 }
 
 function captureTerminalPointerDrag(renderer: unknown, renderable: unknown): void {
@@ -218,7 +216,7 @@ export function PaneHeader({
     const contentWidth = PANE_HEADER_GRIP.length + closeText.length + actionText.length;
     const titleWidth = Math.max(0, innerWidth - contentWidth);
     const clippedTitle = truncateTitle(title, titleWidth);
-    const fillLen = Math.max(0, innerWidth - PANE_HEADER_GRIP.length - clippedTitle.length - actionText.length - closeText.length);
+    const fillLen = Math.max(0, innerWidth - PANE_HEADER_GRIP.length - displayWidth(clippedTitle) - actionText.length - closeText.length);
     const fill = "─".repeat(fillLen);
 
     return (
@@ -257,7 +255,7 @@ export function PaneHeader({
 
   const titleWidth = Math.max(0, width - PANE_HEADER_GRIP.length - actionText.length - closeText.length);
   const clippedTitle = truncateTitle(title, titleWidth);
-  const padding = " ".repeat(Math.max(0, titleWidth - clippedTitle.length));
+  const padding = " ".repeat(Math.max(0, titleWidth - displayWidth(clippedTitle)));
 
   return (
     <Box

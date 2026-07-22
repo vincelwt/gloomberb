@@ -1,4 +1,10 @@
 import type { Dispatch } from "react";
+import {
+  applyLanguagePreference,
+  LANGUAGE_DISPLAY_NAMES,
+  resolveLanguageCommandPreference,
+  t,
+} from "../../../../i18n";
 import { exportConfig, importConfig, resetAllData } from "../../../../data/config/store";
 import type { PluginRegistry } from "../../../../plugins/registry";
 import {
@@ -224,6 +230,25 @@ export function runDirectCommandAction(options: {
       };
       dispatch({ type: "SET_CONFIG", config: nextConfig });
       persistConfig(nextConfig);
+      closeAll({ revertThemePreview: false });
+      return;
+    }
+    case "language": {
+      const current = state.config.language ?? "auto";
+      const next = resolveLanguageCommandPreference(current, arg);
+      if (!next) {
+        notify(
+          `${t("Unsupported language")}: ${arg.trim()}. LANG auto | en | zh-CN | zh-TW | ja | ko`,
+          { type: "error" },
+        );
+        return;
+      }
+      const nextConfig = { ...state.config, language: next };
+      dispatch({ type: "SET_CONFIG", config: nextConfig });
+      persistConfig(nextConfig);
+      applyLanguagePreference(next);
+      const languageLabel = next === "auto" ? t(LANGUAGE_DISPLAY_NAMES.auto) : LANGUAGE_DISPLAY_NAMES[next];
+      notify(`${t("Language")}: ${languageLabel} · ${t("Restart to apply everywhere")}`, { type: "success" });
       closeAll({ revertThemePreview: false });
       return;
     }

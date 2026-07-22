@@ -1,6 +1,7 @@
 import { Box, Text, TextAttributes, type TextareaRenderable } from "../../../../ui";
 import { getMessageComposerBlockHeight, MessageComposer } from "../../../../components/ui";
 import { colors } from "../../../../theme/colors";
+import { t } from "../../../../i18n";
 import type { ChatMessage } from "../../../../api-client";
 import { InlineAuthActions } from "../../cloud/auth-actions";
 import { ChatActionChip } from "../message/action-chip";
@@ -133,18 +134,18 @@ export function ChatComposerArea({
       <Box width={contentWidth} height={2} flexDirection="column">
         {!user && !hasSavedSession ? (
           <>
-            <Text fg={colors.textDim}>Read-only chat. Log in or sign up to send.</Text>
+            <Text fg={colors.textDim}>{t("Read-only chat. Log in or sign up to send.")}</Text>
             <InlineAuthActions />
           </>
         ) : !user ? (
           <>
-            <Text fg={colors.positive}>Saved login found. Log in again to send.</Text>
+            <Text fg={colors.positive}>{t("Saved login found. Log in again to send.")}</Text>
             <InlineAuthActions showSignup={false} />
           </>
         ) : (
           <>
-            <Text fg={colors.positive}>Verify your email to send messages.</Text>
-            <Text fg={colors.textDim}>Ctrl+P, then Resend Verification Email</Text>
+            <Text fg={colors.positive}>{t("Verify your email to send messages.")}</Text>
+            <Text fg={colors.textDim}>{t("Ctrl+P, then Resend Verification Email")}</Text>
           </>
         )}
       </Box>
@@ -166,11 +167,11 @@ export function ChatComposerArea({
 
       {editingMessage && (
         <Box height={1} width={contentWidth} flexDirection="row">
-          <Text fg={colors.textMuted}> editing </Text>
+          <Text fg={colors.textMuted}>{` ${t("editing")} `}</Text>
           <Text fg={colors.textDim}>{editingPreview ? `: ${editingPreview}` : ""}</Text>
           <Box flexGrow={1} />
           <ChatActionChip
-            label="Cancel"
+            label={t("Cancel")}
             width={COMPOSER_ACTION_WIDTH}
             onPress={cancelEditMessage}
           />
@@ -179,12 +180,12 @@ export function ChatComposerArea({
 
       {!editingMessage && replyTo && (
         <Box height={1} width={contentWidth} flexDirection="row">
-          <Text fg={colors.textMuted}> replying to </Text>
+          <Text fg={colors.textMuted}>{` ${t("replying to")} `}</Text>
           <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{`@${replyTo.user.username}`}</Text>
           <Text fg={colors.textDim}>{replyPreview ? `: ${replyPreview}` : ""}</Text>
           <Box flexGrow={1} />
           <ChatActionChip
-            label="Cancel"
+            label={t("Cancel")}
             width={COMPOSER_ACTION_WIDTH}
             onPress={clearReplyTarget}
           />

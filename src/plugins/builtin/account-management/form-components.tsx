@@ -5,6 +5,7 @@ import { colors } from "../../../theme/colors";
 import { NativeSelect, type NativeSelectElement } from "../../../components/ui/native-select";
 import type { AccountFieldKey, ProfileAnalyticsPreview } from "./model";
 import { truncate } from "./model";
+import { t } from "../../../i18n";
 
 export function AccountTextField({
   fieldKey,
@@ -129,7 +130,7 @@ export function CheckboxRow({
         </Text>
         <Checkbox
           label={label}
-          displayLabel={checked ? "On" : "Off"}
+          displayLabel={checked ? t("On") : t("Off")}
           checked={checked}
           active={false}
           width={controlWidth}
@@ -188,7 +189,7 @@ export function PublicAnalyticsGroup({
 }) {
   const isDesktop = useUiHost().kind === "desktop-web";
   const contentWidth = Math.max(1, width - 2);
-  const labelText = active ? "> Public Stats:" : "  Public Stats:";
+  const labelText = active ? `> ${t("Public Stats:")}` : `  ${t("Public Stats:")}`;
   const labelWidth = Math.min(accountFieldLabelWidth(width), Math.max(1, contentWidth));
   const nativeButtonWidth = Math.max(14, Math.min(24, Math.floor(contentWidth * 0.3)));
   const terminalMaxButtonWidth = Math.max(8, Math.min(24, contentWidth - labelWidth - 1));

@@ -17,6 +17,7 @@ import {
 import type { matchPrefix } from "../commands/registry";
 import { getVisibleMultiSelectPickerOptions } from "../multi-select-picker";
 import type { CommandBarRoute } from "../workflow/types";
+import { tc } from "../../../i18n";
 
 type ActiveCommandMatch = ReturnType<typeof matchPrefix>;
 
@@ -153,7 +154,7 @@ function buildRouteListState(options: BuildRouteListStateOptions): ListScreenSta
       id: option.id,
       label: option.label,
       detail: option.detail || "",
-      category: "Options",
+      category: tc("picker-heading", "Options"),
       kind: "action" as const,
       disabled: option.disabled,
       action: () => {},

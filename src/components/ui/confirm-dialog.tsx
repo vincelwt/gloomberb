@@ -1,6 +1,7 @@
 import { useCallback, type ReactNode } from "react";
 import { Box, Text } from "../../ui";
 import { colors } from "../../theme/colors";
+import { t, tf } from "../../i18n";
 import { type PromptContext, useDialogKeyboard } from "../../ui/dialog";
 import { Button, type ButtonVariant } from "./button";
 import { DialogFrame } from "./frame";
@@ -40,7 +41,7 @@ export function ConfirmDialog({
   });
 
   return (
-    <DialogFrame title={title} footer={footer ?? `Enter ${confirmLabel.toLowerCase()} · Esc cancel`}>
+    <DialogFrame title={title} footer={footer ?? tf("Enter {action} · Esc cancel", { action: t(confirmLabel).toLowerCase() })}>
       <Box flexDirection="column" width={width}>
         {renderBody(body)}
         <Box height={1} />
@@ -56,7 +57,7 @@ export function ConfirmDialog({
 function renderBody(body: ReactNode | string | string[]): ReactNode {
   if (Array.isArray(body)) {
     return body.map((line, index) => (
-      <Text key={`${line}:${index}`} fg={index === 0 ? colors.text : colors.textDim}>{line}</Text>
+      <Text key={`${line}:${index}`} fg={index === 0 ? colors.text : colors.textDim}>{t(line)}</Text>
     ));
   }
   if (typeof body === "string") {

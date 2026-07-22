@@ -1,6 +1,7 @@
 import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { PaneProps, TickerResearchTabDef } from "../../../types/plugin";
+import { t, tf } from "../../../i18n";
 import { quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
 import {
   useAppDispatch,
@@ -159,8 +160,8 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
   if (!ticker) {
     const isEmptyFollowCollection = paneInstance?.binding?.kind === "follow" && !!collectionId && collectionTickerCount === 0;
     const message = isEmptyFollowCollection
-      ? `No tickers in ${collectionName || "this collection"}.`
-      : "No ticker selected.";
+      ? tf("No tickers in {name}.", { name: collectionName || t("this collection") })
+      : t("No ticker selected.");
 
     return (
       <Box flexDirection="column" flexGrow={1} paddingX={1}>
@@ -173,7 +174,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
     <Box flexDirection="column" flexGrow={1} flexBasis={0} overflow="hidden">
       {!paneSettings.hideTabs && (
         <Tabs
-          tabs={allTabs.map((tab) => ({ label: tab.name, value: tab.id }))}
+          tabs={allTabs.map((tab) => ({ label: t(tab.name), value: tab.id }))}
           activeValue={resolvedTabId}
           onSelect={setActiveTabId}
           focused={focused && !pluginCaptured}

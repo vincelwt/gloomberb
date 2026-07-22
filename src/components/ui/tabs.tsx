@@ -3,6 +3,8 @@ import { useShortcut } from "../../react/input";
 import { Box, ScrollBox, Text, useUiHost } from "../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import { colors, hoverBg } from "../../theme/colors";
+import { t } from "../../i18n";
+import { displayWidth } from "../../utils/format";
 import { useRemoteUiNode } from "../../remote/semantic-tree";
 
 type TabPointerEvent = {
@@ -38,7 +40,7 @@ export interface TabsProps {
 const WHEEL_DELTA_PER_CELL = 8;
 
 export function Tabs({
-  tabs,
+  tabs: rawTabs,
   activeValue,
   onSelect,
   compact = false,
@@ -51,6 +53,9 @@ export function Tabs({
   scrollable = true,
   scrollId,
 }: TabsProps) {
+  const tabs = useMemo(() => rawTabs.map((tab) => (
+    { ...tab, label: t(tab.label) }
+  )), [rawTabs]);
   const ui = useUiHost();
   const NativeTabs = ui.Tabs;
   const navigationValueRef = useRef<string | null>(activeValue);
@@ -195,7 +200,7 @@ function tabWidth(
   closeMode: TabsProps["closeMode"],
 ): number {
   const showClose = !!tab.onClose && (closeMode === "always" || active);
-  return tab.label.length + 2 + (showClose ? 2 : 0);
+  return displayWidth(tab.label) + 2 + (showClose ? 2 : 0);
 }
 
 function OpenTuiTabs({
@@ -291,7 +296,7 @@ function OpenTuiTabs({
         const active = tab.value === activeValue;
         const hovered = hoveredValue === tab.value && !tab.disabled;
         const focusedActive = focused && active;
-        const tabWidth = tabWidths[index] ?? tab.label.length + 2;
+        const tabWidth = tabWidths[index] ?? displayWidth(tab.label) + 2;
         const showClose = !!tab.onClose && (closeMode === "always" || active);
         const attributes = (active ? TextAttributes.BOLD : 0)
           | (

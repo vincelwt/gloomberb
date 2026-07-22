@@ -11,6 +11,7 @@ import {
 import { useAssetData, usePluginPaneState, usePluginState, usePluginTickerActions } from "../../../runtime";
 import { type DataTableKeyEvent } from "../../../../components";
 import { colors } from "../../../../theme/colors";
+import { t } from "../../../../i18n";
 import { detectProviders, getAiProvider, resolveDefaultAiProviderId } from "../providers";
 import {
   getScreenerPromptSignature,
@@ -363,7 +364,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
 
       {availableProviders.length === 0 && (
         <Box flexDirection="column" paddingX={1} paddingTop={1}>
-          <Text fg={colors.textDim}>No supported AI CLI tools detected. Install one to run screeners.</Text>
+          <Text fg={colors.textDim}>{t("No supported AI CLI tools detected. Install one to run screeners.")}</Text>
         </Box>
       )}
 

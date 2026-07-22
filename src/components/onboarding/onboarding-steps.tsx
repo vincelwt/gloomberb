@@ -1,5 +1,6 @@
 import { AsciiText, Box, Span, Strong, Text, TextAttributes, useUiHost } from "../../ui";
 import { colors } from "../../theme/colors";
+import { t, tf } from "../../i18n";
 import { themes } from "../../theme/themes";
 import { detectShortcutPlatform, formatPrimaryShortcut, getShortcutDisplayMode } from "../../utils/shortcut-labels";
 export { PortfolioStep, type PortfolioSub } from "./portfolio-step";
@@ -18,11 +19,11 @@ export function WelcomeStep() {
       <AsciiText text={LOGO_TEXT} font="wordmark" color={colors.textBright} />
       <Box height={2} />
       <Box height={1}>
-        <Text fg={colors.textDim}>{"The open terminal for modern finance."}</Text>
+        <Text fg={colors.textDim}>{t("The open terminal for modern finance.")}</Text>
       </Box>
       <Box height={2} />
       <Box height={1}>
-        <Text fg={colors.textMuted}>{"Let's set things up (~30s)."}</Text>
+        <Text fg={colors.textMuted}>{t("Let's set things up (~30s).")}</Text>
       </Box>
       <Box height={2} />
     </Box>
@@ -39,11 +40,11 @@ export function ThemeStep({ themeIds, selectedIdx, height }: { themeIds: string[
   return (
     <Box flexDirection="column" paddingX={2}>
       <Box height={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Theme"}</Text>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{t("Theme")}</Text>
       </Box>
       <Box height={1} />
       <Box height={1} flexDirection="row">
-        <Text fg={colors.textDim}>{"Change it later from the command bar with "}</Text>
+        <Text fg={colors.textDim}>{t("Change it later from the command bar with ")}</Text>
         <Text fg={colors.text} attributes={TextAttributes.BOLD}>{"TH"}</Text>
       </Box>
       <Box height={1} />
@@ -87,7 +88,7 @@ export function ThemeStep({ themeIds, selectedIdx, height }: { themeIds: string[
 
       <Box height={1} />
       <Box height={1}>
-        <Text fg={colors.textMuted}>{"Use \u2191\u2193 to browse"}</Text>
+        <Text fg={colors.textMuted}>{t("Use \u2191\u2193 to browse")}</Text>
       </Box>
     </Box>
   );
@@ -99,19 +100,19 @@ export function ShortcutsStep() {
   const shortcutDisplayMode = getShortcutDisplayMode(uiHost.kind);
   const platformShortcut = (keys: string | readonly string[]) => formatPrimaryShortcut(keys, shortcutPlatform, shortcutDisplayMode);
   const keyboardShortcuts = [
-    { key: "Ctrl+P", desc: "Open command mode" },
-    { key: "`", desc: "Open ticker search" },
-    { key: "Tab", desc: "Switch between panels" },
-    { key: platformShortcut("W"), desc: "Close the focused pane" },
-    { key: platformShortcut(["Shift", "D"]), desc: "Dock or float the focused pane" },
-    { key: "q", desc: "Quit" },
+    { key: "Ctrl+P", desc: t("Open command mode") },
+    { key: "`", desc: t("Open ticker search") },
+    { key: "Tab", desc: t("Switch between panels") },
+    { key: platformShortcut("W"), desc: t("Close the focused pane") },
+    { key: platformShortcut(["Shift", "D"]), desc: t("Dock or float the focused pane") },
+    { key: "q", desc: t("Quit") },
   ];
 
   const commandPrefixes = [
-    { key: "DES AAPL", desc: "Open security details" },
-    { key: "TH", desc: "Switch theme" },
-    { key: "PL", desc: "Toggle plugins" },
-    { key: "HELP", desc: "Open the help window" },
+    { key: "DES AAPL", desc: t("Open security details") },
+    { key: "TH", desc: t("Switch theme") },
+    { key: "PL", desc: t("Toggle plugins") },
+    { key: "HELP", desc: t("Open the help window") },
   ];
 
   const COL = 20;
@@ -119,7 +120,7 @@ export function ShortcutsStep() {
   return (
     <Box flexDirection="column" paddingX={2}>
       <Box height={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"After launch shortcuts"}</Text>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{t("After launch shortcuts")}</Text>
       </Box>
       <Box height={1} />
 
@@ -132,11 +133,11 @@ export function ShortcutsStep() {
 
       <Box height={2} />
       <Box height={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Basic command prefixes"}</Text>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{t("Basic command prefixes")}</Text>
       </Box>
       <Box height={1} />
       <Box height={1}>
-        <Text fg={colors.textDim}>{"Type these in the command bar ("}<Span fg={colors.text}><Strong>{"Ctrl+P"}</Strong></Span>{"):"}</Text>
+        <Text fg={colors.textDim}>{t("Type these in the command bar (")}<Span fg={colors.text}><Strong>{"Ctrl+P"}</Strong></Span>{"):"}</Text>
       </Box>
       <Box height={1} />
 
@@ -149,7 +150,7 @@ export function ShortcutsStep() {
 
       <Box height={2} />
       <Box height={1}>
-        <Text fg={colors.textDim}>{"Everything is searchable, just type what you want."}</Text>
+        <Text fg={colors.textDim}>{t("Everything is searchable, just type what you want.")}</Text>
       </Box>
     </Box>
   );
@@ -175,39 +176,39 @@ export function ReadyStep({
     <Box flexDirection="column" paddingX={2}>
       <Box height={2} />
       <Box height={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"You're all set"}</Text>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{t("You're all set")}</Text>
       </Box>
       <Box height={2} />
       <Box height={1}>
         <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{"\u2713"}</Text>
-        <Text fg={colors.text}>{" Theme configured"}</Text>
+        <Text fg={colors.text}>{` ${t("Theme configured")}`}</Text>
       </Box>
       <Box height={1}>
         <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{"\u2713"}</Text>
         <Text fg={colors.text}>
           {brokerName
-            ? ` ${brokerName} connected. Imported ${positionsImported} ${positionLabel}`
-            : ` Portfolio "${portfolioName}" created`}
+            ? ` ${tf("{broker} connected. Imported {count} {label}", { broker: brokerName, count: positionsImported, label: t(positionLabel) })}`
+            : ` ${tf('Portfolio "{name}" created', { name: portfolioName })}`}
         </Text>
       </Box>
       <Box height={1}>
         <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{"\u2713"}</Text>
-        <Text fg={colors.text}>{" Plugins enabled"}</Text>
+        <Text fg={colors.text}>{` ${t("Plugins enabled")}`}</Text>
       </Box>
       <Box height={2} />
       {brokerName ? (
         <Box height={1}>
           <Text fg={isFinishing ? colors.text : colors.textDim}>
             {isFinishing
-              ? "Launching Gloomberb..."
+              ? t("Launching Gloomberb...")
               : positionsImported > 0
-                ? "Your broker portfolio is ready and will open directly after launch."
-                : "Broker sync finished. If you expected holdings, check the selected account or connection mode."}
+                ? t("Your broker portfolio is ready and will open directly after launch.")
+                : t("Broker sync finished. If you expected holdings, check the selected account or connection mode.")}
           </Text>
         </Box>
       ) : (
         <Box height={1}>
-          <Text fg={colors.textDim}>{"Search for broker names in the command bar to connect."}</Text>
+          <Text fg={colors.textDim}>{t("Search for broker names in the command bar to connect.")}</Text>
         </Box>
       )}
       {error && (
@@ -220,7 +221,7 @@ export function ReadyStep({
       )}
       <Box height={2} />
       <Box height={1} flexDirection="row">
-        <Text fg={colors.textDim}>{"Data stored in "}</Text>
+        <Text fg={colors.textDim}>{t("Data stored in ")}</Text>
         <Text fg={colors.text}>{"~/gloomberb/"}</Text>
       </Box>
       <Box height={1} />

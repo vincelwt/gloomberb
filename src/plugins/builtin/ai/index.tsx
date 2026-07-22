@@ -3,13 +3,14 @@ import { AskAiResearchTab } from "./ask-ai-detail-tab";
 import { detectProviders, getLocalWorkspaceProviders } from "./providers";
 import { AiScreenerPane } from "./screener/pane";
 import { buildAiScreenerPaneSettingsDef, getAiScreenerPaneSettings } from "./settings";
+import { t } from "../../../i18n";
 import { LocalAgentWorkspacePane } from "./workspace/pane";
 
 export const aiPlugin: GloomPlugin = {
   id: "ai",
   name: "AI",
   version: "1.0.0",
-  description: "Use local AI CLI with your financial data.",
+  description: t("Use local AI CLI with your financial data."),
   toggleable: true,
 
   setup(ctx) {
@@ -29,7 +30,7 @@ export const aiPlugin: GloomPlugin = {
 
     ctx.registerTickerResearchTab({
       id: "ai-chat",
-      name: "Ask AI",
+      name: t("Ask AI"),
       order: 60,
       component: AskAiResearchTab,
     });
@@ -75,7 +76,7 @@ export const aiPlugin: GloomPlugin = {
 
     ctx.registerPane({
       id: "ai-screener",
-      name: "AI Screener",
+      name: t("AI Screener"),
       icon: "A",
       component: AiScreenerPane,
       defaultPosition: "right",
@@ -89,27 +90,27 @@ export const aiPlugin: GloomPlugin = {
     ctx.registerPaneTemplate({
       id: "new-ai-screener-pane",
       paneId: "ai-screener",
-      label: "AI Screener",
-      description: "Create a prompt-driven AI screener pane with reusable screening tabs.",
+      label: t("AI Screener"),
+      description: t("Create a prompt-driven AI screener pane with reusable screening tabs."),
       keywords: ["ai", "screener", "screen", "watchlist", "prompt"],
       shortcut: { prefix: "AI", argPlaceholder: "prompt", argKind: "text" },
       wizard: [
         {
           key: "providerId",
-          label: "AI Provider",
+          label: t("AI Provider"),
           type: "select",
           defaultValue: defaultProviderId,
           options: providerOptions,
-          body: ["Choose which local AI CLI should run the initial screener."],
+          body: [t("Choose which local AI CLI should run the initial screener.")],
         },
         {
           key: "prompt",
-          label: "Screener Prompt",
+          label: t("Screener Prompt"),
           type: "textarea",
-          placeholder: "Examples: humanoid robot suppliers, defense software compounders, EM payment rails, obesity-drug picks-and-shovels...",
+          placeholder: t("Examples: humanoid robot suppliers, defense software compounders, EM payment rails, obesity-drug picks-and-shovels..."),
           body: [
-            "Describe the screening idea in plain English.",
-            "The AI will return validated ticker ideas with a short reason for each one.",
+            t("Describe the screening idea in plain English."),
+            t("The AI will return validated ticker ideas with a short reason for each one."),
           ],
         },
       ],
@@ -118,7 +119,7 @@ export const aiPlugin: GloomPlugin = {
         if (!prompt) return null;
         const providerId = options?.values?.providerId || defaultProviderId;
         return {
-          title: "AI Screener",
+          title: t("AI Screener"),
           placement: "floating",
           params: {
             prompt,

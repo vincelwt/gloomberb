@@ -1,8 +1,9 @@
 import { Box, ScrollBox, Text } from "../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { t } from "../../i18n";
+import { displayWidth, formatTimeAgo } from "../../utils/format";
 import { colors } from "../../theme/colors";
-import { formatTimeAgo } from "../../utils/format";
 import { isPlainKey } from "../../utils/keyboard";
 import { toTimestampMillis } from "../../utils/timestamp";
 import { DataTableStackView } from "../data-table/stack-view";
@@ -111,7 +112,7 @@ function buildColumns(
   const timeWidth = 8;
   const sourceWidth = Math.min(
     Math.max(
-      sourceLabel.length,
+      displayWidth(sourceLabel),
       ...items.map((item) => item.eyebrow?.length ?? 0),
       6,
     ),
@@ -123,7 +124,7 @@ function buildColumns(
   );
 
   return [
-    { id: "time", label: "Time", width: timeWidth, align: "left" },
+    { id: "time", label: t("Time"), width: timeWidth, align: "left" },
     { id: "source", label: sourceLabel, width: sourceWidth, align: "left" },
     { id: "title", label: titleLabel, width: titleWidth, align: "left" },
   ];
@@ -155,7 +156,7 @@ export function FeedDataTableStackView({
   const detailScrollRef = useRef<ScrollBoxRenderable>(null);
   const detailTextWidth = Math.max(width - 2, 12);
   const columns = useMemo(
-    () => buildColumns(width, sourceLabel, titleLabel, items),
+    () => buildColumns(width, t(sourceLabel), t(titleLabel), items),
     [items, sourceLabel, titleLabel, width],
   );
   const sortedRows = useMemo(() => {
@@ -356,7 +357,7 @@ export function FeedDataTableStackView({
         )}
       getItemKey={(row) => row.item.id}
       renderCell={renderCell}
-      emptyStateTitle={emptyStateTitle}
+      emptyStateTitle={t(emptyStateTitle)}
       emptyStateHint={emptyStateHint}
       showHorizontalScrollbar={false}
     />

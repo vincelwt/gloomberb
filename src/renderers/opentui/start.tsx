@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from "fs";
 import { App } from "../../app";
 import { dispatchCli } from "../../cli/index";
 import { getDataDir, initDataDir, setConfigStoreHost } from "../../data/config/store";
+import { applyLanguageFromConfig } from "../../i18n";
 import * as nodeConfigStoreHost from "../../data/config/store/node";
 import { loadExternalPlugins } from "../../plugins/loader";
 import { OpenTuiInputHostProvider } from "./input-host";
@@ -95,6 +96,7 @@ export async function startOpenTuiApp(options: StartOpenTuiAppOptions = {}): Pro
     }
 
     const config = await measurePerfAsync("startup.opentui.init-data-dir", () => initDataDir(dataDir));
+    applyLanguageFromConfig(config);
     host = await measurePerfAsync("startup.opentui.create-host", () => createOpenTuiHost());
     host.renderer.once("destroy", finishProcessExit);
 

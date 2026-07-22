@@ -20,7 +20,7 @@ export function createRootCommandItemBuilder({
   hasPaneSettings,
   runDirectCommand,
   state,
-}: RootCommandItemBuilderOptions): (command: Command) => ResultItem | null {
+}: RootCommandItemBuilderOptions): (command: Command, arg?: string) => ResultItem | null {
   const isWatchlistTab = state.config.watchlists.some(
     (entry) => entry.id === activeCollectionId,
   );
@@ -156,7 +156,7 @@ export function createRootCommandItemBuilder({
     }
   }
 
-  return (command) => {
+  return (command, arg = "") => {
     if (!shouldShow(command)) return null;
     return {
       id: command.id,
@@ -164,13 +164,13 @@ export function createRootCommandItemBuilder({
       detail: smartDetail(command),
       category: command.category,
       kind: "command",
-      right: command.prefix || undefined,
+      right: command.id === "language" && arg ? arg : command.prefix || undefined,
       shortcutQuery: command.prefix || undefined,
       searchText: smartSearchText(command),
       disabled:
         command.id === "check-for-updates" &&
         (state.updateCheckInProgress || !!state.updateProgress),
-      action: () => runDirectCommand(command, ""),
+      action: () => runDirectCommand(command, arg),
     };
   };
 }

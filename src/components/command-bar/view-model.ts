@@ -1,4 +1,6 @@
 import { matchPrefix, type Command } from "./commands/registry";
+import { t, tf } from "../../i18n";
+import { truncateToDisplayWidth } from "../../utils/format";
 
 export { rankTickerSearchItems } from "../../tickers/search";
 
@@ -40,24 +42,24 @@ export function resolveCommandBarMode(query: string, commandList?: Command[]): C
   const match = matchPrefix(query, commandList);
 
   if (!query.trim()) {
-    return { kind: "default", badge: "BROWSE", hint: "Type a command or prefix" };
+    return { kind: "default", badge: "BROWSE", hint: t("Type a command or prefix") };
   }
 
   if (!match) {
-    return { kind: "default", badge: "FILTER", hint: `Filtering for "${query.trim()}"` };
+    return { kind: "default", badge: "FILTER", hint: tf('Filtering for "{query}"', { query: query.trim() }) };
   }
 
   switch (match.command.id) {
     case "security-description":
-      return { kind: "search", badge: match.prefix, hint: "Open security details for a ticker" };
+      return { kind: "search", badge: match.prefix, hint: t("Open security details for a ticker") };
     case "theme":
-      return { kind: "themes", badge: "THEMES", hint: "Preview with arrows, Enter to save, Esc to revert" };
+      return { kind: "themes", badge: "THEMES", hint: t("Preview with arrows, Enter to save, Esc to revert") };
     case "plugins":
-      return { kind: "plugins", badge: "PLUGINS", hint: "Toggle plugins without leaving the list" };
+      return { kind: "plugins", badge: "PLUGINS", hint: t("Toggle plugins without leaving the list") };
     case "layout":
-      return { kind: "layout", badge: "LAYOUT", hint: "Organize panes, history, and saved layouts" };
+      return { kind: "layout", badge: "LAYOUT", hint: t("Organize panes, history, and saved layouts") };
     default:
-      return { kind: "direct-command", badge: "COMMAND", hint: `Run ${match.command.label}` };
+      return { kind: "direct-command", badge: "COMMAND", hint: tf("Run {label}", { label: t(match.command.label) }) };
   }
 }
 
@@ -89,20 +91,20 @@ export function getEmptyState(mode: CommandBarMode, query: string, searchQuery?:
   switch (mode) {
     case "search":
       if (!searchQuery) {
-        return { label: "Type a ticker symbol", detail: "Open security details after resolving a ticker" };
+        return { label: t("Type a ticker symbol"), detail: t("Open security details after resolving a ticker") };
       }
-      return { label: `No matches for "${searchQuery}"`, detail: "Try a symbol, company name, or exchange variant" };
+      return { label: tf('No matches for "{query}"', { query: searchQuery }), detail: t("Try a symbol, company name, or exchange variant") };
     case "plugins":
-      return { label: "No plugins match", detail: query.trim() || "Toggleable plugins will appear here" };
+      return { label: t("No plugins match"), detail: query.trim() || t("Toggleable plugins will appear here") };
     case "themes":
-      return { label: "No themes match", detail: query.trim() || "Installed themes will appear here" };
+      return { label: t("No themes match"), detail: query.trim() || t("Installed themes will appear here") };
     case "layout":
-      return { label: "No layout actions match", detail: query.trim() || "Focused-pane and layout actions will appear here" };
+      return { label: t("No layout actions match"), detail: query.trim() || t("Focused-pane and layout actions will appear here") };
     default:
       if (query.trim()) {
-        return { label: `No matches for "${query.trim()}"`, detail: "Try a command name or prefix. Use T for ticker search" };
+        return { label: tf('No matches for "{query}"', { query: query.trim() }), detail: t("Try a command name or prefix. Use T for ticker search") };
       }
-      return { label: "No results yet", detail: "Suggested commands will appear here" };
+      return { label: t("No results yet"), detail: t("Suggested commands will appear here") };
   }
 }
 
@@ -119,18 +121,15 @@ export function getRowPresentation(item: CommandBarItemView, selected: boolean, 
 
   return {
     glyph,
-    label: item.label,
-    trailing,
+    label: t(item.label),
+    trailing: t(trailing),
     selected,
     primaryMuted,
   };
 }
 
 export function truncateText(text: string, width: number): string {
-  if (width <= 0) return "";
-  if (text.length <= width) return text;
-  if (width <= 3) return ".".repeat(width);
-  return `${text.slice(0, width - 3)}...`;
+  return truncateToDisplayWidth(text, width);
 }
 
 function getCategoryPriority(category: string, sectionOrder: CommandBarSectionOrder = "default"): number {

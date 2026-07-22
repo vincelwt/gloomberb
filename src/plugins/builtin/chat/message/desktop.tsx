@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { Box, Span, Text } from "../../../../ui";
 import { hoverBg } from "../../../../theme/colors";
+import { t } from "../../../../i18n";
 import { MESSAGE_ACTION_WIDTH, normalizeInlinePreview } from "../layout";
 import { ChatActionChip } from "./action-chip";
 import { ResponsiveTickerBadgeText } from "./inline-tokens";
@@ -120,7 +121,7 @@ export const DesktopChatMessage = memo(function DesktopChatMessage({
                   data-gloom-role="chat-message-reply-action"
                 >
                   <ChatActionChip
-                    label="Reply"
+                    label={t("Reply")}
                     width={MESSAGE_ACTION_WIDTH}
                     emphasized={state.isSelected}
                     onPress={() => beginReplyTo(index)}
@@ -134,7 +135,7 @@ export const DesktopChatMessage = memo(function DesktopChatMessage({
                   data-gloom-role="chat-message-reply-action"
                 >
                   <ChatActionChip
-                    label="Edit"
+                    label={t("Edit")}
                     width={MESSAGE_ACTION_WIDTH}
                     emphasized={state.isSelected}
                     onPress={() => beginEditMessage(index)}
@@ -175,7 +176,7 @@ export const DesktopChatMessage = memo(function DesktopChatMessage({
           >
             {showGroupedReplyAction && (
               <ChatActionChip
-                label="Reply"
+                label={t("Reply")}
                 width={MESSAGE_ACTION_WIDTH}
                 emphasized={state.isSelected}
                 onPress={() => beginReplyTo(index)}
@@ -183,7 +184,7 @@ export const DesktopChatMessage = memo(function DesktopChatMessage({
             )}
             {showGroupedEditAction && (
               <ChatActionChip
-                label="Edit"
+                label={t("Edit")}
                 width={MESSAGE_ACTION_WIDTH}
                 emphasized={state.isSelected}
                 onPress={() => beginEditMessage(index)}

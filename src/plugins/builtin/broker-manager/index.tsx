@@ -10,6 +10,7 @@ import {
   useAppSelector,
 } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
+import { t, tf } from "../../../i18n";
 import type { BrokerAdapter } from "../../../types/broker";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { usePluginBrokerActions } from "../../runtime";
@@ -249,15 +250,15 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
       <Box height={1} flexDirection="row">
         <Box flexGrow={1} flexDirection="row">
           <Box width={8}>
-            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Brokers</Text>
+            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{t("Brokers")}</Text>
           </Box>
-          <Text fg={colors.textDim}>{`${rows.length} profiles · ${connectedCount} connected · ${errorCount} issues`}</Text>
+          <Text fg={colors.textDim}>{tf("{profiles} profiles · {connected} connected · {issues} issues", { profiles: rows.length, connected: connectedCount, issues: errorCount })}</Text>
         </Box>
         {busy && <Text fg={colors.textDim}>{busy}</Text>}
       </Box>
       <Box height={1}>
         <Text fg={isBrokerErrorMessage(message) ? colors.negative : colors.textDim}>
-          {message || "Manage broker profiles, connection tests, and position syncs."}
+          {message || t("Manage broker profiles, connection tests, and position syncs.")}
         </Text>
       </Box>
       <Box height={1}>
@@ -289,8 +290,8 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
           onHeaderClick={() => {}}
           getItemKey={(row) => row.id}
           renderCell={renderBrokerCell}
-          emptyStateTitle="No broker profiles."
-          emptyStateHint="Add a broker profile to test connections and sync positions."
+          emptyStateTitle={t("No broker profiles.")}
+          emptyStateHint={t("Add a broker profile to test connections and sync positions.")}
           showHorizontalScrollbar={false}
         />
       </Box>

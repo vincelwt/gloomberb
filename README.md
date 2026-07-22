@@ -11,6 +11,8 @@ Desktop app for macOS and Windows. Terminal UI for macOS, Linux, and Windows.
 <a href="https://gloomberb.com/download/desktop"><strong>Download desktop</strong></a>
 &nbsp;&middot;&nbsp;
 <a href="#install"><strong>Install the TUI</strong></a>
+&nbsp;&middot;&nbsp;
+<a href="README.zh-CN.md">简体中文</a>
 
 <br />
 <br />
@@ -266,7 +268,23 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `VF` | Toggle quote value flashing |
 | `TH <theme>` | Change color theme |
 | `CR` | Cycle chart renderer |
+| `LANG <locale>` | Change interface language (`auto`, `en`, `zh-CN`, `zh-TW`, `ja`, or `ko`) |
 | `PL <plugin>` | Manage plugins |
+
+## Localized interface
+
+Gloomberb includes English, Simplified Chinese, Traditional Chinese, Japanese, and Korean UI support. English remains the default fallback language.
+
+- **Automatic detection:** supported `LANG` / `LC_ALL` and desktop system locales select the matching interface automatically.
+- **Command switching:** enter `LANG` in the command bar (Ctrl+P) to cycle languages, or use `LANG auto`, `LANG en`, `LANG zh-CN`, `LANG zh-TW`, `LANG ja`, or `LANG ko`. The choice is persisted in `config.json`.
+- **One-run override:** `GLOOMBERB_LANG=ja gloomberb` (or another supported locale) takes highest priority in environments that expose process locale variables.
+
+Implementation notes:
+
+- Locale dictionaries live in [src/i18n](src/i18n), keyed by the original English UI text. Missing entries safely fall back to English.
+- Shared render sinks call `t()` / `tf()` / `tc()` for pane titles, the command bar, menus, settings, tabs, help, and onboarding.
+- Finance abbreviations such as BID, ASK, and CHG% intentionally remain in English for terminal conventions and fixed-width alignment.
+- CJK wide characters and grapheme clusters are measured by [src/utils/format.ts](src/utils/format.ts) using terminal display-cell widths.
 
 ## License
 

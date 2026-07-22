@@ -8,6 +8,7 @@ import {
   type ScrollBoxRenderable,
 } from "../../../ui";
 import { Spinner } from "../../ui";
+import { t } from "../../../i18n";
 import type { CommandBarListRow, ListScreenState, ResultItem } from "./model";
 import { getRowPresentation, truncateText } from "../view-model";
 import { useRemoteUiNode } from "../../../remote/semantic-tree";
@@ -69,7 +70,7 @@ export const CommandBarListHeader = memo(function CommandBarListHeader({
             value={query}
             onInput={onQueryChange}
             onChange={onQueryChange}
-            placeholder={kind === "root" ? "Search commands" : title === "Security Description" ? "Search tickers" : "Filter"}
+            placeholder={kind === "root" ? t("Search commands") : title === "Security Description" ? t("Search tickers") : t("Filter")}
             focused
             data-gloom-remote-scope="command-bar"
             data-gloom-remote-surface="command-bar"
@@ -296,14 +297,14 @@ export const CommandBarListBody = memo(function CommandBarListBody({
         if (row.kind === "spinner") {
           return (
             <Box key={row.id} height={1} paddingX={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}>
-              <Spinner label={row.label} />
+              <Spinner label={t(row.label)} />
             </Box>
           );
         }
         if (row.kind === "message") {
           return (
             <Box key={row.id} height={1} paddingX={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}>
-              <Text fg={paletteText}>{truncateText(row.label, queryDisplayWidth)}</Text>
+              <Text fg={paletteText}>{truncateText(t(row.label), queryDisplayWidth)}</Text>
             </Box>
           );
         }
@@ -311,7 +312,7 @@ export const CommandBarListBody = memo(function CommandBarListBody({
           return (
             <Box key={row.id} height={1} paddingX={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}>
               <Text attributes={TextAttributes.BOLD} fg={paletteHeadingText}>
-                {truncateText(row.label, queryDisplayWidth)}
+                {truncateText(t(row.label), queryDisplayWidth)}
               </Text>
             </Box>
           );

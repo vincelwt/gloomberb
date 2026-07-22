@@ -2,6 +2,7 @@ import { Box, ScrollBox, Text, type ScrollBoxRenderable } from "../../../../ui";
 import type { Dispatch, SetStateAction } from "react";
 import type { InlineTickerCatalogEntry } from "../../../../state/hooks/inline-tickers";
 import { colors } from "../../../../theme/colors";
+import { t } from "../../../../i18n";
 import type { ChatMessage, ChatUserSummary } from "../../../../api-client";
 import { DesktopChatMessage } from "../message/desktop";
 import { UserProfilePopover } from "../message/profile-popover";
@@ -89,16 +90,16 @@ export function ChatTranscript({
       >
         {loadingOlderMessages && (
           <Box alignItems="center" justifyContent="center" height={1} width={contentWidth}>
-            <Text fg={colors.textDim}>Loading earlier messages...</Text>
+            <Text fg={colors.textDim}>{t("Loading earlier messages...")}</Text>
           </Box>
         )}
         {loading && messages.length === 0 ? (
           <Box alignItems="center" justifyContent="center" flexGrow={1}>
-            <Text fg={colors.textDim}>Loading...</Text>
+            <Text fg={colors.textDim}>{t("Loading...")}</Text>
           </Box>
         ) : messages.length === 0 && (
           <Box alignItems="center" justifyContent="center" flexGrow={1}>
-            <Text fg={colors.textDim}>No messages yet. Be the first to say something!</Text>
+            <Text fg={colors.textDim}>{t("No messages yet. Be the first to say something!")}</Text>
           </Box>
         )}
         {messages.map((msg, index) => (

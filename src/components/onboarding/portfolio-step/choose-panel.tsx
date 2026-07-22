@@ -1,5 +1,6 @@
 import { Box, Text, TextAttributes } from "../../../ui";
 import { colors } from "../../../theme/colors";
+import { t } from "../../../i18n";
 import { ListView, type ListViewItem } from "../../ui";
 
 export function PortfolioChoicePanel({
@@ -14,11 +15,11 @@ export function PortfolioChoicePanel({
   return (
     <Box flexDirection="column" paddingX={2}>
       <Box height={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Set up a portfolio"}</Text>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{t("Set up a portfolio")}</Text>
       </Box>
       <Box height={1} />
       <Box height={1}>
-        <Text fg={colors.textDim}>{"How would you like to get started?"}</Text>
+        <Text fg={colors.textDim}>{t("How would you like to get started?")}</Text>
       </Box>
       <Box height={2} />
 
@@ -31,11 +32,11 @@ export function PortfolioChoicePanel({
 
       <Box height={1} />
       <Box height={1}>
-        <Text fg={colors.textDim}>{"Edits later from the command bar."}</Text>
+        <Text fg={colors.textDim}>{t("Edits later from the command bar.")}</Text>
       </Box>
       <Box height={1} />
       <Box height={1}>
-        <Text fg={colors.textMuted}>{"Use \u2191\u2193 to choose"}</Text>
+        <Text fg={colors.textMuted}>{t("Use \u2191\u2193 to choose")}</Text>
       </Box>
     </Box>
   );

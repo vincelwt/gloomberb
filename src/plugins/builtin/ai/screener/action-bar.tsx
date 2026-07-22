@@ -1,5 +1,6 @@
 import { Box } from "../../../../ui";
 import { Button } from "../../../../components";
+import { t } from "../../../../i18n";
 
 export function AiScreenerActionBar({
   active,
@@ -28,19 +29,19 @@ export function AiScreenerActionBar({
     <Box flexDirection="row" height={1} gap={1}>
       {isRunning ? (
         <>
-          <Button label={runMode === "force" ? "Force Refreshing..." : "Refreshing..."} variant="secondary" disabled />
-          <Button label="Stop" variant="ghost" onPress={onCancelRun} />
+          <Button label={runMode === "force" ? t("Force Refreshing...") : t("Refreshing...")} variant="secondary" disabled />
+          <Button label={t("Stop")} variant="ghost" onPress={onCancelRun} />
         </>
       ) : (
         <>
           <Button
-            label={primaryRunLabel}
+            label={t(primaryRunLabel)}
             variant="primary"
             onPress={onRefresh}
             disabled={!active}
           />
           <Button
-            label={forceRunArmed ? "Confirm Force Refresh" : "Force Refresh"}
+            label={forceRunArmed ? t("Confirm Force Refresh") : t("Force Refresh")}
             variant={forceRunArmed ? "danger" : "ghost"}
             onPress={onForceRefresh}
             disabled={!active}
@@ -48,7 +49,7 @@ export function AiScreenerActionBar({
         </>
       )}
       <Button
-        label="Edit Prompt"
+        label={t("Edit Prompt")}
         variant={promptDirty ? "primary" : "secondary"}
         onPress={onEdit}
         disabled={!active}

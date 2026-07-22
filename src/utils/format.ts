@@ -186,6 +186,13 @@ function truncateToWidth(value: string, width: number): string {
   return output;
 }
 
+export function truncateToDisplayWidth(value: string, width: number): string {
+  if (width <= 0) return "";
+  if (displayWidth(value) <= width) return value;
+  if (width <= 3) return ".".repeat(width);
+  return `${truncateToWidth(value, width - 3)}...`;
+}
+
 /** Pad/truncate a string to a fixed display width */
 export function padTo(str: string, width: number, align: "left" | "right" | "center" = "left"): string {
   const clipped = displayWidth(str) > width ? truncateToWidth(str, width) : str;

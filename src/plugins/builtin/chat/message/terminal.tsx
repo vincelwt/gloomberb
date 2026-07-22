@@ -1,4 +1,5 @@
 import { Box, Text } from "../../../../ui";
+import { t } from "../../../../i18n";
 import { MESSAGE_ACTION_WIDTH, formatInlinePreview, getMessageBodyTokenLines } from "../layout";
 import { ChatActionChip } from "./action-chip";
 import { ResponsiveTickerBadgeText } from "./inline-tokens";
@@ -61,7 +62,7 @@ export function TerminalChatMessage({
             if (msg.replyToId) jumpToMessage(msg.replyToId);
           }}
         >
-          <Text fg={state.replyMetaColor}>reply </Text>
+          <Text fg={state.replyMetaColor}>{`${t("reply")} `}</Text>
           <Text fg={state.replyAuthorColor}>{msg.replyTo.user.username}: </Text>
           <Text fg={state.replyMetaColor}>
             {formatInlinePreview(
@@ -100,7 +101,7 @@ export function TerminalChatMessage({
               {showInlineReplyAction && (
                 <Box width={MESSAGE_ACTION_WIDTH} height={1}>
                   <ChatActionChip
-                    label="Reply"
+                    label={t("Reply")}
                     width={MESSAGE_ACTION_WIDTH}
                     emphasized={state.isSelected}
                     onPress={() => beginReplyTo(index)}
@@ -110,7 +111,7 @@ export function TerminalChatMessage({
               {showInlineEditAction && (
                 <Box width={MESSAGE_ACTION_WIDTH} height={1}>
                   <ChatActionChip
-                    label="Edit"
+                    label={t("Edit")}
                     width={MESSAGE_ACTION_WIDTH}
                     emphasized={state.isSelected}
                     onPress={() => beginEditMessage(index)}
@@ -146,7 +147,7 @@ export function TerminalChatMessage({
             <Box position="absolute" top={0} right={0} width={groupedActionWidth} height={1} flexDirection="row">
               {showGroupedReplyAction && (
                 <ChatActionChip
-                  label="Reply"
+                  label={t("Reply")}
                   width={MESSAGE_ACTION_WIDTH}
                   emphasized={state.isSelected}
                   onPress={() => beginReplyTo(index)}
@@ -154,7 +155,7 @@ export function TerminalChatMessage({
               )}
               {showGroupedEditAction && (
                 <ChatActionChip
-                  label="Edit"
+                  label={t("Edit")}
                   width={MESSAGE_ACTION_WIDTH}
                   emphasized={state.isSelected}
                   onPress={() => beginEditMessage(index)}

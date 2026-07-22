@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { displayWidth, formatTimeAgo, padTo } from "./format";
+import { displayWidth, formatTimeAgo, padTo, truncateToDisplayWidth } from "./format";
 import { normalizeTimestamp } from "./timestamp";
 
 describe("formatTimeAgo", () => {
@@ -27,5 +27,15 @@ describe("padTo", () => {
     expect(padTo("🇺🇸", 3)).toBe("🇺🇸 ");
     expect(padTo("🇺🇸", 1)).toBe(" ");
     expect(padTo("🇺🇸 CPI", 6)).toBe("🇺🇸 CPI");
+  });
+});
+
+describe("truncateToDisplayWidth", () => {
+  test("preserves grapheme clusters and stays within the terminal cell budget", () => {
+    expect(displayWidth("📈")).toBe(2);
+    expect(displayWidth("e\u0301")).toBe(1);
+    expect(displayWidth("👨‍👩‍👧‍👦")).toBe(2);
+    expect(truncateToDisplayWidth("投资组合分析面板", 9)).toBe("投资组...");
+    expect(displayWidth(truncateToDisplayWidth("👨‍👩‍👧‍👦 family", 7))).toBeLessThanOrEqual(7);
   });
 });

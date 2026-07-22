@@ -8,6 +8,7 @@ import { buildPortfolioSummarySegments } from "./summary";
 import { shouldToggleCashMarginDrawer } from ".";
 import { needsVisibleQuoteWatchdogRefresh, selectQuoteWarmupTickers, selectStreamTickers } from "./pane/data";
 import { buildPortfolioPaneSettingsDef, getPortfolioPaneSettings } from "./settings";
+import { getLanguage, setLanguage } from "../../../i18n";
 
 function ticker(symbol: string): TickerRecord {
   return {
@@ -58,6 +59,22 @@ describe("buildPortfolioSummarySegments", () => {
     });
 
     expect(segments.map((segment) => segment.id)).toEqual(["netliq", "val"]);
+  });
+
+  test("fits segments using translated terminal display widths", () => {
+    const previousLanguage = getLanguage();
+    try {
+      setLanguage("zh-CN");
+      const segments = buildPortfolioSummarySegments({
+        totals,
+        accountState: { account, sourceLabel: "Live" },
+        widthBudget: 22,
+      });
+
+      expect(segments.map((segment) => segment.id)).toEqual(["netliq"]);
+    } finally {
+      setLanguage(previousLanguage);
+    }
   });
 
   test("uses broker gross position value for broker portfolio value", () => {

@@ -1,5 +1,6 @@
 import { Box, useRendererHost } from "../../ui";
 import { useCallback } from "react";
+import { t } from "../../i18n";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "./titlebar-overlay";
 
 const WINDOWS_CONTROL_SIZE_PX = TITLEBAR_OVERLAY_HEIGHT_PX;
@@ -11,9 +12,9 @@ const WINDOWS_CONTROLS: Array<{
   action: WindowControlAction;
   label: string;
 }> = [
-  { action: "minimize", label: "Minimize" },
-  { action: "toggle-maximize", label: "Maximize" },
-  { action: "close", label: "Close" },
+  { action: "minimize", label: t("Minimize") },
+  { action: "toggle-maximize", label: t("Maximize") },
+  { action: "close", label: t("Close") },
 ];
 
 function stopMouse(event: { stopPropagation?: () => void; preventDefault?: () => void }) {

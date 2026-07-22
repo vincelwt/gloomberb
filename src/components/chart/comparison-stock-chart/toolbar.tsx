@@ -1,5 +1,6 @@
 import { Box, Text, TextAttributes } from "../../../ui";
 import { colors } from "../../../theme/colors";
+import { t } from "../../../i18n";
 import {
   getChartResolutionLabel,
   isRangePresetSupported,
@@ -86,7 +87,7 @@ export function ComparisonChartToolbar({
             </Text>
           ))}
           {isUpdating && (
-            <Text fg={colors.textDim}>updating</Text>
+            <Text fg={colors.textDim}>{t("updating")}</Text>
           )}
         </Box>
         <Box flexGrow={1} />
@@ -108,7 +109,7 @@ export function ComparisonChartToolbar({
             <Text fg={colors.textDim}>{projectionWarning}</Text>
           )}
           {showNativeUnavailable && (
-            <Text fg={colors.textDim}>native unavailable</Text>
+            <Text fg={colors.textDim}>{t("native unavailable")}</Text>
           )}
         </Box>
       </Box>

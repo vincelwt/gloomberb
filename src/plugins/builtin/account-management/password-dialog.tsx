@@ -5,6 +5,7 @@ import { Box, Text } from "../../../ui";
 import { useDialogKeyboard, type AlertContext } from "../../../ui/dialog";
 import { colors } from "../../../theme/colors";
 import { isPlainKey } from "../../../utils/keyboard";
+import { t } from "../../../i18n";
 import { truncate } from "./model";
 
 type PasswordDialogField = "current" | "new" | "confirm";
@@ -26,15 +27,15 @@ export function PasswordChangeDialog({
   const submit = useCallback(async () => {
     if (submitting) return;
     if (!currentPassword || !newPassword) {
-      setError("Current and new password are required.");
+      setError(t("Current and new password are required."));
       return;
     }
     if (newPassword.length < 8) {
-      setError("New password must be at least 8 characters.");
+      setError(t("New password must be at least 8 characters."));
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError("New passwords do not match.");
+      setError(t("New passwords do not match."));
       return;
     }
 
@@ -44,7 +45,7 @@ export function PasswordChangeDialog({
       await onChangePassword(currentPassword, newPassword);
       dismiss();
     } catch (errorValue) {
-      setError(errorValue instanceof Error ? errorValue.message : "Failed to change password.");
+      setError(errorValue instanceof Error ? errorValue.message : t("Failed to change password."));
     } finally {
       setSubmitting(false);
     }
@@ -78,10 +79,10 @@ export function PasswordChangeDialog({
 
   const fieldWidth = 42;
   return (
-    <DialogFrame title="Change Password">
+    <DialogFrame title={t("Change Password")}>
       <Box flexDirection="column" gap={1}>
         <TextField
-          label={activeField === "current" ? "> Current Password" : "  Current Password"}
+          label={activeField === "current" ? `> ${t("Current Password")}` : `  ${t("Current Password")}`}
           value={currentPassword}
           focused={activeField === "current"}
           width={fieldWidth}
@@ -91,7 +92,7 @@ export function PasswordChangeDialog({
           onSubmit={() => { void submit(); }}
         />
         <TextField
-          label={activeField === "new" ? "> New Password" : "  New Password"}
+          label={activeField === "new" ? `> ${t("New Password")}` : `  ${t("New Password")}`}
           value={newPassword}
           focused={activeField === "new"}
           width={fieldWidth}
@@ -101,7 +102,7 @@ export function PasswordChangeDialog({
           onSubmit={() => { void submit(); }}
         />
         <TextField
-          label={activeField === "confirm" ? "> Confirm Password" : "  Confirm Password"}
+          label={activeField === "confirm" ? `> ${t("Confirm Password")}` : `  ${t("Confirm Password")}`}
           value={confirmPassword}
           focused={activeField === "confirm"}
           width={fieldWidth}
@@ -113,7 +114,7 @@ export function PasswordChangeDialog({
         {error ? <Text fg={colors.negative}>{truncate(error, fieldWidth)}</Text> : null}
         <Box flexDirection="row" justifyContent="flex-end">
           <Button
-            label={submitting ? "Changing..." : "Update Password"}
+            label={submitting ? t("Changing...") : t("Update Password")}
             variant="primary"
             disabled={submitting}
             onPress={() => { void submit(); }}

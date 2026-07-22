@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { t, tf } from "../i18n";
 import { getSharedRegistry, type PluginRegistry } from "../plugins/registry";
 import type { TickerFinancials } from "../types/financials";
 import { TICKER_RESEARCH_PANE_ID } from "../types/config";
@@ -225,12 +226,12 @@ export function tickerContextMenuItems({
   const items: ContextMenuItem[] = [
     {
       id: "ticker:open",
-      label: `Open ${symbol} Ticker Research`,
+      label: tf("Open {symbol} Ticker Research", { symbol }),
       onSelect: () => (openTicker ? openTicker(symbol) : registry?.navigateTicker(symbol)),
     },
     {
       id: "ticker:pin-floating",
-      label: `Open ${symbol} in New Floating Ticker Research`,
+      label: tf("Open {symbol} in New Floating Ticker Research", { symbol }),
       onSelect: () => registry?.pinTicker(symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID, forceNewPane: true }),
     },
     {
@@ -283,6 +284,17 @@ export function tickerContextMenuItems({
   return items;
 }
 
+function translateContextMenuItems(items: ContextMenuItem[]): ContextMenuItem[] {
+  return items.map((item) => {
+    if (item.type === "divider" || item.type === "role") return item;
+    return {
+      ...item,
+      label: t(item.label),
+      submenu: item.submenu ? translateContextMenuItems(item.submenu) : item.submenu,
+    };
+  });
+}
+
 export function ContextMenuProvider({
   pluginRegistry,
   children,
@@ -314,7 +326,7 @@ export function ContextMenuProvider({
 
     event?.preventDefault?.();
     event?.stopPropagation?.();
-    return renderer.showContextMenu(withSafeActions(items, handleActionError));
+    return renderer.showContextMenu(withSafeActions(translateContextMenuItems(items), handleActionError));
   }, [handleActionError, nativeSupported, registry, renderer]);
 
   useEffect(() => {

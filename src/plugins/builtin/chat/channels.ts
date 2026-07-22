@@ -1,6 +1,7 @@
 import type { CommandResultDef, GloomPluginContext } from "../../../types/plugin";
 import type { ChatChannel, ChatChannelState } from "../../../api-client";
 import type { AppConfig } from "../../../types/config";
+import { t } from "../../../i18n";
 import { chatController } from "./controller";
 import { formatChannelLabel } from "./channel-labels";
 
@@ -45,14 +46,14 @@ function conversationDetail(channel: ChatChannel): string {
   if (channel.kind === "direct") {
     const displayName = channel.dmUser?.displayName?.trim();
     const username = channel.dmUser?.username?.trim();
-    return [displayName && username ? displayName : null, "Direct message"].filter(Boolean).join(" - ");
+    return [displayName && username ? displayName : null, t("Direct message")].filter(Boolean).join(" - ");
   }
   const members = (channel.members ?? [])
     .map((member) => member.username ? `@${member.username}` : member.displayName)
     .filter(Boolean)
     .slice(0, 4);
   const suffix = (channel.members?.length ?? 0) > members.length ? ` +${(channel.members?.length ?? 0) - members.length}` : "";
-  return members.length > 0 ? `Group chat - ${members.join(", ")}${suffix}` : "Group chat";
+  return members.length > 0 ? `${t("Group chat")} - ${members.join(", ")}${suffix}` : t("Group chat");
 }
 
 export function parseDmUsernames(value: string): string[] {
@@ -107,10 +108,10 @@ export function buildDmCommandResults(ctx: GloomPluginContext, arg: string): Com
       label,
       detail: valid
         ? usernames.length === 1
-          ? "Start or open direct message"
-          : "Start group chat"
-        : "Use @username, or multiple usernames for a group chat",
-      category: "Chat",
+          ? t("Start or open direct message")
+          : t("Start group chat")
+        : t("Use @username, or multiple usernames for a group chat"),
+      category: t("Chat"),
       right: "DM",
       disabled: !valid,
       execute: () => openDmTargetFromCommand(ctx, usernames),
@@ -122,9 +123,9 @@ export function buildDmCommandResults(ctx: GloomPluginContext, arg: string): Com
   if (conversations.length === 0) {
     return [{
       id: "empty",
-      label: "No DMs yet",
-      detail: "Type DM @username to start one",
-      category: "Chat",
+      label: t("No DMs yet"),
+      detail: t("Type DM @username to start one"),
+      category: t("Chat"),
       right: "DM",
       disabled: true,
       execute: () => {},
@@ -135,8 +136,8 @@ export function buildDmCommandResults(ctx: GloomPluginContext, arg: string): Com
     id: `channel:${channel.id}`,
     label: formatChannelLabel(channel, channel.id),
     detail: conversationDetail(channel),
-    category: "Conversations",
-    right: channel.kind === "group" ? "Group" : "DM",
+    category: t("Conversations"),
+    right: channel.kind === "group" ? t("Group") : t("DM"),
     keywords: [
       channel.name,
       channel.dmUser?.username ?? "",

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Box, Text } from "../../ui";
 import { type PromptContext, useDialogKeyboard } from "../../ui/dialog";
 import { colors } from "../../theme/colors";
+import { t } from "../../i18n";
 import { isPlainKey } from "../../utils/keyboard";
 import { DialogFrame } from "./frame";
 import { ListView, type ListViewItem } from "./list-view";
@@ -97,7 +98,7 @@ export function ChoiceDialog({
           items={items}
           selectedIndex={selectedIndex}
           bgColor={bgColor}
-          emptyMessage="No choices."
+          emptyMessage={t("No choices.")}
           rowGap={0}
           surface="framed"
           selectOnHover

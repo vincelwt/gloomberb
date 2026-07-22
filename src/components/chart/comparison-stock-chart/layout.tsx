@@ -1,6 +1,7 @@
 import type { ReactNode, RefObject } from "react";
 import { Box, ChartSurface, Text, type BoxRenderable, type ChartSurfaceProps } from "../../../ui";
 import { colors } from "../../../theme/colors";
+import { t } from "../../../i18n";
 import type { ChartMouseEvent } from "../core/pointer";
 import type { StyledContent } from "../core/renderer";
 import { PriceAxisLabels } from "../price-axis-labels";
@@ -97,7 +98,7 @@ export function ComparisonChartLayout({
       {isBlockingBody
         ? (
           <Box flexGrow={1} alignItems="center" justifyContent="center">
-            <Text fg={colors.textDim} selectable={false}>Loading chart...</Text>
+            <Text fg={colors.textDim} selectable={false}>{t("Loading chart...")}</Text>
           </Box>
         )
         : bodyMessage

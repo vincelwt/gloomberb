@@ -1,5 +1,6 @@
 import { Box, Text, useRendererHost, useUiCapabilities } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { t } from "../../i18n";
 import { useShortcut, useViewport } from "../../react/input";
 import { useAppDispatch, useAppSelector } from "../../state/app/context";
 import type { DesktopWindowBridge } from "../../types/desktop-window";
@@ -121,7 +122,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
   if (!instance || !paneDef) {
     return (
       <Box flexGrow={1} alignItems="center" justifyContent="center" backgroundColor={colors.bg}>
-        <Text fg={colors.textDim}>Pane unavailable.</Text>
+        <Text fg={colors.textDim}>{t("Pane unavailable.")}</Text>
       </Box>
     );
   }

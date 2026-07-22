@@ -154,6 +154,9 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     items.push(...buildWindowModeItems(match.arg));
   } else if (match && match.command.id === "theme") {
     initialIdx = 0;
+  } else if (match && match.command.id === "language") {
+    const item = commandToItem(match.command, match.arg);
+    if (item) items.push(item);
   } else if (match && match.command.id === "security-description") {
     if (shortcutItem) {
       items.push(shortcutItem);
