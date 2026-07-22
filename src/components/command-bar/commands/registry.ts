@@ -202,7 +202,9 @@ export const commands: Command[] = [
     id: "language",
     prefix: "LANG",
     label: "Change Language",
-    description: "Switch the interface language (English / 中文)",
+    description: "Switch the interface language",
+    hasArg: true,
+    argPlaceholder: "locale",
     category: "Config",
   },
 

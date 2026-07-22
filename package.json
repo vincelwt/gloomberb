@@ -22,6 +22,7 @@
     "desktop:build": "electrobun build",
     "desktop:release": "electrobun build --env=stable",
     "desktop:release:windows": "electrobun build --env=stable --targets=win-x64",
+    "i18n:audit": "bun run scripts/i18n-audit.ts",
     "test": "bun test",
     "release": "./scripts/release.sh"
   },

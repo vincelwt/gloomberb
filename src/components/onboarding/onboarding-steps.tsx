@@ -187,7 +187,7 @@ export function ReadyStep({
         <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{"\u2713"}</Text>
         <Text fg={colors.text}>
           {brokerName
-            ? ` ${tf("{broker} connected. Imported {count} {label}", { broker: brokerName, count: positionsImported, label: positionLabel })}`
+            ? ` ${tf("{broker} connected. Imported {count} {label}", { broker: brokerName, count: positionsImported, label: t(positionLabel) })}`
             : ` ${tf('Portfolio "{name}" created', { name: portfolioName })}`}
         </Text>
       </Box>

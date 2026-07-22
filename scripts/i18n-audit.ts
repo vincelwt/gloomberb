@@ -1,7 +1,7 @@
 /**
  * Static i18n audit: extracts every string-literal key passed to t() / tf()
- * and tc() across src/, then reports keys missing from the zh-CN dictionary
- * and dictionary entries no longer referenced anywhere.
+ * and tc() across src/, then reports missing translations, locale dictionary
+ * key drift, and dictionary entries no longer referenced anywhere.
  *
  * Usage:
  *   bun run scripts/i18n-audit.ts            # human-readable report
@@ -12,9 +12,18 @@
  */
 import { readdir } from "fs/promises";
 import { join } from "path";
+import { ja } from "../src/i18n/ja";
+import { ko } from "../src/i18n/ko";
 import { zhCN } from "../src/i18n/zh-cn";
+import { zhTW } from "../src/i18n/zh-tw";
 
 const SOURCE_ROOT = join(process.cwd(), "src");
+const DICTIONARIES = {
+  "zh-CN": zhCN,
+  "zh-TW": zhTW,
+  ja,
+  ko,
+};
 
 // t("...") / tf("...") / tf('...') — first string-literal argument.
 const CALL_PATTERN = /\bt[fc]?\(\s*(["'])((?:\\.|(?!\1).)*)\1/g;
@@ -65,23 +74,43 @@ for (const file of files) {
   }
 }
 
-const missing = [...referenced.keys()].filter((key) => !(key in zhCN)).sort();
+const canonicalKeys = Object.keys(zhCN).sort();
+const canonicalKeySet = new Set(canonicalKeys);
 const unused = Object.keys(zhCN).filter((key) => !referenced.has(key)).sort();
+const placeholders = (value: string) => [...value.matchAll(/\{\w+\}/g)].map((match) => match[0]).sort();
+const audits = Object.fromEntries(Object.entries(DICTIONARIES).map(([locale, dictionary]) => {
+  const keys = Object.keys(dictionary);
+  return [locale, {
+    entries: keys.length,
+    missing: [...referenced.keys()].filter((key) => !(key in dictionary)).sort(),
+    missingCanonical: canonicalKeys.filter((key) => !(key in dictionary)),
+    extra: keys.filter((key) => !canonicalKeySet.has(key)).sort(),
+    placeholderMismatches: canonicalKeys.filter((key) => (
+      key in dictionary
+      && JSON.stringify(placeholders(dictionary[key]!)) !== JSON.stringify(placeholders(key))
+    )),
+  }];
+}));
 
 const asJson = process.argv.includes("--json");
 if (asJson) {
   console.log(JSON.stringify({
     calls: referenced.size,
-    dictionaryEntries: Object.keys(zhCN).length,
-    missing,
+    canonicalEntries: canonicalKeys.length,
+    dictionaries: audits,
     unused,
   }, null, 2));
 } else {
   console.log(`t()/tf()/tc() distinct keys referenced: ${referenced.size}`);
-  console.log(`zh-CN dictionary entries: ${Object.keys(zhCN).length}`);
-  console.log(`\nMissing translations: ${missing.length}`);
-  for (const key of missing) {
-    console.log(`  "${key}"  ← ${[...new Set(referenced.get(key))].slice(0, 2).join(", ")}`);
+  console.log(`Canonical dictionary entries: ${canonicalKeys.length}`);
+  for (const [locale, audit] of Object.entries(audits)) {
+    console.log(`\n${locale}: ${audit.entries} entries, ${audit.missing.length} referenced keys missing, ${audit.missingCanonical.length} canonical keys missing, ${audit.extra.length} extra keys, ${audit.placeholderMismatches.length} placeholder mismatches`);
+    for (const key of audit.missing) {
+      console.log(`  "${key}"  ← ${[...new Set(referenced.get(key))].slice(0, 2).join(", ")}`);
+    }
+    for (const key of audit.missingCanonical) console.log(`  missing canonical: "${key}"`);
+    for (const key of audit.extra) console.log(`  extra: "${key}"`);
+    for (const key of audit.placeholderMismatches) console.log(`  placeholder mismatch: "${key}"`);
   }
   console.log(`\nDictionary entries not referenced by any t()/tf()/tc() call: ${unused.length}`);
   if (unused.length > 0 && process.argv.includes("--verbose")) {
@@ -91,4 +120,9 @@ if (asJson) {
   }
 }
 
-if (missing.length > 0) process.exit(1);
+if (Object.values(audits).some((audit) => (
+  audit.missing.length > 0
+  || audit.missingCanonical.length > 0
+  || audit.extra.length > 0
+  || audit.placeholderMismatches.length > 0
+))) process.exit(1);

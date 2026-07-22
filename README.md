@@ -268,22 +268,23 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `VF` | Toggle quote value flashing |
 | `TH <theme>` | Change color theme |
 | `CR` | Cycle chart renderer |
+| `LANG <locale>` | Change interface language (`auto`, `en`, `zh-CN`, `zh-TW`, `ja`, or `ko`) |
 | `PL <plugin>` | Manage plugins |
 
-## 中文界面 (Chinese UI)
+## Localized interface
 
-本地版本内置了简体中文界面支持（English UI is unchanged and remains the default）：
+Gloomberb includes English, Simplified Chinese, Traditional Chinese, Japanese, and Korean UI support. English remains the default fallback language.
 
-- **自动检测**：终端 `LANG`/`LC_ALL` 为 `zh_*` 时自动启用中文。
-- **命令切换**：命令栏（Ctrl+P）输入 `LANG` 在 自动 / English / 中文 间循环，选择会持久化到配置文件（`config.json` 的 `language` 字段）。
-- **单次覆盖**：`GLOOMBERB_LANG=zh-CN gloomberb`（或 `=en` 强制英文），优先级最高。
+- **Automatic detection:** supported `LANG` / `LC_ALL` and desktop system locales select the matching interface automatically.
+- **Command switching:** enter `LANG` in the command bar (Ctrl+P) to cycle languages, or use `LANG auto`, `LANG en`, `LANG zh-CN`, `LANG zh-TW`, `LANG ja`, or `LANG ko`. The choice is persisted in `config.json`.
+- **One-run override:** `GLOOMBERB_LANG=ja gloomberb` (or another supported locale) takes highest priority in environments that expose process locale variables.
 
-实现说明：
+Implementation notes:
 
-- 词典在 [src/i18n/zh-cn.ts](src/i18n/zh-cn.ts)，以英文原文为键；查不到的词条自动回退英文，因此可以增量补充翻译，不影响任何功能。
-- 渲染出口统一经过 `t()`（[src/i18n/index.ts](src/i18n/index.ts)），面板标题、命令栏、右键菜单、设置对话框、页签、帮助与引导页均已接入。
-- 表格列头（BID/ASK/CHG% 等金融缩写）刻意保留英文，符合行情终端惯例并保证定宽列对齐。
-- 中日韩宽字符和字素簇的截断与排版由 [src/utils/format.ts](src/utils/format.ts) 按终端单元格宽度处理。
+- Locale dictionaries live in [src/i18n](src/i18n), keyed by the original English UI text. Missing entries safely fall back to English.
+- Shared render sinks call `t()` / `tf()` / `tc()` for pane titles, the command bar, menus, settings, tabs, help, and onboarding.
+- Finance abbreviations such as BID, ASK, and CHG% intentionally remain in English for terminal conventions and fixed-width alignment.
+- CJK wide characters and grapheme clusters are measured by [src/utils/format.ts](src/utils/format.ts) using terminal display-cell widths.
 
 ## License
 

@@ -267,19 +267,20 @@ gloomberb
 | `VF` | 切换行情数值闪烁 |
 | `TH <theme>` | 更换配色主题 |
 | `CR` | 切换图表渲染器 |
+| `LANG <locale>` | 切换界面语言（`auto`、`en`、`zh-CN`、`zh-TW`、`ja` 或 `ko`） |
 | `PL <plugin>` | 管理插件 |
 
-## 中文界面 (Chinese UI)
+## 本地化界面
 
-本地版本内置了简体中文界面支持（English UI 保持不变，仍是默认语言）：
+Gloomberb 内置 English、简体中文、繁體中文、日本語和한국어界面支持；英文仍是默认回退语言。
 
-- **自动检测**：终端 `LANG`/`LC_ALL` 为 `zh_*` 时自动启用中文。
-- **命令切换**：命令栏（Ctrl+P）输入 `LANG` 在 自动 / English / 中文 间循环，选择会持久化到配置文件（`config.json` 的 `language` 字段）。
-- **单次覆盖**：`GLOOMBERB_LANG=zh-CN gloomberb`（或 `=en` 强制英文），优先级最高。
+- **自动检测**：终端 `LANG` / `LC_ALL` 与桌面系统语言会自动选择受支持的界面语言。
+- **命令切换**：在命令栏（Ctrl+P）输入 `LANG` 可循环切换，也可直接输入 `LANG auto`、`LANG en`、`LANG zh-CN`、`LANG zh-TW`、`LANG ja` 或 `LANG ko`。选择会保存到 `config.json`。
+- **单次覆盖**：在可读取进程语言变量的环境中，可用 `GLOOMBERB_LANG=ja gloomberb`（或其他受支持的语言代码）进行最高优先级覆盖。
 
 实现说明：
 
-- 词典在 [src/i18n/zh-cn.ts](src/i18n/zh-cn.ts)，以英文原文为键；查不到的词条自动回退英文，因此可以增量补充翻译，不影响任何功能。
+- 各语言词典位于 [src/i18n](src/i18n)，以英文原文为键；查不到的词条自动回退英文，因此可以增量补充翻译，不影响任何功能。
 - 渲染出口统一经过 `t()`（[src/i18n/index.ts](src/i18n/index.ts)），面板标题、命令栏、右键菜单、设置对话框、页签、帮助与引导页均已接入。
 - 表格列头（BID/ASK/CHG% 等金融缩写）刻意保留英文，符合行情终端惯例并保证定宽列对齐。
 - 中日韩宽字符和字素簇的截断与排版由 [src/utils/format.ts](src/utils/format.ts) 按终端单元格宽度处理。

@@ -1,9 +1,22 @@
+import { ja } from "./ja";
+import { ko } from "./ko";
 import { zhCN } from "./zh-cn";
+import { zhTW } from "./zh-tw";
+import type { AppLanguage, LanguagePreference } from "./languages";
 
-export type AppLanguage = "en" | "zh-CN";
+export type { AppLanguage, LanguagePreference } from "./languages";
+export {
+  LANGUAGE_DISPLAY_NAMES,
+  LANGUAGE_PREFERENCES,
+  parseLanguagePreference,
+  resolveLanguageCommandPreference,
+} from "./languages";
 
 const DICTIONARIES: Record<Exclude<AppLanguage, "en">, Record<string, string>> = {
   "zh-CN": zhCN,
+  "zh-TW": zhTW,
+  ja,
+  ko,
 };
 
 function normalizeLanguageTag(tag: string): AppLanguage | null {
@@ -13,10 +26,16 @@ function normalizeLanguageTag(tag: string): AppLanguage | null {
     .split(/[.@]/, 1)[0]
     ?.replaceAll("_", "-");
   if (!normalized) return null;
-  const [language, variant] = normalized.split("-");
+  const [language, ...variants] = normalized.split("-");
   if (language === "en") return "en";
-  if (language === "zh" && (!variant || variant === "cn" || variant === "sg" || variant === "hans")) {
-    return "zh-CN";
+  if (language === "ja") return "ja";
+  if (language === "ko") return "ko";
+  if (language === "zh") {
+    if (variants.length === 0) return "zh-CN";
+    if (variants.includes("hant") || variants.includes("cht")) return "zh-TW";
+    if (variants.includes("hans") || variants.includes("chs")) return "zh-CN";
+    if (variants.some((variant) => variant === "tw" || variant === "hk" || variant === "mo")) return "zh-TW";
+    if (variants.some((variant) => variant === "cn" || variant === "sg" || variant === "my")) return "zh-CN";
   }
   return null;
 }
@@ -88,7 +107,7 @@ export function applyLanguageFromConfig(config: { language?: string } | null | u
  * Applies an explicit user language choice at runtime (from the LANG
  * command). "auto" re-runs environment detection.
  */
-export function applyLanguagePreference(preference: "auto" | "en" | "zh-CN"): void {
+export function applyLanguagePreference(preference: LanguagePreference): void {
   currentLanguage = getEnvironmentLanguageOverride()
     ?? (preference === "auto" ? detectLanguage() : preference);
 }
