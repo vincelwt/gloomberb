@@ -4,6 +4,7 @@ import {
   chartEvidenceMismatchesFor,
   missingActiveTabSelections,
   shotDataEvidenceFor,
+  shotPriceHistoryRange,
   type PaneScreenshotExpectedChartEvidence,
   type PaneScreenshotExpectedSelection,
 } from "./screenshot";
@@ -59,6 +60,11 @@ describe("pane screenshot chart-data verification", () => {
     expect(chartEvidenceMismatchesFor(renderedComparisonChart(), expected)).toEqual([]);
   });
 
+  test("fetches the requested comparison range instead of a coarser five-year series", () => {
+    expect(shotPriceHistoryRange(resolved("price-comparison", { rangePreset: "1Y" })))
+      .toBe("1Y");
+  });
+
   test("rejects a wrong range or rendered value even when symbols are visible", () => {
     const nodes = renderedComparisonChart();
     nodes[0]!.metadata!.rangePreset = "3M";
@@ -71,6 +77,27 @@ describe("pane screenshot chart-data verification", () => {
 });
 
 describe("pane screenshot structured data evidence", () => {
+  test("captures the exact single-price series rendered by a price chart", () => {
+    const evidence = shotDataEvidenceFor(
+      resolved("price-chart", { rangePreset: "3M" }),
+      payload([["AAPL", {
+        priceHistory: [
+          { date: "2026-04-01", close: 100 },
+          { date: "2026-07-01", close: 125 },
+        ],
+      }]]),
+    );
+
+    expect(evidence).toEqual({
+      kind: "price-series",
+      symbol: "AAPL",
+      range: "3M",
+      pointCount: 2,
+      first: { date: "2026-04-01T00:00:00.000Z", close: 100 },
+      last: { date: "2026-07-01T00:00:00.000Z", close: 125 },
+    });
+  });
+
   test("captures the exact comparison projection inputs and return", () => {
     const evidence = shotDataEvidenceFor(
       resolved("price-comparison", { rangePreset: "1Y", axisMode: "percent" }),

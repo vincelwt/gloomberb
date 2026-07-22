@@ -86,6 +86,15 @@ export interface PaneScreenshotPriceComparisonEvidence {
   }>;
 }
 
+export interface PaneScreenshotPriceSeriesEvidence {
+  kind: "price-series";
+  symbol: string;
+  range: string;
+  pointCount: number;
+  first: PaneScreenshotChartPointEvidence;
+  last: PaneScreenshotChartPointEvidence;
+}
+
 export interface PaneScreenshotFundamentalSeriesEvidence {
   kind: "fundamental-series";
   metric: string;
@@ -113,6 +122,7 @@ export interface PaneScreenshotFinancialStatementEvidence {
 }
 
 export type PaneScreenshotDataEvidence =
+  | PaneScreenshotPriceSeriesEvidence
   | PaneScreenshotPriceComparisonEvidence
   | PaneScreenshotFundamentalSeriesEvidence
   | PaneScreenshotFinancialStatementEvidence;
@@ -249,16 +259,15 @@ async function buildDesktopShotPayload(
   };
 }
 
-function shotPriceHistoryRange(resolved: ResolvedPaneFunction): TimeRange | null {
+export function shotPriceHistoryRange(resolved: ResolvedPaneFunction): TimeRange | null {
   switch (resolved.capability.id) {
     case "valuation-series":
       return "ALL";
     case "price-chart":
+      return (resolved.options.rangePreset ?? "5Y") as TimeRange;
     case "price-comparison":
     case "return-correlation":
-      return resolved.capability.id === "price-comparison"
-        ? "5Y"
-        : (resolved.options.rangePreset ?? "1Y") as TimeRange;
+      return (resolved.options.rangePreset ?? "1Y") as TimeRange;
     case "intraday-price-chart":
       return "1D";
     case "historical-prices":
@@ -348,7 +357,7 @@ export async function renderDesktopShot({
 }
 
 function requiresStructuredDataEvidence(resolved: ResolvedPaneFunction): boolean {
-  return ["price-comparison", "fundamental-series", "financial-statements"]
+  return ["price-chart", "price-comparison", "fundamental-series", "financial-statements"]
     .includes(resolved.capability.id);
 }
 
@@ -381,6 +390,22 @@ export function shotDataEvidenceFor(
   resolved: ResolvedPaneFunction,
   payload: DesktopPaneShotPayload,
 ): PaneScreenshotDataEvidence | null {
+  if (resolved.capability.id === "price-chart") {
+    const range = String(resolved.options.rangePreset ?? "5Y") as TimeRange;
+    const [symbol, financials] = payload.financials[0] ?? [];
+    if (!symbol || !financials) return null;
+    const { evidence } = normalizeChartSeries(symbol, financials, range);
+    if (!evidence.first || !evidence.last || evidence.pointCount <= 0) return null;
+    return {
+      kind: "price-series",
+      symbol,
+      range,
+      pointCount: evidence.pointCount,
+      first: evidence.first,
+      last: evidence.last,
+    };
+  }
+
   if (resolved.capability.id === "price-comparison") {
     const range = String(resolved.options.rangePreset ?? "1Y") as TimeRange;
     const normalizedSeries = payload.financials.map(([symbol, financials]) => ({

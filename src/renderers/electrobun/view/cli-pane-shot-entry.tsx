@@ -24,6 +24,11 @@ import { PaneContent } from "../../../components/layout/pane/content";
 import { resolvePaneBodyFrame } from "../../../components/layout/pane/sizing";
 import { getPaneDisplayTitle } from "../../../components/layout/pane/title";
 import { subtractTimeRange } from "../../../components/chart/core/date-window";
+import {
+  getPresetResolution,
+  normalizeChartResolutionSupport,
+  TIME_RANGE_ORDER,
+} from "../../../components/chart/core/resolution";
 import type { TimeRange } from "../../../components/chart/core/types";
 import type { AppConfig } from "../../../types/config";
 import type { CachedFinancialsTarget, DataProvider, QuoteSubscriptionTarget } from "../../../types/data-provider";
@@ -69,6 +74,12 @@ const TRACKED_RESPONSE_METHODS = new Set<PropertyKey>([
 let pendingShotWork = 0;
 let didInstallShotFetchTracker = false;
 let shotDataProvider: DataProvider | null = null;
+const SHOT_CHART_RESOLUTION_SUPPORT = normalizeChartResolutionSupport(
+  TIME_RANGE_ORDER.map((maxRange) => ({
+    resolution: getPresetResolution(maxRange),
+    maxRange,
+  })),
+);
 
 const rendererHost: RendererHost = {
   requestExit() {},
@@ -265,6 +276,9 @@ function createShotDataProvider(payload: CliPaneShotPayload): DataProvider {
       return trackShotWork(Promise.resolve().then(() => (
         clipShotPriceHistory(getFinancials(ticker).priceHistory ?? [], bufferRange)
       )));
+    },
+    getChartResolutionSupport() {
+      return resolveShotWork(SHOT_CHART_RESOLUTION_SUPPORT);
     },
     subscribeQuotes() {
       return () => {};

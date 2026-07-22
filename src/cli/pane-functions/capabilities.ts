@@ -340,7 +340,7 @@ const CAPABILITIES: Record<string, PaneFunctionCapability> = {
     intents: ["chart a security price over time"],
     outputKind: "price-history",
     reportReadiness: "ready",
-    screenshotReadiness: "partial",
+    screenshotReadiness: "ready",
     dataRequirements: ["price history"],
     limitations: [],
     options: [{
