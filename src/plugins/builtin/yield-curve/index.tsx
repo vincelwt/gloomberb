@@ -2,7 +2,8 @@ import { Box, ScrollBox, Text } from "../../../ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useShortcut } from "../../../react/input";
 import { StaticChartSurface, usePaneFooter } from "../../../components";
-import type { GloomPluginContext, PaneProps } from "../../../types/plugin";
+import type { PaneProps } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { colors } from "../../../theme/colors";
 import { resolveChartPalette } from "../../../components/chart/core/renderer";
 import type { ProjectedChartPoint } from "../../../components/chart/core/data";
@@ -162,8 +163,8 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
   );
 }
 
-export function registerYieldCurveFeature(ctx: GloomPluginContext): void {
-  ctx.registerPane({
+export const yieldCurveModule: PluginModule = {
+  panes: [{
     id: "yield-curve",
     name: "US Treasury Yield Curve",
     icon: "Y",
@@ -171,14 +172,13 @@ export function registerYieldCurveFeature(ctx: GloomPluginContext): void {
     defaultPosition: "right",
     defaultMode: "floating",
     defaultFloatingSize: { width: 80, height: 20 },
-  });
-
-  ctx.registerPaneTemplate({
+  }],
+  paneTemplates: [{
     id: "yield-curve-pane",
     paneId: "yield-curve",
     label: "Yield Curve",
     description: "US Treasury yield curve charted from FRED data.",
     keywords: ["yield", "curve", "treasury", "bonds", "rates", "gc", "interest"],
     shortcut: { prefix: "GC" },
-  });
-}
+  }],
+};

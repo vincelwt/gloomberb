@@ -1,7 +1,8 @@
 import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataTableView, Tabs, usePaneFooter, type DataTableKeyEvent } from "../../../components";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { PaneProps } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
@@ -248,13 +249,7 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
   );
 }
 
-export const marketMoversPlugin: GloomPlugin = {
-  id: "market-movers",
-  name: "Market Movers",
-  version: "1.0.0",
-  description: "Top gainers, losers, most active, and trending tickers",
-  toggleable: true,
-
+export const marketMoversModule: PluginModule = {
   setup(ctx) {
     attachMarketMoversPersistence(ctx.persistence);
   },

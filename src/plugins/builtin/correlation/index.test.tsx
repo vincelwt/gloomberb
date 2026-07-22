@@ -11,7 +11,7 @@ import { cloneLayout, createDefaultConfig, TICKER_RESEARCH_PANE_ID } from "../..
 import type { TickerRecord } from "../../../types/ticker";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../runtime";
-import { correlationPlugin } from ".";
+import { correlationModule } from ".";
 
 const TEST_PANE_ID = "correlation:test";
 
@@ -61,7 +61,7 @@ function CorrelationHarness({ runtime }: { runtime: PluginRuntimeAccess }) {
     ["MSFT", makeTicker("MSFT")],
   ]);
 
-  const CorrelationPane = correlationPlugin.panes?.[0]?.component as (props: {
+  const CorrelationPane = correlationModule.panes?.[0]?.component as (props: {
     paneId: string;
     paneType: string;
     focused: boolean;
@@ -72,7 +72,7 @@ function CorrelationHarness({ runtime }: { runtime: PluginRuntimeAccess }) {
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
-        <PluginRenderProvider pluginId="correlation" runtime={runtime}>
+        <PluginRenderProvider pluginId="market-overview" runtime={runtime}>
           <Box width={60} height={8}>
             <CorrelationPane
               paneId={TEST_PANE_ID}
@@ -98,7 +98,7 @@ afterEach(async () => {
   testSetup = undefined;
 });
 
-describe("correlationPlugin", () => {
+describe("correlationModule", () => {
   test("opens tickers from row and column labels", async () => {
     const opened: Array<{ symbol: string; options: { floating?: boolean; paneType?: string } | undefined }> = [];
     const runtime = createTestPluginRuntime({

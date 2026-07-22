@@ -1,43 +1,35 @@
 import type { GloomPlugin } from "../types/plugin";
-import { portfolioListPlugin } from "./builtin/portfolio-list";
 import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
 import { substackPlugin } from "./builtin/substack";
 import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/cloud";
-import { changelogPlugin } from "./builtin/changelog";
-import { helpPlugin } from "./builtin/help";
 import { ibkrPlugin } from "./ibkr";
-import { layoutManagerPlugin } from "./builtin/layout-manager";
 import { predictionMarketsPlugin } from "./prediction-markets";
-import { analyticsPlugin } from "./builtin/analytics";
 import { alertsPlugin } from "./builtin/alerts";
-import { kellySizerPlugin } from "./builtin/kelly-sizer";
 import {
+  applicationPlugin,
   brokerPlugin,
   macroPlugin,
   marketOverviewPlugin,
+  portfolioPlugin,
   tickerResearchPlugin,
-} from "./builtin/plugin-groups";
+} from "./builtin/composite-plugins";
 
 export const uiBuiltinPlugins: GloomPlugin[] = [
   gloomberbCloudPlugin,
-  portfolioListPlugin,
+  portfolioPlugin,
   tickerResearchPlugin,
   brokerPlugin,
   ibkrPlugin,
-  layoutManagerPlugin,
+  applicationPlugin,
   newsPlugin,
   substackPlugin,
   notesPlugin,
   aiPlugin,
-  changelogPlugin,
-  helpPlugin,
   predictionMarketsPlugin,
   marketOverviewPlugin,
   macroPlugin,
-  analyticsPlugin,
-  kellySizerPlugin,
   alertsPlugin,
 ];
 

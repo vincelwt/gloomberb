@@ -39,7 +39,7 @@ function Harness() {
   return (
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={PANE_ID}>
-        <PluginRenderProvider pluginId="thirteenf" runtime={createTestPluginRuntime()}>
+        <PluginRenderProvider pluginId="ticker-research" runtime={createTestPluginRuntime()}>
           <ThirteenFPane
             paneId={PANE_ID}
             paneType="thirteenf-funds"

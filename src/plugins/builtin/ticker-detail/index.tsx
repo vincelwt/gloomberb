@@ -1,4 +1,4 @@
-import type { GloomPlugin } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import type { TickerFinancials } from "../../../types/financials";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { normalizeTickerInput } from "../../../tickers/search";
@@ -32,11 +32,7 @@ function hasStatementFinancials(financials: TickerFinancials | null | undefined)
   return (financials?.annualStatements.length ?? 0) > 0 || (financials?.quarterlyStatements.length ?? 0) > 0;
 }
 
-export const tickerDetailPlugin: GloomPlugin = {
-  id: "ticker-detail",
-  name: "Ticker Research",
-  version: "1.0.0",
-
+export const tickerDetailModule: PluginModule = {
   setup(ctx) {
     ctx.registerTickerResearchTab({
       id: "overview",

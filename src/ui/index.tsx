@@ -39,6 +39,8 @@ export type {
   HostCheckboxProps,
   Highlight,
   ImageSurfaceProps,
+  MediaSurfaceHandle,
+  MediaSurfaceProps,
   InputRenderable,
   NativeCursorState,
   NativeRendererHost,
@@ -282,6 +284,12 @@ export const ImageSurface = forwardRef<any, ComponentProps<UiHost["ImageSurface"
   return createElement(HostImageSurface as any, { ...props, ref });
 });
 ImageSurface.displayName = "ImageSurface";
+
+export const MediaSurface = forwardRef<any, ComponentProps<UiHost["MediaSurface"]>>((props, ref) => {
+  const { MediaSurface: HostMediaSurface } = useUiHost();
+  return createElement(HostMediaSurface as any, { ...props, ref });
+});
+MediaSurface.displayName = "MediaSurface";
 
 export const SpinnerMark = forwardRef<any, ComponentProps<UiHost["SpinnerMark"]>>((props, ref) => {
   const { SpinnerMark: HostSpinnerMark } = useUiHost();

@@ -56,6 +56,92 @@ describe("core sync contributors", () => {
     expect(serialized).toContain("Demo Broker");
   });
 
+  test("normalizes legacy built-in ownership in pulled config", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-sync-test");
+    const layouts = config.layouts.map((savedLayout, index) => index === 0
+      ? {
+        ...savedLayout,
+        paneState: {
+          "portfolio-list:main": {
+            pluginState: {
+              analytics: { metric: "beta", shared: "legacy" },
+              portfolio: { shared: "canonical" },
+            },
+          },
+        },
+      }
+      : savedLayout);
+
+    const merged = __syncContributorInternalsForTests.mergeConfigPayload(config, {
+      disabledPlugins: ["analytics", "kelly-sizer", "changelog", "macro-tv"],
+      pluginConfig: {
+        analytics: { metric: "beta", shared: "legacy" },
+        portfolio: { shared: "canonical" },
+        help: { section: "shortcuts" },
+      },
+      layout: config.layout,
+      layouts,
+      activeLayoutIndex: config.activeLayoutIndex,
+    });
+
+    expect(merged?.disabledPlugins).toEqual(["portfolio", "macro"]);
+    expect(merged?.pluginConfig).toEqual({
+      portfolio: { metric: "beta", shared: "canonical" },
+      application: { section: "shortcuts" },
+    });
+    expect(merged?.layouts[0]?.paneState?.["portfolio-list:main"]?.pluginState).toEqual({
+      portfolio: { metric: "beta", shared: "canonical" },
+    });
+  });
+
+  test("emits legacy aliases for mixed-version config sync", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-sync-test");
+    config.disabledPlugins = ["portfolio"];
+    config.pluginConfig = {
+      portfolio: { "commonAssumptions:v1": { kellyFraction: 0.5 } },
+    };
+    config.layouts[0] = {
+      ...config.layouts[0]!,
+      paneState: {
+        "portfolio-list:main": {
+          pluginState: {
+            portfolio: { mode: "scenario" },
+          },
+        },
+      },
+    };
+
+    const payload = await coreConfigSyncContributor.collect({
+      state: createInitialState(config),
+    }) as any;
+
+    expect(payload.disabledPlugins).toEqual([
+      "portfolio",
+      "portfolio-list",
+      "analytics",
+      "kelly-sizer",
+    ]);
+    for (const pluginId of ["portfolio", "portfolio-list", "analytics", "kelly-sizer"]) {
+      expect(payload.pluginConfig[pluginId]).toEqual(config.pluginConfig.portfolio);
+      expect(
+        payload.layouts[0].paneState["portfolio-list:main"].pluginState[pluginId],
+      ).toEqual({ mode: "scenario" });
+    }
+  });
+
+  test("ignores malformed synced layout collections", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-sync-test");
+    const merged = __syncContributorInternalsForTests.mergeConfigPayload(config, {
+      layout: config.layout,
+      layouts: null,
+      activeLayoutIndex: 0,
+    });
+
+    expect(merged?.layout).toBe(config.layout);
+    expect(merged?.layouts).toBe(config.layouts);
+    expect(merged?.activeLayoutIndex).toBe(config.activeLayoutIndex);
+  });
+
   test("syncs collection memberships and sanitized positions", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-sync-test");
     config.portfolios = [{

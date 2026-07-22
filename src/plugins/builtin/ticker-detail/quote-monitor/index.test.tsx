@@ -152,7 +152,7 @@ function createQuoteMonitorHarness(options: {
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
       <PaneInstanceProvider paneId="quote-monitor:test">
-        <PluginRenderProvider pluginId="ticker-detail" runtime={makeRuntime({
+        <PluginRenderProvider pluginId="ticker-research" runtime={makeRuntime({
           pinCalls: options.pinCalls,
           settingsCalls: options.settingsCalls,
         })}>

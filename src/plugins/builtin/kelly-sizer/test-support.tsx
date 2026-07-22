@@ -11,11 +11,11 @@ import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import type { BrokerAccount } from "../../../types/trading";
 import { PluginRenderProvider } from "../../runtime";
-import { kellySizerPlugin } from "./index";
+import { positionSizerModule } from "./index";
 
 export const TEST_PANE_ID = "kelly-sizer:test";
 
-const KellySizerPane = kellySizerPlugin.panes![0]!.component as (props: {
+const KellySizerPane = positionSizerModule.panes![0]!.component as (props: {
   paneId: string;
   paneType: string;
   focused: boolean;
@@ -159,7 +159,7 @@ export function KellySizerHarness({
   return (
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
-        <PluginRenderProvider pluginId={kellySizerPlugin.id} runtime={createTestPluginRuntime()}>
+        <PluginRenderProvider pluginId="portfolio" runtime={createTestPluginRuntime()}>
           <KellySizerPane
             paneId={TEST_PANE_ID}
             paneType="kelly-sizer"

@@ -3,7 +3,8 @@ import { TextAttributes } from "../../../ui";
 import { useState } from "react";
 import { Tabs } from "../../../components";
 import { ExternalLinkText } from "../../../components/ui";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { PaneProps } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { colors } from "../../../theme/colors";
 import { t } from "../../../i18n";
 import { getSharedRegistry } from "../../registry";
@@ -399,12 +400,7 @@ function HelpPane({ focused, width, height }: PaneProps) {
   );
 }
 
-export const helpPlugin: GloomPlugin = {
-  id: "help",
-  name: "Help",
-  version: "1.0.0",
-  description: "Shortcut and layout help",
-
+export const helpModule: PluginModule = {
   panes: [
     {
       id: "help",

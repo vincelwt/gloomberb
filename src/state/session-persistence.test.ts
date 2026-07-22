@@ -100,7 +100,13 @@ describe("session persistence", () => {
             main: { columnId: "mkt_value", direction: "desc" },
           },
         },
-        "ticker-detail:main": { activeTabId: "chart" },
+        "ticker-detail:main": {
+          activeTabId: "chart",
+          pluginState: {
+            "ticker-detail": { detailMetric: "revenue", shared: "legacy" },
+            "ticker-research": { shared: "canonical" },
+          },
+        },
         "missing:pane": { cursorSymbol: "MSFT" },
       },
       focusedPaneId: "missing:pane",
@@ -122,7 +128,12 @@ describe("session persistence", () => {
         main: { columnId: "mkt_value", direction: "desc" },
       },
     });
-    expect(reconciled?.paneState["ticker-detail:main"]).toEqual({ activeTabId: "chart" });
+    expect(reconciled?.paneState["ticker-detail:main"]).toEqual({
+      activeTabId: "chart",
+      pluginState: {
+        "ticker-research": { detailMetric: "revenue", shared: "canonical" },
+      },
+    });
     expect(reconciled?.paneState["missing:pane"]).toBeUndefined();
     expect(reconciled?.focusedPaneId).toBe("portfolio-list:main");
     expect(reconciled?.hydrationTargets).toEqual([{ symbol: "AAPL", brokerInstanceId: "ibkr-live", brokerId: "ibkr", exchange: undefined, instrument: null }]);

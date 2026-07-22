@@ -223,7 +223,7 @@ describe("plugin runtime hooks", () => {
     }
 
     testSetup = await testRender(
-      <PluginRenderProvider pluginId="help" runtime={runtime}>
+      <PluginRenderProvider pluginId="application" runtime={runtime}>
         <HookProbe />
       </PluginRenderProvider>,
       { width: 40, height: 5 },
@@ -267,7 +267,7 @@ describe("plugin runtime hooks", () => {
 
     testSetup = await testRender(
       <PaneInstanceProvider paneId="comparison-chart:main">
-        <PluginRenderProvider pluginId="comparison-chart" runtime={runtime}>
+        <PluginRenderProvider pluginId="market-overview" runtime={runtime}>
           <HookProbe />
         </PluginRenderProvider>
       </PaneInstanceProvider>,

@@ -1,6 +1,6 @@
 import { Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { GloomPlugin } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import type { SecFilingItem } from "../../../types/data-provider";
 import {
   useResolvedEntryValue,
@@ -255,12 +255,7 @@ function InsiderView({ width, height, focused }: { width: number; height: number
   );
 }
 
-export const insiderPlugin: GloomPlugin = {
-  id: "insider",
-  name: "Insider Trading",
-  version: "1.0.0",
-  description: "SEC Form 4 insider transaction activity",
-
+export const insiderModule: PluginModule = {
   panes: [
     {
       id: "insider",

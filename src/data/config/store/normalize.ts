@@ -14,6 +14,11 @@ import {
 } from "../../../types/config";
 import type { Portfolio, Watchlist } from "../../../types/ticker";
 import { isLanguagePreference } from "../../../i18n/languages";
+import {
+  normalizeBuiltinDisabledPluginIds,
+  normalizeBuiltinPaneStatePluginOwners,
+  normalizeBuiltinPluginStateMap,
+} from "../../../plugins/ownership";
 import { isLayoutConfig, sanitizeLayout } from "../layout";
 
 const LEGACY_MAIN_PORTFOLIO_COLUMN_IDS = DEFAULT_COLUMNS.map((column) => column.id);
@@ -37,28 +42,13 @@ const PRE_DAY_PNL_PORTFOLIO_COLUMN_IDS = [
   "pnl_pct",
 ];
 const BUILTIN_SOURCE_IDS = new Set(["yahoo", "gloomberb-cloud"]);
-const BUILTIN_PLUGIN_GROUP_ALIASES: Record<string, string> = {
-  "broker-manager": "broker",
-  "company-research": "ticker-research",
-  "comparison-chart": "market-overview",
-  correlation: "market-overview",
-  "earnings-calendar": "macro",
-  "fx-matrix": "market-overview",
-  holders: "ticker-research",
-  insider: "ticker-research",
-  "market-movers": "market-overview",
-  options: "ticker-research",
-  research: "ticker-research",
-  sectors: "market-overview",
-  sec: "ticker-research",
-  "ticker-detail": "ticker-research",
-  "world-indices": "market-overview",
-};
+const CLOUD_MACRO_SPLIT_CONFIG_VERSION = 15;
+const PORTFOLIO_DEFAULT_COLUMNS_MIGRATION_VERSION = 17;
 
 export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: string): { config: AppConfig; needsSave: boolean } {
   const defaults = createDefaultConfig(dataDir);
   const shouldMigratePortfolioDefaults =
-    typeof saved.configVersion !== "number" || saved.configVersion < CURRENT_CONFIG_VERSION;
+    typeof saved.configVersion !== "number" || saved.configVersion < PORTFOLIO_DEFAULT_COLUMNS_MIGRATION_VERSION;
   const shouldEnableCloudDefault =
     typeof saved.configVersion !== "number" || saved.configVersion < 13;
   const directLayout = migrateLegacyPortfolioDefaultColumns(
@@ -154,17 +144,13 @@ function sanitizeStringArray(value: unknown, fallback: string[]): string[] {
     : fallback;
 }
 
-function normalizeBuiltinPluginId(pluginId: string): string {
-  return BUILTIN_PLUGIN_GROUP_ALIASES[pluginId] ?? pluginId;
-}
-
 function sanitizeUniqueStringList(value: unknown): string[] {
   return [...new Set(sanitizeStringArray(value, []))];
 }
 
 function sanitizeDisabledPluginList(value: unknown, options: { expandLegacyCloudMacro?: boolean } = {}): string[] {
   const raw = sanitizeUniqueStringList(value);
-  const disabled = raw.map(normalizeBuiltinPluginId);
+  const disabled = normalizeBuiltinDisabledPluginIds(raw);
   if (options.expandLegacyCloudMacro && raw.includes("gloomberb-cloud")) {
     disabled.push("macro");
   }
@@ -178,7 +164,7 @@ function sanitizeDisabledPlugins(
 ): string[] {
   const expandLegacyCloudMacro =
     !options.enableCloudDefault
-    && (typeof saved.configVersion !== "number" || saved.configVersion < CURRENT_CONFIG_VERSION);
+    && (typeof saved.configVersion !== "number" || saved.configVersion < CLOUD_MACRO_SPLIT_CONFIG_VERSION);
   const disabled = sanitizeDisabledPluginList(saved.disabledPlugins ?? fallback, {
     expandLegacyCloudMacro,
   });
@@ -230,7 +216,7 @@ function sanitizeSavedPaneState(
       .map(([paneId, entry]) => [paneId, sanitizeSerializableValue(entry)])
       .filter((entry): entry is [string, Record<string, unknown>] => isPlainRecord(entry[1])),
   );
-  return paneState;
+  return normalizeBuiltinPaneStatePluginOwners(paneState);
 }
 
 function isPluginConfigMap(value: unknown): value is Record<string, Record<string, unknown>> {
@@ -240,18 +226,7 @@ function isPluginConfigMap(value: unknown): value is Record<string, Record<strin
 
 function sanitizePluginConfig(value: unknown): Record<string, Record<string, unknown>> {
   if (!isPluginConfigMap(value)) return {};
-  return Object.fromEntries(
-    Object.entries(value).reduce<Array<[string, Record<string, unknown>]>>((entries, [pluginId, state]) => {
-      const normalizedPluginId = normalizeBuiltinPluginId(pluginId);
-      const existing = entries.find(([entryPluginId]) => entryPluginId === normalizedPluginId);
-      if (existing) {
-        existing[1] = { ...state, ...existing[1] };
-      } else {
-        entries.push([normalizedPluginId, { ...state }]);
-      }
-      return entries;
-    }, []),
-  );
+  return normalizeBuiltinPluginStateMap(value);
 }
 
 function isChartPreferences(value: unknown): value is ChartPreferences {

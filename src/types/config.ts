@@ -1,7 +1,7 @@
 import type { Portfolio, Watchlist } from "./ticker";
 import type { LanguagePreference } from "../i18n/languages";
 
-export const CURRENT_CONFIG_VERSION = 19;
+export const CURRENT_CONFIG_VERSION = 20;
 
 type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc" | "hlc";
 type ChartRendererPreference = "auto" | "kitty" | "braille";

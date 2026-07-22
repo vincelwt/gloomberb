@@ -28,7 +28,7 @@ import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pa
 import type { PluginRegistry } from "../../registry";
 import { setSharedRegistryForTests } from "../../registry";
 import { PluginRenderProvider } from "../../runtime";
-import { tickerDetailPlugin } from ".";
+import { tickerDetailModule } from ".";
 import { FinancialsTab } from "./financials/tab";
 import { isUsEquityTicker } from "../../../utils/sec";
 
@@ -43,7 +43,7 @@ let sharedCoordinator: MarketDataCoordinator | null = null;
 const runtime = createTestPluginRuntime();
 const TICKER_TAB_SETTLE_MS = 160;
 
-const DetailPane = tickerDetailPlugin.panes![0]!.component as (props: {
+const DetailPane = tickerDetailModule.panes![0]!.component as (props: {
   paneId: string;
   paneType: string;
   focused: boolean;
@@ -166,7 +166,7 @@ function makeRegistry(options: { stubFundamentalGraphs?: boolean } = {}): Plugin
     <text>stub</text>
   );
   const tickerResearchTabs = new Map<string, TickerResearchTabDef>();
-  tickerDetailPlugin.setup?.({
+  tickerDetailModule.setup?.({
     registerTickerResearchTab: (tab: TickerResearchTabDef) => tickerResearchTabs.set(tab.id, tab),
   } as any);
   if (options.stubFundamentalGraphs) {
@@ -265,7 +265,7 @@ function DetailHarness({
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
         <text>{`active:${state.paneState[TEST_PANE_ID]?.activeTabId ?? ""}`}</text>
-        <PluginRenderProvider pluginId={tickerDetailPlugin.id} runtime={runtime}>
+        <PluginRenderProvider pluginId="ticker-research" runtime={runtime}>
           <DetailPane
             paneId={TEST_PANE_ID}
             paneType={TICKER_RESEARCH_PANE_ID}
@@ -618,7 +618,7 @@ describe("TickerResearchPane", () => {
     });
     await flushFrame();
 
-    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.pluginState?.["ticker-detail"]?.detailMetric).toBe("grossProfit");
+    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.pluginState?.["ticker-research"]?.detailMetric).toBe("grossProfit");
     expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("fundamental-graphs");
 
     await emitKeypress({ name: "escape", sequence: "\u001b" });
@@ -670,7 +670,7 @@ describe("TickerResearchPane", () => {
     });
     await flushFrame();
 
-    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.pluginState?.["ticker-detail"]?.detailMetric).toBe("grossProfit");
+    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.pluginState?.["ticker-research"]?.detailMetric).toBe("grossProfit");
     expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("fundamental-graphs");
   });
 

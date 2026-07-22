@@ -16,6 +16,14 @@ import {
   getSyncedProfileAnalytics,
   setSyncedProfileAnalytics,
 } from "./profile-analytics";
+import {
+  addLegacyBuiltinDisabledPluginAliases,
+  addLegacyBuiltinPaneStatePluginAliases,
+  addLegacyBuiltinPluginOwnerAliases,
+  normalizeBuiltinDisabledPluginIds,
+  normalizeBuiltinPaneStatePluginOwners,
+  normalizeBuiltinPluginStateMap,
+} from "../plugins/ownership";
 
 const SENSITIVE_KEY_PATTERN = /(token|secret|password|credential|private|api[_-]?key|access[_-]?key|refresh[_-]?key|session|cookie|dataDir|path|directory|localPath)/i;
 
@@ -155,12 +163,19 @@ function collectCoreConfigPayload(config: AppConfig) {
     portfolios: config.portfolios.map(sanitizePortfolio),
     watchlists: config.watchlists.map(sanitizeWatchlist),
     layout: config.layout,
-    layouts: config.layouts,
+    layouts: config.layouts.map((savedLayout) => (
+      savedLayout.paneState
+        ? {
+          ...savedLayout,
+          paneState: addLegacyBuiltinPaneStatePluginAliases(savedLayout.paneState),
+        }
+        : savedLayout
+    )),
     activeLayoutIndex: config.activeLayoutIndex,
     brokerInstances: config.brokerInstances.map(sanitizeBrokerInstance),
-    disabledPlugins: config.disabledPlugins,
+    disabledPlugins: addLegacyBuiltinDisabledPluginAliases(config.disabledPlugins),
     disabledSources: config.disabledSources,
-    pluginConfig: config.pluginConfig,
+    pluginConfig: addLegacyBuiltinPluginOwnerAliases(config.pluginConfig),
     theme: config.theme,
     chartPreferences: config.chartPreferences,
     valueFlashingEnabled: config.valueFlashingEnabled,
@@ -314,6 +329,21 @@ function valuesEqual(left: unknown, right: unknown): boolean {
   return stableStringify(left) === stableStringify(right);
 }
 
+function isPluginStateMap(value: unknown): value is Record<string, Record<string, unknown>> {
+  return isPlainObject(value) && Object.values(value).every(isPlainObject);
+}
+
+function normalizeSyncedLayouts(layouts: AppConfig["layouts"]): AppConfig["layouts"] {
+  return layouts.map((savedLayout) => {
+    if (!isPlainObject(savedLayout)) return savedLayout;
+    if (!isPluginStateMap(savedLayout.paneState)) return savedLayout;
+    return {
+      ...savedLayout,
+      paneState: normalizeBuiltinPaneStatePluginOwners(savedLayout.paneState),
+    };
+  });
+}
+
 function mergeConfigPayload(
   config: AppConfig,
   payload: unknown,
@@ -334,14 +364,23 @@ function mergeConfigPayload(
   assign("refreshIntervalMinutes");
   assign("portfolios");
   assign("watchlists");
-  assign("disabledPlugins");
   assign("disabledSources");
-  assign("pluginConfig");
   assign("theme");
   assign("chartPreferences");
   assign("valueFlashingEnabled");
   assign("recentTickers");
   assign("onboardingComplete");
+
+  if (
+    canApply("disabledPlugins")
+    && Array.isArray(payload.disabledPlugins)
+    && payload.disabledPlugins.every((pluginId) => typeof pluginId === "string")
+  ) {
+    next.disabledPlugins = normalizeBuiltinDisabledPluginIds(payload.disabledPlugins);
+  }
+  if (canApply("pluginConfig") && isPluginStateMap(payload.pluginConfig)) {
+    next.pluginConfig = normalizeBuiltinPluginStateMap(payload.pluginConfig);
+  }
 
   const layoutStateUntouched = config.layout === baselineConfig.layout
     && config.layouts === baselineConfig.layouts
@@ -349,9 +388,10 @@ function mergeConfigPayload(
   if (
     layoutStateUntouched
     && ["layout", "layouts", "activeLayoutIndex"].every((key) => key in payload)
+    && Array.isArray(payload.layouts)
   ) {
     next.layout = payload.layout as unknown as AppConfig["layout"];
-    next.layouts = payload.layouts as AppConfig["layouts"];
+    next.layouts = normalizeSyncedLayouts(payload.layouts as AppConfig["layouts"]);
     next.activeLayoutIndex = payload.activeLayoutIndex as number;
   }
 

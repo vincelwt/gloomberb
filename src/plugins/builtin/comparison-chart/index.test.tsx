@@ -20,7 +20,7 @@ import { PluginRenderProvider, type PluginRuntimeAccess } from "../../runtime";
 import { setSharedMarketDataForTests, setSharedRegistryForTests } from "../../registry";
 import type { TickerRecord } from "../../../types/ticker";
 import {
-  comparisonChartPlugin,
+  comparisonChartModule,
   getComparisonChartPaneSettings,
 } from ".";
 
@@ -237,7 +237,7 @@ function createComparisonHarness(
   state.tickers = new Map(tickers.map((ticker) => [ticker.metadata.ticker, ticker]));
   state.financials = new Map(financials);
 
-  const ComparisonPane = comparisonChartPlugin.panes?.[0]?.component as (props: {
+  const ComparisonPane = comparisonChartModule.panes?.[0]?.component as (props: {
     paneId: string;
     paneType: string;
     focused: boolean;
@@ -248,7 +248,7 @@ function createComparisonHarness(
   return (
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
-        <PluginRenderProvider pluginId="comparison-chart" runtime={runtime}>
+        <PluginRenderProvider pluginId="market-overview" runtime={runtime}>
           <PaneFooterProvider>
             {(footer) => (
               <Box flexDirection="column" width={120} height={20}>
@@ -326,7 +326,7 @@ afterEach(async () => {
   setSharedMarketDataForTests(undefined);
 });
 
-describe("comparisonChartPlugin", () => {
+describe("comparisonChartModule", () => {
   test("parses stored pane settings and backfills the text form", () => {
     expect(getComparisonChartPaneSettings({
       axisMode: "percent",
@@ -341,7 +341,7 @@ describe("comparisonChartPlugin", () => {
   });
 
   test("requires at least two symbols when creating a comparison pane", async () => {
-    const template = comparisonChartPlugin.paneTemplates?.[0]!;
+    const template = comparisonChartModule.paneTemplates?.[0]!;
     const context = {
       config: createDefaultConfig("/tmp/gloomberb-compare"),
       layout: { dockRoot: null, instances: [], floating: [], detached: [] },

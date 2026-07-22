@@ -27,7 +27,7 @@ import { PluginRenderProvider, type PluginRuntimeAccess } from "../../../runtime
 import { PluginRegistry, setSharedMarketDataForTests, setSharedRegistryForTests } from "../../../registry";
 import type { BrokerAdapter } from "../../../../types/broker";
 import { colors } from "../../../../theme/colors";
-import { portfolioListPlugin } from "..";
+import { portfolioListModule } from "..";
 
 const TEST_PANE_ID = "portfolio-list:test";
 
@@ -38,7 +38,7 @@ let harnessState: ReturnType<typeof createInitialState> | null = null;
 const tempPaths: string[] = [];
 const tempPersistences: AppPersistence[] = [];
 
-const PortfolioPane = portfolioListPlugin.panes![0]!.component as (props: {
+const PortfolioPane = portfolioListModule.panes![0]!.component as (props: {
   paneId: string;
   paneType: string;
   focused: boolean;
@@ -307,7 +307,7 @@ function PortfolioHarness({
   return (
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
-        <PluginRenderProvider pluginId="portfolio-list" runtime={runtime}>
+        <PluginRenderProvider pluginId="portfolio" runtime={runtime}>
           <PortfolioPane
             paneId={TEST_PANE_ID}
             paneType="portfolio-list"

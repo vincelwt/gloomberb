@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataTableView } from "../../../components";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { PaneProps } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { useAssetData, usePluginTickerActions } from "../../runtime";
 import { WORLD_INDICES, REGION_LABELS, getIndicesByRegion } from "./indices";
@@ -185,13 +186,7 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
   );
 }
 
-export const worldIndicesPlugin: GloomPlugin = {
-  id: "world-indices",
-  name: "World Equity Indices",
-  version: "1.0.0",
-  description: "Global equity index monitor grouped by region",
-  toggleable: true,
-
+export const worldIndicesModule: PluginModule = {
   panes: [
     {
       id: "world-indices",

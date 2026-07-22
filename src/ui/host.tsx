@@ -1,6 +1,7 @@
-import { createContext, useContext, type ComponentType, type ReactNode } from "react";
+import { createContext, useContext, type ComponentType, type ReactNode, type Ref } from "react";
 import type { ContextMenuItem } from "../types/context-menu";
 import type { AppNotificationRequest } from "../types/plugin";
+import type { LiveStreamResolveRequest, ResolvedLiveStream } from "../types/media";
 import type { AsciiFontName } from "./ascii-font";
 
 export const TextAttributes = {
@@ -214,6 +215,23 @@ export interface ImageSurfaceProps extends BoxProps {
   alt?: string;
   objectFit?: "contain" | "cover";
 }
+export interface MediaSurfaceProps extends BoxProps {
+  src?: string;
+  title?: string;
+  poster?: string;
+  autoPlay?: boolean;
+  muted?: boolean;
+  mediaHandleRef?: Ref<MediaSurfaceHandle>;
+  onPlaybackStateChange?: (state: "idle" | "loading" | "playing" | "paused" | "error") => void;
+  onMutedChange?: (muted: boolean) => void;
+  onError?: (message: string) => void;
+}
+export interface MediaSurfaceHandle {
+  play(): Promise<void>;
+  pause(): void;
+  toggle(): Promise<void>;
+  toggleMuted(): boolean;
+}
 interface SpinnerMarkProps extends BoxProps {
   name?: string;
   color?: string;
@@ -302,6 +320,7 @@ export interface UiHost {
   Textarea: ComponentType<TextareaProps>;
   ChartSurface: ComponentType<ChartSurfaceProps>;
   ImageSurface: ComponentType<ImageSurfaceProps>;
+  MediaSurface: ComponentType<MediaSurfaceProps>;
   SpinnerMark: ComponentType<SpinnerMarkProps>;
   AsciiText: ComponentType<AsciiTextProps>;
   Button?: ComponentType<any>;
@@ -329,6 +348,8 @@ export interface RendererHost {
   supportsNativeDesktopNotifications?: boolean;
   notify(notification: AppNotificationRequest): void;
   showContextMenu?(items: ContextMenuItem[]): Promise<boolean>;
+  playTerminalMedia?(url: string, title?: string, options?: { muted?: boolean }): Promise<void>;
+  resolveLiveStream?(request: LiveStreamResolveRequest): Promise<ResolvedLiveStream>;
 }
 
 interface UiHostContextValue {

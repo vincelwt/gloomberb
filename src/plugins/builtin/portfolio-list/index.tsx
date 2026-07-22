@@ -1,4 +1,5 @@
-import type { GloomPlugin, PaneTemplateContext, PaneTemplateInstanceConfig } from "../../../types/plugin";
+import type { PaneTemplateContext, PaneTemplateInstanceConfig } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { PortfolioListPane } from "./pane";
 import { shouldToggleCashMarginDrawer } from "./header";
 import {
@@ -32,10 +33,7 @@ function createCollectionPaneInstance(
   return collectionId ? { params: { collectionId } } : null;
 }
 
-export const portfolioListPlugin: GloomPlugin = {
-  id: "portfolio-list",
-  name: "Portfolio List",
-  version: "1.0.0",
+export const portfolioListModule: PluginModule = {
   panes: [
     {
       id: "portfolio-list",

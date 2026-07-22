@@ -1,14 +1,8 @@
-import type { GloomPlugin } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { HoldersView } from "./pane";
 
-export const holdersPlugin: GloomPlugin = {
-  id: "holders",
-  name: "Holders",
-  version: "1.0.0",
-  description: "Institutional holders by value and position change",
-  toggleable: true,
-
+export const holdersModule: PluginModule = {
   setup(ctx) {
     ctx.registerTickerResearchTab({
       id: "holders",

@@ -56,6 +56,7 @@ import {
 } from "./shared";
 import { RegistryResumeStateListeners } from "./plugin-state";
 import { cloudSyncController } from "../../sync/controller";
+import { isReservedBuiltinPluginId } from "../ownership";
 
 interface PluginRegistryOptions {
   enableCapabilityHandlers?: boolean;
@@ -367,6 +368,10 @@ export class PluginRegistry implements PluginRuntimeAccess {
     return this.contributions.commandOwners.get(commandId);
   }
 
+  getPanePluginId(paneId: string): string | undefined {
+    return this.contributions.paneOwners.get(paneId);
+  }
+
   getPaneTemplatePluginId(templateId: string): string | undefined {
     return this.contributions.paneTemplateOwners.get(templateId);
   }
@@ -441,6 +446,9 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
   async register(plugin: GloomPlugin): Promise<void> {
     this.registryLog.info(`Registering plugin: ${plugin.id} v${plugin.version ?? "?"}`);
+    if (isReservedBuiltinPluginId(plugin.id)) {
+      throw new Error(`Plugin id is reserved by a built-in module: ${plugin.id}`);
+    }
     if (this.plugins.has(plugin.id)) throw new Error(`Plugin already registered: ${plugin.id}`);
     this.plugins.set(plugin.id, plugin);
     try {

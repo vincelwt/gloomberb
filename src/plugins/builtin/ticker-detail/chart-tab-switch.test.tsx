@@ -17,10 +17,10 @@ import type { TickerRecord } from "../../../types/ticker";
 import { getNativeSurfaceManager } from "../../../components/chart/native/surface/manager";
 import { setSharedRegistryForTests, type PluginRegistry } from "../../registry";
 import { PluginRenderProvider } from "../../runtime";
-import { tickerDetailPlugin } from ".";
+import { tickerDetailModule } from ".";
 
 const TEST_PANE_ID = "ticker-detail:test";
-const DetailPane = tickerDetailPlugin.panes![0]!.component as (props: {
+const DetailPane = tickerDetailModule.panes![0]!.component as (props: {
   paneId: string;
   paneType: string;
   focused: boolean;
@@ -93,7 +93,7 @@ function makeDetailConfig(symbol: string): AppConfig {
 
 function makeRegistry(): PluginRegistry {
   const tickerResearchTabs = new Map<string, TickerResearchTabDef>();
-  tickerDetailPlugin.setup?.({
+  tickerDetailModule.setup?.({
     registerTickerResearchTab: (tab: TickerResearchTabDef) => tickerResearchTabs.set(tab.id, tab),
   } as any);
   return { tickerResearchTabs } as unknown as PluginRegistry;
@@ -123,7 +123,7 @@ function DetailHarness({
     <TestDialogProvider>
       <AppContext value={{ state, dispatch }}>
         <PaneInstanceProvider paneId={TEST_PANE_ID}>
-          <PluginRenderProvider pluginId={tickerDetailPlugin.id} runtime={runtime}>
+          <PluginRenderProvider pluginId="ticker-research" runtime={runtime}>
             <DetailPane
               paneId={TEST_PANE_ID}
               paneType={TICKER_RESEARCH_PANE_ID}

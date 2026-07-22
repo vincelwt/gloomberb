@@ -2,7 +2,8 @@ import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { TextAttributes } from "../../../ui";
 import { Tabs } from "../../../components";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { PaneProps } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { colors } from "../../../theme/colors";
 import {
   getFocusedCollectionId,
@@ -316,13 +317,7 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   );
 }
 
-export const analyticsPlugin: GloomPlugin = {
-  id: "analytics",
-  name: "Portfolio Analytics",
-  version: "1.0.0",
-  description: "Sharpe ratio, beta, and sector allocation for the active portfolio",
-  toggleable: true,
-
+export const portfolioAnalyticsModule: PluginModule = {
   panes: [
     {
       id: "analytics",

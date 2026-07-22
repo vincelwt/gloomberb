@@ -73,7 +73,7 @@ function Harness({
 
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
-      <PluginRenderProvider pluginId="broker-manager" runtime={runtime}>
+      <PluginRenderProvider pluginId="broker" runtime={runtime}>
         <PaneInstanceProvider paneId="brokers:test">
           <BrokersPane focused width={92} height={paneHeight} />
         </PaneInstanceProvider>

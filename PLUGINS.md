@@ -1,6 +1,6 @@
 # Building Plugins
 
-Gloomberb is built on a plugin architecture — core features like the portfolio list and Ticker Research workspace are plugins themselves. You can extend the app by writing your own.
+Gloomberb is built on a plugin architecture — top-level product areas such as Portfolio and Ticker Research are plugins themselves. You can extend the app by writing your own.
 
 ## Installing plugins
 
@@ -56,6 +56,14 @@ export const myPlugin: GloomPlugin = {
 
 export default myPlugin;
 ```
+
+### Built-in plugin composition
+
+Only independently owned, registered product areas implement `GloomPlugin`. Larger built-ins may compose internal `PluginModule` objects for panes, commands, capabilities, and lifecycle code, but those modules do not have their own identity, toggle, version, or persistence namespace. Small plugins such as Substack can declare their contributions directly without an extra module wrapper.
+
+`PluginModule` is an internal organization tool for first-party plugins, not a second external plugin API. External plugins should continue exporting one `GloomPlugin`.
+
+Plugin IDs must not reuse current or retired built-in IDs. Retired module IDs remain reserved so saved configuration can be migrated safely to their current owning plugin.
 
 For external plugins, create a directory in `~/.gloomberb/plugins/`:
 

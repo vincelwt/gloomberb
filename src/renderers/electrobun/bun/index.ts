@@ -46,6 +46,7 @@ import { DesktopDetachedWindowManager } from "./desktop/detached-windows";
 import { handleDesktopHostRequest } from "./desktop/host-requests";
 import { handleDesktopWorkspaceRequest } from "./desktop/workspace/requests";
 import { handleDesktopBackendRequest } from "./desktop/backend-requests";
+import { resolveDesktopLiveStream } from "./desktop/media";
 import { initializeDesktopBackend } from "./desktop/initialization";
 import { applyWindowsCustomChrome } from "./desktop/windows-custom-chrome";
 import { applyWindowsWindowIcon } from "./desktop/windows-icons";
@@ -429,6 +430,7 @@ async function handleBackendRequest(
 
   if (method === "init") return initialize(rpc, payload);
   if (method === "http.fetch") return handleHttpFetch(payload);
+  if (method === "media.resolveLiveStream") return resolveDesktopLiveStream(payload);
   if (method.startsWith("capability.")) return capabilityBridge.handle(rpc, method, payload);
   if (method.startsWith("desktop.")) {
     return handleDesktopWorkspaceRequest({

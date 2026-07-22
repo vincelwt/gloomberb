@@ -196,15 +196,15 @@ describe("CommandBar", () => {
             calls.push("gridlock-all");
           },
         });
-        (pluginRegistry.allPlugins as Map<string, any>).set("layout-manager", {
-          id: "layout-manager",
-          name: "Layout Manager",
+        (pluginRegistry.allPlugins as Map<string, any>).set("application", {
+          id: "application",
+          name: "Application",
           version: "1.0.0",
           description: "Pane layout management commands",
         });
         const getCommandPluginId = pluginRegistry.getCommandPluginId;
         pluginRegistry.getCommandPluginId = (commandId: string) => (
-          commandId === "gridlock-all" ? "layout-manager" : getCommandPluginId(commandId)
+          commandId === "gridlock-all" ? "application" : getCommandPluginId(commandId)
         );
       }}
     />, {
@@ -281,6 +281,38 @@ describe("CommandBar", () => {
     expect(frame).toContain("News");
     expect(frame).toContain("Notes");
     expect(frame).not.toContain("No plugins match");
+  });
+
+  test("finds grouped plugins through their owned feature terms", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="PL kelly"
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.allPlugins as Map<string, any>).set("portfolio", {
+          id: "portfolio",
+          name: "Portfolio",
+          version: "1.0.0",
+          description: "Portfolio management",
+          toggleable: true,
+        });
+        (pluginRegistry.panes as Map<string, any>).set("kelly-sizer", {
+          id: "kelly-sizer",
+          name: "Position Sizer",
+          component: () => null,
+          defaultPosition: "right",
+        });
+        const getPluginPaneIds = pluginRegistry.getPluginPaneIds;
+        pluginRegistry.getPluginPaneIds = (pluginId: string) => (
+          pluginId === "portfolio" ? ["kelly-sizer"] : getPluginPaneIds(pluginId)
+        );
+      }}
+    />, {
+      width: 80,
+      height: 18,
+    });
+
+    await testSetup.renderOnce();
+
+    expect(testSetup.captureCharFrame()).toContain("Portfolio");
   });
 
   test("opens plugin command shortcut arguments in the wizard for confirmation", async () => {

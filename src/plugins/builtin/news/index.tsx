@@ -1,6 +1,6 @@
 import { Text } from "../../../ui";
 import { useRef, useEffect, useMemo, useState } from "react";
-import type { GloomPlugin } from "../../../types/plugin";
+import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { usePaneTicker } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import type { NewsArticle } from "../../../types/news-source";
@@ -9,14 +9,13 @@ import { instrumentFromTicker } from "../../../market-data/request-types";
 import { useDebouncedPluginPaneState } from "../../runtime";
 import { FeedDataTableStackView, Spinner, type FeedDataTableItem } from "../../../components";
 import { useNewsArticles } from "../../../news/hooks";
-import { registerNewsWireFeatures } from "./wire";
+import { newsWireModule } from "./wire";
 import { useNewsArticleFooter } from "./wire/news/footer";
 import { usePersistedNewsArticles } from "./wire/persisted-articles";
 import { useNewsReadState } from "./wire/read-state";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 
 const NEWS_ITEM_LIMIT = 50;
-let disposeNewsWireFeatures: (() => void) | null = null;
 
 function getFeedItems(
   news: NewsArticle[],
@@ -146,13 +145,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   );
 }
 
-export const newsPlugin: GloomPlugin = {
-  id: "news",
-  name: "News",
-  version: "1.0.0",
-  description: "View latest news for each ticker",
-  toggleable: true,
-
+const tickerNewsModule: PluginModule = {
   panes: [
     {
       id: "ticker-news",
@@ -183,11 +176,14 @@ export const newsPlugin: GloomPlugin = {
       order: 40,
       component: TickerNewsView,
     });
-    disposeNewsWireFeatures = registerNewsWireFeatures(ctx);
-  },
-
-  dispose() {
-    disposeNewsWireFeatures?.();
-    disposeNewsWireFeatures = null;
   },
 };
+
+export const newsPlugin = composeBuiltinPlugin({
+  id: "news",
+  name: "News",
+  version: "1.0.0",
+  description: "View latest news for each ticker",
+  toggleable: true,
+  modules: [tickerNewsModule, newsWireModule],
+});
