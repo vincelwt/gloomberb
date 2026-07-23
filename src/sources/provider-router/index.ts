@@ -215,6 +215,10 @@ export class AssetDataRouter implements DataProvider {
     return this.supplementalRoutes.getCorporateActions(ticker, exchange, context);
   }
 
+  async getEarningsCalendar(symbols: string[], context?: MarketDataRequestContext) {
+    return this.supplementalRoutes.getEarningsCalendar(symbols, context);
+  }
+
   async getSecFilings(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<SecFilingItem[]> {
     return this.documentRoutes.getSecFilings(ticker, count, exchange, context);
   }
