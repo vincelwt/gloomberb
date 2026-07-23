@@ -2,6 +2,7 @@
 /** @jsxImportSource react */
 import {
   forwardRef,
+  memo,
   useEffect,
   useRef,
   type CSSProperties,
@@ -11,7 +12,7 @@ import {
 import type { BitmapSurface, BoxRenderable, ChartCrosshairOverlay } from "../../../../ui/host";
 import { WebBox } from "./box";
 
-function CanvasBitmap({ bitmap }: { bitmap: BitmapSurface }) {
+const CanvasBitmap = memo(function CanvasBitmap({ bitmap }: { bitmap: BitmapSurface }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -19,10 +20,10 @@ function CanvasBitmap({ bitmap }: { bitmap: BitmapSurface }) {
     if (!canvas) return;
     const context = canvas.getContext("2d");
     if (!context) return;
-    const pixels = bitmap.pixels instanceof Uint8ClampedArray
-      ? bitmap.pixels
-      : new Uint8ClampedArray(bitmap.pixels.buffer, bitmap.pixels.byteOffset, bitmap.pixels.byteLength);
-    context.putImageData(new ImageData(new Uint8ClampedArray(pixels), bitmap.width, bitmap.height), 0, 0);
+    const pixels = bitmap.pixels.buffer instanceof ArrayBuffer
+      ? new Uint8ClampedArray(bitmap.pixels.buffer, bitmap.pixels.byteOffset, bitmap.pixels.byteLength)
+      : new Uint8ClampedArray(bitmap.pixels);
+    context.putImageData(new ImageData(pixels, bitmap.width, bitmap.height), 0, 0);
   }, [bitmap]);
 
   return (
@@ -37,9 +38,9 @@ function CanvasBitmap({ bitmap }: { bitmap: BitmapSurface }) {
       }}
     />
   );
-}
+});
 
-function BoxLayer({ bitmap, index }: { bitmap: BitmapSurface; index: number }) {
+const BoxLayer = memo(function BoxLayer({ bitmap, index }: { bitmap: BitmapSurface; index: number }) {
   return (
     <div
       style={{
@@ -52,7 +53,7 @@ function BoxLayer({ bitmap, index }: { bitmap: BitmapSurface; index: number }) {
       <CanvasBitmap bitmap={bitmap} />
     </div>
   );
-}
+});
 
 function ChartCrosshair({
   bitmap,
@@ -132,7 +133,7 @@ export const WebChartSurface = forwardRef<BoxRenderable, Record<string, unknown>
       >
         {layers.length > 0
           ? layers.map((layer, index) => (
-            <BoxLayer key={`${layer.width}x${layer.height}:${index}`} index={index} bitmap={layer} />
+            <BoxLayer key={`layer:${index}`} index={index} bitmap={layer} />
           ))
           : children as ReactNode}
         <ChartCrosshair bitmap={baseLayer} crosshair={crosshair} />

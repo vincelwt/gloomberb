@@ -54,7 +54,6 @@ const PERIOD_OPTION: PaneFunctionOptionDef = {
 
 const GRAPH_PERIOD_OPTION: PaneFunctionOptionDef = {
   ...PERIOD_OPTION,
-  pluginState: { pluginId: "ticker-research" },
 };
 
 const GRAPH_PERIOD_COUNT_OPTION: PaneFunctionOptionDef = {
@@ -64,7 +63,6 @@ const GRAPH_PERIOD_COUNT_OPTION: PaneFunctionOptionDef = {
   aliases: ["years", "limit"],
   minimum: 1,
   maximum: 40,
-  pluginState: { pluginId: "ticker-research" },
 };
 
 const RANGE_VALUES: PaneFunctionOptionValue[] = [
@@ -106,6 +104,35 @@ const VALUATION_METRIC_VALUES: PaneFunctionOptionValue[] = [
 ];
 
 const CAPABILITIES: Record<string, PaneFunctionCapability> = {
+  "chart-composer-pane": {
+    id: "chart-composer",
+    botSafe: true,
+    tickerCardinality: "none",
+    aliases: ["custom chart", "mixed series chart", "chart composer", "economic chart"],
+    intents: ["chart arbitrary market fundamental valuation and economic series together"],
+    outputKind: "chart-series",
+    reportReadiness: "ready",
+    screenshotReadiness: "ready",
+    dataRequirements: ["data required by each authored chart series"],
+    limitations: ["FRED observations do not include historical vintage availability dates."],
+    options: [
+      {
+        key: "rangePreset",
+        description: "Chart history window.",
+        type: "enum",
+        aliases: ["range"],
+        values: RANGE_VALUES,
+      },
+      {
+        key: "chartResolution",
+        description: "Market-price sampling resolution.",
+        type: "enum",
+        aliases: ["resolution"],
+        values: ["auto", "1m", "5m", "15m", "30m", "45m", "1h", "1d", "1wk", "1mo"]
+          .map((value) => ({ value })),
+      },
+    ],
+  },
   "financial-analysis-pane": {
     id: "financial-statements",
     botSafe: true,
@@ -161,7 +188,6 @@ const CAPABILITIES: Record<string, PaneFunctionCapability> = {
         type: "enum",
         values: FUNDAMENTAL_METRIC_VALUES,
         defaultValue: "totalRevenue",
-        pluginState: { pluginId: "ticker-research" },
       },
       GRAPH_PERIOD_OPTION,
       GRAPH_PERIOD_COUNT_OPTION,
@@ -185,7 +211,6 @@ const CAPABILITIES: Record<string, PaneFunctionCapability> = {
         type: "enum",
         values: VALUATION_METRIC_VALUES,
         defaultValue: "priceSales",
-        pluginState: { pluginId: "ticker-research" },
       },
       GRAPH_PERIOD_OPTION,
       GRAPH_PERIOD_COUNT_OPTION,

@@ -36,6 +36,8 @@ import type { OptionsChain, PricePoint, TickerFinancials } from "../../../types/
 import type { TickerRecord } from "../../../types/ticker";
 import type { AppState, PaneRuntimeState } from "../../../core/state/app/state";
 import type { PaneDef } from "../../../types/plugin";
+import { canonicalTickerKey, parsePublicTickerKey } from "../../../utils/exchanges";
+import { hydrateFredSeries, type FredSeriesCacheEntry } from "../../../data/fred-series";
 
 interface CliPaneShotPayload {
   config: AppConfig;
@@ -45,6 +47,7 @@ interface CliPaneShotPayload {
   tickers: TickerRecord[];
   financials: Array<[string, TickerFinancials]>;
   optionsChains: Array<[string, OptionsChain]>;
+  fredSeries: Array<[string, FredSeriesCacheEntry]>;
   paneState: Record<string, PaneRuntimeState>;
 }
 
@@ -153,10 +156,17 @@ function isShotLoadingTextVisible(): boolean {
 function hasUnresolvedChartData(): boolean {
   return (window.__GLOOM_CLI_SHOT_SEMANTIC_UI__ ?? []).some((node) => (
     node.role === "chart-data"
-    && (node.metadata?.kind === "stock-price" || node.metadata?.kind === "price-comparison")
     && (
-      typeof node.metadata.projectedPointCount !== "number"
-      || node.metadata.projectedPointCount <= 0
+      node.metadata?.kind === "stock-price"
+      || node.metadata?.kind === "price-comparison"
+      || node.metadata?.kind === "chart-composer"
+    )
+    && (
+      node.metadata.loading === true
+      || (node.metadata.kind !== "chart-composer" && (
+        typeof node.metadata.projectedPointCount !== "number"
+        || node.metadata.projectedPointCount <= 0
+      ))
     )
   ));
 }
@@ -207,11 +217,22 @@ function waitForShotReadiness(): () => void {
 }
 
 function createShotDataProvider(payload: CliPaneShotPayload): DataProvider {
-  const financials = new Map(payload.financials.map(([symbol, data]) => [normalizeSymbol(symbol), data]));
-  const optionsChains = new Map((payload.optionsChains ?? []).map(([symbol, data]) => [normalizeSymbol(symbol), data]));
+  const financials = new Map<string, TickerFinancials>();
+  for (const [key, data] of payload.financials) {
+    const instrument = parsePublicTickerKey(key);
+    financials.set(canonicalTickerKey(instrument.symbol, instrument.exchange), data);
+    if (!instrument.exchange) financials.set(normalizeSymbol(instrument.symbol), data);
+  }
+  const optionsChains = new Map<string, OptionsChain>();
+  for (const [key, data] of payload.optionsChains ?? []) {
+    const instrument = parsePublicTickerKey(key);
+    optionsChains.set(canonicalTickerKey(instrument.symbol, instrument.exchange), data);
+    if (!instrument.exchange) optionsChains.set(normalizeSymbol(instrument.symbol), data);
+  }
 
-  const getFinancials = (symbol: string) => {
-    const data = financials.get(normalizeSymbol(symbol));
+  const getFinancials = (symbol: string, exchange?: string) => {
+    const data = financials.get(canonicalTickerKey(symbol, exchange))
+      ?? financials.get(normalizeSymbol(symbol));
     if (!data) throw new Error(`No screenshot market data available for ${symbol}.`);
     return data;
   };
@@ -219,18 +240,20 @@ function createShotDataProvider(payload: CliPaneShotPayload): DataProvider {
   return {
     id: "cli-shot",
     name: "CLI screenshot data",
-    getTickerFinancials(ticker) {
-      return trackShotWork(Promise.resolve().then(() => getFinancials(ticker)));
+    getTickerFinancials(ticker, exchange) {
+      return trackShotWork(Promise.resolve().then(() => getFinancials(ticker, exchange)));
     },
     getTickerFinancialsBatch(targets: CachedFinancialsTarget[]) {
       return resolveShotWork(targets.map((target) => ({
         target,
-        financials: financials.get(normalizeSymbol(target.symbol)) ?? null,
+        financials: financials.get(canonicalTickerKey(target.symbol, target.exchange))
+          ?? financials.get(normalizeSymbol(target.symbol))
+          ?? null,
       })));
     },
-    getQuote(ticker) {
+    getQuote(ticker, exchange) {
       return trackShotWork(Promise.resolve().then(() => {
-        const quote = getFinancials(ticker).quote;
+        const quote = getFinancials(ticker, exchange).quote;
         if (!quote) throw new Error(`No screenshot quote data available for ${ticker}.`);
         return quote;
       }));
@@ -238,15 +261,17 @@ function createShotDataProvider(payload: CliPaneShotPayload): DataProvider {
     getQuotesBatch(targets: QuoteSubscriptionTarget[]) {
       return resolveShotWork(targets.map((target) => ({
         target,
-        quote: financials.get(normalizeSymbol(target.symbol))?.quote ?? null,
+        quote: (financials.get(canonicalTickerKey(target.symbol, target.exchange))
+          ?? financials.get(normalizeSymbol(target.symbol)))?.quote ?? null,
       })));
     },
     getExchangeRate() {
       return resolveShotWork(1);
     },
-    getOptionsChain(ticker) {
+    getOptionsChain(ticker, exchange) {
       return trackShotWork(Promise.resolve().then(() => {
-        const chain = optionsChains.get(normalizeSymbol(ticker));
+        const chain = optionsChains.get(canonicalTickerKey(ticker, exchange))
+          ?? optionsChains.get(normalizeSymbol(ticker));
         if (!chain) throw new Error(`No screenshot options data available for ${ticker}.`);
         return chain;
       }));
@@ -267,14 +292,14 @@ function createShotDataProvider(payload: CliPaneShotPayload): DataProvider {
     getArticleSummary() {
       return resolveShotWork(null);
     },
-    getPriceHistory(ticker, _exchange, range) {
+    getPriceHistory(ticker, exchange, range) {
       return trackShotWork(Promise.resolve().then(() => (
-        clipShotPriceHistory(getFinancials(ticker).priceHistory ?? [], range)
+        clipShotPriceHistory(getFinancials(ticker, exchange).priceHistory ?? [], range)
       )));
     },
-    getPriceHistoryForResolution(ticker, _exchange, bufferRange) {
+    getPriceHistoryForResolution(ticker, exchange, bufferRange) {
       return trackShotWork(Promise.resolve().then(() => (
-        clipShotPriceHistory(getFinancials(ticker).priceHistory ?? [], bufferRange)
+        clipShotPriceHistory(getFinancials(ticker, exchange).priceHistory ?? [], bufferRange)
       )));
     },
     getChartResolutionSupport() {
@@ -291,8 +316,14 @@ function installShotMarketData(payload: CliPaneShotPayload): void {
   shotDataProvider = provider;
   const coordinator = new MarketDataCoordinator(provider);
   coordinator.primeCachedFinancials(payload.tickers.flatMap((ticker) => {
-    const financials = payload.financials.find(([symbol]) => normalizeSymbol(symbol) === normalizeSymbol(ticker.metadata.ticker))?.[1];
     const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
+    const instrumentKey = instrument
+      ? canonicalTickerKey(instrument.symbol, instrument.exchange)
+      : normalizeSymbol(ticker.metadata.ticker);
+    const financials = payload.financials.find(([key]) => {
+      const candidate = parsePublicTickerKey(key);
+      return canonicalTickerKey(candidate.symbol, candidate.exchange) === instrumentKey;
+    })?.[1];
     return instrument && financials ? [{ instrument, financials }] : [];
   }));
   setSharedMarketDataForTests(provider);
@@ -452,6 +483,7 @@ function render() {
   const payload = window.__GLOOM_CLI_SHOT_PAYLOAD__;
   if (!payload) throw new Error("Missing CLI pane screenshot payload.");
   installShotFetchTracker();
+  hydrateFredSeries(payload.fredSeries ?? []);
   installShotMarketData(payload);
 
   const rootElement = document.getElementById("root");

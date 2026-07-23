@@ -455,3 +455,20 @@ body.gloom-dragging [data-gloom-role="chart-surface"] {
     0 18px 48px color-mix(in srgb, var(--gloom-bg) 46%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--gloom-text-bright) 5%, transparent);
 }
+.gloom-popover-anchor {
+  display: inline-flex;
+  min-width: 0;
+  outline: none;
+}
+.gloom-popover {
+  position: fixed;
+  z-index: 10001;
+  max-height: min(420px, calc(100vh - 20px));
+  overflow: auto;
+  border: 1px solid;
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow:
+    0 14px 34px color-mix(in srgb, var(--gloom-bg) 42%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--gloom-text-bright) 5%, transparent);
+}

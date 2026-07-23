@@ -3,11 +3,9 @@ import type { LanguagePreference } from "../i18n/languages";
 
 export const CURRENT_CONFIG_VERSION = 20;
 
-type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc" | "hlc";
 type ChartRendererPreference = "auto" | "kitty" | "braille";
 
 export interface ChartPreferences {
-  defaultRenderMode: DefaultChartRenderMode;
   renderer: ChartRendererPreference;
 }
 
@@ -142,16 +140,20 @@ export interface AppConfig {
 
 export const TICKER_RESEARCH_PANE_ID = "ticker-research";
 export const LEGACY_TICKER_DETAIL_PANE_ID = "ticker-detail";
+export const CHART_COMPOSER_PANE_ID = "chart-composer";
 
 export function normalizePaneId(paneId: string): string {
-  return paneId === LEGACY_TICKER_DETAIL_PANE_ID ? TICKER_RESEARCH_PANE_ID : paneId;
+  if (paneId === LEGACY_TICKER_DETAIL_PANE_ID) return TICKER_RESEARCH_PANE_ID;
+  if (paneId === "comparison-chart" || paneId === "ticker-chart" || paneId === "fundamental-graph") {
+    return CHART_COMPOSER_PANE_ID;
+  }
+  return paneId;
 }
 
 const TICKER_PANE_IDS = new Set([
   TICKER_RESEARCH_PANE_ID,
   LEGACY_TICKER_DETAIL_PANE_ID,
   "financial-analysis",
-  "ticker-chart",
   "quote-monitor",
   "ticker-news",
   "notes",
@@ -163,7 +165,6 @@ const TICKER_PANE_IDS = new Set([
   "corporate-actions",
   "earnings-estimates",
   "historical-prices",
-  "fundamental-graph",
   "ibkr-trading",
 ]);
 
@@ -228,8 +229,6 @@ const DEFAULT_HOME_LAYOUT: LayoutConfig = {
       settings: {
         hideTabs: false,
         lockedTabId: "overview",
-        chartRangePreset: "5Y",
-        chartResolution: "auto",
       },
       binding: { kind: "follow", sourceInstanceId: "portfolio-list:main" },
     },
@@ -240,8 +239,6 @@ const DEFAULT_HOME_LAYOUT: LayoutConfig = {
       settings: {
         hideTabs: false,
         lockedTabId: "overview",
-        chartRangePreset: "5Y",
-        chartResolution: "auto",
       },
       binding: { kind: "fixed", symbol: "NVDA" },
     },
@@ -632,7 +629,6 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     pluginConfig: {},
     theme: "amber",
     chartPreferences: {
-      defaultRenderMode: "area",
       renderer: "auto",
     },
     valueFlashingEnabled: true,

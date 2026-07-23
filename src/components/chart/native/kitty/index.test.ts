@@ -1,13 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { CliRenderer } from "@opentui/core";
-import { projectComparisonChartData } from "../../comparison/data";
-import { buildComparisonChartScene } from "../../comparison/renderer";
 import { buildChartScene, resolveChartPalette } from "../../core/renderer";
 import {
   computeBitmapSize,
   computeNativePlacement,
   excludeCellRects,
-  renderNativeComparisonChartBase,
   renderNativeChartBase,
   renderNativeCrosshairOverlay,
   type CellRect,
@@ -375,74 +372,6 @@ describe("renderNativeChartBase", () => {
       if (red > 180 && blue > 180 && green < 120) magentaPixels += 1;
     }
     expect(magentaPixels).toBeGreaterThan(0);
-  });
-});
-
-describe("renderNativeComparisonChartBase", () => {
-  test("renders multi-series comparison overlays over transparent pixels", () => {
-    const projection = projectComparisonChartData([
-      {
-        symbol: "AAPL",
-        color: "#00ff00",
-        fillColor: "#004400",
-        currency: "USD",
-        points: [
-          { date: new Date("2024-01-02"), close: 10 },
-          { date: new Date("2024-01-03"), close: 12 },
-          { date: new Date("2024-01-04"), close: 11 },
-        ],
-      },
-      {
-        symbol: "MSFT",
-        color: "#ff0000",
-        fillColor: "#440000",
-        currency: "USD",
-        points: [
-          { date: new Date("2024-01-02"), close: 8 },
-          { date: new Date("2024-01-03"), close: 9 },
-          { date: new Date("2024-01-04"), close: 10 },
-        ],
-      },
-    ], 12, {
-      panOffset: 0,
-      zoomLevel: 1,
-      renderMode: "line",
-    }, "percent");
-    const scene = buildComparisonChartScene(projection, {
-      width: 12,
-      height: 6,
-      cursorX: null,
-      cursorY: null,
-      selectedSymbol: "MSFT",
-      colors: {
-        bgColor: "#112233",
-        gridColor: "#334455",
-        crosshairColor: "#ffffff",
-      },
-    });
-
-    expect(scene).not.toBeNull();
-
-    const bitmap = renderNativeComparisonChartBase(scene!, 120, 60);
-    let transparentPixels = 0;
-    let drawnPixels = 0;
-    for (let offset = 3; offset < bitmap.pixels.length; offset += 4) {
-      if (bitmap.pixels[offset] === 0) {
-        transparentPixels += 1;
-      } else {
-        drawnPixels += 1;
-      }
-    }
-    expect(transparentPixels).toBeGreaterThan(0);
-    expect(drawnPixels).toBeGreaterThan(0);
-
-    const visiblePixels = [];
-    for (let offset = 0; offset < bitmap.pixels.length; offset += 4) {
-      if (bitmap.pixels[offset + 3] !== 0) {
-        visiblePixels.push(offset);
-      }
-    }
-    expect(visiblePixels.length).toBeGreaterThan(0);
   });
 });
 

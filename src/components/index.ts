@@ -22,7 +22,7 @@ export type { FeedDataTableItem } from "./feed-data-table/stack-view";
 export { activeStackIndex, sortStackItems } from "./feed-stack-controller";
 export type { StackSortPreference } from "./feed-stack-controller";
 export { PaneFooterScope, usePaneFooter } from "./layout/pane/footer";
-export type { PaneFooterSegment, PaneHint } from "./layout/pane/footer";
+export type { PaneFooterPressEvent, PaneFooterSegment, PaneHint } from "./layout/pane/footer";
 export { useExternalLinkFooter } from "./use-external-link-footer";
 export { Button } from "./ui/button";
 export { Checkbox } from "./ui/checkbox";

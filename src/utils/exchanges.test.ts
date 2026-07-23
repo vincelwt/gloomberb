@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { canonicalExchange, CANONICAL_EXCHANGE_ALIASES, EXCHANGE_TIME_ZONES, resolveExchangeTimeZone } from "./exchanges";
+import {
+  canonicalExchange,
+  CANONICAL_EXCHANGE_ALIASES,
+  EXCHANGE_TIME_ZONES,
+  parsePublicTickerKey,
+  publicTickerKey,
+  resolveExchangeTimeZone,
+} from "./exchanges";
 
 describe("exchange metadata", () => {
   test("has a valid timezone for every canonical exchange", () => {
@@ -22,5 +29,10 @@ describe("exchange metadata", () => {
     expect(resolveExchangeTimeZone("LSEETF")).toBe("Europe/London");
     expect(resolveExchangeTimeZone("TSE")).toBe("America/Toronto");
     expect(resolveExchangeTimeZone("AEB")).toBe("Europe/Amsterdam");
+  });
+
+  test("round-trips public exchange-qualified ticker keys", () => {
+    expect(publicTickerKey("3hnx", "LSE")).toBe("3HNX:XLON");
+    expect(parsePublicTickerKey("3hnx:xlon")).toEqual({ symbol: "3HNX", exchange: "LSE" });
   });
 });

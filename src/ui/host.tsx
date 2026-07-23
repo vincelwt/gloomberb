@@ -126,6 +126,7 @@ export interface InputRenderable {
   cursorOffset?: number;
   setCursorOffset?(offset: number): void;
   focus?(): void;
+  blur?(): void;
 }
 
 export interface TextareaRenderable extends InputRenderable {
@@ -295,6 +296,18 @@ export interface HostCheckboxProps {
   variant?: "default" | "desktop";
 }
 
+export interface HostPopoverProps {
+  open: boolean;
+  onOpenChange(open: boolean): void;
+  trigger: ReactNode;
+  children: ReactNode;
+  anchorPoint?: { x: number; y: number } | null;
+  placement?: "bottom-start" | "bottom-end";
+  minWidth?: number | string;
+  maxWidth?: number | string;
+  label?: string;
+}
+
 export interface UiHost {
   kind?: "opentui" | "desktop-web";
   capabilities?: {
@@ -332,6 +345,7 @@ export interface UiHost {
   PageStackView?: ComponentType<any>;
   Tabs?: ComponentType<HostTabsProps>;
   Checkbox?: ComponentType<HostCheckboxProps>;
+  Popover?: ComponentType<HostPopoverProps>;
   DataTable?: ComponentType<any>;
   createSyntaxStyle?(): SyntaxStyleLike;
   colorFromHex?(hex: string): unknown;

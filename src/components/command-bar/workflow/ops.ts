@@ -11,17 +11,6 @@ import {
   RELATIONSHIP_GRAPH_PANE_ID,
   buildRelationshipGraphPaneTitle,
 } from "../../../plugins/builtin/correlation/relationship/model";
-import {
-  buildComparisonChartPaneTitle,
-  COMPARISON_CHART_PANE_ID,
-  MIN_COMPARISON_CHART_SYMBOLS,
-} from "../../../plugins/builtin/comparison-chart";
-import {
-  FUNDAMENTAL_GRAPH_PANE_ID,
-  graphKindFromSettings,
-  graphShortcutForKind,
-  graphTemplateTitle,
-} from "../../../plugins/builtin/ticker-detail/data-panes/fundamental-graph/settings";
 import { buildQuoteMonitorPaneTitle } from "../../../plugins/builtin/ticker-detail/settings";
 import { getPaneTemplateDisplayLabel } from "../pane-templates/items";
 import {
@@ -225,24 +214,6 @@ export async function applyPaneSettingFieldValue(
     return;
   }
 
-  if (descriptor.pane.paneId === FUNDAMENTAL_GRAPH_PANE_ID && field.key === "symbolsText") {
-    const rawInput = typeof value === "string" ? value : "";
-    const symbols = await resolveTickerListInput(
-      rawInput,
-      descriptor.context.activeCollectionId,
-      deps,
-    );
-    const primarySymbol = symbols[0]!;
-    const chartKind = graphKindFromSettings(descriptor.context.settings, "fundamental");
-    const nextLayout = updateTickerListPane(state.config.layout, targetId, {
-      title: graphTemplateTitle(graphShortcutForKind(chartKind), symbols),
-      symbols,
-      primarySymbol,
-    });
-    deps.persistLayout(nextLayout, { pushHistory: shouldPushHistory });
-    return;
-  }
-
   if (descriptor.pane.paneId === RELATIONSHIP_GRAPH_PANE_ID && field.key === "symbolsText") {
     const rawInput = typeof value === "string" ? value : "";
     const symbols = await resolveTickerListInput(
@@ -263,28 +234,17 @@ export async function applyPaneSettingFieldValue(
     return;
   }
 
-  if (descriptor.pane.paneId === COMPARISON_CHART_PANE_ID && field.key === "symbolsText") {
-    const rawInput = typeof value === "string" ? value : "";
-    const symbols = await resolveTickerListInput(
-      rawInput,
-      descriptor.context.activeCollectionId,
-      deps,
-    );
-    if (symbols.length < MIN_COMPARISON_CHART_SYMBOLS) {
-      throw new Error(`Enter at least ${MIN_COMPARISON_CHART_SYMBOLS} tickers.`);
-    }
-    const nextLayout = updateTickerListPane(state.config.layout, targetId, {
-      title: buildComparisonChartPaneTitle(symbols),
-      symbols,
-    });
-    deps.persistLayout(nextLayout, { pushHistory: shouldPushHistory });
-    return;
-  }
-
-  let nextSettings: Record<string, unknown> = {
-    ...(descriptor.rawSettings ?? descriptor.context.settings),
-    [field.key]: value,
-  };
+  let nextSettings: Record<string, unknown> = descriptor.settingsDef.applyValue
+    ? await descriptor.settingsDef.applyValue(
+      descriptor.rawSettings ?? descriptor.context.settings,
+      field,
+      value,
+      descriptor.context,
+    )
+    : {
+      ...(descriptor.rawSettings ?? descriptor.context.settings),
+      [field.key]: value,
+    };
 
   if (descriptor.pane.paneId === "portfolio-list") {
     nextSettings = cleanPortfolioPaneSettings(nextSettings);

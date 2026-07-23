@@ -16,7 +16,7 @@ export interface TextFieldProps {
   onSubmit?: (value: string) => void;
   onBlur?: (value: string) => void;
   hint?: string;
-  type?: "text" | "password";
+  type?: "text" | "password" | "date";
   variant?: "default" | "plain";
   backgroundColor?: string;
   textColor?: string;

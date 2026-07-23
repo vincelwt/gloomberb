@@ -1,0 +1,104 @@
+import { describe, expect, test } from "bun:test";
+import type { ResolvedSeries, TimeSeriesPoint } from "../../../time-series/types";
+import {
+  panCompositeViewport,
+  resolveCompositeChartInteraction,
+  resolveCompositeMinimumSpanMs,
+  resolveCompositeNavigationBounds,
+  resolveCompositeWheelPanRatio,
+  shouldResetCompositeViewport,
+  zoomCompositeViewport,
+  type CompositeViewportRange,
+} from "./interactions";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function point(day: number): TimeSeriesPoint {
+  const date = new Date(Date.UTC(2025, 0, day));
+  return { date, observedAt: date, value: day };
+}
+
+function series(days: number[]): ResolvedSeries {
+  return {
+    id: "price",
+    label: "Price",
+    color: "#00ff66",
+    unit: "USD",
+    unitGroup: "currency",
+    nativeFrequency: "daily",
+    dataShape: "scalar",
+    style: "line",
+    transform: "raw",
+    axis: "left",
+    panelId: "main",
+    interpolation: "none",
+    points: days.map(point),
+  };
+}
+
+function viewport(startDay: number, endDay: number): CompositeViewportRange {
+  return {
+    start: new Date(Date.UTC(2025, 0, startDay)),
+    end: new Date(Date.UTC(2025, 0, endDay)),
+  };
+}
+
+describe("composite chart interactions", () => {
+  test("zooms around the right edge and clamps zoom-out to loaded bounds", () => {
+    const bounds = viewport(1, 11);
+    const zoomed = zoomCompositeViewport(bounds, bounds, 2, 1, DAY_MS);
+
+    expect(zoomed.start.toISOString()).toBe("2025-01-06T00:00:00.000Z");
+    expect(zoomed.end.toISOString()).toBe("2025-01-11T00:00:00.000Z");
+    expect(zoomCompositeViewport(zoomed, bounds, 0.1, 1, DAY_MS)).toEqual(bounds);
+  });
+
+  test("pans relative to the drag-start window without changing its span", () => {
+    const bounds = viewport(1, 11);
+    const visible = viewport(4, 8);
+
+    const older = panCompositeViewport(visible, bounds, 0.5);
+    expect(older).toEqual(viewport(2, 6));
+    expect(older.end.getTime() - older.start.getTime()).toBe(visible.end.getTime() - visible.start.getTime());
+
+    const clampedNewer = panCompositeViewport(visible, bounds, -10);
+    expect(clampedNewer).toEqual(viewport(7, 11));
+  });
+
+  test("uses the finest real observation step as the zoom floor", () => {
+    const data = series([1, 2, 5, 11]);
+    const bounds = resolveCompositeNavigationBounds([data]);
+    expect(bounds).toEqual(viewport(1, 11));
+    expect(resolveCompositeMinimumSpanMs([data], bounds!)).toBe(DAY_MS);
+  });
+
+  test("keeps live viewport drift but resets deliberate range/window changes", () => {
+    const original = viewport(1, 11);
+    const oneMinuteLater = {
+      start: new Date(original.start.getTime() + 1_000),
+      end: new Date(original.end.getTime() + 1_000),
+    };
+    const movedWindow = viewport(3, 13);
+    const widerRange = viewport(1, 31);
+
+    expect(shouldResetCompositeViewport(original, oneMinuteLater)).toBe(false);
+    expect(shouldResetCompositeViewport(original, movedWindow)).toBe(true);
+    expect(shouldResetCompositeViewport(original, widerRange)).toBe(true);
+  });
+
+  test("restores legacy keyboard aliases without stealing modified shortcuts", () => {
+    expect(resolveCompositeChartInteraction({ name: "=", sequence: "+", shift: true })).toBe("zoom-in");
+    expect(resolveCompositeChartInteraction({ name: "minus", sequence: "-", shift: false })).toBe("zoom-out");
+    expect(resolveCompositeChartInteraction({ name: "left", shift: true })).toBe("pan-left");
+    expect(resolveCompositeChartInteraction({ name: "right", shift: false })).toBe("cursor-right");
+    expect(resolveCompositeChartInteraction({ name: "=", sequence: "+", ctrl: true })).toBeNull();
+    expect(resolveCompositeChartInteraction({ name: "-", targetEditable: true })).toBeNull();
+  });
+
+  test("maps wheel directions to bounded horizontal pan increments", () => {
+    expect(resolveCompositeWheelPanRatio("up", 1)).toBe(0.005);
+    expect(resolveCompositeWheelPanRatio("left", 100)).toBe(0.04);
+    expect(resolveCompositeWheelPanRatio("down", 100)).toBe(-0.04);
+    expect(resolveCompositeWheelPanRatio("right", 0)).toBe(-0.005);
+  });
+});

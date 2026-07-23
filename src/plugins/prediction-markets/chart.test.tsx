@@ -14,7 +14,6 @@ import { getNativeSurfaceManager } from "../../components/chart/native/surface/m
 import { PredictionMarketChart } from "./chart";
 
 const TEST_PANE_ID = "prediction-scroll:test";
-const SURFACE_ID = `chart-surface:${TEST_PANE_ID}:compact:base`;
 
 let testSetup: Awaited<ReturnType<typeof createTestRenderer>> | undefined;
 let root: ReturnType<typeof createRoot> | undefined;
@@ -96,10 +95,10 @@ describe("PredictionMarketChart kitty scrolling", () => {
   test("creates a native chart surface when scrolled into view", async () => {
     actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
     testSetup = await createTestRenderer({ width: 100, height: 24 });
-    (testSetup.renderer as { _capabilities: unknown })._capabilities = {
+    (testSetup.renderer as unknown as { _capabilities: unknown })._capabilities = {
       kitty_graphics: true,
     };
-    (testSetup.renderer as { _resolution: unknown })._resolution = {
+    (testSetup.renderer as unknown as { _resolution: unknown })._resolution = {
       width: 1000,
       height: 720,
     };
@@ -116,13 +115,16 @@ describe("PredictionMarketChart kitty scrolling", () => {
         string,
         {
           snapshot: {
+            paneId: string;
             visibleRect: { x: number; y: number; width: number; height: number } | null;
           };
         }
       >;
     };
 
-    const hiddenSurface = manager.surfaces.get(SURFACE_ID);
+    const findPredictionSurface = () => [...manager.surfaces.values()]
+      .find((surface) => surface.snapshot.paneId === TEST_PANE_ID);
+    const hiddenSurface = findPredictionSurface();
     expect(hiddenSurface).toBeUndefined();
 
     act(() => {
@@ -131,7 +133,7 @@ describe("PredictionMarketChart kitty scrolling", () => {
 
     await flushFrames();
 
-    const visibleSurface = manager.surfaces.get(SURFACE_ID);
+    const visibleSurface = findPredictionSurface();
     expect(visibleSurface).toBeDefined();
     expect(visibleSurface?.snapshot.visibleRect).not.toBeNull();
     expect(testSetup.captureCharFrame()).toContain("1M");

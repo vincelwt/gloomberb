@@ -35,7 +35,6 @@ function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     pluginConfig: {},
     theme: "amber",
     chartPreferences: {
-      defaultRenderMode: "area",
       renderer: "auto",
     },
     recentTickers: [],

@@ -123,6 +123,68 @@ describe("createPaneTemplateOrThrow", () => {
 });
 
 describe("applyPaneSettingFieldValue", () => {
+  test("lets a pane map derived setting fields back to its canonical settings object", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+    const layout = cloneLayout(config.layout);
+    const pane = findPaneInstance(layout, "portfolio-list:main");
+    if (!pane) throw new Error("missing test pane");
+    pane.paneId = "nested-settings";
+    pane.settings = { canonical: { mode: "line" } };
+    const state = createInitialState({ ...config, layout });
+    const persisted: LayoutConfig[] = [];
+    const applied: unknown[] = [];
+
+    await applyPaneSettingFieldValue(pane.instanceId, {
+      key: "mode",
+      label: "Mode",
+      type: "select",
+      options: [],
+    }, "area", {
+      dataProvider: makeDataProvider() as any,
+      tickerRepository: makeTickerRepository() as any,
+      dispatch: () => {},
+      getState: () => state,
+      persistLayout: (nextLayout) => { persisted.push(nextLayout); },
+      pluginRegistry: {
+        resolvePaneSettings: () => ({
+          paneId: pane.instanceId,
+          pane,
+          paneDef: {
+            id: "nested-settings",
+            name: "Nested Settings",
+            component: () => null,
+            defaultPosition: "right",
+          },
+          rawSettings: pane.settings,
+          settingsDef: {
+            values: { mode: "line" },
+            fields: [],
+            applyValue: (settings: Record<string, unknown>, field: unknown, value: unknown) => {
+              applied.push([settings, field, value]);
+              return { canonical: { mode: value } };
+            },
+          },
+          context: {
+            config: state.config,
+            layout: state.config.layout,
+            paneId: pane.instanceId,
+            paneType: "nested-settings",
+            pane,
+            settings: { ...pane.settings, mode: "line" },
+            paneState: {},
+            activeTicker: null,
+            activeCollectionId: null,
+          },
+        }),
+      } as any,
+    });
+
+    expect(applied).toHaveLength(1);
+    expect(findPaneInstance(persisted[0]!, pane.instanceId)?.settings).toEqual({
+      canonical: { mode: "area" },
+    });
+  });
+
   test("keeps portfolio panes on their displayed collection when switching back to all collections", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
     const layout = cloneLayout(config.layout);

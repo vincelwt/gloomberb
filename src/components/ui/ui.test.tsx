@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, useEffect, useRef, useState } from "react";
+import { act, createRef, useEffect, useRef, useState } from "react";
 import { TestDialogProvider, testRender } from "../../renderers/opentui/test-utils";
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core";
 import { ChoiceDialog } from "./choice-dialog";
 import { DataTable, type DataTableColumn } from "./data-table";
 import { TextField } from "./fields";
 import { ListView } from "./list-view";
-import { MultiSelectDialogButton } from "./multi-select/dialog";
+import { MultiSelectDialogButton, type MultiSelectDialogButtonHandle } from "./multi-select/dialog";
 import {
   getMultiSelectDisplayValues,
   moveMultiSelectDisplayValue,
@@ -28,6 +28,8 @@ let tableScrollBoxForTest: ScrollBoxRenderable | null = null;
 let closedTab: string | null = null;
 let addedTab = false;
 let resolvedChoice: string | null = null;
+let multiSelectOpenStates: boolean[] = [];
+const multiSelectDialogHandle = createRef<MultiSelectDialogButtonHandle>();
 
 function ScrollableListHarness() {
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -213,11 +215,15 @@ function MultiSelectDialogButtonHarness() {
   return (
     <TestDialogProvider>
       <MultiSelectDialogButton
+        ref={multiSelectDialogHandle}
         label="IND"
         title="Chart Indicators"
         selectedValues={values}
         onChange={setValues}
         idPrefix="indicator-dialog"
+        shortcutKey="i"
+        shortcutActive
+        onOpenChange={(open) => multiSelectOpenStates.push(open)}
         options={[
           { value: "sma", label: "SMA" },
           { value: "ema", label: "EMA" },
@@ -245,7 +251,7 @@ function ChoiceDialogHarness({ selectedChoiceId }: { selectedChoiceId?: string }
   );
 }
 
-async function emitKeypress(event: { name?: string; sequence?: string }) {
+async function emitKeypress(event: { name?: string; sequence?: string; ctrl?: boolean; meta?: boolean; shift?: boolean; alt?: boolean }) {
   await act(async () => {
     testSetup!.renderer.keyInput.emit("keypress", {
       ctrl: false,
@@ -277,6 +283,7 @@ afterEach(() => {
   closedTab = null;
   addedTab = false;
   resolvedChoice = null;
+  multiSelectOpenStates = [];
 });
 
 describe("shared UI kit", () => {
@@ -495,6 +502,33 @@ describe("shared UI kit", () => {
 
     frame = testSetup.captureCharFrame();
     expect(frame).not.toContain("Chart Indicators");
+  });
+
+  test("opens multi-selects imperatively and only matches plain shortcuts", async () => {
+    testSetup = await testRender(<MultiSelectDialogButtonHarness />, { width: 60, height: 18 });
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    await emitKeypress({ name: "i", sequence: "i", ctrl: true });
+    expect(testSetup.captureCharFrame()).not.toContain("Chart Indicators");
+
+    await emitKeypress({ name: "i", sequence: "i" });
+    expect(testSetup.captureCharFrame()).toContain("Chart Indicators");
+    expect(multiSelectOpenStates.at(-1)).toBe(true);
+
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+    expect(testSetup.captureCharFrame()).not.toContain("Chart Indicators");
+    expect(multiSelectOpenStates.at(-1)).toBe(false);
+
+    await act(async () => {
+      multiSelectDialogHandle.current?.open();
+      await Promise.resolve();
+      await testSetup!.renderOnce();
+    });
+    expect(testSetup.captureCharFrame()).toContain("Chart Indicators");
+    expect(multiSelectOpenStates.at(-1)).toBe(true);
   });
 
   test("supports keyboard and pointer selection in choice dialogs", async () => {

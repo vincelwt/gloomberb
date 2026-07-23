@@ -1,7 +1,11 @@
 import { Box, Text } from "../../ui";
 import { useMemo } from "react";
 import { TextAttributes } from "../../ui";
-import { StockChart } from "../../components/chart/stock-chart";
+import {
+  CompositeChart,
+  pricePointsToResolvedSeries,
+} from "../../components/chart/composite";
+import type { ChartMouseEvent } from "../../components/chart/core/pointer";
 import { EmptyState } from "../../components/ui/status";
 import { colors } from "../../theme/colors";
 import { formatNumber, formatPercentRaw } from "../../utils/format";
@@ -50,10 +54,13 @@ function PredictionRangeTabs({
         return (
           <Box
             key={entry}
-            onMouseDown={(event) => {
-              event.preventDefault();
+            onMouseDown={(event: ChartMouseEvent) => {
+              event.preventDefault?.();
               onRangeSelect(entry);
             }}
+            cursor="pointer"
+            data-gloom-interactive="true"
+            data-gloom-label={`${entry} prediction history`}
           >
             <Text
               fg={active ? colors.textBright : colors.textDim}
@@ -113,6 +120,15 @@ export function PredictionMarketChart({
   const delta = first && last ? last.close - first.close : 0;
   const deltaPct = first?.close ? (delta / first.close) * 100 : 0;
   const chartHeight = Math.max(height - 1, 2);
+  const priceSeries = pricePointsToResolvedSeries(pricePoints, {
+    id: "prediction-price",
+    label: "YES price",
+    color: delta > 0 ? colors.positive : delta < 0 ? colors.negative : colors.text,
+    unit: "USD",
+    style: "area",
+    axis: "right",
+    panelId: "price",
+  });
 
   return (
     <Box flexDirection="column" height={height}>
@@ -135,13 +151,15 @@ export function PredictionMarketChart({
         </Text>
       </Box>
 
-      <StockChart
+      <CompositeChart
         width={width}
         height={chartHeight}
         focused={false}
-        compact
-        historyOverride={pricePoints}
-        currencyOverride="USD"
+        interactive={false}
+        series={[priceSeries]}
+        panels={[{ id: "price" }]}
+        axisWidth={8}
+        showLegend={false}
       />
     </Box>
   );

@@ -1,7 +1,7 @@
 import { portfolioAnalyticsModule } from "./analytics";
 import { brokerManagerModule } from "./broker-manager";
 import { changelogModule } from "./changelog";
-import { comparisonChartModule } from "./comparison-chart";
+import { chartComposerModule } from "./chart-composer";
 import { correlationModule } from "./correlation";
 import { economicCalendarModule } from "./econ";
 import { earningsModule } from "./earnings";
@@ -51,6 +51,7 @@ export const tickerResearchPlugin = composeBuiltinPlugin({
   toggleable: true,
   modules: [
     tickerDetailModule,
+    chartComposerModule,
     optionsModule,
     researchModule,
     holdersModule,
@@ -73,10 +74,9 @@ export const marketOverviewPlugin = composeBuiltinPlugin({
   id: "market-overview",
   name: "Market Overview",
   version: "1.0.0",
-  description: "Global indices, movers, sectors, FX, comparison charts, and correlations.",
+  description: "Global indices, movers, sectors, FX, sentiment, and correlations.",
   toggleable: true,
   modules: [
-    comparisonChartModule,
     correlationModule,
     worldIndicesModule,
     marketHeatmapModule,

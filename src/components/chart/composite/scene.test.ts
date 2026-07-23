@@ -1,0 +1,246 @@
+import { describe, expect, test } from "bun:test";
+import type { ResolvedSeries, TimeSeriesPoint } from "../../../time-series/types";
+import {
+  allocateCompositePanelHeights,
+  applyCompositeChartCursor,
+  buildCompositeChartScene,
+  projectCompositeValue,
+  resolveCompositeCursorDate,
+} from "./scene";
+
+function point(date: string, value: number): TimeSeriesPoint {
+  const observedAt = new Date(`${date}T00:00:00.000Z`);
+  return { date: observedAt, observedAt, value };
+}
+
+function series(overrides: Partial<ResolvedSeries> & Pick<ResolvedSeries, "id" | "points">): ResolvedSeries {
+  return {
+    id: overrides.id,
+    label: overrides.label ?? overrides.id,
+    color: overrides.color ?? "#00ff66",
+    unit: overrides.unit ?? "USD",
+    unitGroup: overrides.unitGroup ?? "currency",
+    nativeFrequency: overrides.nativeFrequency ?? "daily",
+    dataShape: overrides.dataShape ?? "scalar",
+    style: overrides.style ?? "line",
+    transform: overrides.transform ?? "raw",
+    axis: overrides.axis ?? "left",
+    panelId: overrides.panelId ?? "main",
+    interpolation: overrides.interpolation ?? "none",
+    points: overrides.points,
+    warning: overrides.warning,
+  };
+}
+
+describe("composite chart scene", () => {
+  test("keeps panels synchronized while preserving independent dual-axis domains", () => {
+    const price = series({
+      id: "price",
+      points: [point("2025-01-01", 90), point("2025-01-03", 110)],
+    });
+    const revenue = series({
+      id: "revenue",
+      axis: "right",
+      style: "step",
+      interpolation: "step-after",
+      points: [point("2024-12-31", 1_000_000), point("2025-01-03", 1_500_000)],
+    });
+    const macro = series({
+      id: "macro",
+      panelId: "macro",
+      unit: "%",
+      unitGroup: "percent",
+      points: [point("2025-01-02", 3.5), point("2025-01-04", 4.1)],
+    });
+
+    const scene = buildCompositeChartScene(
+      [price, revenue, macro],
+      [{ id: "main", height: 2 }, { id: "macro", height: 1 }],
+      { width: 81, height: 18, cursorDate: new Date("2025-01-02T12:00:00.000Z") },
+    );
+
+    expect(scene).not.toBeNull();
+    expect(scene!.panels.map((panel) => panel.height)).toEqual([12, 6]);
+    expect(scene!.startTime).toBe(new Date("2024-12-31T00:00:00.000Z").getTime());
+    expect(scene!.endTime).toBe(new Date("2025-01-04T00:00:00.000Z").getTime());
+
+    const main = scene!.panels[0]!;
+    expect(main.axes.left!.seriesIds).toEqual(["price"]);
+    expect(main.axes.right!.seriesIds).toEqual(["revenue"]);
+    expect(main.axes.left!.max).toBeLessThan(1_000);
+    expect(main.axes.right!.min).toBeGreaterThan(900_000);
+    expect(main.series[0]!.points.at(-1)!.xRatio).toBeLessThan(1);
+
+    expect(scene!.cursorDate?.toISOString()).toBe("2025-01-02T00:00:00.000Z");
+    expect(scene!.cursorValues.find((value) => value.seriesId === "price")?.value).toBe(90);
+    expect(scene!.cursorValues.find((value) => value.seriesId === "revenue")?.value).toBe(1_000_000);
+    expect(scene!.cursorValues.find((value) => value.seriesId === "macro")?.value).toBe(3.5);
+  });
+
+  test("projects logarithmic axes safely and snaps pointers to the shared date set", () => {
+    const logarithmic = series({
+      id: "log",
+      points: [point("2025-01-01", -2), point("2025-01-02", 10), point("2025-01-05", 1_000)],
+    });
+    const scene = buildCompositeChartScene(
+      [logarithmic],
+      [{ id: "main", scale: "log" }],
+      { width: 101, height: 10 },
+    );
+
+    expect(scene).not.toBeNull();
+    const domain = scene!.panels[0]!.axes.left!;
+    expect(domain.scale).toBe("log");
+    expect(projectCompositeValue(0, domain)).toBeNull();
+    expect(scene!.panels[0]!.series[0]!.points).toHaveLength(2);
+    expect(resolveCompositeCursorDate(scene!, 70)?.toISOString()).toBe("2025-01-05T00:00:00.000Z");
+  });
+
+  test("starts a new rendered segment after null and logarithmically hidden observations", () => {
+    const withNull = series({
+      id: "null-gap",
+      points: [
+        point("2025-01-01", 1),
+        { ...point("2025-01-02", 2), value: null },
+        point("2025-01-03", 3),
+      ],
+    });
+    const linearScene = buildCompositeChartScene([withNull], [{ id: "main" }], { width: 40, height: 8 });
+    expect(linearScene?.panels[0]?.series[0]?.points.map((entry) => entry.breakBefore)).toEqual([true, true]);
+
+    const withHiddenLogValue = series({
+      id: "log-gap",
+      points: [point("2025-01-01", 10), point("2025-01-02", -1), point("2025-01-03", 1_000)],
+    });
+    const logScene = buildCompositeChartScene(
+      [withHiddenLogValue],
+      [{ id: "main", scale: "log" }],
+      { width: 40, height: 8 },
+    );
+    expect(logScene?.panels[0]?.series[0]?.points.map((entry) => entry.breakBefore)).toEqual([true, true]);
+  });
+
+  test("allocates every available row without starving a panel", () => {
+    expect(allocateCompositePanelHeights(
+      [{ id: "one", height: 3 }, { id: "two", height: 1 }, { id: "three", height: 1 }],
+      4,
+    )).toEqual(new Map([["one", 2], ["two", 1], ["three", 1]]));
+  });
+
+  test("preserves explicit viewport bounds when observations are sparse", () => {
+    const sparse = series({
+      id: "sparse",
+      points: [point("2025-03-01", 10), point("2025-09-01", 12)],
+    });
+    const scene = buildCompositeChartScene(
+      [sparse],
+      [{ id: "main" }],
+      {
+        width: 101,
+        height: 10,
+        viewport: {
+          start: new Date("2025-01-01T00:00:00.000Z"),
+          end: new Date("2025-12-31T23:59:59.999Z"),
+        },
+      },
+    );
+
+    expect(scene?.startTime).toBe(new Date("2025-01-01T00:00:00.000Z").getTime());
+    expect(scene?.endTime).toBe(new Date("2025-12-31T23:59:59.999Z").getTime());
+    expect(scene?.panels[0]?.series[0]?.points[0]?.xRatio).toBeGreaterThan(0);
+    expect(scene?.panels[0]?.series[0]?.points.at(-1)?.xRatio).toBeLessThan(1);
+  });
+
+  test("keeps positive column axes anchored at zero without negative padding", () => {
+    const columns = series({
+      id: "revenue",
+      style: "columns",
+      points: [point("2025-01-01", 100), point("2025-04-01", 140)],
+    });
+    const scene = buildCompositeChartScene(
+      [columns],
+      [{ id: "main" }],
+      { width: 40, height: 8 },
+    );
+
+    expect(scene?.panels[0]?.axes.left?.min).toBe(0);
+    expect(scene?.panels[0]?.axes.left?.max).toBeGreaterThan(140);
+  });
+
+  test("extends a prior step anchor across an otherwise empty viewport", () => {
+    const step = series({
+      id: "step",
+      style: "step",
+      interpolation: "step-after",
+      points: [point("2024-12-15", 90)],
+    });
+    const scene = buildCompositeChartScene(
+      [step],
+      [{ id: "main" }],
+      {
+        width: 101,
+        height: 10,
+        viewport: {
+          start: new Date("2025-01-01T00:00:00.000Z"),
+          end: new Date("2025-01-31T23:59:59.999Z"),
+        },
+      },
+    );
+
+    expect(scene).not.toBeNull();
+    expect(scene?.panels[0]?.series[0]?.points.map(({ xRatio }) => xRatio)).toEqual([0, 1]);
+    expect(scene?.cursorValues[0]?.value).toBe(90);
+  });
+
+  test("uses as-of values across mixed-frequency dates without looking ahead", () => {
+    const daily = series({
+      id: "daily",
+      points: [point("2025-01-02", 20), point("2025-01-04", 40)],
+    });
+    const quarterly = series({
+      id: "quarterly",
+      style: "step",
+      interpolation: "step-after",
+      points: [point("2025-01-01", 100), point("2025-04-01", 140)],
+    });
+
+    const beforeDaily = buildCompositeChartScene(
+      [daily, quarterly],
+      [{ id: "main" }],
+      { width: 80, height: 10, cursorDate: new Date("2025-01-01T00:00:00.000Z") },
+    );
+    expect(beforeDaily?.cursorValues.find((entry) => entry.seriesId === "daily")?.value).toBeNull();
+
+    const betweenDaily = buildCompositeChartScene(
+      [daily, quarterly],
+      [{ id: "main" }],
+      { width: 80, height: 10, cursorDate: new Date("2025-01-03T00:00:00.000Z") },
+    );
+    expect(betweenDaily?.cursorDate?.toISOString()).toBe("2025-01-02T00:00:00.000Z");
+    expect(betweenDaily?.cursorValues.find((entry) => entry.seriesId === "daily")?.value).toBe(20);
+    expect(betweenDaily?.cursorValues.find((entry) => entry.seriesId === "quarterly")?.value).toBe(100);
+  });
+
+  test("hydrates cursor values without rebuilding projected panels", () => {
+    const base = buildCompositeChartScene(
+      [series({
+        id: "price",
+        points: [point("2025-01-01", 10), point("2025-01-02", 12)],
+      })],
+      [{ id: "main" }],
+      { width: 80, height: 10 },
+    )!;
+
+    const withCursor = applyCompositeChartCursor(
+      base,
+      new Date("2025-01-01T12:00:00.000Z"),
+    );
+
+    expect(withCursor).not.toBe(base);
+    expect(withCursor.panels).toBe(base.panels);
+    expect(withCursor.panels[0]?.series).toBe(base.panels[0]?.series);
+    expect(withCursor.cursorDate?.toISOString()).toBe("2025-01-01T00:00:00.000Z");
+    expect(withCursor.cursorValues[0]?.value).toBe(10);
+    expect(applyCompositeChartCursor(withCursor, new Date("2025-01-01T00:00:00.000Z"))).toBe(withCursor);
+  });
+});

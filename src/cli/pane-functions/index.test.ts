@@ -175,7 +175,7 @@ describe("pane function CLI args", () => {
     expect(matches.map(({ token }) => token)).toEqual(["GF", "CMP"]);
   });
 
-  test("normalizes GF options into the plugin state consumed by its pane", () => {
+  test("normalizes GF options without creating retired plugin state", () => {
     const capability = capabilityFor("fundamental-graph-pane");
     const options = normalizeCapabilityOptions(capability, {
       metric: "operating cash flow",
@@ -186,11 +186,25 @@ describe("pane function CLI args", () => {
       metric: "operatingCashFlow",
       period: "annual",
     });
-    expect(capabilityPluginState(capability, options)).toEqual({
-      "ticker-research": {
-        metric: "operatingCashFlow",
-        period: "annual",
-      },
+    expect(capabilityPluginState(capability, options)).toEqual({});
+  });
+
+  test("exposes custom G as a bot-safe mixed-series capability", () => {
+    const capability = capabilityFor("chart-composer-pane");
+
+    expect(capability).toMatchObject({
+      id: "chart-composer",
+      botSafe: true,
+      tickerCardinality: "none",
+      reportReadiness: "ready",
+      screenshotReadiness: "ready",
+    });
+    expect(normalizeCapabilityOptions(capability, {
+      range: "five years",
+      resolution: "1d",
+    })).toEqual({
+      rangePreset: "5Y",
+      chartResolution: "1d",
     });
   });
 

@@ -9,8 +9,11 @@ export { Button } from "./button";
 export { Checkbox } from "./checkbox";
 export type { CheckboxProps } from "./checkbox";
 export { ShortcutHint } from "./shortcut-hint";
+export { Popover } from "./popover";
+export type { PopoverProps } from "./popover";
 
 export { MultiSelectDialogButton, MultiSelectDialogContent } from "./multi-select/dialog";
+export type { MultiSelectDialogButtonHandle, MultiSelectPopoverAnchorPoint } from "./multi-select/dialog";
 
 export { TextField, NumberField } from "./fields";
 

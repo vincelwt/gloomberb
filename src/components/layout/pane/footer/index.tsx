@@ -7,6 +7,7 @@ import {
   EMPTY_FOOTER,
   hasPaneFooterContent,
   type CombinedPaneFooter,
+  type PaneFooterPressEvent,
   type PaneFooterPart,
   type PaneFooterSegment,
   type PaneHint,
@@ -15,6 +16,7 @@ import {
 export {
   hasPaneFooterContent,
   type CombinedPaneFooter,
+  type PaneFooterPressEvent,
   type PaneFooterSegment,
   type PaneHint,
 } from "./model";

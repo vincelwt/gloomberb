@@ -29,8 +29,10 @@ import type { PluginRegistry } from "../../registry";
 import { setSharedRegistryForTests } from "../../registry";
 import { PluginRenderProvider } from "../../runtime";
 import { tickerDetailModule } from ".";
+import { chartComposerModule } from "../chart-composer";
 import { FinancialsTab } from "./financials/tab";
 import { isUsEquityTicker } from "../../../utils/sec";
+import { MemoryPluginPersistence } from "../../../test-support/plugin-persistence";
 
 const TEST_PANE_ID = "ticker-research:test";
 
@@ -161,7 +163,7 @@ function setOptionsProvider(provider: DataProvider | undefined): void {
   setSharedMarketDataCoordinator(sharedCoordinator);
 }
 
-function makeRegistry(options: { stubFundamentalGraphs?: boolean } = {}): PluginRegistry {
+function makeRegistry(): PluginRegistry {
   const stubTab = (_props: { width: number; height: number; focused: boolean; onCapture: (capturing: boolean) => void }) => (
     <text>stub</text>
   );
@@ -169,10 +171,10 @@ function makeRegistry(options: { stubFundamentalGraphs?: boolean } = {}): Plugin
   tickerDetailModule.setup?.({
     registerTickerResearchTab: (tab: TickerResearchTabDef) => tickerResearchTabs.set(tab.id, tab),
   } as any);
-  if (options.stubFundamentalGraphs) {
-    const tab = tickerResearchTabs.get("fundamental-graphs");
-    if (tab) tickerResearchTabs.set(tab.id, { ...tab, component: stubTab });
-  }
+  chartComposerModule.setup?.({
+    persistence: new MemoryPluginPersistence(),
+    registerTickerResearchTab: (tab: TickerResearchTabDef) => tickerResearchTabs.set(tab.id, tab),
+  } as any);
   for (const tab of [
     ["ibkr-trade", {
       id: "ibkr-trade",
@@ -211,6 +213,7 @@ function createDetailConfig(symbol: string, brokerInstances: BrokerInstanceConfi
       binding: { kind: "fixed" as const, symbol },
     }],
     floating: [],
+    detached: [],
   };
 
   return {
@@ -513,7 +516,7 @@ describe("TickerResearchPane", () => {
   });
 
   test("lets ticker detail tab arrows leave the embedded financials tab", async () => {
-    setSharedRegistryForTests(makeRegistry({ stubFundamentalGraphs: true }));
+    setSharedRegistryForTests(makeRegistry());
     setOptionsProvider(createProvider(false));
 
     testSetup = await testRender(
@@ -538,7 +541,7 @@ describe("TickerResearchPane", () => {
     await flushFrame();
 
     await settleTickerTabCommit();
-    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("fundamental-graphs");
+    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("chart");
 
     await act(async () => {
       testSetup!.mockInput.pressArrow("left");
@@ -548,130 +551,6 @@ describe("TickerResearchPane", () => {
 
     await settleTickerTabCommit();
     expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("financials");
-  });
-
-  test("shows metric tabs for fundamental graph charts and defaults them to quarterly data", async () => {
-    setSharedRegistryForTests(makeRegistry());
-    setOptionsProvider(createProvider(false));
-
-    testSetup = await testRender(
-      <DetailHarness
-        config={createDetailConfig("AAPL")}
-        ticker={makeTicker("AAPL")}
-        financials={makeFinancials({
-          annualStatements: [{ date: "2024-12-31", totalRevenue: 1_000 }],
-          quarterlyStatements: [
-            { date: "2025-03-31", totalRevenue: 200 },
-            { date: "2025-06-30", totalRevenue: 250 },
-          ],
-        })}
-        activeTabId="fundamental-graphs"
-        height={28}
-      />,
-      { width: 90, height: 28 },
-    );
-
-    await flushFrame();
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Revenue");
-    expect(frame).toContain("Gross Profit");
-    expect(frame).not.toContain("Revenue (quarterly)");
-    expect(frame).not.toContain("[g]roup");
-    expect(frame).toContain("2025-03-31");
-    expect(frame).toContain("2025-06-30");
-    expect(frame.indexOf("2025-06-30")).toBeLessThan(frame.indexOf("2025-03-31"));
-  });
-
-  test("captures arrows for graph metric tabs between enter and escape", async () => {
-    setSharedRegistryForTests(makeRegistry());
-    setOptionsProvider(createProvider(false));
-
-    testSetup = await testRender(
-      <DetailHarness
-        config={createDetailConfig("AAPL")}
-        ticker={makeTicker("AAPL")}
-        financials={makeFinancials({
-          annualStatements: [{ date: "2024-12-31", totalRevenue: 1_000, grossProfit: 400 }],
-          quarterlyStatements: [
-            { date: "2025-03-31", totalRevenue: 200, grossProfit: 80 },
-            { date: "2025-06-30", totalRevenue: 250, grossProfit: 120 },
-          ],
-        })}
-        activeTabId="fundamental-graphs"
-        height={28}
-      />,
-      { width: 90, height: 28 },
-    );
-
-    await flushFrame();
-    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("fundamental-graphs");
-
-    await act(async () => {
-      testSetup!.mockInput.pressEnter();
-      await testSetup!.renderOnce();
-    });
-    await flushFrame();
-
-    await act(async () => {
-      testSetup!.mockInput.pressArrow("right");
-      await testSetup!.renderOnce();
-    });
-    await flushFrame();
-
-    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.pluginState?.["ticker-research"]?.detailMetric).toBe("grossProfit");
-    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("fundamental-graphs");
-
-    await emitKeypress({ name: "escape", sequence: "\u001b" });
-    expect(detailHarnessState?.inputCaptured).toBe(false);
-
-    await act(async () => {
-      testSetup!.mockInput.pressArrow("right");
-      await testSetup!.renderOnce();
-    });
-    await flushFrame();
-
-    await settleTickerTabCommit();
-    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("chart");
-  });
-
-  test("clicking graph content focuses metric tabs for arrow navigation", async () => {
-    setSharedRegistryForTests(makeRegistry());
-    setOptionsProvider(createProvider(false));
-
-    testSetup = await testRender(
-      <DetailHarness
-        config={createDetailConfig("AAPL")}
-        ticker={makeTicker("AAPL")}
-        financials={makeFinancials({
-          annualStatements: [{ date: "2024-12-31", totalRevenue: 1_000, grossProfit: 400 }],
-          quarterlyStatements: [
-            { date: "2025-03-31", totalRevenue: 200, grossProfit: 80 },
-            { date: "2025-06-30", totalRevenue: 250, grossProfit: 120 },
-          ],
-        })}
-        activeTabId="fundamental-graphs"
-        height={28}
-      />,
-      { width: 90, height: 28 },
-    );
-
-    await flushFrame();
-
-    await act(async () => {
-      await testSetup!.mockMouse.click(24, 6);
-      await testSetup!.renderOnce();
-    });
-    await flushFrame();
-    expect(detailHarnessState?.inputCaptured).toBe(true);
-
-    await act(async () => {
-      testSetup!.mockInput.pressArrow("right");
-      await testSetup!.renderOnce();
-    });
-    await flushFrame();
-
-    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.pluginState?.["ticker-research"]?.detailMetric).toBe("grossProfit");
-    expect(detailHarnessState?.paneState[TEST_PANE_ID]?.activeTabId).toBe("fundamental-graphs");
   });
 
   test("shows Trade when an IBKR gateway profile exists", async () => {
@@ -818,7 +697,7 @@ describe("TickerResearchPane", () => {
 
     await flushFrame();
     const frame = testSetup.captureCharFrame();
-    expect(receivedHeight).toBe(17);
+    expect(Number(receivedHeight)).toBe(17);
     expect(frame).toContain("height:17");
   });
 

@@ -236,6 +236,7 @@ export const WebInput = forwardRef<InputRenderable, Record<string, unknown>>(fun
     },
     setCursorOffset: applyCursorOffset,
     focus: () => elementRef.current?.focus(),
+    blur: () => elementRef.current?.blur(),
   }), [applyCursorOffset, cursorOffset, setValue, valueRef]);
 
   const handleValueChange = useCallback((nextValue: string) => {

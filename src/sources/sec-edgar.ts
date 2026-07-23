@@ -452,6 +452,15 @@ function setCompanyFactValue(
   if (compareCompanyFactsEntries(entry, selectedFacts.get(selectionKey)) < 0) return;
   const row = rows.get(date) ?? { date };
   (row as unknown as Record<string, unknown>)[field] = value;
+  if (entry.filed) {
+    row.fieldAvailability = {
+      ...(row.fieldAvailability ?? {}),
+      [String(field)]: entry.filed,
+    };
+    if (!row.availableAt || entry.filed.localeCompare(row.availableAt) > 0) {
+      row.availableAt = entry.filed;
+    }
+  }
   rows.set(date, row);
   selectedFacts.set(selectionKey, entry);
 }
@@ -489,6 +498,18 @@ function finalizeCompanyFactsStatements(rows: Map<string, FinancialStatement>): 
       && typeof statement.capitalExpenditure === "number"
     ) {
       statement.freeCashFlow = statement.operatingCashFlow + statement.capitalExpenditure;
+      const operatingCashFlowAvailableAt = statement.fieldAvailability?.operatingCashFlow;
+      const capitalExpenditureAvailableAt = statement.fieldAvailability?.capitalExpenditure;
+      const derivedAvailableAt = [operatingCashFlowAvailableAt, capitalExpenditureAvailableAt]
+        .filter((value): value is string => !!value)
+        .sort()
+        .at(-1);
+      if (derivedAvailableAt) {
+        statement.fieldAvailability = {
+          ...(statement.fieldAvailability ?? {}),
+          freeCashFlow: derivedAvailableAt,
+        };
+      }
     }
   }
   return statements;

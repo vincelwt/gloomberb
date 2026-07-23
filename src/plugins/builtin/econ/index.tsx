@@ -29,10 +29,7 @@ import {
   type EconCalendarColumn,
   type ImpactFilter,
 } from "./calendar-model";
-import {
-  attachEconFredPersistence,
-  resetEconFredPersistence,
-} from "./fred-cache";
+import { attachFredSeriesPersistence } from "../../../data/fred-series";
 
 function EconCalendarPane({ focused, width, height }: PaneProps) {
   const [initialCache] = useState(() => getCalendarCache());
@@ -371,10 +368,9 @@ export const economicCalendarModule: PluginModule = {
   }],
   setup(ctx) {
     attachEconCalendarPersistence(ctx.persistence);
-    attachEconFredPersistence(ctx.persistence);
+    attachFredSeriesPersistence(ctx.persistence);
   },
   dispose() {
     resetEconCalendarPersistence();
-    resetEconFredPersistence();
   },
 };

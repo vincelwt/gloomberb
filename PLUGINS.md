@@ -436,6 +436,34 @@ settings: (context) => ({
 }),
 ```
 
+For fields derived from one canonical nested setting, expose their current display values with `values` and map edits back with `applyValue`. The callback returns the complete pane settings object that should be persisted:
+
+```typescript
+settings: (context) => ({
+  values: {
+    mode: context.settings.chartSpec?.mode ?? "line",
+  },
+  fields: [
+    {
+      key: "mode",
+      label: "Mode",
+      type: "select",
+      options: [
+        { value: "line", label: "Line" },
+        { value: "area", label: "Area" },
+      ],
+    },
+  ],
+  applyValue: (settings, field, value) => ({
+    ...settings,
+    chartSpec: {
+      ...settings.chartSpec,
+      [field.key]: value,
+    },
+  }),
+}),
+```
+
 Available field types:
 - `toggle`
 - `text`

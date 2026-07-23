@@ -238,6 +238,16 @@ export function publicExchange(value?: string): string {
   return PUBLIC_EXCHANGE_ALIASES[canonical] ?? canonical;
 }
 
+export function parsePublicTickerKey(value: string): { symbol: string; exchange?: string } {
+  const normalized = normalizeSymbol(value);
+  const separator = normalized.lastIndexOf(":");
+  if (separator <= 0 || separator === normalized.length - 1) return { symbol: normalized };
+  return {
+    symbol: normalized.slice(0, separator),
+    exchange: canonicalExchange(normalized.slice(separator + 1)),
+  };
+}
+
 export function canonicalTickerKey(symbol: string, exchange?: string): string {
   const normalizedSymbol = normalizeSymbol(symbol);
   const canonical = canonicalExchange(exchange);

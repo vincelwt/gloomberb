@@ -177,6 +177,15 @@ describe("parseCompanyFactsFinancialStatements", () => {
 
     expect(statements.annualStatements).toEqual([{
       date: "2020-12-31",
+      availableAt: "2020-12-31",
+      fieldAvailability: {
+        totalRevenue: "2020-12-31",
+        operatingCashFlow: "2020-12-31",
+        capitalExpenditure: "2020-12-31",
+        freeCashFlow: "2020-12-31",
+        totalAssets: "2020-12-31",
+        eps: "2020-12-31",
+      },
       totalRevenue: 100,
       operatingCashFlow: 25,
       capitalExpenditure: -5,
@@ -187,6 +196,15 @@ describe("parseCompanyFactsFinancialStatements", () => {
     expect(statements.quarterlyStatements).toEqual([
       {
         date: "2021-03-31",
+        availableAt: "2021-03-31",
+        fieldAvailability: {
+          totalRevenue: "2021-03-31",
+          operatingCashFlow: "2021-03-31",
+          capitalExpenditure: "2021-03-31",
+          freeCashFlow: "2021-03-31",
+          totalAssets: "2021-03-31",
+          eps: "2021-03-31",
+        },
         totalRevenue: 30,
         operatingCashFlow: 8,
         capitalExpenditure: -3,
@@ -196,6 +214,8 @@ describe("parseCompanyFactsFinancialStatements", () => {
       },
       {
         date: "2021-06-30",
+        availableAt: "2021-06-30",
+        fieldAvailability: { totalRevenue: "2021-06-30" },
         totalRevenue: 40,
       },
     ]);
@@ -237,9 +257,60 @@ describe("parseCompanyFactsFinancialStatements", () => {
     });
 
     expect(statements.quarterlyStatements).toEqual([
-      { date: "2025-03-31", totalRevenue: 100, grossProfit: 60 },
-      { date: "2026-03-31", totalRevenue: 200, grossProfit: 120 },
+      {
+        date: "2025-03-31",
+        availableAt: "2025-03-31",
+        fieldAvailability: { totalRevenue: "2025-03-31", grossProfit: "2025-03-31" },
+        totalRevenue: 100,
+        grossProfit: 60,
+      },
+      {
+        date: "2026-03-31",
+        availableAt: "2026-03-31",
+        fieldAvailability: { totalRevenue: "2026-03-31", grossProfit: "2026-03-31" },
+        totalRevenue: 200,
+        grossProfit: 120,
+      },
     ]);
+  });
+
+  test("keeps field-level filing dates for point-in-time calculations", () => {
+    const statements = parseCompanyFactsFinancialStatements({
+      facts: {
+        "us-gaap": {
+          Revenues: {
+            units: {
+              USD: [{
+                start: "2025-01-01",
+                end: "2025-12-31",
+                val: 120,
+                filed: "2026-02-10",
+                form: "10-K",
+                fp: "FY",
+              }],
+            },
+          },
+          GrossProfit: {
+            units: {
+              USD: [{
+                start: "2025-01-01",
+                end: "2025-12-31",
+                val: 72,
+                filed: "2026-02-12",
+                form: "10-K",
+                fp: "FY",
+              }],
+            },
+          },
+        },
+      },
+    });
+
+    expect(statements.annualStatements[0]?.availableAt).toBe("2026-02-12");
+    expect(statements.annualStatements[0]?.fieldAvailability).toEqual({
+      totalRevenue: "2026-02-10",
+      grossProfit: "2026-02-12",
+    });
   });
 });
 

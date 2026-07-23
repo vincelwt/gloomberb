@@ -1,0 +1,328 @@
+import { describe, expect, test } from "bun:test";
+import {
+  parseChartSpec,
+  serializeChartSpec,
+} from "./chart-spec";
+import {
+  appendChartSeries,
+  buildComparisonChartPreset,
+  buildCustomChartPreset,
+  buildFundamentalChartPreset,
+  buildIntradayPriceChartPreset,
+  buildPriceChartPreset,
+  applySeriesStyle,
+  getSelectedBuiltinStudies,
+  getSelectedPairStudies,
+  parseChartExpression,
+  rebindChartSecuritySymbol,
+  resolveChartFieldAlias,
+  setBuiltinStudies,
+  setPairStudies,
+} from "./presets";
+import { applyChartComposerCapabilityOptions } from "./cli-options";
+
+describe("chart composer expressions", () => {
+  test("appends catalog series with required panels and collision-safe IDs", () => {
+    const initial = buildCustomChartPreset("AAPL:price, MSFT:price");
+    const withVolume = appendChartSeries(initial, {
+      kind: "security",
+      symbol: "AAPL",
+      fieldId: "market.volume",
+    });
+    expect(withVolume.spec.panels.some((panel) => panel.id === "volume")).toBe(true);
+
+    const repeated = buildCustomChartPreset("AAPL:price, AAPL:price, AAPL:price");
+    const withRemovedMiddle = {
+      ...repeated,
+      series: [repeated.series[0]!, repeated.series[2]!],
+    };
+    const appended = appendChartSeries(withRemovedMiddle, {
+      kind: "security",
+      symbol: "AAPL",
+      fieldId: "market.ohlcv",
+    });
+
+    expect(appended.spec.series.map((series) => series.id)).toEqual([
+      "aapl-market-ohlcv-1",
+      "aapl-market-ohlcv-3",
+      "aapl-market-ohlcv-3-2",
+    ]);
+  });
+
+  test("accepts catalog aliases and FRED series in one expression", () => {
+    expect(parseChartExpression(
+      "aapl:price; msft:Free Cash Flow Margin\nFRED:CPIAUCSL",
+    )).toEqual([
+      { kind: "security", symbol: "AAPL", fieldId: "market.ohlcv" },
+      { kind: "security", symbol: "MSFT", fieldId: "fundamental.freeCashFlowMargin" },
+      { kind: "economic", provider: "fred", seriesId: "CPIAUCSL" },
+    ]);
+    expect(resolveChartFieldAlias("EV / EBITDA")).toBe("valuation.evEbitda");
+  });
+
+  test("rejects an invalid leg instead of silently building a partial chart", () => {
+    expect(() => buildCustomChartPreset("AAPL:price, MSFT:revenu"))
+      .toThrow('Invalid chart series "MSFT:revenu"');
+  });
+
+  test("parses exchange-qualified tickers without confusing the exchange for a field", () => {
+    const spec = buildCustomChartPreset("3hnx:lse, 3HNX:LSE:revenue");
+
+    expect(spec.series.map((series) => series.source)).toEqual([
+      expect.objectContaining({
+        kind: "security",
+        instrument: { symbol: "3HNX", exchange: "LSE" },
+        fieldId: "market.ohlcv",
+      }),
+      expect.objectContaining({
+        kind: "security",
+        instrument: { symbol: "3HNX", exchange: "LSE" },
+        fieldId: "fundamental.totalRevenue",
+      }),
+    ]);
+  });
+
+  test("builds mixed-frequency series with source-appropriate presentation", () => {
+    const spec = buildCustomChartPreset("AAPL:price, MSFT:revenue, FRED:CPIAUCSL");
+
+    expect(spec.series.map((series) => series.source.kind)).toEqual([
+      "security",
+      "security",
+      "economic",
+    ]);
+    expect(spec.series[0]).toMatchObject({ style: "candles", interpolation: "none" });
+    expect(spec.series[1]).toMatchObject({
+      style: "step",
+      interpolation: "step-after",
+      source: {
+        kind: "security",
+        fieldId: "fundamental.totalRevenue",
+        period: "quarterly",
+        timestampMode: "available-at",
+      },
+    });
+    expect(spec.series[2]).toMatchObject({
+      style: "step",
+      interpolation: "step-after",
+      panelId: "panel-2",
+      source: { kind: "economic", provider: "fred", seriesId: "CPIAUCSL" },
+    });
+    expect(spec.panels.find((panel) => panel.id === "panel-2")).toMatchObject({
+      label: "Panel 2",
+      height: 0.35,
+    });
+
+    expect(buildCustomChartPreset("AAPL:revenue, MSFT:revenue").series.map((series) => series.axis))
+      .toEqual(["auto", "auto"]);
+  });
+});
+
+describe("chart composer presets and formulas", () => {
+  test("keeps shortcut presets semantically distinct", () => {
+    const intraday = buildIntradayPriceChartPreset("aapl");
+    expect(intraday.viewport).toEqual({ range: "1D", resolution: "1m" });
+    expect(intraday.series[0]).toMatchObject({ style: "candles", transform: "raw" });
+    expect(getSelectedBuiltinStudies(intraday)).toEqual(["volume"]);
+
+    const comparison = buildComparisonChartPreset(["aapl", "msft"]);
+    expect(comparison.series.map((series) => ({ style: series.style, transform: series.transform }))).toEqual([
+      { style: "line", transform: "percent" },
+      { style: "line", transform: "percent" },
+    ]);
+
+    const fundamental = buildFundamentalChartPreset(["aapl"]);
+    expect(fundamental.series[0]).toMatchObject({
+      style: "step",
+      interpolation: "step-after",
+      source: { fieldId: "fundamental.totalRevenue" },
+    });
+  });
+
+  test("includes volume in fresh price and followed-ticker defaults", () => {
+    const price = buildPriceChartPreset("AAPL");
+    const followed = buildCustomChartPreset("", "AAPL");
+
+    expect(getSelectedBuiltinStudies(price)).toEqual(["volume"]);
+    expect(price.panels.find((panel) => panel.id === "volume")).toMatchObject({
+      label: "Volume",
+      height: 0.24,
+    });
+    expect(followed).toEqual(price);
+  });
+
+  test("forces raw values when a series changes to an OHLC presentation", () => {
+    const price = buildPriceChartPreset("AAPL").series[0]!;
+    const transformed = { ...price, style: "line" as const, transform: "percent" as const };
+    expect(applySeriesStyle(transformed, "candles")).toMatchObject({
+      style: "candles",
+      transform: "raw",
+    });
+  });
+
+  test("rebinds followed research symbols without resetting authored chart state", () => {
+    const price = buildPriceChartPreset("AAPL");
+    const customized = setBuiltinStudies({
+      ...price,
+      viewport: { range: "3M", resolution: "1h" },
+      series: [
+        { ...price.series[0]!, style: "line", transform: "percent", label: "AAPL" },
+        buildCustomChartPreset("MSFT:revenue").series[0]!,
+      ],
+    }, ["sma20"]);
+
+    const rebound = rebindChartSecuritySymbol(customized, "AAPL", "NVDA");
+    expect(rebound.viewport).toEqual(customized.viewport);
+    expect(rebound.studies).toEqual(customized.studies);
+    expect(rebound.series[0]).toMatchObject({
+      style: "line",
+      transform: "percent",
+      label: "NVDA",
+      source: { instrument: { symbol: "NVDA" } },
+    });
+    expect(rebound.series[1]).toEqual(customized.series[1]);
+  });
+
+  test("binds pair formulas to the first two visible series after reordering", () => {
+    const comparison = buildComparisonChartPreset(["AAPL", "MSFT", "NVDA"]);
+    const withFormulas = setPairStudies(comparison, ["ratio", "correlation"]);
+    const firstInputs = withFormulas.series.slice(0, 2).map((series) => series.id);
+    expect(withFormulas.studies.map((study) => study.inputSeriesIds)).toEqual([
+      firstInputs,
+      firstInputs,
+    ]);
+
+    const reordered = {
+      ...withFormulas,
+      series: [withFormulas.series[2]!, withFormulas.series[0]!, withFormulas.series[1]!],
+    };
+    const rebound = setPairStudies(reordered, getSelectedPairStudies(reordered));
+    const reorderedInputs = rebound.series.slice(0, 2).map((series) => series.id);
+    expect(rebound.studies.map((study) => study.inputSeriesIds)).toEqual([
+      reorderedInputs,
+      reorderedInputs,
+    ]);
+  });
+
+  test("preserves user-authored panel settings when indicators and formulas change", () => {
+    const comparison = buildComparisonChartPreset(["AAPL", "MSFT"]);
+    const customized = {
+      ...comparison,
+      panels: [{ id: "main", label: "Relative performance", height: 0.72, scale: "log" as const }],
+    };
+
+    const withIndicators = setBuiltinStudies(customized, ["rsi14"]);
+    expect(getSelectedBuiltinStudies(withIndicators)).toEqual(["rsi14"]);
+    expect(withIndicators.panels[0]).toEqual({
+      id: "main",
+      label: "Relative performance",
+      height: 0.72,
+      scale: "log",
+    });
+    expect(withIndicators.panels.find((panel) => panel.id === "rsi")).toMatchObject({
+      label: "RSI",
+      height: 0.28,
+    });
+
+    const withFormula = setPairStudies(withIndicators, ["ratio"]);
+    expect(withFormula.panels[0]).toEqual(withIndicators.panels[0]);
+    expect(withFormula.panels.find((panel) => panel.id === "rsi")).toEqual(
+      withIndicators.panels.find((panel) => panel.id === "rsi"),
+    );
+
+    const customizedFormula = {
+      ...withFormula,
+      panels: withFormula.panels.map((panel) => panel.id === "formula"
+        ? { ...panel, label: "Custom ratio", height: 0.41, scale: "log" as const }
+        : panel),
+    };
+    const rebound = setPairStudies(customizedFormula, getSelectedPairStudies(customizedFormula));
+    expect(rebound.panels.find((panel) => panel.id === "formula")).toEqual({
+      id: "formula",
+      label: "Custom ratio",
+      height: 0.41,
+      scale: "log",
+    });
+  });
+});
+
+describe("chart composer spec persistence", () => {
+  test("normalizes aliases and incompatible presentation on parse", () => {
+    const authored = buildCustomChartPreset("MSFT:revenue");
+    const series = authored.series[0]!;
+    const parsed = parseChartSpec({
+      ...authored,
+      series: [{
+        ...series,
+        source: { ...series.source, fieldId: "revenue" },
+        style: "candles",
+      }],
+    });
+
+    expect(parsed?.series[0]).toMatchObject({
+      style: "step",
+      source: { kind: "security", fieldId: "fundamental.totalRevenue" },
+    });
+    expect(parsed?.panels[0]?.scale).toBe("linear");
+  });
+
+  test("round-trips a valid spec and rejects malformed semantic references", () => {
+    const valid = setPairStudies(
+      buildComparisonChartPreset(["AAPL", "MSFT"]),
+      ["spread"],
+    );
+    expect(parseChartSpec(serializeChartSpec(valid))).toEqual(parseChartSpec(valid));
+    expect(parseChartSpec("not json")).toBeNull();
+
+    const price = buildPriceChartPreset("AAPL");
+    expect(parseChartSpec({
+      ...price,
+      panels: [...price.panels, { id: "formula" }],
+      studies: [{
+        id: "bad-ratio",
+        kind: "ratio",
+        inputSeriesIds: [price.series[0]!.id],
+        parameters: {},
+        panelId: "formula",
+        axis: "auto",
+      }],
+    })).toBeNull();
+  });
+
+  test("rejects chart specs authored by a newer unsupported version", () => {
+    const current = buildPriceChartPreset("AAPL");
+    expect(parseChartSpec({ ...current, version: current.version + 1 })).toBeNull();
+    expect(parseChartSpec({ ...current, version: String(current.version + 1) })).toBeNull();
+  });
+});
+
+describe("chart composer CLI options", () => {
+  test("applies price and financial options to the persisted spec", () => {
+    const candle = applyChartComposerCapabilityOptions(
+      buildPriceChartPreset("AAPL"),
+      "price-chart",
+      { axisMode: "percent" },
+    );
+    expect(candle.series[0]).toMatchObject({ style: "candles", transform: "raw" });
+
+    const comparison = applyChartComposerCapabilityOptions(
+      buildComparisonChartPreset(["AAPL", "MSFT"]),
+      "price-comparison",
+      { rangePreset: "3M", chartResolution: "1h", axisMode: "price" },
+    );
+    expect(comparison.viewport).toMatchObject({ range: "3M", resolution: "1h" });
+    expect(comparison.series.every((series) => series.transform === "raw")).toBe(true);
+
+    const financial = applyChartComposerCapabilityOptions(
+      buildCustomChartPreset("AAPL:revenue"),
+      "fundamental-series",
+      { metric: "freeCashFlow", period: "annual", periods: 6 },
+    );
+    expect(financial.viewport.maxPoints).toBe(6);
+    expect(financial.series[0]?.source).toMatchObject({
+      kind: "security",
+      fieldId: "fundamental.freeCashFlow",
+      period: "annual",
+      timestampMode: "available-at",
+    });
+  });
+});

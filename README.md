@@ -102,6 +102,7 @@ Open command mode with `Ctrl+P`, then type a command. Press `` ` `` to open tick
 |-----|-------|
 | `DES AAPL` | Security details |
 | `GP NVDA` | Price chart |
+| `G AAPL:price, MSFT:revenue` | Mixed-series chart |
 | `TOP` | Ranked market stories |
 | `HM` | Market heatmap |
 | `MOST` | Market movers |
@@ -197,6 +198,7 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 |----------|----------|
 | `DES <ticker>` / `T <ticker>` | Security details for a ticker |
 | `FA <ticker>` | Financial statement view |
+| `G <series>` | Custom chart composer |
 | `GP <ticker>` | Price chart |
 | `GIP <ticker>` | Intraday price chart |
 | `HP <ticker>` | Historical OHLCV prices |
@@ -207,7 +209,7 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `EM [tickers]` | Earnings monitor |
 | `SRCH <query>` | Provider symbol search |
 | `QQ <tickers>` | Ticker quote monitor |
-| `CMP <tickers>` | Ticker charts |
+| `CMP <tickers>` | Normalized price comparison |
 | `CORR <tickers>` | Ticker return correlations |
 | `ANR <ticker>` | Analyst targets and ratings |
 | `SEC <ticker>` | SEC filings and company disclosures |
@@ -217,6 +219,18 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `INS <ticker>` | Insider activity |
 | `EVT <ticker>` | Corporate actions, earnings, and estimates |
 | `RV <tickers>` | Relative valuation |
+
+### Chart Composer
+
+`G`, `GP`, `GIP`, `CMP`, `GF`, and `GE` all open the same chart composer with different starting presets. A custom expression can mix unrelated data sources on one synchronized timeline:
+
+```text
+G AAPL:price, MSFT:revenue, FRED:CPIAUCSL
+```
+
+Open **Series** to add, remove, reorder, or hide series and choose each series' field, chart style, transform, axis, panel, period, and panel scale. Price data supports candles, OHLC, HLC, line, and area; scalar data supports its compatible line, area, step, column, and point modes. Panels can use independent left/right axes and linear or logarithmic scales.
+
+The toolbar controls preset or exact date ranges, intervals from one minute through monthly, the primary chart mode, technical indicators, and pair formulas. Indicators include volume, SMA, EMA, Bollinger Bands, RSI, and MACD; formulas include ratio, spread, and rolling correlation. Mixed-frequency values use as-of alignment: fundamentals use filing dates when available, sparse series carry forward only after becoming available, and missing publication dates are called out in the chart status.
 
 ### Markets, News, and Macro
 

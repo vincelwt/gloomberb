@@ -59,12 +59,6 @@ const RANGE_PRELOAD_BUFFER: Record<TimeRange, TimeRange> = {
   "ALL": "ALL",
 };
 
-export const DEFAULT_TICKER_CHART_RANGE_PRESET: TimeRange = "5Y";
-export const DEFAULT_TICKER_CHART_RESOLUTION: ChartResolution = "auto";
-export const DEFAULT_COMPARISON_CHART_RANGE_PRESET: TimeRange = "1Y";
-export const DEFAULT_COMPARISON_CHART_RESOLUTION: ManualChartResolution = "1d";
-
-export const DEFAULT_VISIBLE_MANUAL_CHART_RESOLUTIONS: ManualChartResolution[] = ["1m", "5m", "15m", "1h", "1d", "1wk", "1mo"];
 export const CHART_RESOLUTION_STEP_MS: Record<ManualChartResolution, number> = {
   "1m": 60_000,
   "5m": 5 * 60_000,
