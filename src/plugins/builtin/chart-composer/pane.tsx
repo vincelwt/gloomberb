@@ -19,6 +19,8 @@ import { useResolvedChartSpec } from "../../../time-series/hooks";
 import { useShortcut } from "../../../react/input";
 import { useDialog, useDialogState, type PromptContext } from "../../../ui/dialog";
 import {
+  useAppDispatch,
+  usePaneInstanceId,
   usePaneSettingValue,
   usePaneTicker,
 } from "../../../state/app/context";
@@ -52,6 +54,7 @@ import {
   getChartPrimaryStyles,
 } from "./settings";
 import { resolveChartComposerShortcut } from "./shortcuts";
+import { ChartSeriesQuickAdd } from "./quick-add";
 
 const RANGE_TABS = RANGES.map((range, index) => ({ label: `${index + 1}:${range}`, value: range }));
 const RESOLUTION_TABS = RESOLUTIONS.map((value) => ({ label: value.toUpperCase(), value }));
@@ -95,6 +98,8 @@ export function ChartComposerSurface({
   onCapture,
 }: ChartComposerSurfaceProps) {
   const dialog = useDialog();
+  const dispatch = useAppDispatch();
+  const paneId = usePaneInstanceId();
   const dialogOpen = useDialogState((state) => state.isOpen);
   const resolution = useResolvedChartSpec(spec);
   const selectedStudies = getSelectedBuiltinStudies(spec);
@@ -108,6 +113,7 @@ export function ChartComposerSurface({
   const viewport = resolution.viewport;
   const baseSeriesIds = useMemo(() => new Set(spec.series.map((series) => series.id)), [spec.series]);
   const [interactionCaptured, setInteractionCapturedState] = useState(false);
+  const [quickAddHeight, setQuickAddHeight] = useState(1);
   const interactionCaptureRef = useRef(false);
   const interactionCaptureSourcesRef = useRef(new Set<string>());
   const indicatorsDialogRef = useRef<MultiSelectDialogButtonHandle | null>(null);
@@ -132,7 +138,11 @@ export function ChartComposerSurface({
     (open: boolean) => setInteractionCaptured("formulas", open),
     [setInteractionCaptured],
   );
-  const surfaceInteractive = focused && !dialogOpen && !interactionCaptured;
+  const surfaceInteractive = !dialogOpen && !interactionCaptured;
+  const shortcutActive = focused && surfaceInteractive;
+  const activatePane = useCallback(() => {
+    if (!focused) dispatch({ type: "FOCUS_PANE", paneId });
+  }, [dispatch, focused, paneId]);
 
   useRemoteUiNode({
     role: "chart-data",
@@ -426,7 +436,7 @@ export function ChartComposerSurface({
         disabled={indicatorsDisabled}
         idPrefix={`${footerId}:indicators`}
         shortcutKey="i"
-        shortcutActive={surfaceInteractive}
+        shortcutActive={shortcutActive}
         onOpenChange={setIndicatorsOpen}
         renderTrigger={() => null}
       />
@@ -440,7 +450,7 @@ export function ChartComposerSurface({
         disabled={formulasDisabled}
         idPrefix={`${footerId}:formulas`}
         shortcutKey="f"
-        shortcutActive={surfaceInteractive}
+        shortcutActive={shortcutActive}
         onOpenChange={setFormulasOpen}
         renderTrigger={() => null}
       />
@@ -450,19 +460,32 @@ export function ChartComposerSurface({
           <EmptyState title="No chart series configured." message="Open Series to add a security, field, or economic series." />
         ) : (
           <CompositeChart
-            series={resolution.series}
+            series={resolution.bufferedSeries ?? resolution.series}
             panels={spec.panels}
             viewport={viewport}
             width={Math.max(1, width)}
-            height={Math.max(4, height - 1)}
+            height={Math.max(4, height - 1 - quickAddHeight)}
             focused={focused}
             interactive={surfaceInteractive}
+            onActivate={activatePane}
             onToggleSeries={toggleSeries}
             isSeriesToggleable={(series) => baseSeriesIds.has(series.id)}
             emptyMessage={emptyMessage}
           />
         )}
       </Box>
+      <ChartSeriesQuickAdd
+        spec={spec}
+        setSpec={setSpec}
+        focused={focused}
+        width={width}
+        height={height}
+        shortcutEnabled={surfaceInteractive}
+        shortcutBlocked={dialogOpen}
+        onActivatePane={activatePane}
+        onActiveChange={(active) => setInteractionCaptured("quick-add", active)}
+        onHeightChange={setQuickAddHeight}
+      />
     </Box>
   );
 }

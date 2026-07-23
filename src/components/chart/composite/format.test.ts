@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { CompositeChartScene } from "./types";
 import {
+  formatCompositeAxisValue,
   formatCompositeCursorDate,
+  formatCompositeSeriesValue,
   formatCompositeTimeAxisDate,
 } from "./format";
+import type { ResolvedSeries } from "../../../time-series/types";
 import { renderCompositeTimeAxis } from "./text-renderer";
 
 function scene(start: string, end: string): CompositeChartScene {
@@ -56,5 +59,35 @@ describe("composite chart timestamp formatting", () => {
     expect(formatCompositeTimeAxisDate(cursor, weekly.startTime, weekly.endTime)).toBe("2025-01-04");
     expect(renderCompositeTimeAxis(weekly, 60)).toContain("2025-01-01");
     expect(renderCompositeTimeAxis(weekly, 60)).toContain("2025-01-08");
+  });
+});
+
+describe("composite chart unit formatting", () => {
+  test("keeps derived ratio dimensions visible instead of labeling them as multiples", () => {
+    const derived: ResolvedSeries = {
+      id: "ratio",
+      label: "Price / Revenue",
+      color: "#ffffff",
+      unit: "1/share",
+      unitGroup: "derived-unit:1/share",
+      nativeFrequency: "quarterly",
+      dataShape: "scalar",
+      style: "step",
+      transform: "raw",
+      axis: "left",
+      panelId: "formula",
+      interpolation: "step-after",
+      points: [],
+    };
+    expect(formatCompositeSeriesValue(0.000000003, derived)).toBe("3.00e-9 1/share");
+    expect(formatCompositeAxisValue(0.5, {
+      side: "left",
+      min: 0,
+      max: 1,
+      scale: "linear",
+      unit: "USD/JPY",
+      unitGroup: "derived-unit:usd/jpy",
+      seriesIds: ["ratio"],
+    })).toBe("0.500");
   });
 });

@@ -38,6 +38,7 @@ export function formatCompositeSeriesValue(value: number, series: ResolvedSeries
     return `${compact}%`;
   }
   if (group.includes("ratio") || unit.toLowerCase() === "x") return `${compact}x`;
+  if (group.startsWith("derived-unit:")) return `${compact} ${unit}`;
   const currency = currencyPrefix(unit);
   if (currency) return `${currency}${compact}`;
   return unit && unit.length <= 6 ? `${compact}${unit.startsWith("/") ? "" : " "}${unit}` : compact;
@@ -48,6 +49,9 @@ export function formatCompositeAxisValue(value: number, domain: CompositeAxisDom
   const group = domain.unitGroup.toLowerCase();
   if (group.includes("percent") || domain.unit === "%") return `${compact}%`;
   if (group.includes("ratio") || domain.unit.toLowerCase() === "x") return `${compact}x`;
+  // Derived dimensions are included in the legend value. Axis labels stay
+  // numeric so a narrow gutter cannot truncate USD/JPY into a false USD label.
+  if (group.startsWith("derived-unit:")) return compact;
   return `${currencyPrefix(domain.unit)}${compact}`;
 }
 

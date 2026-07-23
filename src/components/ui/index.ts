@@ -20,6 +20,8 @@ export { TextField, NumberField } from "./fields";
 export { getMessageComposerBlockHeight, MessageComposer } from "./message-composer";
 
 export { DialogFrame } from "./frame";
+export { InlineQuickAddRow } from "./inline-quick-add";
+export type { InlineQuickAddRowProps } from "./inline-quick-add";
 
 export { ExternalLink, ExternalLinkText, openUrl } from "./external-link";
 export { RemoteImage } from "./remote-image";

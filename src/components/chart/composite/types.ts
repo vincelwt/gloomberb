@@ -100,6 +100,7 @@ export interface CompositeChartProps {
   emptyMessage?: string;
   formatValue?: (value: number, series: ResolvedSeries) => string;
   onCursorDateChange?: (date: Date | null) => void;
+  onActivate?: () => void;
   onToggleSeries?: (seriesId: string) => void;
   isSeriesToggleable?: (series: ResolvedSeries) => boolean;
 }

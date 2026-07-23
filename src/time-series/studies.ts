@@ -318,6 +318,67 @@ interface PairedSample {
   right: number;
 }
 
+interface SeriesUnit {
+  currency: string | null;
+  dimension: string;
+}
+
+function seriesCurrency(series: ResolvedSeries): string | null {
+  const grouped = series.unitGroup.match(/:([A-Z]{3})$/i)?.[1];
+  if (grouped) return grouped.toUpperCase();
+  if (!/^(?:price|currency-total|per-share)$/.test(series.unitGroup)) return null;
+  return series.unit.match(/^([A-Z]{3})(?:$|\/)/i)?.[1]?.toUpperCase() ?? null;
+}
+
+function seriesUnit(series: ResolvedSeries): SeriesUnit {
+  const currency = seriesCurrency(series);
+  const unit = series.unit.trim();
+  return {
+    currency,
+    dimension: currency && unit.toUpperCase().startsWith(currency)
+      ? `currency${unit.slice(currency.length).toLowerCase()}`
+      : unit.toLowerCase(),
+  };
+}
+
+function unitFactors(unit: string): { numerator: string[]; denominator: string[] } {
+  const [numerator = "", ...denominator] = unit.split("/");
+  const factor = (value: string) => {
+    const normalized = value.trim();
+    if (!normalized || normalized === "1") return [];
+    return [normalized.toLowerCase() === "shares" ? "share" : normalized];
+  };
+  return {
+    numerator: factor(numerator),
+    denominator: denominator.flatMap(factor),
+  };
+}
+
+function ratioUnit(left: ResolvedSeries, right: ResolvedSeries): {
+  unit: string;
+  unitGroup: string;
+} {
+  const leftFactors = unitFactors(left.unit);
+  const rightFactors = unitFactors(right.unit);
+  const numerator = [...leftFactors.numerator, ...rightFactors.denominator];
+  const denominator = [...leftFactors.denominator, ...rightFactors.numerator];
+  for (let index = numerator.length - 1; index >= 0; index -= 1) {
+    const match = denominator.findIndex((factor) => (
+      factor.toLowerCase() === numerator[index]!.toLowerCase()
+    ));
+    if (match < 0) continue;
+    numerator.splice(index, 1);
+    denominator.splice(match, 1);
+  }
+  const unit = denominator.length === 0
+    ? numerator.join("·") || "x"
+    : `${numerator.join("·") || "1"}/${denominator.join("·")}`;
+  return {
+    unit,
+    unitGroup: unit === "x" ? "ratio" : `derived-unit:${unit.toLowerCase()}`,
+  };
+}
+
 function pairedSamples(left: ResolvedSeries, right: ResolvedSeries): PairedSample[] {
   return alignTimeSeries([left, right], {
     mode: "intersection",
@@ -367,14 +428,17 @@ function resolvePairStudy(
         : sample.left - sample.right * multiplier,
     ));
     const ratioStudy = spec.kind === "ratio";
+    const outputUnit = ratioStudy
+      ? ratioUnit(left, right)
+      : { unit: left.unit, unitGroup: left.unitGroup };
     return [outputSeries(spec, left, {
       label: ratioStudy
         ? `${left.label} / ${right.label}`
         : `${left.label} - ${multiplier === 1 ? "" : `${multiplier}×`}${right.label}`,
       points,
       color,
-      unit: ratioStudy ? "ratio" : left.unit,
-      unitGroup: ratioStudy ? "ratio" : left.unitGroup,
+      unit: outputUnit.unit,
+      unitGroup: outputUnit.unitGroup,
       // Pair formulas are calculated with as-of carry on the union of both
       // inputs' event dates. Their value is therefore piecewise constant until
       // either input changes, even when an input is displayed as columns.
@@ -469,9 +533,19 @@ export function resolveStudies(
     else if (spec.kind === "volume") outputs = resolveVolume(spec, input, color);
     else {
       const pairedInput = inputs[1]!;
-      if ((spec.kind === "ratio" || spec.kind === "spread") && input.unitGroup !== pairedInput.unitGroup) {
+      const inputUnit = seriesUnit(input);
+      const pairedUnit = seriesUnit(pairedInput);
+      const sameDimension = inputUnit.dimension === pairedUnit.dimension;
+      const differentCurrencies = inputUnit.currency !== null
+        && pairedUnit.currency !== null
+        && inputUnit.currency !== pairedUnit.currency;
+      if (spec.kind === "spread" && !sameDimension) {
         warnings.push(
-          `${spec.id}: ${spec.kind} inputs use incompatible units (${input.unit} and ${pairedInput.unit}); raw values are not currency-converted.`,
+          `${spec.id}: spread cannot subtract ${pairedInput.unit} from ${input.unit}; choose inputs with matching units.`,
+        );
+      } else if ((spec.kind === "ratio" || spec.kind === "spread") && differentCurrencies) {
+        warnings.push(
+          `${spec.id}: ${spec.kind} inputs use different currencies (${inputUnit.currency} and ${pairedUnit.currency}); raw values are not FX-converted.`,
         );
       }
       if (spec.kind === "correlation" && input.nativeFrequency !== pairedInput.nativeFrequency) {

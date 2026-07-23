@@ -13,11 +13,9 @@ import { colors as themeColors } from "../../../theme/colors";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
 import type { ResolvedSeries } from "../../../time-series/types";
 import {
-  cancelAnimationFrameSafe,
   consumeChartMouseEvent,
   getGlobalMouseX,
   getLocalPlotPointer,
-  requestAnimationFrameSafe,
   type ChartMouseEvent,
 } from "../core/pointer";
 import type { NativeChartBitmap } from "../native/chart-rasterizer";
@@ -61,8 +59,8 @@ import type {
   CompositePanelScene,
 } from "./types";
 
-// Two 60 Hz frames still coalesce resize churn without the five-frame lag of
-// the previous 80 ms settle.
+// A short resize-only delay coalesces geometry churn without delaying
+// live-data paints or depending on a foreground animation frame.
 const DESKTOP_BITMAP_RESIZE_DEBOUNCE_MS = 32;
 
 function renderPanelBitmap(
@@ -94,8 +92,22 @@ function useCompositePanelBitmap({
 }): NativeChartBitmap | null {
   const [desktopBitmap, setDesktopBitmap] = useState<NativeChartBitmap | null>(null);
   const desktopBitmapRef = useRef<NativeChartBitmap | null>(null);
+  const desktopRenderInputRef = useRef<{
+    panel: CompositePanelScene;
+    pixelWidth: number;
+    pixelHeight: number;
+    colors: CompositeChartColors;
+  } | null>(null);
+  const desktopRequestedSizeRef = useRef<{ pixelWidth: number; pixelHeight: number } | null>(null);
+  const desktopRenderedSizeRef = useRef<{ pixelWidth: number; pixelHeight: number } | null>(null);
+  const desktopRenderTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
+  const desktopActiveRef = useRef(false);
   const pixelWidth = bitmapSize?.pixelWidth ?? null;
   const pixelHeight = bitmapSize?.pixelHeight ?? null;
+
+  desktopRenderInputRef.current = isDesktopWeb && pixelWidth !== null && pixelHeight !== null
+    ? { panel, pixelWidth, pixelHeight, colors }
+    : null;
 
   const terminalBitmap = useMemo(() => {
     if (isDesktopWeb || !bitmapSize) return null;
@@ -103,37 +115,80 @@ function useCompositePanelBitmap({
   }, [bitmapSize, colors, cursorXRatio, isDesktopWeb, panel]);
 
   useEffect(() => {
-    if (!isDesktopWeb) return;
+    const cancelRender = () => {
+      if (desktopRenderTimerRef.current === null) return;
+      clearTimeout(desktopRenderTimerRef.current);
+      desktopRenderTimerRef.current = null;
+    };
+    const scheduleRender = (delay: number) => {
+      if (desktopRenderTimerRef.current !== null) return;
+      desktopRenderTimerRef.current = globalThis.setTimeout(() => {
+        desktopRenderTimerRef.current = null;
+        if (!desktopActiveRef.current) return;
+        const input = desktopRenderInputRef.current;
+        if (!input) return;
+        const next = renderPanelBitmap(
+          input.panel,
+          { pixelWidth: input.pixelWidth, pixelHeight: input.pixelHeight },
+          input.colors,
+          null,
+        );
+        if (!desktopActiveRef.current) return;
+        desktopRenderedSizeRef.current = {
+          pixelWidth: input.pixelWidth,
+          pixelHeight: input.pixelHeight,
+        };
+        desktopBitmapRef.current = next;
+        setDesktopBitmap(next);
+      }, delay);
+    };
+
+    if (!isDesktopWeb) {
+      desktopActiveRef.current = false;
+      cancelRender();
+      desktopRequestedSizeRef.current = null;
+      desktopRenderedSizeRef.current = null;
+      return;
+    }
     if (pixelWidth === null || pixelHeight === null) {
+      desktopActiveRef.current = false;
+      cancelRender();
+      desktopRequestedSizeRef.current = null;
+      desktopRenderedSizeRef.current = null;
       desktopBitmapRef.current = null;
       setDesktopBitmap((current) => current === null ? current : null);
       return;
     }
 
-    let cancelled = false;
-    let frame: number | null = null;
-    const delay = desktopBitmapRef.current ? DESKTOP_BITMAP_RESIZE_DEBOUNCE_MS : 0;
-    const timer = globalThis.setTimeout(() => {
-      frame = requestAnimationFrameSafe(() => {
-        if (cancelled) return;
-        const next = renderPanelBitmap(
-          panel,
-          { pixelWidth, pixelHeight },
-          colors,
-          null,
-        );
-        if (cancelled) return;
-        desktopBitmapRef.current = next;
-        setDesktopBitmap(next);
-      });
-    }, delay);
+    desktopActiveRef.current = true;
+    const nextSize = { pixelWidth, pixelHeight };
+    const requestedSize = desktopRequestedSizeRef.current;
+    const requestedSizeChanged = !requestedSize
+      || requestedSize.pixelWidth !== pixelWidth
+      || requestedSize.pixelHeight !== pixelHeight;
+    desktopRequestedSizeRef.current = nextSize;
+    const renderedSize = desktopRenderedSizeRef.current;
+    const sizeAlreadyRendered = !!renderedSize
+      && renderedSize.pixelWidth === pixelWidth
+      && renderedSize.pixelHeight === pixelHeight;
 
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-      if (frame !== null) cancelAnimationFrameSafe(frame);
-    };
+    if (!desktopBitmapRef.current || sizeAlreadyRendered) {
+      if (requestedSizeChanged) cancelRender();
+      scheduleRender(0);
+      return;
+    }
+
+    if (!requestedSizeChanged || desktopRenderTimerRef.current !== null) return;
+    scheduleRender(DESKTOP_BITMAP_RESIZE_DEBOUNCE_MS);
   }, [colors, isDesktopWeb, panel, pixelHeight, pixelWidth]);
+
+  useEffect(() => () => {
+    desktopActiveRef.current = false;
+    if (desktopRenderTimerRef.current !== null) {
+      clearTimeout(desktopRenderTimerRef.current);
+      desktopRenderTimerRef.current = null;
+    }
+  }, []);
 
   if (!bitmapSize) return null;
   return isDesktopWeb ? desktopBitmap : terminalBitmap;
@@ -172,8 +227,10 @@ interface CompositePanelSurfaceProps {
   colors: CompositeChartColors;
   interactive: boolean;
   viewport: CompositeViewportRange;
+  onActivate?: () => void;
   onCursorDateChange: (date: Date | null) => void;
   onPanViewport: (shiftRatio: number, fromViewport?: CompositeViewportRange) => void;
+  onZoomViewport: (zoomFactor: number, anchorRatio: number) => void;
 }
 
 function CompositePanelSurface({
@@ -186,8 +243,10 @@ function CompositePanelSurface({
   colors,
   interactive,
   viewport,
+  onActivate,
   onCursorDateChange,
   onPanViewport,
+  onZoomViewport,
 }: CompositePanelSurfaceProps) {
   const isDesktopWeb = useUiHost().kind === "desktop-web";
   const renderer = useNativeRenderer();
@@ -234,12 +293,14 @@ function CompositePanelSurface({
   }, [onCursorDateChange, renderer, scene]);
   const clearCursor = useCallback(() => onCursorDateChange(null), [onCursorDateChange]);
   const startDrag = useCallback((event: ChartMouseEvent) => {
+    onActivate?.();
+    consumeChartMouseEvent(event);
     if (!updateCursor(event)) return;
     dragRef.current = {
       startGlobalX: getGlobalMouseX(event, renderer),
       startViewport: viewport,
     };
-  }, [renderer, updateCursor, viewport]);
+  }, [onActivate, renderer, updateCursor, viewport]);
   const dragViewport = useCallback((event: ChartMouseEvent) => {
     const drag = dragRef.current;
     if (!drag) return;
@@ -254,10 +315,23 @@ function CompositePanelSurface({
   const panFromWheel = useCallback((event: ChartMouseEvent) => {
     const direction = event.scroll?.direction;
     if (!direction) return;
+    onActivate?.();
     consumeChartMouseEvent(event);
+    const pointerTarget = plotRef.current as unknown as Parameters<typeof getLocalPlotPointer>[1];
+    const pointer = getLocalPlotPointer(event, pointerTarget, renderer);
+    if (event.modifiers.ctrl && pointer) {
+      const zoomIn = direction === "up" || direction === "left";
+      const magnitude = Math.min(Math.max(Math.abs(event.scroll?.delta ?? 1), 1), 8);
+      onZoomViewport(
+        zoomIn ? 1 + magnitude * 0.04 : 1 / (1 + magnitude * 0.04),
+        pointer.cellX / Math.max(plotWidth - 1, 1),
+      );
+      updateCursor(event);
+      return;
+    }
     updateCursor(event);
     onPanViewport(resolveCompositeWheelPanRatio(direction, event.scroll?.delta));
-  }, [onPanViewport, updateCursor]);
+  }, [onActivate, onPanViewport, onZoomViewport, plotWidth, renderer, updateCursor]);
 
   return (
     <Box flexDirection="row" height={panel.height} width={plotWidth + leftAxisWidth + rightAxisWidth + axisGap * ((leftAxisWidth ? 1 : 0) + (rightAxisWidth ? 1 : 0))}>
@@ -316,6 +390,7 @@ function CompositeLegend({
   series,
   width,
   formatValue,
+  onActivate,
   onToggleSeries,
   isSeriesToggleable,
 }: {
@@ -323,6 +398,7 @@ function CompositeLegend({
   series: ResolvedSeries[];
   width: number;
   formatValue: CompositeChartProps["formatValue"];
+  onActivate: CompositeChartProps["onActivate"];
   onToggleSeries: CompositeChartProps["onToggleSeries"];
   isSeriesToggleable: CompositeChartProps["isSeriesToggleable"];
 }) {
@@ -349,6 +425,7 @@ function CompositeLegend({
             height={1}
             overflow="hidden"
             onMouseDown={toggleable ? (event: ChartMouseEvent) => {
+              onActivate?.();
               consumeChartMouseEvent(event);
               onToggleSeries?.(entry.id);
             } : undefined}
@@ -381,6 +458,7 @@ export function CompositeChart({
   emptyMessage = "No chart data",
   formatValue,
   onCursorDateChange,
+  onActivate,
   onToggleSeries,
   isSeriesToggleable,
 }: CompositeChartProps) {
@@ -389,60 +467,77 @@ export function CompositeChart({
   const totalWidth = Math.max(1, Math.floor(width));
   const totalHeight = Math.max(1, Math.floor(height));
   const visibleSeries = useMemo(() => series.filter((entry) => entry.points.length > 0), [series]);
-  const sourceViewport = useMemo(
+  const navigationBounds = useMemo(
     () => resolveCompositeNavigationBounds(visibleSeries, viewport),
     [viewport, visibleSeries],
   );
-  const previousSourceViewportRef = useRef<CompositeViewportRange | null>(sourceViewport);
+  const initialViewport = useMemo(() => (
+    navigationBounds
+      ? viewport
+        ? clampCompositeViewport(viewport, navigationBounds)
+        : navigationBounds
+      : null
+  ), [navigationBounds, viewport]);
+  const previousNavigationBoundsRef = useRef<CompositeViewportRange | null>(navigationBounds);
+  const previousInitialViewportRef = useRef<CompositeViewportRange | null>(initialViewport);
   const [interactionViewport, setInteractionViewport] = useState<CompositeViewportRange | null>(null);
-  const sourceViewportChanged = shouldResetCompositeViewport(
-    previousSourceViewportRef.current,
-    sourceViewport,
+  const navigationBoundsChanged = shouldResetCompositeViewport(
+    previousNavigationBoundsRef.current,
+    navigationBounds,
   );
-  const currentInteractionViewport = sourceViewportChanged ? null : interactionViewport;
-  const effectiveViewport = sourceViewport
+  const initialViewportChanged = shouldResetCompositeViewport(
+    previousInitialViewportRef.current,
+    initialViewport,
+  );
+  const currentInteractionViewport = navigationBoundsChanged || initialViewportChanged ? null : interactionViewport;
+  const effectiveViewport = navigationBounds
     ? currentInteractionViewport
-      ? clampCompositeViewport(currentInteractionViewport, sourceViewport)
-      : sourceViewport
+      ? clampCompositeViewport(currentInteractionViewport, navigationBounds)
+      : initialViewport
     : null;
   const minimumViewportSpanMs = useMemo(
-    () => sourceViewport ? resolveCompositeMinimumSpanMs(visibleSeries, sourceViewport) : 1,
-    [sourceViewport, visibleSeries],
+    () => navigationBounds ? resolveCompositeMinimumSpanMs(visibleSeries, navigationBounds) : 1,
+    [navigationBounds, visibleSeries],
   );
 
   useEffect(() => {
-    const previous = previousSourceViewportRef.current;
-    previousSourceViewportRef.current = sourceViewport;
-    if (shouldResetCompositeViewport(previous, sourceViewport)) {
+    const previousBounds = previousNavigationBoundsRef.current;
+    const previousInitial = previousInitialViewportRef.current;
+    previousNavigationBoundsRef.current = navigationBounds;
+    previousInitialViewportRef.current = initialViewport;
+    if (
+      shouldResetCompositeViewport(previousBounds, navigationBounds)
+      || shouldResetCompositeViewport(previousInitial, initialViewport)
+    ) {
       setInteractionViewport(null);
     }
-  }, [sourceViewport]);
+  }, [initialViewport, navigationBounds]);
 
-  const zoomViewport = useCallback((zoomFactor: number) => {
-    if (!sourceViewport) return;
+  const zoomViewport = useCallback((zoomFactor: number, anchorRatio = 1) => {
+    if (!navigationBounds || !initialViewport) return;
     setInteractionViewport((current) => {
-      const base = current ?? sourceViewport;
+      const base = current ?? initialViewport;
       const next = zoomCompositeViewport(
         base,
-        sourceViewport,
+        navigationBounds,
         zoomFactor,
-        1,
+        anchorRatio,
         minimumViewportSpanMs,
       );
-      return sameCompositeViewport(next, sourceViewport) ? null : next;
+      return sameCompositeViewport(next, initialViewport) ? null : next;
     });
-  }, [minimumViewportSpanMs, sourceViewport]);
+  }, [initialViewport, minimumViewportSpanMs, navigationBounds]);
   const panViewport = useCallback((
     shiftRatio: number,
     fromViewport?: CompositeViewportRange,
   ) => {
-    if (!sourceViewport) return;
+    if (!navigationBounds || !initialViewport) return;
     setInteractionViewport((current) => {
-      const base = fromViewport ?? current ?? sourceViewport;
-      const next = panCompositeViewport(base, sourceViewport, shiftRatio);
-      return sameCompositeViewport(next, sourceViewport) ? null : next;
+      const base = fromViewport ?? current ?? initialViewport;
+      const next = panCompositeViewport(base, navigationBounds, shiftRatio);
+      return sameCompositeViewport(next, initialViewport) ? null : next;
     });
-  }, [sourceViewport]);
+  }, [initialViewport, navigationBounds]);
   const resetViewport = useCallback(() => {
     setInteractionViewport(null);
   }, []);
@@ -536,7 +631,7 @@ export function CompositeChart({
       || ((interaction === "zoom-in"
         || interaction === "zoom-out"
         || interaction === "pan-left"
-        || interaction === "pan-right") && !sourceViewport)
+        || interaction === "pan-right") && !navigationBounds)
     ) {
       return;
     }
@@ -593,6 +688,7 @@ export function CompositeChart({
           series={visibleSeries}
           width={totalWidth}
           formatValue={formatValue}
+          onActivate={onActivate}
           onToggleSeries={onToggleSeries}
           isSeriesToggleable={isSeriesToggleable}
         />
@@ -609,8 +705,10 @@ export function CompositeChart({
           colors={resolvedColors}
           interactive={interactive}
           viewport={effectiveViewport!}
+          onActivate={onActivate}
           onCursorDateChange={updateCursor}
           onPanViewport={panViewport}
+          onZoomViewport={zoomViewport}
         />
       ))}
       {showTimeAxis ? (

@@ -150,6 +150,42 @@ describe("resolveChartSpecData", () => {
     expect(result.series[0]?.points.map((point) => point.value)).toEqual([100]);
   });
 
+  test("clamps preload history to the provider limit without coarsening the visible interval", async () => {
+    const requests: Array<{ range: string; resolution: string }> = [];
+    const provider = createTestDataProvider({
+      getTickerFinancials: async () => emptyFinancials(),
+      getChartResolutionSupport: () => [{ resolution: "5m", maxRange: "1W" }],
+      getPriceHistoryForResolution: async (_symbol, _exchange, range, resolution) => {
+        requests.push({ range, resolution });
+        return [{ date: new Date("2025-01-07T16:00:00Z"), close: 100 }];
+      },
+    });
+    const spec: ChartSpec = {
+      version: CHART_SPEC_VERSION,
+      viewport: { range: "1W", resolution: "auto" },
+      panels: [{ id: "main" }],
+      series: [{
+        id: "price",
+        source: { kind: "security", instrument: { symbol: "TEST" }, fieldId: "market.close" },
+        style: "line",
+        transform: "raw",
+        axis: "left",
+        panelId: "main",
+        interpolation: "none",
+      }],
+      studies: [],
+    };
+
+    const result = await resolveChartSpecData(spec, {
+      dataProvider: provider,
+      now: new Date("2025-01-08T00:00:00Z"),
+      loadFredSeries: async () => fredLoad(),
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(requests).toEqual([{ range: "1W", resolution: "5m" }]);
+  });
+
   test("resolves unrelated price, filed fundamental, and economic series on one chart", async () => {
     const provider = createTestDataProvider({
       getTickerFinancials: async (symbol) => symbol === "MSFT"
@@ -245,6 +281,8 @@ describe("resolveChartSpecData", () => {
     const price = result.series.find((entry) => entry.id === "aapl-price")!;
     expect(price.points.map((point) => point.value)).toEqual([0, 25]);
     expect(price.axis).toBe("left");
+    const bufferedPrice = result.bufferedSeries?.find((entry) => entry.id === "aapl-price");
+    expect(bufferedPrice?.points.map((point) => point.value)).toEqual([-20, 0, 25]);
     const revenue = result.series.find((entry) => entry.id === "msft-revenue")!;
     expect(revenue.points[0]?.date.toISOString().slice(0, 10)).toBe("2026-02-15");
     expect(revenue.axis).toBe("right");

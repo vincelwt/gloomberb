@@ -5,9 +5,12 @@ import {
 } from "../components/chart/core/date-window";
 import {
   CHART_RESOLUTION_STEP_MS,
+  clampTimeRangeToMaxRange,
   getNextBufferRange,
   getPresetResolution,
+  getSupportMaxRange,
   TIME_RANGE_ORDER,
+  type ChartResolutionSupport,
   type ManualChartResolution,
 } from "../components/chart/core/resolution";
 import type { TimeRange } from "../components/chart/core/types";
@@ -69,6 +72,7 @@ export interface ChartResolveSources {
 export class ChartResolveCache {
   readonly financialsByInstrument = new Map<string, Promise<TickerFinancials | null>>();
   readonly priceHistoryByRequest = new Map<string, Promise<TickerFinancials["priceHistory"]>>();
+  readonly resolutionSupportByInstrument = new Map<string, Promise<ChartResolutionSupport[]>>();
   readonly fredSeriesByRequest = new Map<string, Promise<FredSeriesLoadResult>>();
 }
 
@@ -160,20 +164,6 @@ function requestResolution(
   return resolutionForExplicitMarketPeriods(preferred, activeSeries);
 }
 
-function hasStepSeries(spec: ChartSpec): boolean {
-  const studyInputs = activeStudyInputSeriesIds(spec.studies);
-  return spec.series.some((entry) => (
-    (entry.visible !== false || studyInputs.has(entry.id))
-    && entry.interpolation === "step-after"
-  ));
-}
-
-function hasAsOfPairStudy(spec: ChartSpec): boolean {
-  return spec.studies.some((study) => (
-    study.visible !== false && (study.kind === "ratio" || study.kind === "spread")
-  ));
-}
-
 function calculationBounds(
   spec: ChartSpec,
   visibleBounds: DateBounds,
@@ -181,8 +171,6 @@ function calculationBounds(
 ): DateBounds {
   if (visibleBounds.start === null) return visibleBounds;
   const warmupPoints = maxStudyWarmupPoints(spec.studies);
-  const retainStepAnchor = hasStepSeries(spec) || hasAsOfPairStudy(spec);
-  if (warmupPoints === 0 && !retainStepAnchor) return visibleBounds;
 
   const visibleEnd = visibleBounds.end ?? visibleBounds.start;
   const bufferedRange = getNextBufferRange(boundsRange(visibleBounds));
@@ -408,10 +396,14 @@ function prepareBaseSeriesForStudies(
   let source = series;
   if (clipToBounds && bounds.start !== null && bounds.end !== null) {
     source = clipSeriesToWindow(series, new Date(bounds.start), new Date(bounds.end));
-  } else if (baselineTransform || clipToBounds) {
+  } else if (clipToBounds) {
     source = { ...series, points: filterPoints(series.points, bounds) };
   }
-  return applyResolvedSeriesTransform(source);
+  return applyResolvedSeriesTransform(
+    source,
+    source.transform,
+    baselineTransform ? { baseline: scalarBaseline(series, bounds) } : undefined,
+  );
 }
 
 function rawCalculationSeries(series: ResolvedSeries, bounds: DateBounds): ResolvedSeries {
@@ -504,17 +496,35 @@ export async function resolveChartSpecData(
     }
     return pending;
   };
-  const loadHistory = (
+  const loadResolutionSupport = (
+    source: Extract<ChartSeriesSpec["source"], { kind: "security" }>,
+  ) => {
+    const provider = sources.dataProvider!;
+    if (!provider.getChartResolutionSupport) return Promise.resolve([]);
+    const key = `${provider.id}|${instrumentKey(source)}`;
+    let pending = cache.resolutionSupportByInstrument.get(key);
+    if (!pending) {
+      pending = Promise.resolve(provider.getChartResolutionSupport(
+        source.instrument.symbol,
+        source.instrument.exchange ?? "",
+        requestContext(source),
+      )).catch(() => []);
+      cache.resolutionSupportByInstrument.set(key, pending);
+    }
+    return pending;
+  };
+  const loadHistory = async (
     source: Extract<ChartSeriesSpec["source"], { kind: "security" }>,
     all = false,
   ) => {
-    const fallbackRange = hasExplicitWindow
-      ? trailingRangeForStart(initialCalculationBounds.start, referenceNow)
-      : all
-        ? "ALL"
-        : spec.studies.length > 0 || hasStepSeries(spec)
-          ? getNextBufferRange(spec.viewport.range)
-          : spec.viewport.range;
+    const requestedFallbackRange = all
+      ? "ALL"
+      : trailingRangeForStart(initialCalculationBounds.start, referenceNow);
+    const support = await loadResolutionSupport(source);
+    const maxRange = getSupportMaxRange(support, initialResolution);
+    const fallbackRange = maxRange
+      ? clampTimeRangeToMaxRange(requestedFallbackRange, maxRange)
+      : requestedFallbackRange;
     const request: PriceHistoryRequest = {
       bounds: initialCalculationBounds,
       explicitWindow: hasExplicitWindow,
@@ -621,7 +631,8 @@ export async function resolveChartSpecData(
     errors.push(...studyResult.errors);
   }
 
-  resolved = resolved.map((entry) => (
+  const bufferedSeries = assignAxes(resolved, [...spec.series, ...spec.studies], warnings);
+  resolved = bufferedSeries.map((entry) => (
     bounds.start !== null && bounds.end !== null
       ? clipSeriesToWindow(entry, new Date(bounds.start), new Date(bounds.end))
       : { ...entry, points: filterPoints(entry.points, bounds) }
@@ -632,7 +643,6 @@ export async function resolveChartSpecData(
       points: entry.points.slice(-spec.viewport.maxPoints!),
     }));
   }
-  resolved = assignAxes(resolved, [...spec.series, ...spec.studies], warnings);
   for (const entry of resolved) {
     if (entry.warning) warnings.push(`${entry.label}: ${entry.warning}`);
     if (entry.points.length === 0) warnings.push(`${entry.label}: no observations in the selected date range.`);
@@ -655,6 +665,7 @@ export async function resolveChartSpecData(
     : undefined;
   return {
     series: resolved,
+    ...(spec.viewport.maxPoints === undefined ? { bufferedSeries } : {}),
     loading: false,
     errors,
     warnings: [...new Set([...priorityWarnings, ...warnings])],

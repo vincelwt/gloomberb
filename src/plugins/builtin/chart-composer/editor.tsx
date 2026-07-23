@@ -22,8 +22,6 @@ import type {
   SeriesTransform,
 } from "../../../time-series/types";
 import { validateChartSpec } from "../../../time-series/spec";
-import { searchTickerCandidates } from "../../../tickers/search";
-import type { TickerRecord } from "../../../types/ticker";
 import { isPlainKey } from "../../../utils/keyboard";
 import { publicTickerKey } from "../../../utils/exchanges";
 import { getSharedRegistry } from "../../registry";
@@ -42,17 +40,12 @@ import {
   setBuiltinStudies,
   setPairStudies,
 } from "./presets";
-import {
-  analyzeSeriesSearchQuery,
-  buildSeriesCatalogSuggestions,
-  type SeriesCatalogInstrument,
-  type SeriesCatalogSuggestion,
-} from "./series-catalog";
+import type { SeriesCatalogInstrument, SeriesCatalogSuggestion } from "./series-catalog";
+import { useSeriesCatalogSuggestions } from "./use-series-catalog";
 
 const AXES: SeriesAxis[] = ["auto", "left", "right"];
 const MARKET_PERIODS: SeriesPeriod[] = ["auto", "daily", "weekly", "monthly", "quarterly", "annual"];
 const FINANCIAL_PERIODS: SeriesPeriod[] = ["auto", "quarterly", "annual", "ttm"];
-const EMPTY_TICKER_CATALOG: ReadonlyMap<string, TickerRecord> = new Map();
 
 function titleCase(value: string): string {
   return value
@@ -141,11 +134,6 @@ export function SeriesEditorDialog({ dialogId, resolve, initialSpec }: SeriesEdi
   const [quickAddActive, setQuickAddActive] = useState(true);
   const [quickAddQuery, setQuickAddQuery] = useState("");
   const [quickAddSelection, setQuickAddSelection] = useState(0);
-  const [instrumentSearch, setInstrumentSearch] = useState<{
-    query: string;
-    instruments: SeriesCatalogInstrument[];
-    loading: boolean;
-  }>({ query: "", instruments: [], loading: false });
   const [error, setError] = useState<string | null>(null);
   const expressionRef = useRef<InputRenderable | null>(null);
   const quickAddRef = useRef<InputRenderable | null>(null);
@@ -207,79 +195,14 @@ export function SeriesEditorDialog({ dialogId, resolve, initialSpec }: SeriesEdi
       ...(saved?.metadata.name ? { name: saved.metadata.name } : {}),
     };
   }, [draft.series, selected]);
-  const searchAnalysis = useMemo(
-    () => analyzeSeriesSearchQuery(quickAddQuery),
-    [quickAddQuery],
-  );
-
-  useEffect(() => {
-    const query = searchAnalysis.instrumentQuery.trim();
-    if (!quickAddActive || !query || searchAnalysis.directInstrument) {
-      setInstrumentSearch({ query: "", instruments: [], loading: false });
-      return;
-    }
-
-    const registry = getSharedRegistry();
-    if (!registry) {
-      setInstrumentSearch({ query, instruments: [], loading: false });
-      return;
-    }
-
-    let cancelled = false;
-    setInstrumentSearch({ query, instruments: [], loading: true });
-    const timer = setTimeout(() => {
-      void searchTickerCandidates({
-        query,
-        tickers: EMPTY_TICKER_CATALOG,
-        dataProvider: registry.marketData,
-        totalLimit: 4,
-        localLimit: 3,
-        includeOptionContracts: false,
-      }).then((candidates) => {
-        if (cancelled) return;
-        const instruments = candidates.map((candidate) => ({
-          symbol: candidate.symbol,
-          ...(candidate.ticker?.metadata.exchange
-            ? { exchange: candidate.ticker.metadata.exchange }
-            : candidate.result?.primaryExchange || candidate.result?.exchange
-              ? { exchange: candidate.result?.primaryExchange || candidate.result?.exchange }
-              : {}),
-          ...(candidate.ticker?.metadata.name || candidate.result?.name
-            ? { name: candidate.ticker?.metadata.name || candidate.result?.name }
-            : {}),
-        }));
-        setInstrumentSearch({ query, instruments, loading: false });
-      }).catch(() => {
-        if (!cancelled) setInstrumentSearch({ query, instruments: [], loading: false });
-      });
-    }, 80);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [
-    quickAddActive,
-    searchAnalysis.directInstrument,
-    searchAnalysis.instrumentQuery,
-  ]);
-
-  const quickAddSuggestions = useMemo(
-    () => buildSeriesCatalogSuggestions(
-      quickAddQuery,
-      defaultInstrument,
-      instrumentSearch.query === searchAnalysis.instrumentQuery
-        ? instrumentSearch.instruments
-        : [],
-    ),
-    [
-      defaultInstrument,
-      instrumentSearch.instruments,
-      instrumentSearch.query,
-      quickAddQuery,
-      searchAnalysis.instrumentQuery,
-    ],
-  );
+  const {
+    suggestions: quickAddSuggestions,
+    loading: quickAddLoading,
+  } = useSeriesCatalogSuggestions({
+    query: quickAddQuery,
+    defaultInstrument,
+    enabled: quickAddActive,
+  });
 
   useEffect(() => {
     setQuickAddSelection(0);
@@ -388,19 +311,8 @@ export function SeriesEditorDialog({ dialogId, resolve, initialSpec }: SeriesEdi
     setError(null);
   };
 
-  const submitQuickAdd = (submittedValue?: string) => {
-    const query = submittedValue
-      ?? quickAddRef.current?.editBuffer.getText()
-      ?? quickAddQuery;
-    const analysis = analyzeSeriesSearchQuery(query);
-    const suggestions = buildSeriesCatalogSuggestions(
-      query,
-      defaultInstrument,
-      instrumentSearch.query === analysis.instrumentQuery
-        ? instrumentSearch.instruments
-        : [],
-    );
-    addCatalogSuggestion(suggestions[clampIndex(quickAddSelection, suggestions.length)]);
+  const submitQuickAdd = () => {
+    addCatalogSuggestion(quickAddSuggestions[clampIndex(quickAddSelection, quickAddSuggestions.length)]);
   };
 
   const removeSeries = () => {
@@ -673,7 +585,7 @@ export function SeriesEditorDialog({ dialogId, resolve, initialSpec }: SeriesEdi
             </Box>
           ) : (
             <Text fg={colors.textMuted}>
-              {instrumentSearch.loading ? "Searching instruments…" : "No matching security or metric."}
+              {quickAddLoading ? "Searching instruments…" : "No matching security or metric."}
             </Text>
           )
         )}

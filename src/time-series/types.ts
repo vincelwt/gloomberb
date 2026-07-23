@@ -137,6 +137,8 @@ export interface TimeSeriesFieldDefinition {
 
 export interface ChartResolutionResult {
   series: ResolvedSeries[];
+  /** Loaded observations retained outside the visible window for interactive navigation. */
+  bufferedSeries?: ResolvedSeries[];
   loading: boolean;
   errors: string[];
   warnings: string[];

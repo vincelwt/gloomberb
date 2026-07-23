@@ -62,13 +62,18 @@ export function resolveCompositeNavigationBounds(
   requestedViewport?: CompositeViewportRange | null,
 ): CompositeViewportRange | null {
   const requested = normalizeViewport(requestedViewport);
-  if (requested) return requested;
-
   const timestamps = pointTimestamps(series);
-  if (timestamps.length === 0) return null;
-  const start = timestamps[0]!;
-  const end = timestamps.at(-1)!;
-  return normalizeViewport({ start: new Date(start), end: new Date(end) });
+  if (timestamps.length === 0) return requested;
+  const data = normalizeViewport({
+    start: new Date(timestamps[0]!),
+    end: new Date(timestamps.at(-1)!),
+  });
+  if (!requested) return data;
+  if (!data) return requested;
+  return normalizeViewport({
+    start: new Date(Math.min(requested.start.getTime(), data.start.getTime())),
+    end: new Date(Math.max(requested.end.getTime(), data.end.getTime())),
+  });
 }
 
 export function resolveCompositeMinimumSpanMs(

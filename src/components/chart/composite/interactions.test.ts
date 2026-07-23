@@ -72,6 +72,11 @@ describe("composite chart interactions", () => {
     expect(resolveCompositeMinimumSpanMs([data], bounds!)).toBe(DAY_MS);
   });
 
+  test("keeps the selected window separate from wider loaded navigation bounds", () => {
+    const data = series([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(resolveCompositeNavigationBounds([data], viewport(5, 9))).toEqual(viewport(1, 9));
+  });
+
   test("keeps live viewport drift but resets deliberate range/window changes", () => {
     const original = viewport(1, 11);
     const oneMinuteLater = {

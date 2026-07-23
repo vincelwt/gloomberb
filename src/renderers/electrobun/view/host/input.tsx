@@ -223,6 +223,8 @@ export const WebInput = forwardRef<InputRenderable, Record<string, unknown>>(fun
   useEffect(() => {
     if (props.focused === true) {
       elementRef.current?.focus();
+    } else if (props.focused === false && document.activeElement === elementRef.current) {
+      elementRef.current?.blur();
     }
   }, [props.focused]);
 
@@ -255,6 +257,12 @@ export const WebInput = forwardRef<InputRenderable, Record<string, unknown>>(fun
   });
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if ((event.key === "Escape" || event.key === "Esc") && typeof propsRef.current.onEscape === "function") {
+      event.preventDefault();
+      event.stopPropagation();
+      (propsRef.current.onEscape as () => void)();
+      return;
+    }
     if (event.key === "Enter" && typeof propsRef.current.onSubmit === "function") {
       event.preventDefault();
       (propsRef.current.onSubmit as (value: string) => void)(syncElementValue());

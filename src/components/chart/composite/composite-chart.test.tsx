@@ -1,7 +1,21 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act } from "react";
+import {
+  act,
+  createElement,
+  forwardRef,
+  useMemo,
+  type ForwardedRef,
+  type ReactNode,
+} from "react";
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../time-series/types";
 import { testRender } from "../../../renderers/opentui/test-utils";
+import {
+  UiHostProvider,
+  useNativeRenderer,
+  useRendererHost,
+  useUiHost,
+  type BoxRenderable,
+} from "../../../ui";
 import {
   InputHostProvider,
   type InputHost,
@@ -11,6 +25,8 @@ import { CompositeChart } from "./composite-chart";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let chartShortcut: ((event: KeyEventLike) => void) | null = null;
+let capturedSurfaceProps: Record<string, any> | null = null;
+let capturedSurfaceNode: BoxRenderable | null = null;
 
 const chartInputHost: InputHost = {
   useShortcut(handler) {
@@ -20,6 +36,58 @@ const chartInputHost: InputHost = {
     return { width: 80, height: 24 };
   },
 };
+
+function assignRef(ref: ForwardedRef<any>, value: any) {
+  if (typeof ref === "function") ref(value);
+  else if (ref) ref.current = value;
+}
+
+function CaptureChartSurfaceProvider({ children }: { children: ReactNode }) {
+  const baseUi = useUiHost();
+  const renderer = useRendererHost();
+  const nativeRenderer = useNativeRenderer();
+  const CapturingChartSurface = useMemo(() => {
+    const BaseChartSurface = baseUi.ChartSurface;
+    return forwardRef<any, Record<string, any>>(function CapturingSurface(props, ref) {
+      capturedSurfaceProps = props;
+      return createElement(BaseChartSurface as any, {
+        ...props,
+        ref: (node: BoxRenderable | null) => {
+          capturedSurfaceNode = node;
+          assignRef(ref, node);
+        },
+      });
+    });
+  }, [baseUi]);
+  const ui = useMemo(
+    () => ({ ...baseUi, ChartSurface: CapturingChartSurface }),
+    [CapturingChartSurface, baseUi],
+  );
+  return (
+    <UiHostProvider ui={ui} renderer={renderer} nativeRenderer={nativeRenderer}>
+      {children}
+    </UiHostProvider>
+  );
+}
+
+function pointerEvent(
+  localX: number,
+  localY: number,
+  options: {
+    ctrl?: boolean;
+    scroll?: { direction: "up" | "down" | "left" | "right"; delta: number };
+  } = {},
+) {
+  const node = capturedSurfaceNode!;
+  return {
+    x: (node.x as number) + localX,
+    y: (node.y as number) + localY,
+    modifiers: { shift: false, alt: false, ctrl: options.ctrl === true },
+    scroll: options.scroll,
+    preventDefault() {},
+    stopPropagation() {},
+  };
+}
 
 function keyEvent(name: string): KeyEventLike {
   let defaultPrevented = false;
@@ -52,6 +120,8 @@ afterEach(async () => {
   await act(async () => testSetup!.renderer.destroy());
   testSetup = undefined;
   chartShortcut = null;
+  capturedSurfaceProps = null;
+  capturedSurfaceNode = null;
 });
 
 function point(date: string, value: number): TimeSeriesPoint {
@@ -205,6 +275,78 @@ describe("CompositeChart", () => {
     await act(async () => chartShortcut?.(keyEvent("0")));
     await act(async () => testSetup!.renderOnce());
     expect(testSetup.captureCharFrame()).toContain("2025-01-01");
+  });
+
+  test("activates and navigates a buffered viewport from the first mouse gesture", async () => {
+    let activations = 0;
+    const cursorChanges: string[] = [];
+    testSetup = await testRender(
+      <CaptureChartSurfaceProvider>
+        <CompositeChart
+          width={60}
+          height={12}
+          focused={false}
+          interactive
+          series={[series("price", "main", "left", "USD", [100, 101, 102, 103, 104, 105, 106, 107, 108])]}
+          panels={[{ id: "main" }]}
+          viewport={{
+            start: new Date("2025-01-05T00:00:00.000Z"),
+            end: new Date("2025-01-09T00:00:00.000Z"),
+          }}
+          onActivate={() => { activations += 1; }}
+          onCursorDateChange={(date) => {
+            if (date) cursorChanges.push(date.toISOString());
+          }}
+        />
+      </CaptureChartSurfaceProvider>,
+      { width: 62, height: 14 },
+    );
+
+    await act(async () => testSetup!.renderOnce());
+    expect(testSetup.captureCharFrame()).toContain("2025-01-05");
+
+    await act(async () => {
+      capturedSurfaceProps!.onMouseDown(pointerEvent(10, 3));
+      capturedSurfaceProps!.onMouseDrag(pointerEvent(30, 3));
+      capturedSurfaceProps!.onMouseUp(pointerEvent(30, 3));
+    });
+    await act(async () => testSetup!.renderOnce());
+
+    expect(activations).toBe(1);
+    expect(cursorChanges.length).toBeGreaterThan(0);
+    expect(testSetup.captureCharFrame()).toContain("2025-01-03");
+  });
+
+  test("zooms around the mouse pointer with control-wheel", async () => {
+    testSetup = await testRender(
+      <CaptureChartSurfaceProvider>
+        <CompositeChart
+          width={60}
+          height={12}
+          interactive
+          series={[series("price", "main", "left", "USD", [100, 101, 102, 103, 104, 105, 106, 107, 108])]}
+          panels={[{ id: "main" }]}
+          viewport={{
+            start: new Date("2025-01-05T00:00:00.000Z"),
+            end: new Date("2025-01-09T00:00:00.000Z"),
+          }}
+        />
+      </CaptureChartSurfaceProvider>,
+      { width: 62, height: 14 },
+    );
+
+    await act(async () => testSetup!.renderOnce());
+    expect(testSetup.captureCharFrame()).toContain("2025-01-09");
+
+    await act(async () => {
+      capturedSurfaceProps!.onMouseScroll(pointerEvent(25, 3, {
+        ctrl: true,
+        scroll: { direction: "up", delta: 4 },
+      }));
+    });
+    await act(async () => testSetup!.renderOnce());
+
+    expect(testSetup.captureCharFrame()).not.toContain("2025-01-09");
   });
 
   test("shows useful UTC times for an intraday shared cursor and time axis", async () => {

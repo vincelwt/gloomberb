@@ -351,7 +351,22 @@ describe("study resolution", () => {
     expect(result.errors[0]).toContain("requires 2 valid input series");
   });
 
-  test("warns when raw pair formulas mix incompatible currency units", () => {
+  test("preserves the derived unit when a raw ratio mixes dimensions in one currency", () => {
+    const price = { ...resolved("price"), unit: "USD/share", unitGroup: "price:USD" };
+    const revenue = { ...resolved("revenue", 2), unit: "USD", unitGroup: "currency-total:USD" };
+    const result = resolveStudies([price, revenue], [
+      study("ratio", "ratio", ["price", "revenue"]),
+    ]);
+
+    expect(result.warnings).toEqual([]);
+    expect(result.series[0]).toMatchObject({
+      unit: "1/share",
+      unitGroup: "derived-unit:1/share",
+    });
+    expect(result.series[0]?.points.every(({ value }) => value === 0.5)).toBe(true);
+  });
+
+  test("warns when raw pair formulas mix currencies without FX conversion", () => {
     const usd = { ...resolved("usd"), unit: "USD/share", unitGroup: "price:USD" };
     const jpy = { ...resolved("jpy"), unit: "JPY/share", unitGroup: "price:JPY" };
     const result = resolveStudies([usd, jpy], [
@@ -360,8 +375,24 @@ describe("study resolution", () => {
     ]);
 
     expect(result.warnings).toEqual([
-      "ratio: ratio inputs use incompatible units (USD/share and JPY/share); raw values are not currency-converted.",
-      "spread: spread inputs use incompatible units (USD/share and JPY/share); raw values are not currency-converted.",
+      "ratio: ratio inputs use different currencies (USD and JPY); raw values are not FX-converted.",
+      "spread: spread inputs use different currencies (USD and JPY); raw values are not FX-converted.",
+    ]);
+    expect(result.series.find(({ id }) => id === "ratio")).toMatchObject({
+      unit: "USD/JPY",
+      unitGroup: "derived-unit:usd/jpy",
+    });
+  });
+
+  test("describes incompatible spread dimensions without implying an FX problem", () => {
+    const price = { ...resolved("price"), unit: "USD/share", unitGroup: "price:USD" };
+    const revenue = { ...resolved("revenue", 2), unit: "USD", unitGroup: "currency-total:USD" };
+    const result = resolveStudies([price, revenue], [
+      study("spread", "spread", ["price", "revenue"]),
+    ]);
+
+    expect(result.warnings).toEqual([
+      "spread: spread cannot subtract USD from USD/share; choose inputs with matching units.",
     ]);
   });
 });
