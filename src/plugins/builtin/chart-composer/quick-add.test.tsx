@@ -73,7 +73,6 @@ describe("chart series inline quick add", () => {
     const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-chart-quick-add"));
     const startingSpec = buildPriceChartPreset("AAPL");
     let updatedSpec: ChartSpec | undefined;
-    let renderedRows = 0;
     let renderedWidth = 0;
 
     testSetup = await testRender(
@@ -89,9 +88,6 @@ describe("chart series inline quick add", () => {
           shortcutEnabled
           shortcutBlocked={false}
           onActivatePane={() => {}}
-          onHeightChange={(height) => {
-            renderedRows = height;
-          }}
           onWidthChange={(width) => {
             renderedWidth = width;
           }}
@@ -104,7 +100,6 @@ describe("chart series inline quick add", () => {
       await testSetup!.renderOnce();
     });
     expect(testSetup.captureCharFrame()).toContain("add series");
-    expect(renderedRows).toBe(1);
     expect(renderedWidth).toBe(14);
 
     await emitKey("n", "n");
@@ -113,10 +108,12 @@ describe("chart series inline quick add", () => {
       await testSetup!.renderOnce();
     });
     expect(await waitForFrameToContain("MSFT · Revenue")).toContain("MSFT · Revenue");
-    expect(renderedRows).toBeGreaterThan(1);
     expect(renderedWidth).toBe(36);
 
-    await emitKey("enter", "\r");
+    await act(async () => {
+      await testSetup!.mockMouse.click(2, 1);
+      await testSetup!.renderOnce();
+    });
     expect(updatedSpec?.series).toHaveLength(2);
     expect(updatedSpec?.series[1]?.source).toMatchObject({
       kind: "security",
@@ -124,11 +121,9 @@ describe("chart series inline quick add", () => {
       fieldId: "fundamental.totalRevenue",
     });
 
-    await emitKey("escape", "\x1b");
-    const closedFrame = await waitForFrameToExclude("AAPL · Revenue");
+    const closedFrame = await waitForFrameToExclude("MSFT · Revenue");
     expect(closedFrame).toContain("add series");
-    expect(closedFrame).not.toContain("AAPL · Revenue");
-    expect(renderedRows).toBe(1);
+    expect(closedFrame).not.toContain("MSFT · Revenue");
     expect(renderedWidth).toBe(14);
   });
 });

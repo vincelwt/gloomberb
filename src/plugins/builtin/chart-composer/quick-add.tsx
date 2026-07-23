@@ -52,7 +52,6 @@ export function ChartSeriesQuickAdd({
   shortcutBlocked,
   onActivatePane,
   onActiveChange,
-  onHeightChange,
   onWidthChange,
 }: {
   spec: ChartSpec;
@@ -64,7 +63,6 @@ export function ChartSeriesQuickAdd({
   shortcutBlocked: boolean;
   onActivatePane: () => void;
   onActiveChange?: (active: boolean) => void;
-  onHeightChange?: (height: number) => void;
   onWidthChange?: (width: number) => void;
 }) {
   const inputRef = useRef<InputRenderable | null>(null);
@@ -104,10 +102,6 @@ export function ChartSeriesQuickAdd({
   useEffect(() => {
     onActiveChange?.(active && focused);
   }, [active, focused, onActiveChange]);
-
-  useEffect(() => {
-    onHeightChange?.(1 + drawerHeight);
-  }, [drawerHeight, onHeightChange]);
 
   useEffect(() => {
     onWidthChange?.(controlWidth);
@@ -160,7 +154,8 @@ export function ChartSeriesQuickAdd({
     clearInput();
     setSelectedIndex(0);
     setError(null);
-    queueMicrotask(() => inputRef.current?.focus?.());
+    setActive(false);
+    queueMicrotask(() => inputRef.current?.blur?.());
   }, [cancelPendingBlur, clearInput, setSpec, spec]);
 
   const submit = useCallback(() => {
@@ -219,33 +214,14 @@ export function ChartSeriesQuickAdd({
 
   return (
     <Box
-      flexDirection="column"
+      position="relative"
       width={controlWidth}
-      height={1 + drawerHeight}
+      height={1}
       flexShrink={0}
-      overflow="hidden"
+      overflow="visible"
       backgroundColor={colors.panel}
+      zIndex={30}
     >
-      {drawerHeight > 0 ? (
-        drawerStatus ? (
-          <Box width={controlWidth} height={1} paddingX={1} overflow="hidden">
-            <Text fg={error ? colors.warning : colors.textDim}>{drawerStatus}</Text>
-          </Box>
-        ) : (
-          <ListView
-            items={items}
-            selectedIndex={clampSelection(selectedIndex, items.length)}
-            height={drawerHeight}
-            surface="plain"
-            scrollable={items.length > drawerHeight}
-            rowGap={0}
-            selectOnHover
-            onSelect={setSelectedIndex}
-            onActivate={(_, index) => commitSuggestion(suggestions[index])}
-            remoteLabel="Chart series suggestions"
-          />
-        )
-      ) : null}
       <InlineQuickAddRow
         value={query}
         active={active}
@@ -263,19 +239,65 @@ export function ChartSeriesQuickAdd({
           if (!active) setActive(true);
         }}
         onSubmit={submit}
-        onFocus={() => {
-          cancelPendingBlur();
-          setActive(true);
-        }}
+        onFocus={cancelPendingBlur}
         onBlur={() => {
           cancelPendingBlur();
           blurTimerRef.current = setTimeout(() => {
             blurTimerRef.current = null;
+            clearInput();
+            setSelectedIndex(0);
+            setError(null);
             setActive(false);
           }, 0);
         }}
         onCancel={cancel}
       />
+      {drawerHeight > 0 ? (
+        <Box
+          position="absolute"
+          left={0}
+          top={1}
+          width={controlWidth}
+          height={drawerHeight}
+          overflow="hidden"
+          backgroundColor={colors.panel}
+          zIndex={31}
+          onMouseDown={(event: {
+            preventDefault?: () => void;
+            stopPropagation?: () => void;
+          }) => {
+            cancelPendingBlur();
+            event.preventDefault?.();
+            event.stopPropagation?.();
+          }}
+        >
+          {drawerStatus ? (
+            <Box
+              width={controlWidth}
+              height={1}
+              paddingX={1}
+              overflow="hidden"
+              backgroundColor={colors.panel}
+            >
+              <Text fg={error ? colors.warning : colors.textDim}>{drawerStatus}</Text>
+            </Box>
+          ) : (
+            <ListView
+              items={items}
+              selectedIndex={clampSelection(selectedIndex, items.length)}
+              height={drawerHeight}
+              surface="plain"
+              bgColor={colors.panel}
+              scrollable={items.length > drawerHeight}
+              rowGap={0}
+              selectOnHover
+              onSelect={setSelectedIndex}
+              onActivate={(_, index) => commitSuggestion(suggestions[index])}
+              remoteLabel="Chart series suggestions"
+            />
+          )}
+        </Box>
+      ) : null}
     </Box>
   );
 }

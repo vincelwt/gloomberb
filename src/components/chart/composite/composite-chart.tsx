@@ -481,7 +481,6 @@ function CompositeLegend({
   scene,
   series,
   width,
-  height,
   accessory,
   accessoryWidth,
   formatValue,
@@ -492,7 +491,6 @@ function CompositeLegend({
   scene: CompositeChartScene | null;
   series: ResolvedSeries[];
   width: number;
-  height: number;
   accessory: CompositeChartProps["legendAccessory"];
   accessoryWidth: CompositeChartProps["legendAccessoryWidth"];
   formatValue: CompositeChartProps["formatValue"];
@@ -554,8 +552,9 @@ function CompositeLegend({
       flexDirection="row"
       alignItems="flex-end"
       width={width}
-      height={height}
-      overflow="hidden"
+      height={1}
+      overflow="visible"
+      zIndex={20}
       data-gloom-role="composite-chart-legend"
     >
       {showDate ? (
@@ -603,7 +602,14 @@ function CompositeLegend({
         <Box width={accessorySpacerWidth} flexShrink={0} />
       ) : null}
       {accessory ? (
-        <Box width={resolvedAccessoryWidth} flexShrink={0} height={height} overflow="hidden">
+        <Box
+          position="relative"
+          width={resolvedAccessoryWidth}
+          flexShrink={0}
+          height={1}
+          overflow="visible"
+          zIndex={21}
+        >
           {accessory}
         </Box>
       ) : null}
@@ -624,7 +630,6 @@ export function CompositeChart({
   axisWidth = 9,
   showLegend = true,
   legendAccessory,
-  legendAccessoryRows = 1,
   legendAccessoryWidth,
   showTimeAxis = true,
   emptyMessage = "No chart data",
@@ -723,11 +728,8 @@ export function CompositeChart({
   const horizontalReserved = leftAxisWidth + rightAxisWidth
     + axisGap * ((leftAxisWidth ? 1 : 0) + (rightAxisWidth ? 1 : 0));
   const plotWidth = Math.max(1, totalWidth - horizontalReserved);
-  const resolvedLegendAccessoryRows = legendAccessory
-    ? Math.max(1, Math.floor(legendAccessoryRows))
-    : 0;
   const legendRows = showLegend && (visibleSeries.length > 0 || legendAccessory)
-    ? Math.max(1, resolvedLegendAccessoryRows)
+    ? 1
     : 0;
   const timeAxisRows = showTimeAxis ? 1 : 0;
   const panelCount = new Set(visibleSeries.map((entry) => entry.panelId)).size;
@@ -856,7 +858,6 @@ export function CompositeChart({
             scene={null}
             series={[]}
             width={totalWidth}
-            height={legendRows}
             accessory={legendAccessory}
             accessoryWidth={legendAccessoryWidth}
             formatValue={formatValue}
@@ -897,7 +898,6 @@ export function CompositeChart({
           scene={scene}
           series={visibleSeries}
           width={totalWidth}
-          height={legendRows}
           accessory={legendAccessory}
           accessoryWidth={legendAccessoryWidth}
           formatValue={formatValue}

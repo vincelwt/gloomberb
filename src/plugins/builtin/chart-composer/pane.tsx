@@ -112,7 +112,6 @@ export function ChartComposerSurface({
   const viewport = resolution.viewport;
   const baseSeriesIds = useMemo(() => new Set(spec.series.map((series) => series.id)), [spec.series]);
   const [interactionCaptured, setInteractionCapturedState] = useState(false);
-  const [quickAddRows, setQuickAddRows] = useState(1);
   const [quickAddWidth, setQuickAddWidth] = useState(14);
   const interactionCaptureRef = useRef(false);
   const interactionCaptureSourcesRef = useRef(new Set<string>());
@@ -479,11 +478,9 @@ export function ChartComposerSurface({
               shortcutBlocked={dialogOpen}
               onActivatePane={activatePane}
               onActiveChange={(active) => setInteractionCaptured("quick-add", active)}
-              onHeightChange={setQuickAddRows}
               onWidthChange={setQuickAddWidth}
             />
           )}
-          legendAccessoryRows={quickAddRows}
           legendAccessoryWidth={quickAddWidth}
         />
       </Box>

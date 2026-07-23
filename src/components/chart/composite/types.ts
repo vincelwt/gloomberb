@@ -98,7 +98,6 @@ export interface CompositeChartProps {
   axisWidth?: number;
   showLegend?: boolean;
   legendAccessory?: ReactNode;
-  legendAccessoryRows?: number;
   legendAccessoryWidth?: number;
   showTimeAxis?: boolean;
   emptyMessage?: string;
