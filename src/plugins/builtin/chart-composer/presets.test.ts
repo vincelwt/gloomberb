@@ -50,6 +50,43 @@ describe("chart composer expressions", () => {
     ]);
   });
 
+  test("renders an appended secondary OHLCV price as a valid comparison line", () => {
+    const initial = buildPriceChartPreset("AAPL");
+    const appended = appendChartSeries(initial, {
+      kind: "security",
+      symbol: "META",
+      fieldId: "market.ohlcv",
+    });
+
+    expect(initial.series[0]).toMatchObject({ style: "candles", panelId: "main" });
+    expect(appended.series).toMatchObject({
+      source: {
+        kind: "security",
+        instrument: { symbol: "META" },
+        fieldId: "market.ohlcv",
+      },
+      style: "line",
+      transform: "raw",
+      interpolation: "none",
+      panelId: "main",
+    });
+    expect(parseChartSpec(appended.spec)).not.toBeNull();
+  });
+
+  test("keeps bulk custom price expressions valid with one OHLC presentation per panel", () => {
+    const spec = buildCustomChartPreset("AAPL:price, META:price");
+
+    expect(spec.series.map(({ style, transform, interpolation }) => ({
+      style,
+      transform,
+      interpolation,
+    }))).toEqual([
+      { style: "candles", transform: "raw", interpolation: "none" },
+      { style: "line", transform: "raw", interpolation: "none" },
+    ]);
+    expect(parseChartSpec(spec)).not.toBeNull();
+  });
+
   test("accepts catalog aliases and FRED series in one expression", () => {
     expect(parseChartExpression(
       "aapl:price; msft:Free Cash Flow Margin\nFRED:CPIAUCSL",

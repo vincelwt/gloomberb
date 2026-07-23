@@ -202,6 +202,28 @@ export function projectCompositeValue(value: number, domain: CompositeAxisDomain
   return span === 0 ? 0.5 : 1 - (value - domain.min) / span;
 }
 
+export function unprojectCompositeValue(
+  yRatio: number,
+  domain: CompositeAxisDomain,
+): number | null {
+  if (
+    !Number.isFinite(yRatio)
+    || !Number.isFinite(domain.min)
+    || !Number.isFinite(domain.max)
+  ) {
+    return null;
+  }
+  const ratio = Math.max(0, Math.min(1, yRatio));
+  if (domain.scale === "log") {
+    if (domain.min <= 0 || domain.max <= 0) return null;
+    return Math.exp(
+      Math.log(domain.max)
+      + (Math.log(domain.min) - Math.log(domain.max)) * ratio,
+    );
+  }
+  return domain.max + (domain.min - domain.max) * ratio;
+}
+
 function projectSeries(
   series: ResolvedSeries,
   domain: CompositeAxisDomain,

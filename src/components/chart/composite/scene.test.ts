@@ -6,6 +6,7 @@ import {
   buildCompositeChartScene,
   projectCompositeValue,
   resolveCompositeCursorDate,
+  unprojectCompositeValue,
 } from "./scene";
 
 function point(date: string, value: number): TimeSeriesPoint {
@@ -94,6 +95,29 @@ describe("composite chart scene", () => {
     expect(projectCompositeValue(0, domain)).toBeNull();
     expect(scene!.panels[0]!.series[0]!.points).toHaveLength(2);
     expect(resolveCompositeCursorDate(scene!, 70)?.toISOString()).toBe("2025-01-05T00:00:00.000Z");
+  });
+
+  test("inverts one crosshair level through linear and logarithmic axis domains", () => {
+    const linear = {
+      side: "left" as const,
+      min: 0,
+      max: 200,
+      scale: "linear" as const,
+      unit: "USD",
+      unitGroup: "currency",
+      seriesIds: ["price"],
+    };
+    const logarithmic = {
+      ...linear,
+      min: 1,
+      max: 100,
+      scale: "log" as const,
+    };
+
+    expect(unprojectCompositeValue(0.25, linear)).toBe(150);
+    expect(unprojectCompositeValue(0.5, logarithmic)).toBeCloseTo(10);
+    expect(unprojectCompositeValue(projectCompositeValue(25, linear)!, linear)).toBeCloseTo(25);
+    expect(unprojectCompositeValue(Number.NaN, linear)).toBeNull();
   });
 
   test("starts a new rendered segment after null and logarithmically hidden observations", () => {

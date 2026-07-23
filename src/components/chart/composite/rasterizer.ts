@@ -20,6 +20,7 @@ interface RenderCompositePanelBitmapOptions {
   pixelWidth: number;
   pixelHeight: number;
   cursorXRatio: number | null;
+  cursorYRatio: number | null;
   colors: CompositeChartColors;
 }
 
@@ -309,6 +310,14 @@ export function renderCompositePanelBitmap(
       if (!cursorPoint) continue;
       const projected = pixelPoint(cursorPoint, width, height);
       drawCircle(data, width, height, projected.x, projected.y, 2.6, parseHex(series.source.color));
+    }
+  }
+  if (options.cursorYRatio !== null) {
+    const y = clamp(options.cursorYRatio * Math.max(height - 1, 0), 0, Math.max(height - 1, 0));
+    fillRect(data, width, height, 0, y - 0.55, width - 1, y + 0.55, crosshair, 0.75);
+    if (options.cursorXRatio !== null) {
+      const x = clamp(options.cursorXRatio * Math.max(width - 1, 0), 0, Math.max(width - 1, 0));
+      drawCircle(data, width, height, x, y, 3, crosshair);
     }
   }
 

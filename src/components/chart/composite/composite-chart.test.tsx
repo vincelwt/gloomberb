@@ -10,6 +10,8 @@ import {
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../time-series/types";
 import { testRender } from "../../../renderers/opentui/test-utils";
 import {
+  Box,
+  Text,
   UiHostProvider,
   useNativeRenderer,
   useRendererHost,
@@ -182,6 +184,72 @@ describe("CompositeChart", () => {
     expect(frame.match(/2025-01-03/g)).toHaveLength(1);
   });
 
+  test("keeps legend items compact and anchors an accessory to the right edge", async () => {
+    testSetup = await testRender(
+      <CompositeChart
+        width={78}
+        height={12}
+        series={[
+          series("price", "main", "left", "USD", [100, 103, 101]),
+          series("revenue", "main", "right", "%", [4, 6, 8]),
+        ]}
+        panels={[{ id: "main" }]}
+        cursorDate={new Date("2025-01-02T00:00:00.000Z")}
+        legendAccessory={(
+          <Box width={14} height={1} overflow="hidden">
+            <Text>+ add series</Text>
+          </Box>
+        )}
+      />,
+      { width: 80, height: 14 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const legend = testSetup.captureCharFrame()
+      .split("\n")
+      .find((line) => line.includes("+ add series"));
+    expect(legend).toBeDefined();
+    expect(legend).toContain("ACME Price $103");
+    expect(legend).toContain("OTHER Revenue 6.00%");
+    const accessoryStart = legend!.indexOf("+ add series");
+    const lastLegendEnd = legend!.indexOf("6.00%") + "6.00%".length;
+    expect(accessoryStart).toBe(78 - 14);
+    expect(accessoryStart - lastLegendEnd).toBeGreaterThan(1);
+  });
+
+  test("keeps the legend accessory visible when the pane is narrower than its legend", async () => {
+    testSetup = await testRender(
+      <CompositeChart
+        width={20}
+        height={10}
+        series={[series("price", "main", "left", "USD", [100, 103, 101])]}
+        panels={[{ id: "main" }]}
+        legendAccessory={(
+          <Box width={14} height={1} overflow="hidden">
+            <Text>+ add series</Text>
+          </Box>
+        )}
+        legendAccessoryWidth={14}
+      />,
+      { width: 22, height: 12 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const legend = testSetup.captureCharFrame()
+      .split("\n")
+      .find((line) => line.includes("+ add series"));
+    expect(legend).toBeDefined();
+    expect(legend).toContain("●");
+  });
+
   test("moves and clears the shared cursor from the keyboard while focused", async () => {
     const cursorChanges: Array<string | null> = [];
     testSetup = await testRender(
@@ -202,7 +270,9 @@ describe("CompositeChart", () => {
     await act(async () => chartShortcut?.(keyEvent("left")));
     await act(async () => testSetup!.renderOnce());
     expect(cursorChanges).toEqual(["2025-01-03T00:00:00.000Z"]);
-    expect(testSetup.captureCharFrame()).toContain("2025-01-03");
+    const firstCursorFrame = testSetup.captureCharFrame();
+    expect(firstCursorFrame).toContain("2025-01-03");
+    expect(firstCursorFrame).toContain("────────");
 
     await act(async () => chartShortcut?.(keyEvent("left")));
     await act(async () => testSetup!.renderOnce());
@@ -315,6 +385,42 @@ describe("CompositeChart", () => {
     expect(activations).toBe(1);
     expect(cursorChanges.length).toBeGreaterThan(0);
     expect(testSetup.captureCharFrame()).toContain("2025-01-03");
+  });
+
+  test("maps the pointer crosshair level through both axes and labels its date", async () => {
+    testSetup = await testRender(
+      <CaptureChartSurfaceProvider>
+        <CompositeChart
+          width={60}
+          height={12}
+          showLegend={false}
+          interactive
+          series={[
+            series("price", "main", "left", "USD", [100, 200, 100, 100]),
+            series("revenue", "main", "right", "%", [0, 200, 0, 0]),
+          ]}
+          panels={[{ id: "main" }]}
+        />
+      </CaptureChartSurfaceProvider>,
+      { width: 62, height: 14 },
+    );
+
+    await act(async () => testSetup!.renderOnce());
+    const plotWidth = capturedSurfaceNode!.width as number;
+    const plotHeight = capturedSurfaceNode!.height as number;
+    await act(async () => {
+      capturedSurfaceProps!.onMouseMove(pointerEvent(
+        (plotWidth - 1) * (2 / 3),
+        (plotHeight - 1) / 2,
+      ));
+    });
+    await act(async () => testSetup!.renderOnce());
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("$150");
+    expect(frame).toContain("106%");
+    expect(frame).toContain("2025-01-03");
+    expect(frame).toContain("────────");
   });
 
   test("zooms around the mouse pointer with control-wheel", async () => {

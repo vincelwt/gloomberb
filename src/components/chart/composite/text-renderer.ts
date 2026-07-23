@@ -155,6 +155,7 @@ export function renderCompositePanelText(
   panel: CompositePanelScene,
   width: number,
   cursorXRatio: number | null,
+  cursorYRatio: number | null,
 ): string[] {
   const height = Math.max(1, panel.height);
   const plotWidth = Math.max(1, width);
@@ -193,6 +194,13 @@ export function renderCompositePanelText(
     for (let y = 0; y < height; y += 1) {
       const current = rows[y]?.[cursorX];
       setCell(rows, cursorX, y, current === " " || current === "·" ? "│" : "┼");
+    }
+  }
+  if (cursorYRatio !== null) {
+    const cursorY = clamp(Math.round(cursorYRatio * Math.max(height - 1, 0)), 0, Math.max(height - 1, 0));
+    for (let x = 0; x < plotWidth; x += 1) {
+      const current = rows[cursorY]?.[x];
+      setCell(rows, x, cursorY, current === " " || current === "·" ? "─" : "┼");
     }
   }
 

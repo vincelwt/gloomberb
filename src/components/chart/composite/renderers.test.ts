@@ -48,7 +48,7 @@ describe("composite chart renderers", () => {
       { width: 31, height: 9 },
     )!;
 
-    const rows = renderCompositePanelText(scene.panels[0]!, scene.width, null);
+    const rows = renderCompositePanelText(scene.panels[0]!, scene.width, null, null);
     expect(rows[7]!.slice(0, 2)).toBe("██");
     expect(rows[7]!.slice(15, 17)).toBe("██");
     expect(rows[7]!.slice(-2)).toBe("██");
@@ -67,6 +67,7 @@ describe("composite chart renderers", () => {
       pixelWidth: 61,
       pixelHeight: 29,
       cursorXRatio: null,
+      cursorYRatio: null,
       colors: {
         background: "#000000",
         grid: "#000000",
@@ -102,7 +103,7 @@ describe("composite chart renderers", () => {
       { width: 31, height: 9 },
     )!;
 
-    const rows = renderCompositePanelText(scene.panels[0]!, scene.width, null);
+    const rows = renderCompositePanelText(scene.panels[0]!, scene.width, null, null);
     const occupied = [...rows[7]!]
       .flatMap((cell, index) => cell === "█" ? [index] : []);
     expect(occupied).toEqual([0, 15, 30]);
@@ -124,7 +125,7 @@ describe("composite chart renderers", () => {
     )!;
 
     for (const panel of scene.panels) {
-      const rows = renderCompositePanelText(panel, scene.width, null);
+      const rows = renderCompositePanelText(panel, scene.width, null, null);
       expect(rows.some((row) => row.includes("██"))).toBe(false);
     }
   });
@@ -136,7 +137,12 @@ describe("composite chart renderers", () => {
       { width: 31, height: 9, cursorDate: new Date("2025-01-02T00:00:00.000Z") },
     )!;
 
-    const output = renderCompositePanelText(scene.panels[0]!, scene.width, scene.cursorXRatio).join("\n");
+    const output = renderCompositePanelText(
+      scene.panels[0]!,
+      scene.width,
+      scene.cursorXRatio,
+      0.5,
+    ).join("\n");
     expect(output).toContain("█");
     expect(output).toContain("•");
     expect(output).toMatch(/[│┼]/);
@@ -152,6 +158,7 @@ describe("composite chart renderers", () => {
       pixelWidth: 62,
       pixelHeight: 36,
       cursorXRatio: scene.cursorXRatio,
+      cursorYRatio: 0.5,
       colors: {
         background: "#101010",
         grid: "#303030",
@@ -193,6 +200,7 @@ describe("composite chart renderers", () => {
         pixelWidth: 960,
         pixelHeight: 320,
         cursorXRatio: null,
+        cursorYRatio: null,
         colors: {
           background: "#101010",
           grid: "#303030",
@@ -260,6 +268,7 @@ describe("composite chart renderers", () => {
       pixelWidth: 62,
       pixelHeight: 36,
       cursorXRatio: null,
+      cursorYRatio: null,
       colors: {
         background: "#101010",
         grid: "#303030",

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type {
   ChartPanelSpec,
   PanelScale,
@@ -96,6 +97,9 @@ export interface CompositeChartProps {
   colors?: Partial<CompositeChartColors>;
   axisWidth?: number;
   showLegend?: boolean;
+  legendAccessory?: ReactNode;
+  legendAccessoryRows?: number;
+  legendAccessoryWidth?: number;
   showTimeAxis?: boolean;
   emptyMessage?: string;
   formatValue?: (value: number, series: ResolvedSeries) => string;

@@ -4,6 +4,7 @@ import {
   ChartSurface,
   Text,
   useNativeRenderer,
+  useUiCapabilities,
   useUiHost,
   type BoxRenderable,
   type ChartSurfaceProps,
@@ -23,7 +24,14 @@ import {
   useStaticChartBitmapSize,
   type StaticChartBitmapSize,
 } from "../static/chart/bitmap";
-import { formatCompositeCursorDate, formatCompositeSeriesValue } from "./format";
+import { StaticXAxisLabels } from "../static/chart/axis-overlays";
+import { PriceAxisLabels } from "../price-axis-labels";
+import {
+  formatCompositeAxisValue,
+  formatCompositeCursorDate,
+  formatCompositeSeriesValue,
+  formatCompositeTimeAxisDate,
+} from "./format";
 import {
   COMPOSITE_KEYBOARD_PAN_RATIO,
   COMPOSITE_ZOOM_STEP_FACTOR,
@@ -46,6 +54,7 @@ import {
   projectCompositeValue,
   resolveAdjacentCompositeCursorDate,
   resolveCompositeCursorDate,
+  unprojectCompositeValue,
 } from "./scene";
 import {
   renderCompositeAxisText,
@@ -68,11 +77,13 @@ function renderPanelBitmap(
   bitmapSize: StaticChartBitmapSize,
   colors: CompositeChartColors,
   cursorXRatio: number | null,
+  cursorYRatio: number | null,
 ): NativeChartBitmap {
   return renderCompositePanelBitmap(panel, {
     pixelWidth: bitmapSize.pixelWidth,
     pixelHeight: bitmapSize.pixelHeight,
     cursorXRatio,
+    cursorYRatio,
     colors,
   });
 }
@@ -82,12 +93,14 @@ function useCompositePanelBitmap({
   bitmapSize,
   colors,
   cursorXRatio,
+  cursorYRatio,
   isDesktopWeb,
 }: {
   panel: CompositePanelScene;
   bitmapSize: StaticChartBitmapSize | null;
   colors: CompositeChartColors;
   cursorXRatio: number | null;
+  cursorYRatio: number | null;
   isDesktopWeb: boolean;
 }): NativeChartBitmap | null {
   const [desktopBitmap, setDesktopBitmap] = useState<NativeChartBitmap | null>(null);
@@ -111,8 +124,8 @@ function useCompositePanelBitmap({
 
   const terminalBitmap = useMemo(() => {
     if (isDesktopWeb || !bitmapSize) return null;
-    return renderPanelBitmap(panel, bitmapSize, colors, cursorXRatio);
-  }, [bitmapSize, colors, cursorXRatio, isDesktopWeb, panel]);
+    return renderPanelBitmap(panel, bitmapSize, colors, cursorXRatio, cursorYRatio);
+  }, [bitmapSize, colors, cursorXRatio, cursorYRatio, isDesktopWeb, panel]);
 
   useEffect(() => {
     const cancelRender = () => {
@@ -131,6 +144,7 @@ function useCompositePanelBitmap({
           input.panel,
           { pixelWidth: input.pixelWidth, pixelHeight: input.pixelHeight },
           input.colors,
+          null,
           null,
         );
         if (!desktopActiveRef.current) return;
@@ -195,26 +209,51 @@ function useCompositePanelBitmap({
 }
 
 function resolvePanelCrosshair(
-  panel: CompositePanelScene,
-  scene: CompositeChartScene,
   bitmap: NativeChartBitmap | null,
+  cursorXRatio: number | null,
+  cursorYRatio: number | null,
   color: string,
 ): ChartSurfaceProps["crosshair"] {
-  if (!bitmap || scene.cursorXRatio === null) return null;
-  let yRatio: number | null = null;
-  for (const series of panel.series) {
-    const value = scene.cursorValues.find((entry) => entry.seriesId === series.source.id)?.value ?? null;
-    const domain = panel.axes[series.source.axis];
-    if (value === null || !domain) continue;
-    yRatio = projectCompositeValue(value, domain);
-    if (yRatio !== null) break;
-  }
-  if (yRatio === null) return null;
+  if (!bitmap || cursorXRatio === null || cursorYRatio === null) return null;
   return {
-    pixelX: scene.cursorXRatio * Math.max(bitmap.width - 1, 0),
-    pixelY: yRatio * Math.max(bitmap.height - 1, 0),
+    pixelX: cursorXRatio * Math.max(bitmap.width - 1, 0),
+    pixelY: cursorYRatio * Math.max(bitmap.height - 1, 0),
     color,
   };
+}
+
+function axisLabelRows(lines: string[]): ReadonlyMap<number, string> {
+  return new Map(lines.flatMap((line, row) => {
+    const label = line.trim();
+    return label ? [[row, label] as const] : [];
+  }));
+}
+
+function cursorAxisLabel(
+  panel: CompositePanelScene,
+  side: "left" | "right",
+  cursorYRatio: number | null,
+): string | null {
+  const domain = panel.axes[side];
+  if (!domain || cursorYRatio === null) return null;
+  const value = unprojectCompositeValue(cursorYRatio, domain);
+  return value === null ? null : formatCompositeAxisValue(value, domain);
+}
+
+function resolveSeriesCursorYRatio(
+  panel: CompositePanelScene,
+  scene: CompositeChartScene,
+): number | null {
+  for (const series of panel.series) {
+    const value = scene.cursorValues.find(
+      (entry) => entry.seriesId === series.source.id,
+    )?.value ?? null;
+    const domain = panel.axes[series.source.axis];
+    if (value === null || !domain) continue;
+    const yRatio = projectCompositeValue(value, domain);
+    if (yRatio !== null) return yRatio;
+  }
+  return null;
 }
 
 interface CompositePanelSurfaceProps {
@@ -249,8 +288,17 @@ function CompositePanelSurface({
   onZoomViewport,
 }: CompositePanelSurfaceProps) {
   const isDesktopWeb = useUiHost().kind === "desktop-web";
+  const { cellHeightPx = 18 } = useUiCapabilities();
   const renderer = useNativeRenderer();
   const plotRef = useRef<BoxRenderable | null>(null);
+  const [cursorYRatio, setCursorYRatio] = useState<number | null>(null);
+  const seriesCursorYRatio = useMemo(
+    () => resolveSeriesCursorYRatio(panel, scene),
+    [panel, scene],
+  );
+  const activeCursorYRatio = scene.cursorXRatio === null
+    ? null
+    : cursorYRatio ?? seriesCursorYRatio;
   const dragRef = useRef<{
     startGlobalX: number;
     startViewport: CompositeViewportRange;
@@ -261,25 +309,42 @@ function CompositePanelSurface({
     bitmapSize,
     colors,
     cursorXRatio: scene.cursorXRatio,
+    cursorYRatio: activeCursorYRatio,
     isDesktopWeb,
   });
   const crosshair = useMemo(
-    () => isDesktopWeb ? resolvePanelCrosshair(panel, scene, bitmap, colors.crosshair) : null,
-    [bitmap, colors.crosshair, isDesktopWeb, panel, scene],
+    () => isDesktopWeb
+      ? resolvePanelCrosshair(bitmap, scene.cursorXRatio, activeCursorYRatio, colors.crosshair)
+      : null,
+    [activeCursorYRatio, bitmap, colors.crosshair, isDesktopWeb, scene.cursorXRatio],
   );
   const bitmapLayers = useMemo(() => bitmap ? [bitmap] : null, [bitmap]);
   const textLines = useMemo(
-    () => isDesktopWeb ? [] : renderCompositePanelText(panel, plotWidth, scene.cursorXRatio),
-    [isDesktopWeb, panel, plotWidth, scene.cursorXRatio],
+    () => isDesktopWeb
+      ? []
+      : renderCompositePanelText(panel, plotWidth, scene.cursorXRatio, activeCursorYRatio),
+    [activeCursorYRatio, isDesktopWeb, panel, plotWidth, scene.cursorXRatio],
   );
-  const leftAxis = useMemo(
-    () => renderCompositeAxisText(panel.axes.left, panel.height, leftAxisWidth, "left"),
+  const leftAxisLabels = useMemo(
+    () => axisLabelRows(
+      renderCompositeAxisText(panel.axes.left, panel.height, leftAxisWidth, "left"),
+    ),
     [leftAxisWidth, panel],
   );
-  const rightAxis = useMemo(
-    () => renderCompositeAxisText(panel.axes.right, panel.height, rightAxisWidth, "right"),
+  const rightAxisLabels = useMemo(
+    () => axisLabelRows(
+      renderCompositeAxisText(panel.axes.right, panel.height, rightAxisWidth, "right"),
+    ),
     [panel, rightAxisWidth],
   );
+  const cursorRow = activeCursorYRatio === null
+    ? null
+    : Math.round(activeCursorYRatio * Math.max(panel.height - 1, 0));
+  const cursorPixelY = activeCursorYRatio === null
+    ? null
+    : activeCursorYRatio * Math.max(panel.height * cellHeightPx - 1, 0);
+  const leftCursorLabel = cursorAxisLabel(panel, "left", activeCursorYRatio);
+  const rightCursorLabel = cursorAxisLabel(panel, "right", activeCursorYRatio);
 
   const updateCursor = useCallback((event: ChartMouseEvent): boolean => {
     const pointerTarget = plotRef.current as unknown as Parameters<typeof getLocalPlotPointer>[1];
@@ -287,11 +352,18 @@ function CompositePanelSurface({
     if (!pointer) return false;
     const nextDate = resolveCompositeCursorDate(scene, pointer.cellX);
     if (!nextDate) return false;
+    const nextYRatio = panel.height <= 1
+      ? 0.5
+      : Math.max(0, Math.min(1, pointer.cellY / (panel.height - 1)));
+    setCursorYRatio((current) => current === nextYRatio ? current : nextYRatio);
     onCursorDateChange(nextDate);
     consumeChartMouseEvent(event);
     return true;
-  }, [onCursorDateChange, renderer, scene]);
-  const clearCursor = useCallback(() => onCursorDateChange(null), [onCursorDateChange]);
+  }, [onCursorDateChange, panel.height, renderer, scene]);
+  const clearCursor = useCallback(() => {
+    setCursorYRatio(null);
+    onCursorDateChange(null);
+  }, [onCursorDateChange]);
   const startDrag = useCallback((event: ChartMouseEvent) => {
     onActivate?.();
     consumeChartMouseEvent(event);
@@ -337,9 +409,19 @@ function CompositePanelSurface({
     <Box flexDirection="row" height={panel.height} width={plotWidth + leftAxisWidth + rightAxisWidth + axisGap * ((leftAxisWidth ? 1 : 0) + (rightAxisWidth ? 1 : 0))}>
       {leftAxisWidth > 0 ? (
         <>
-          <Box flexDirection="column" width={leftAxisWidth} height={panel.height}>
-            {leftAxis.map((line, index) => <Text key={index} fg={colors.textDim}>{line}</Text>)}
-          </Box>
+          <PriceAxisLabels
+            axisLabels={leftAxisLabels}
+            axisWidth={leftAxisWidth}
+            axisSectionWidth={leftAxisWidth}
+            side="left"
+            height={panel.height}
+            cursorRow={cursorRow}
+            cursorPixelY={cursorPixelY}
+            cursorLabel={leftCursorLabel}
+            cursorColor={colors.crosshair}
+            cursorBackgroundColor={colors.background}
+            axisColor={colors.textDim}
+          />
           <Box width={axisGap} />
         </>
       ) : null}
@@ -367,9 +449,19 @@ function CompositePanelSurface({
       {rightAxisWidth > 0 ? (
         <>
           <Box width={axisGap} />
-          <Box flexDirection="column" width={rightAxisWidth} height={panel.height}>
-            {rightAxis.map((line, index) => <Text key={index} fg={colors.textDim}>{line}</Text>)}
-          </Box>
+          <PriceAxisLabels
+            axisLabels={rightAxisLabels}
+            axisWidth={rightAxisWidth}
+            axisSectionWidth={rightAxisWidth}
+            side="right"
+            height={panel.height}
+            cursorRow={cursorRow}
+            cursorPixelY={cursorPixelY}
+            cursorLabel={rightCursorLabel}
+            cursorColor={colors.crosshair}
+            cursorBackgroundColor={colors.background}
+            axisColor={colors.textDim}
+          />
         </>
       ) : null}
     </Box>
@@ -389,55 +481,132 @@ function CompositeLegend({
   scene,
   series,
   width,
+  height,
+  accessory,
+  accessoryWidth,
   formatValue,
   onActivate,
   onToggleSeries,
   isSeriesToggleable,
 }: {
-  scene: CompositeChartScene;
+  scene: CompositeChartScene | null;
   series: ResolvedSeries[];
   width: number;
+  height: number;
+  accessory: CompositeChartProps["legendAccessory"];
+  accessoryWidth: CompositeChartProps["legendAccessoryWidth"];
   formatValue: CompositeChartProps["formatValue"];
   onActivate: CompositeChartProps["onActivate"];
   onToggleSeries: CompositeChartProps["onToggleSeries"];
   isSeriesToggleable: CompositeChartProps["isSeriesToggleable"];
 }) {
-  const dateLabel = scene.cursorDate
-    ? formatCompositeCursorDate(scene.cursorDate, scene.startTime, scene.endTime)
-    : "Latest";
-  const valueById = new Map(scene.cursorValues.map((entry) => [entry.seriesId, entry.value] as const));
-  const availableWidth = Math.max(width - dateLabel.length - 1, 1);
-  const itemWidth = Math.max(7, Math.floor(availableWidth / Math.max(series.length, 1)));
+  const dateLabel = scene
+    ? scene.cursorDate
+      ? formatCompositeCursorDate(scene.cursorDate, scene.startTime, scene.endTime)
+      : "Latest"
+    : "";
+  const valueById = new Map(
+    scene?.cursorValues.map((entry) => [entry.seriesId, entry.value] as const) ?? [],
+  );
+  const entries = series.map((entry) => {
+    const fullText = `${entry.label} ${legendValue(
+      entry,
+      valueById.get(entry.id) ?? null,
+      formatValue,
+    )}`;
+    const textWidth = Math.max(1, Math.min(30, [...fullText].length));
+    return {
+      entry,
+      text: truncateWithEllipsis(fullText, textWidth),
+      width: textWidth + 2,
+    };
+  });
+  const desiredSeriesWidth = entries.reduce(
+    (total, entry, index) => total + entry.width + (index > 0 ? 1 : 0),
+    0,
+  );
+  const resolvedAccessoryWidth = accessory
+    ? Math.max(1, Math.min(width, Math.floor(accessoryWidth ?? 14)))
+    : 0;
+  const reservedAccessoryGap = accessory && width > resolvedAccessoryWidth ? 1 : 0;
+  const widthBeforeAccessory = Math.max(0, width - resolvedAccessoryWidth - reservedAccessoryGap);
+  const minimumSeriesPreviewWidth = entries.length > 0
+    ? Math.min(7, desiredSeriesWidth)
+    : 0;
+  const showDate = dateLabel.length > 0 && widthBeforeAccessory >= (
+    dateLabel.length
+    + (minimumSeriesPreviewWidth > 0 ? minimumSeriesPreviewWidth + 1 : 0)
+  );
+  const dateWidth = showDate ? dateLabel.length : 0;
+  const dateSeriesGap = showDate && entries.length > 0 ? 1 : 0;
+  const seriesWidth = Math.min(
+    desiredSeriesWidth,
+    Math.max(0, widthBeforeAccessory - dateWidth - dateSeriesGap),
+  );
+  const accessorySpacerWidth = accessory
+    ? Math.max(
+      reservedAccessoryGap,
+      width - dateWidth - dateSeriesGap - seriesWidth - resolvedAccessoryWidth,
+    )
+    : 0;
   return (
-    <Box flexDirection="row" width={width} height={1} overflow="hidden" data-gloom-role="composite-chart-legend">
-      <Text fg={themeColors.textDim}>{`${dateLabel} `}</Text>
-      {series.map((entry) => {
-        const toggleable = !!onToggleSeries && (isSeriesToggleable?.(entry) ?? true);
-        const text = truncateWithEllipsis(
-          `${entry.label} ${legendValue(entry, valueById.get(entry.id) ?? null, formatValue)}`,
-          Math.max(itemWidth - 2, 1),
-        );
-        return (
-          <Box
-            key={entry.id}
-            flexDirection="row"
-            width={itemWidth}
-            height={1}
-            overflow="hidden"
-            onMouseDown={toggleable ? (event: ChartMouseEvent) => {
-              onActivate?.();
-              consumeChartMouseEvent(event);
-              onToggleSeries?.(entry.id);
-            } : undefined}
-            cursor={toggleable ? "pointer" : undefined}
-            data-gloom-interactive={toggleable ? "true" : undefined}
-            data-gloom-label={entry.label}
-          >
-            <Text fg={entry.color}>● </Text>
-            <Text fg={themeColors.text}>{text}</Text>
-          </Box>
-        );
-      })}
+    <Box
+      flexDirection="row"
+      alignItems="flex-end"
+      width={width}
+      height={height}
+      overflow="hidden"
+      data-gloom-role="composite-chart-legend"
+    >
+      {showDate ? (
+        <Box width={dateWidth} height={1} flexShrink={0} overflow="hidden">
+          <Text fg={themeColors.textDim}>{dateLabel}</Text>
+        </Box>
+      ) : null}
+      {dateSeriesGap > 0 ? <Box width={dateSeriesGap} flexShrink={0} /> : null}
+      {seriesWidth > 0 ? (
+        <Box
+          flexDirection="row"
+          width={seriesWidth}
+          height={1}
+          flexShrink={0}
+          gap={1}
+          overflow="hidden"
+        >
+          {entries.map(({ entry, text, width: entryWidth }) => {
+            const toggleable = !!onToggleSeries && (isSeriesToggleable?.(entry) ?? true);
+            return (
+              <Box
+                key={entry.id}
+                flexDirection="row"
+                width={entryWidth}
+                height={1}
+                flexShrink={0}
+                overflow="hidden"
+                onMouseDown={toggleable ? (event: ChartMouseEvent) => {
+                  onActivate?.();
+                  consumeChartMouseEvent(event);
+                  onToggleSeries?.(entry.id);
+                } : undefined}
+                cursor={toggleable ? "pointer" : undefined}
+                data-gloom-interactive={toggleable ? "true" : undefined}
+                data-gloom-label={entry.label}
+              >
+                <Text fg={entry.color}>● </Text>
+                <Text fg={themeColors.text}>{text}</Text>
+              </Box>
+            );
+          })}
+        </Box>
+      ) : null}
+      {accessorySpacerWidth > 0 ? (
+        <Box width={accessorySpacerWidth} flexShrink={0} />
+      ) : null}
+      {accessory ? (
+        <Box width={resolvedAccessoryWidth} flexShrink={0} height={height} overflow="hidden">
+          {accessory}
+        </Box>
+      ) : null}
     </Box>
   );
 }
@@ -454,6 +623,9 @@ export function CompositeChart({
   interactive = true,
   axisWidth = 9,
   showLegend = true,
+  legendAccessory,
+  legendAccessoryRows = 1,
+  legendAccessoryWidth,
   showTimeAxis = true,
   emptyMessage = "No chart data",
   formatValue,
@@ -462,6 +634,7 @@ export function CompositeChart({
   onToggleSeries,
   isSeriesToggleable,
 }: CompositeChartProps) {
+  const { cellWidthPx = 8 } = useUiCapabilities();
   const [internalCursorDate, setInternalCursorDate] = useState<Date | null>(null);
   const resolvedCursorDate = cursorDate === undefined ? internalCursorDate : cursorDate;
   const totalWidth = Math.max(1, Math.floor(width));
@@ -550,7 +723,12 @@ export function CompositeChart({
   const horizontalReserved = leftAxisWidth + rightAxisWidth
     + axisGap * ((leftAxisWidth ? 1 : 0) + (rightAxisWidth ? 1 : 0));
   const plotWidth = Math.max(1, totalWidth - horizontalReserved);
-  const legendRows = showLegend && visibleSeries.length > 0 ? 1 : 0;
+  const resolvedLegendAccessoryRows = legendAccessory
+    ? Math.max(1, Math.floor(legendAccessoryRows))
+    : 0;
+  const legendRows = showLegend && (visibleSeries.length > 0 || legendAccessory)
+    ? Math.max(1, resolvedLegendAccessoryRows)
+    : 0;
   const timeAxisRows = showTimeAxis ? 1 : 0;
   const panelCount = new Set(visibleSeries.map((entry) => entry.panelId)).size;
   const plotHeight = Math.max(panelCount, totalHeight - legendRows - timeAxisRows);
@@ -672,14 +850,46 @@ export function CompositeChart({
 
   if (!scene) {
     return (
-      <Box width={totalWidth} height={totalHeight} alignItems="center" justifyContent="center">
-        <Text fg={resolvedColors.textDim}>{emptyMessage}</Text>
+      <Box flexDirection="column" width={totalWidth} height={totalHeight} overflow="hidden">
+        {legendRows > 0 && legendAccessory ? (
+          <CompositeLegend
+            scene={null}
+            series={[]}
+            width={totalWidth}
+            height={legendRows}
+            accessory={legendAccessory}
+            accessoryWidth={legendAccessoryWidth}
+            formatValue={formatValue}
+            onActivate={onActivate}
+            onToggleSeries={onToggleSeries}
+            isSeriesToggleable={isSeriesToggleable}
+          />
+        ) : null}
+        {totalHeight > legendRows ? (
+          <Box
+            width={totalWidth}
+            height={totalHeight - legendRows}
+            alignItems="center"
+            justifyContent="center"
+          >
+            <Text fg={resolvedColors.textDim}>{emptyMessage}</Text>
+          </Box>
+        ) : null}
       </Box>
     );
   }
 
   const leftPadding = leftAxisWidth + (leftAxisWidth ? axisGap : 0);
   const rightPadding = rightAxisWidth + (rightAxisWidth ? axisGap : 0);
+  const timeAxisCursorColumn = scene.cursorXRatio === null
+    ? null
+    : scene.cursorXRatio * Math.max(plotWidth - 1, 0);
+  const timeAxisCursorPixelX = timeAxisCursorColumn === null
+    ? null
+    : timeAxisCursorColumn * cellWidthPx;
+  const timeAxisCursorLabel = scene.cursorDate
+    ? formatCompositeTimeAxisDate(scene.cursorDate, scene.startTime, scene.endTime)
+    : null;
   return (
     <Box flexDirection="column" width={totalWidth} height={totalHeight} overflow="hidden" data-gloom-role="composite-chart">
       {showLegend ? (
@@ -687,6 +897,9 @@ export function CompositeChart({
           scene={scene}
           series={visibleSeries}
           width={totalWidth}
+          height={legendRows}
+          accessory={legendAccessory}
+          accessoryWidth={legendAccessoryWidth}
           formatValue={formatValue}
           onActivate={onActivate}
           onToggleSeries={onToggleSeries}
@@ -712,9 +925,20 @@ export function CompositeChart({
         />
       ))}
       {showTimeAxis ? (
-        <Text fg={resolvedColors.textDim}>
-          {`${" ".repeat(leftPadding)}${renderCompositeTimeAxis(scene, plotWidth)}${" ".repeat(rightPadding)}`}
-        </Text>
+        <Box flexDirection="row" width={totalWidth} height={1}>
+          {leftPadding > 0 ? <Box width={leftPadding} /> : null}
+          <StaticXAxisLabels
+            labels={[renderCompositeTimeAxis(scene, plotWidth)]}
+            width={plotWidth}
+            color={resolvedColors.textDim}
+            cursorColumn={timeAxisCursorColumn}
+            cursorPixelX={timeAxisCursorPixelX}
+            cursorLabel={timeAxisCursorLabel}
+            cursorColor={resolvedColors.crosshair}
+            cursorBackgroundColor={resolvedColors.background}
+          />
+          {rightPadding > 0 ? <Box width={rightPadding} /> : null}
+        </Box>
       ) : null}
     </Box>
   );

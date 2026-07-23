@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box } from "../../../ui";
 import {
   ChoiceDialog,
-  EmptyState,
   Tabs,
   usePaneFooter,
   type PaneFooterPressEvent,
@@ -113,7 +112,8 @@ export function ChartComposerSurface({
   const viewport = resolution.viewport;
   const baseSeriesIds = useMemo(() => new Set(spec.series.map((series) => series.id)), [spec.series]);
   const [interactionCaptured, setInteractionCapturedState] = useState(false);
-  const [quickAddHeight, setQuickAddHeight] = useState(1);
+  const [quickAddRows, setQuickAddRows] = useState(1);
+  const [quickAddWidth, setQuickAddWidth] = useState(14);
   const interactionCaptureRef = useRef(false);
   const interactionCaptureSourcesRef = useRef(new Set<string>());
   const indicatorsDialogRef = useRef<MultiSelectDialogButtonHandle | null>(null);
@@ -456,36 +456,37 @@ export function ChartComposerSurface({
       />
 
       <Box flexGrow={1} minHeight={4}>
-        {spec.series.length === 0 ? (
-          <EmptyState title="No chart series configured." message="Open Series to add a security, field, or economic series." />
-        ) : (
-          <CompositeChart
-            series={resolution.bufferedSeries ?? resolution.series}
-            panels={spec.panels}
-            viewport={viewport}
-            width={Math.max(1, width)}
-            height={Math.max(4, height - 1 - quickAddHeight)}
-            focused={focused}
-            interactive={surfaceInteractive}
-            onActivate={activatePane}
-            onToggleSeries={toggleSeries}
-            isSeriesToggleable={(series) => baseSeriesIds.has(series.id)}
-            emptyMessage={emptyMessage}
-          />
-        )}
+        <CompositeChart
+          series={resolution.bufferedSeries ?? resolution.series}
+          panels={spec.panels}
+          viewport={viewport}
+          width={Math.max(1, width)}
+          height={Math.max(4, height - 1)}
+          focused={focused}
+          interactive={surfaceInteractive}
+          onActivate={activatePane}
+          onToggleSeries={toggleSeries}
+          isSeriesToggleable={(series) => baseSeriesIds.has(series.id)}
+          emptyMessage={emptyMessage}
+          legendAccessory={(
+            <ChartSeriesQuickAdd
+              spec={spec}
+              setSpec={setSpec}
+              focused={focused}
+              width={Math.max(8, Math.min(36, width - 1))}
+              height={height}
+              shortcutEnabled={surfaceInteractive}
+              shortcutBlocked={dialogOpen}
+              onActivatePane={activatePane}
+              onActiveChange={(active) => setInteractionCaptured("quick-add", active)}
+              onHeightChange={setQuickAddRows}
+              onWidthChange={setQuickAddWidth}
+            />
+          )}
+          legendAccessoryRows={quickAddRows}
+          legendAccessoryWidth={quickAddWidth}
+        />
       </Box>
-      <ChartSeriesQuickAdd
-        spec={spec}
-        setSpec={setSpec}
-        focused={focused}
-        width={width}
-        height={height}
-        shortcutEnabled={surfaceInteractive}
-        shortcutBlocked={dialogOpen}
-        onActivatePane={activatePane}
-        onActiveChange={(active) => setInteractionCaptured("quick-add", active)}
-        onHeightChange={setQuickAddHeight}
-      />
     </Box>
   );
 }

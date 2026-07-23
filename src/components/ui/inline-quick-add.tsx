@@ -7,6 +7,7 @@ export interface InlineQuickAddRowProps {
   active: boolean;
   paneFocused: boolean;
   width: number;
+  rowWidth?: number | "100%";
   placeholder: string;
   inputRef: RefObject<InputRenderable | null>;
   preview?: ReactNode;
@@ -26,6 +27,7 @@ export function InlineQuickAddRow({
   active,
   paneFocused,
   width,
+  rowWidth = "100%",
   placeholder,
   inputRef,
   preview,
@@ -45,12 +47,13 @@ export function InlineQuickAddRow({
     }
     return Math.max(minInputWidth, Math.min(10, Math.floor(width * 0.18)));
   }, [maxInputWidth, minInputWidth, value, width]);
+  const hasPreview = preview !== undefined && preview !== null;
   const previewWidth = Math.max(4, width - inputWidth - 5);
 
   return (
     <Box
       height={1}
-      width="100%"
+      width={rowWidth}
       flexDirection="row"
       flexShrink={0}
       paddingX={1}
@@ -87,10 +90,14 @@ export function InlineQuickAddRow({
           onEscape={onCancel}
         />
       </Box>
-      <Box width={1} flexShrink={0} />
-      <Box width={previewWidth} minWidth={0} flexGrow={1} overflow="hidden">
-        {preview}
-      </Box>
+      {hasPreview ? (
+        <>
+          <Box width={1} flexShrink={0} />
+          <Box width={previewWidth} minWidth={0} flexGrow={1} overflow="hidden">
+            {preview}
+          </Box>
+        </>
+      ) : null}
     </Box>
   );
 }

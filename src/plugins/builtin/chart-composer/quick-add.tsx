@@ -15,6 +15,8 @@ const MAX_VISIBLE_SUGGESTIONS = 4;
 const CHART_TOOLBAR_HEIGHT = 1;
 const MINIMUM_CHART_HEIGHT = 4;
 const QUICK_ADD_ROW_HEIGHT = 1;
+const IDLE_QUICK_ADD_WIDTH = 14;
+const ACTIVE_QUICK_ADD_WIDTH = 36;
 
 function clampSelection(index: number, length: number): number {
   if (length <= 0) return -1;
@@ -51,6 +53,7 @@ export function ChartSeriesQuickAdd({
   onActivatePane,
   onActiveChange,
   onHeightChange,
+  onWidthChange,
 }: {
   spec: ChartSpec;
   setSpec: (spec: ChartSpec) => void;
@@ -62,6 +65,7 @@ export function ChartSeriesQuickAdd({
   onActivatePane: () => void;
   onActiveChange?: (active: boolean) => void;
   onHeightChange?: (height: number) => void;
+  onWidthChange?: (width: number) => void;
 }) {
   const inputRef = useRef<InputRenderable | null>(null);
   const commitLockRef = useRef(false);
@@ -76,6 +80,15 @@ export function ChartSeriesQuickAdd({
     defaultInstrument,
     enabled: active,
   });
+  const controlWidth = active
+    ? Math.max(8, Math.min(ACTIVE_QUICK_ADD_WIDTH, width))
+    : Math.max(8, Math.min(IDLE_QUICK_ADD_WIDTH, width));
+  const drawerStatus = error
+    ?? (loading && suggestions.length === 0
+      ? "Searching instruments…"
+      : active && query.trim().length > 0 && suggestions.length === 0
+        ? "No matching security or metric."
+        : null);
   const maximumDrawerHeight = Math.max(
     0,
     Math.min(
@@ -83,7 +96,9 @@ export function ChartSeriesQuickAdd({
       height - CHART_TOOLBAR_HEIGHT - MINIMUM_CHART_HEIGHT - QUICK_ADD_ROW_HEIGHT,
     ),
   );
-  const drawerHeight = active ? Math.min(maximumDrawerHeight, suggestions.length) : 0;
+  const drawerHeight = active
+    ? Math.min(maximumDrawerHeight, drawerStatus ? 1 : suggestions.length)
+    : 0;
   useAppInputCapture(active && focused);
 
   useEffect(() => {
@@ -93,6 +108,10 @@ export function ChartSeriesQuickAdd({
   useEffect(() => {
     onHeightChange?.(1 + drawerHeight);
   }, [drawerHeight, onHeightChange]);
+
+  useEffect(() => {
+    onWidthChange?.(controlWidth);
+  }, [controlWidth, onWidthChange]);
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -197,51 +216,46 @@ export function ChartSeriesQuickAdd({
     description: suggestion.description,
     detail: suggestion.detail,
   })), [suggestions]);
-  const selectedSuggestion = suggestions[clampSelection(selectedIndex, suggestions.length)];
-  const preview = error
-    ? <Text fg={colors.warning}>{error}</Text>
-    : loading
-      ? <Text fg={colors.textDim}>Searching instruments…</Text>
-      : selectedSuggestion
-        ? (
-          <Box flexDirection="row" minWidth={0} overflow="hidden">
-            <Text fg={active ? colors.text : colors.textDim}>{selectedSuggestion.label}</Text>
-            <Text fg={colors.textMuted}>{`  ${selectedSuggestion.description}`}</Text>
-          </Box>
-        )
-        : <Text fg={colors.textMuted}>{active ? "No matching security or metric." : "ticker + metric, e.g. MSFT revenue"}</Text>;
 
   return (
     <Box
       flexDirection="column"
-      width="100%"
+      width={controlWidth}
       height={1 + drawerHeight}
       flexShrink={0}
       overflow="hidden"
       backgroundColor={colors.panel}
     >
       {drawerHeight > 0 ? (
-        <ListView
-          items={items}
-          selectedIndex={clampSelection(selectedIndex, items.length)}
-          height={drawerHeight}
-          surface="plain"
-          scrollable={items.length > drawerHeight}
-          rowGap={0}
-          selectOnHover
-          onSelect={setSelectedIndex}
-          onActivate={(_, index) => commitSuggestion(suggestions[index])}
-          remoteLabel="Chart series suggestions"
-        />
+        drawerStatus ? (
+          <Box width={controlWidth} height={1} paddingX={1} overflow="hidden">
+            <Text fg={error ? colors.warning : colors.textDim}>{drawerStatus}</Text>
+          </Box>
+        ) : (
+          <ListView
+            items={items}
+            selectedIndex={clampSelection(selectedIndex, items.length)}
+            height={drawerHeight}
+            surface="plain"
+            scrollable={items.length > drawerHeight}
+            rowGap={0}
+            selectOnHover
+            onSelect={setSelectedIndex}
+            onActivate={(_, index) => commitSuggestion(suggestions[index])}
+            remoteLabel="Chart series suggestions"
+          />
+        )
       ) : null}
       <InlineQuickAddRow
         value={query}
         active={active}
         paneFocused={focused}
-        width={width}
+        width={controlWidth}
+        rowWidth={controlWidth}
         placeholder="add series"
         inputRef={inputRef}
-        maxInputWidth={28}
+        minInputWidth={Math.max(4, controlWidth - 4)}
+        maxInputWidth={Math.max(4, controlWidth - 4)}
         onFocusRequest={focusInput}
         onChange={(value) => {
           setQuery(value);
@@ -260,7 +274,6 @@ export function ChartSeriesQuickAdd({
             setActive(false);
           }, 0);
         }}
-        preview={preview}
         onCancel={cancel}
       />
     </Box>

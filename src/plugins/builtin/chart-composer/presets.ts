@@ -250,11 +250,26 @@ function uniqueSeriesId(series: readonly ChartSeriesSpec[], preferredId: string)
   return `${preferredId}-${suffix}`;
 }
 
+function coerceOhlcPanelCollision(
+  series: ChartSeriesSpec,
+  existing: readonly ChartSeriesSpec[],
+): ChartSeriesSpec {
+  return isOhlcSeriesStyle(series.style)
+    && existing.some((entry) => (
+      entry.panelId === series.panelId && isOhlcSeriesStyle(entry.style)
+    ))
+    ? applySeriesStyle(series, "line")
+    : series;
+}
+
 export function appendChartSeries(
   spec: ChartSpec,
   expression: ParsedSeriesExpression,
 ): { spec: ChartSpec; series: ChartSeriesSpec } {
-  const built = buildSeriesSpec(expression, spec.series.length);
+  const built = coerceOhlcPanelCollision(
+    buildSeriesSpec(expression, spec.series.length),
+    spec.series,
+  );
   const series = {
     ...built,
     id: uniqueSeriesId(spec.series, built.id),
@@ -291,20 +306,25 @@ function defaultExpressionUnitGroup(expression: ParsedSeriesExpression): string 
 /** Keep arbitrary sources legible when one panel would require more than two axes. */
 function buildCustomSeries(expressions: readonly ParsedSeriesExpression[]): ChartSeriesSpec[] {
   const panelGroups: Array<{ id: string; groups: Set<string> }> = [{ id: "main", groups: new Set() }];
-  return expressions.map((expression, index) => {
-    const series = buildSeriesSpec(expression, index);
-    if (series.panelId !== "main") return series;
-    const unitGroup = defaultExpressionUnitGroup(expression);
-    const panel = panelGroups.find((entry) => entry.groups.has(unitGroup))
-      ?? panelGroups.find((entry) => entry.groups.size < 2)
-      ?? (() => {
-        const entry = { id: `panel-${panelGroups.length + 1}`, groups: new Set<string>() };
-        panelGroups.push(entry);
-        return entry;
-      })();
-    panel.groups.add(unitGroup);
-    return panel.id === "main" ? series : { ...series, panelId: panel.id };
+  const builtSeries: ChartSeriesSpec[] = [];
+  expressions.forEach((expression, index) => {
+    const built = buildSeriesSpec(expression, index);
+    let candidate = built;
+    if (built.panelId === "main") {
+      const unitGroup = defaultExpressionUnitGroup(expression);
+      const panel = panelGroups.find((entry) => entry.groups.has(unitGroup))
+        ?? panelGroups.find((entry) => entry.groups.size < 2)
+        ?? (() => {
+          const entry = { id: `panel-${panelGroups.length + 1}`, groups: new Set<string>() };
+          panelGroups.push(entry);
+          return entry;
+        })();
+      panel.groups.add(unitGroup);
+      if (panel.id !== "main") candidate = { ...built, panelId: panel.id };
+    }
+    builtSeries.push(coerceOhlcPanelCollision(candidate, builtSeries));
   });
+  return builtSeries;
 }
 
 /**
