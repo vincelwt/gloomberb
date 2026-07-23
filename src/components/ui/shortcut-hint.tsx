@@ -3,6 +3,8 @@ import { colors } from "../../theme/colors";
 import { useRef } from "react";
 
 type ShortcutHintMouseEvent = {
+  pixelX?: number;
+  pixelY?: number;
   stopPropagation?: () => void;
   preventDefault?: () => void;
 };

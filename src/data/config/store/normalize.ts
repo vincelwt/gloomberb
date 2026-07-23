@@ -20,6 +20,13 @@ import {
   normalizeBuiltinPluginStateMap,
 } from "../../../plugins/ownership";
 import { isLayoutConfig, sanitizeLayout } from "../layout";
+import {
+  extractLegacyChartIndicatorSelection,
+  hasLegacyChartIndicatorConfig,
+  migrateLegacyChartSavedPaneState,
+  stripLegacyChartPluginConfig,
+  type LegacyChartMigrationContext,
+} from "../chart-settings";
 
 const LEGACY_MAIN_PORTFOLIO_COLUMN_IDS = DEFAULT_COLUMNS.map((column) => column.id);
 const PRE_SPARKLINE_PORTFOLIO_COLUMN_IDS = [
@@ -47,15 +54,38 @@ const PORTFOLIO_DEFAULT_COLUMNS_MIGRATION_VERSION = 17;
 
 export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: string): { config: AppConfig; needsSave: boolean } {
   const defaults = createDefaultConfig(dataDir);
+  const shouldMigrateLegacyConfig =
+    typeof saved.configVersion !== "number" || saved.configVersion < CURRENT_CONFIG_VERSION;
   const shouldMigratePortfolioDefaults =
     typeof saved.configVersion !== "number" || saved.configVersion < PORTFOLIO_DEFAULT_COLUMNS_MIGRATION_VERSION;
   const shouldEnableCloudDefault =
     typeof saved.configVersion !== "number" || saved.configVersion < 13;
+  const normalizedPluginConfig = sanitizePluginConfig(saved.pluginConfig);
+  const chartIndicatorSelection = extractLegacyChartIndicatorSelection(
+    normalizedPluginConfig,
+    shouldMigrateLegacyConfig,
+  );
+  const chartPreferences = isPlainRecord(saved.chartPreferences) ? saved.chartPreferences : {};
+  const storedRenderMode = chartPreferences.defaultRenderMode;
+  const chartMigration: LegacyChartMigrationContext = {
+    ...(shouldMigrateLegacyConfig
+      ? {
+        defaultRenderMode: storedRenderMode === "area"
+          || storedRenderMode === "line"
+          || storedRenderMode === "candles"
+          || storedRenderMode === "ohlc"
+          || storedRenderMode === "hlc"
+          ? storedRenderMode
+          : "area",
+      }
+      : {}),
+    ...(chartIndicatorSelection ? { indicatorSelection: chartIndicatorSelection } : {}),
+  };
   const directLayout = migrateLegacyPortfolioDefaultColumns(
-    sanitizeLayout(saved.layout, defaults.layout),
+    sanitizeLayout(saved.layout, defaults.layout, chartMigration),
     shouldMigratePortfolioDefaults,
   );
-  const layouts = sanitizeSavedLayouts(saved.layouts, directLayout).map((entry) => ({
+  const layouts = sanitizeSavedLayouts(saved.layouts, directLayout, chartMigration).map((entry) => ({
     ...entry,
     layout: migrateLegacyPortfolioDefaultColumns(entry.layout, shouldMigratePortfolioDefaults),
   }));
@@ -84,7 +114,7 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     brokerInstances: sanitizeBrokerInstances(saved.brokerInstances),
     disabledPlugins,
     disabledSources: sanitizeDisabledSources(saved, defaults.disabledSources, disabledPlugins),
-    pluginConfig: sanitizePluginConfig(saved.pluginConfig),
+    pluginConfig: stripLegacyChartPluginConfig(normalizedPluginConfig),
     theme: typeof saved.theme === "string" ? saved.theme : defaults.theme,
     chartPreferences: sanitizeChartPreferences(saved.chartPreferences, defaults.chartPreferences),
     valueFlashingEnabled: typeof saved.valueFlashingEnabled === "boolean" ? saved.valueFlashingEnabled : defaults.valueFlashingEnabled,
@@ -101,6 +131,9 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     || !Array.isArray(saved.brokerInstances)
     || !Array.isArray(saved.disabledSources)
     || !isPluginConfigMap(saved.pluginConfig)
+    || hasLegacyChartIndicatorConfig(normalizedPluginConfig)
+    || (isPlainRecord(saved.chartPreferences)
+      && Object.prototype.hasOwnProperty.call(saved.chartPreferences, "defaultRenderMode"))
     || !isChartPreferences(saved.chartPreferences)
     || (saved.language !== undefined && !isLanguagePreference(saved.language))
     || typeof saved.valueFlashingEnabled !== "boolean"
@@ -110,9 +143,17 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
 }
 
 export function normalizeConfigForSave(config: AppConfig): AppConfig {
-  const activeLayoutIndex = sanitizeActiveLayoutIndex(config.activeLayoutIndex, config.layouts.length || 1);
-  const layout = sanitizeLayout(config.layout, createDefaultConfig(config.dataDir).layout);
-  const layouts = sanitizeSavedLayouts(config.layouts, layout).map((entry, index) => (
+  const defaults = createDefaultConfig(config.dataDir);
+  const normalizedPluginConfig = sanitizePluginConfig(config.pluginConfig);
+  const chartIndicatorSelection = extractLegacyChartIndicatorSelection(normalizedPluginConfig, false);
+  const chartMigration: LegacyChartMigrationContext = chartIndicatorSelection
+    ? { indicatorSelection: chartIndicatorSelection }
+    : {};
+  const directLayout = sanitizeLayout(config.layout, defaults.layout, chartMigration);
+  const sanitizedLayouts = sanitizeSavedLayouts(config.layouts, directLayout, chartMigration);
+  const activeLayoutIndex = sanitizeActiveLayoutIndex(config.activeLayoutIndex, sanitizedLayouts.length || 1);
+  const layout = cloneLayout(sanitizedLayouts[activeLayoutIndex]?.layout ?? directLayout);
+  const layouts = sanitizedLayouts.map((entry, index) => (
     index === activeLayoutIndex
       ? { ...entry, layout: cloneLayout(layout), paneState: sanitizeSavedPaneState(entry.paneState, layout) }
       : entry
@@ -129,8 +170,8 @@ export function normalizeConfigForSave(config: AppConfig): AppConfig {
     brokerInstances: sanitizeBrokerInstances(config.brokerInstances),
     disabledPlugins: sanitizeDisabledPluginList(config.disabledPlugins),
     disabledSources: sanitizeUniqueStringList(config.disabledSources),
-    pluginConfig: sanitizePluginConfig(config.pluginConfig),
-    chartPreferences: sanitizeChartPreferences(config.chartPreferences, createDefaultConfig(config.dataDir).chartPreferences),
+    pluginConfig: stripLegacyChartPluginConfig(normalizedPluginConfig),
+    chartPreferences: sanitizeChartPreferences(config.chartPreferences, defaults.chartPreferences),
     valueFlashingEnabled: config.valueFlashingEnabled !== false,
     recentTickers: sanitizeStringArray(config.recentTickers, []),
   };
@@ -213,7 +254,10 @@ function sanitizeSavedPaneState(
   const paneState = Object.fromEntries(
     Object.entries(value)
       .filter(([paneId, entry]) => validPaneIds.has(paneId) && isPlainRecord(entry))
-      .map(([paneId, entry]) => [paneId, sanitizeSerializableValue(entry)])
+      .map(([paneId, entry]) => {
+        const sanitized = sanitizeSerializableValue(entry);
+        return [paneId, sanitized];
+      })
       .filter((entry): entry is [string, Record<string, unknown>] => isPlainRecord(entry[1])),
   );
   return normalizeBuiltinPaneStatePluginOwners(paneState);
@@ -231,27 +275,14 @@ function sanitizePluginConfig(value: unknown): Record<string, Record<string, unk
 
 function isChartPreferences(value: unknown): value is ChartPreferences {
   if (!value || typeof value !== "object") return false;
-  const defaultRenderMode = (value as ChartPreferences).defaultRenderMode;
   const renderer = (value as ChartPreferences).renderer;
-  return (defaultRenderMode === "area"
-    || defaultRenderMode === "line"
-    || defaultRenderMode === "candles"
-    || defaultRenderMode === "ohlc"
-    || defaultRenderMode === "hlc")
-    && (renderer === "auto" || renderer === "kitty" || renderer === "braille");
+  return renderer === "auto" || renderer === "kitty" || renderer === "braille";
 }
 
 function sanitizeChartPreferences(value: unknown, fallback: ChartPreferences): ChartPreferences {
   if (!value || typeof value !== "object") return { ...fallback };
 
   const candidate = value as Partial<ChartPreferences>;
-  const defaultRenderMode = candidate.defaultRenderMode === "area"
-    || candidate.defaultRenderMode === "line"
-    || candidate.defaultRenderMode === "candles"
-    || candidate.defaultRenderMode === "ohlc"
-    || candidate.defaultRenderMode === "hlc"
-    ? candidate.defaultRenderMode
-    : fallback.defaultRenderMode;
   const renderer = candidate.renderer === "auto"
     || candidate.renderer === "kitty"
     || candidate.renderer === "braille"
@@ -259,7 +290,6 @@ function sanitizeChartPreferences(value: unknown, fallback: ChartPreferences): C
     : fallback.renderer;
 
   return {
-    defaultRenderMode,
     renderer,
   };
 }
@@ -343,7 +373,11 @@ function migrateLegacyPortfolioDefaultColumns(layout: LayoutConfig, enabled: boo
   return nextLayout;
 }
 
-function sanitizeSavedLayouts(value: unknown, fallbackLayout: LayoutConfig): SavedLayout[] {
+function sanitizeSavedLayouts(
+  value: unknown,
+  fallbackLayout: LayoutConfig,
+  chartMigration: LegacyChartMigrationContext = {},
+): SavedLayout[] {
   if (!Array.isArray(value) || value.length === 0) {
     return [{ name: "Default", layout: cloneLayout(fallbackLayout) }];
   }
@@ -355,12 +389,14 @@ function sanitizeSavedLayouts(value: unknown, fallbackLayout: LayoutConfig): Sav
       && typeof (entry as SavedLayout).name === "string",
     )
     .map((entry) => {
-      const layout = sanitizeLayout(entry.layout, fallbackLayout);
+      const layout = sanitizeLayout(entry.layout, fallbackLayout, chartMigration);
+      const paneState = sanitizeSavedPaneState((entry as { paneState?: unknown }).paneState, layout);
+      const migrated = migrateLegacyChartSavedPaneState(layout, paneState, entry.layout);
       return {
         id: typeof entry.id === "string" ? entry.id : undefined,
         name: entry.name,
-        layout,
-        paneState: sanitizeSavedPaneState((entry as { paneState?: unknown }).paneState, layout),
+        layout: migrated.layout,
+        paneState: migrated.paneState,
         focusedPaneId: typeof entry.focusedPaneId === "string" || entry.focusedPaneId === null
           ? entry.focusedPaneId
           : undefined,

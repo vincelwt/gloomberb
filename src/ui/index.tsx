@@ -37,6 +37,7 @@ export type {
   BoxRenderable,
   ChartSurfaceProps,
   HostCheckboxProps,
+  HostPopoverProps,
   Highlight,
   ImageSurfaceProps,
   MediaSurfaceHandle,

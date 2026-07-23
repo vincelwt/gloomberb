@@ -7,6 +7,7 @@ import type { OptionsChain, TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
 import type { PaneRuntimeState } from "../core/state/app/state";
 import type { RemoteUiNodeSnapshot } from "../remote/types";
+import type { FredSeriesCacheEntry } from "../data/fred-series";
 import {
   electrobunViewPath,
   writeElectrobunViewPage,
@@ -22,6 +23,7 @@ export interface DesktopPaneShotPayload {
   tickers: TickerRecord[];
   financials: Array<[string, TickerFinancials]>;
   optionsChains: Array<[string, OptionsChain]>;
+  fredSeries: Array<[string, FredSeriesCacheEntry]>;
   paneState: Record<string, PaneRuntimeState>;
 }
 

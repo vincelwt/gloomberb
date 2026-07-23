@@ -6,11 +6,16 @@ import {
   missingActiveTabSelections,
   shotDataEvidenceFor,
   shotPriceHistoryRange,
+  shotSemanticRowCount,
+  shotUnavailableSymbols,
   type PaneScreenshotExpectedChartEvidence,
   type PaneScreenshotExpectedSelection,
 } from "./screenshot";
+import { collectShotSymbols } from "./data";
 import type { DesktopPaneShotPayload } from "../desktop-pane-shot";
 import type { ResolvedPaneFunction } from "./resolver";
+import { buildCustomChartPreset } from "../../plugins/builtin/chart-composer/presets";
+import { CHART_COMPOSER_PANE_ID } from "../../types/config";
 
 describe("pane screenshot active-state verification", () => {
   const expected: PaneScreenshotExpectedSelection[] = [
@@ -87,6 +92,109 @@ describe("pane screenshot chart-data verification", () => {
       "rendered chart range does not match",
       "AAPL comparison latest value does not match",
     ]);
+  });
+
+  test("accepts resolved mixed-source composer evidence", () => {
+    const expectedComposer: PaneScreenshotExpectedChartEvidence = {
+      kind: "chart-composer",
+      symbols: ["AAPL", "MSFT"],
+      rangePreset: "5Y",
+      resolution: "auto",
+      baseSeries: [
+        {
+          id: "aapl-price",
+          sourceKind: "security",
+          symbol: "AAPL",
+          fieldId: "market.ohlcv",
+          style: "candles",
+          transform: "raw",
+          panelId: "main",
+          visible: true,
+        },
+        {
+          id: "msft-revenue",
+          sourceKind: "security",
+          symbol: "MSFT",
+          fieldId: "fundamental.totalRevenue",
+          style: "step",
+          transform: "raw",
+          panelId: "main",
+          visible: true,
+        },
+        {
+          id: "cpi",
+          sourceKind: "economic",
+          economicSeriesId: "CPIAUCSL",
+          style: "step",
+          transform: "raw",
+          panelId: "macro",
+          visible: true,
+        },
+      ],
+    };
+    const metadata = {
+      ...expectedComposer,
+      projectedPointCount: 42,
+      baseSeries: expectedComposer.baseSeries?.map((series) => ({ ...series, pointCount: 12 })),
+    };
+    expect(chartEvidenceMismatchesFor([{
+      id: "chart-composer-data",
+      role: "chart-data",
+      actions: [],
+      metadata,
+    }], expectedComposer)).toEqual([]);
+  });
+});
+
+describe("pane screenshot chart-composer inputs", () => {
+  test("loads security symbols from the parsed chart spec instead of treating the expression as one ticker", () => {
+    const rawArg = "AAPL:price, MSFT:revenue, 3HNX:LSE:revenue, FRED:CPIAUCSL";
+    const chart = {
+      pane: { id: CHART_COMPOSER_PANE_ID },
+      instance: { settings: { chartSpec: buildCustomChartPreset(rawArg) } },
+      createOptions: { arg: rawArg },
+    } as unknown as ResolvedPaneFunction;
+
+    expect(collectShotSymbols(chart, rawArg)).toEqual(["AAPL", "MSFT", "3HNX:XLON"]);
+  });
+
+  test("uses rendered composer series for FRED-only screenshot readiness", () => {
+    const composer = resolved("chart-composer", {});
+    const semanticUi: RemoteUiNodeSnapshot[] = [{
+      id: "chart-composer-data",
+      role: "chart-data",
+      actions: [],
+      metadata: {
+        kind: "chart-composer",
+        baseSeries: [{
+          sourceKind: "economic",
+          economicSeriesId: "CPIAUCSL",
+          pointCount: 12,
+        }],
+      },
+    }];
+
+    expect(shotSemanticRowCount(composer, payload([]), semanticUi)).toBe(12);
+    expect(shotUnavailableSymbols(composer, payload([]), semanticUi)).toEqual([]);
+  });
+
+  test("reports an empty FRED composer source as unavailable", () => {
+    const semanticUi: RemoteUiNodeSnapshot[] = [{
+      id: "chart-composer-data",
+      role: "chart-data",
+      actions: [],
+      metadata: {
+        kind: "chart-composer",
+        baseSeries: [{
+          sourceKind: "economic",
+          economicSeriesId: "UNRATE",
+          pointCount: 0,
+        }],
+      },
+    }];
+
+    expect(shotUnavailableSymbols(resolved("chart-composer", {}), payload([]), semanticUi))
+      .toEqual(["FRED:UNRATE"]);
   });
 });
 

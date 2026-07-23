@@ -13,18 +13,22 @@ import {
   graphRowsForFinancials,
   limitGraphRowsBySymbol,
   metricDef,
-} from "../../plugins/builtin/ticker-detail/data-panes/fundamental-graph/model";
+} from "../../time-series/reporting";
 import type {
   FundamentalPeriod,
   GraphKind,
   GraphMetricKey,
-} from "../../plugins/builtin/ticker-detail/data-panes/fundamental-graph/types";
+} from "../../time-series/reporting";
 import {
   buildFinancialTableModel,
   formatFinancialHeader,
 } from "../../plugins/builtin/ticker-detail/financials/model";
 import type { PricePoint, TickerFinancials } from "../../types/financials";
 import { formatCurrency, formatNumber, formatPercent, formatPercentRaw } from "../../utils/format";
+import { publicTickerKey } from "../../utils/exchanges";
+import { apiClient } from "../../api-client";
+import { parseChartSpec } from "../../plugins/builtin/chart-composer/chart-spec";
+import { resolveChartSpecData } from "../../time-series/resolve";
 import { formatTimestamp } from "../helpers";
 import { buildTickerReport } from "../commands/ticker";
 import { createBaseConverter } from "../base-converter";
@@ -198,6 +202,103 @@ function contextOutputTable(
     widths.map((width) => "-".repeat(width)).join("  "),
     ...rows.map((row) => renderRow(row)),
   ].join("\n");
+}
+
+async function buildChartComposerReport(
+  resolved: ResolvedPaneFunction,
+  context: MarketContext,
+): Promise<PaneFunctionReport> {
+  const parsed = parseChartSpec(resolved.instance.settings?.chartSpec);
+  if (!parsed) throw new Error("The chart composer specification is invalid.");
+  const spec = {
+    ...parsed,
+    series: await Promise.all(parsed.series.map(async (series) => {
+      if (series.source.kind !== "security" || series.source.instrument.exchange) return series;
+      const ticker = await context.store.loadTicker(series.source.instrument.symbol);
+      return ticker?.metadata.exchange
+        ? {
+          ...series,
+          source: {
+            ...series.source,
+            instrument: { ...series.source.instrument, exchange: ticker.metadata.exchange },
+          },
+        }
+        : series;
+    })),
+  };
+  const result = await resolveChartSpecData(spec, {
+    dataProvider: context.dataProvider,
+    loadFredSeries: async (request) => ({
+      data: await apiClient.getCloudFredSeries(request.seriesId, {
+        startDate: request.startDate,
+        sortOrder: request.sortOrder,
+      }),
+      fetchedAt: Date.now(),
+      stale: false,
+      source: "network",
+    }),
+  });
+  const baseIds = new Set(spec.series.map((series) => series.id));
+  const series = result.series.map((entry) => ({
+    id: entry.id,
+    label: entry.label,
+    derived: !baseIds.has(entry.id),
+    unit: entry.unit,
+    panelId: entry.panelId,
+    axis: entry.axis,
+    style: entry.style,
+    transform: entry.transform,
+    observations: entry.points.map((point) => ({
+      date: point.date.toISOString(),
+      value: point.value ?? point.close ?? null,
+    })),
+  }));
+  const symbols = [...new Set(spec.series.flatMap((entry) => entry.source.kind === "security"
+    ? [publicTickerKey(entry.source.instrument.symbol, entry.source.instrument.exchange)]
+    : []))];
+  const unavailable = spec.series.flatMap((entry) => {
+    const output = result.series.find((candidate) => candidate.id === entry.id);
+    if (output?.points.length) return [];
+    return [entry.source.kind === "security"
+      ? publicTickerKey(entry.source.instrument.symbol, entry.source.instrument.exchange)
+      : `FRED:${entry.source.seriesId}`];
+  });
+  const rowCount = series.reduce((count, entry) => count + entry.observations.length, 0);
+  const tableRows = series.map((entry) => {
+    const latest = entry.observations.at(-1);
+    return [
+      entry.label,
+      latest?.date.slice(0, 10) ?? "-",
+      latest?.value == null ? "-" : formatNumber(latest.value, 4),
+      entry.unit,
+      String(entry.observations.length),
+    ];
+  });
+  const text = [
+    `${resolved.label} | ${spec.viewport.range} | ${spec.viewport.resolution}`,
+    "",
+    contextOutputTable([
+      { header: "Series" },
+      { header: "Latest" },
+      { header: "Value", align: "right" },
+      { header: "Unit" },
+      { header: "Points", align: "right" },
+    ], tableRows),
+    ...(result.warnings.length > 0 ? ["", `Warnings: ${result.warnings.join(" ")}`] : []),
+    ...(result.errors.length > 0 ? ["", `Errors: ${result.errors.join(" ")}`] : []),
+  ].join("\n");
+  return {
+    data: {
+      kind: "chart-composer",
+      ...reportBase(resolved, symbols, rowCount, unavailable),
+      viewport: spec.viewport,
+      panels: spec.panels,
+      warnings: result.warnings,
+      errors: result.errors,
+      series,
+    },
+    text,
+  };
 }
 
 function resolvedSymbols(resolved: ResolvedPaneFunction): string[] {
@@ -654,6 +755,8 @@ export async function buildFunctionReport(
   }
 
   switch (resolved.capability.id) {
+    case "chart-composer":
+      return buildChartComposerReport(resolved, context);
     case "fundamental-series":
       return buildGraphSeriesReport(resolved, context, "fundamental");
     case "valuation-series":

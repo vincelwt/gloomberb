@@ -1,6 +1,7 @@
 import { dirname, resolve } from "path";
 import { mkdir } from "fs/promises";
 import type { PaneRuntimeState } from "../../core/state/app/state";
+import { CHART_COMPOSER_PANE_ID } from "../../types/config";
 import type { OptionsChain, PricePoint, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { slugifyName } from "../../utils/slugify";
@@ -18,7 +19,7 @@ import {
   graphRowsForFinancials,
   limitGraphRowsBySymbol,
   metricDef,
-} from "../../plugins/builtin/ticker-detail/data-panes/fundamental-graph/model";
+} from "../../time-series/reporting";
 import {
   buildFinancialTableModel,
   formatFinancialHeader,
@@ -27,7 +28,7 @@ import type {
   FundamentalPeriod,
   GraphKind,
   GraphMetricKey,
-} from "../../plugins/builtin/ticker-detail/data-panes/fundamental-graph/types";
+} from "../../time-series/reporting";
 import type { TimeRange } from "../../components/chart/core/types";
 import { appendLiveQuotePoint } from "../../components/chart/core/data";
 import {
@@ -35,6 +36,10 @@ import {
   getVisibleWindowForDateRange,
   subtractTimeRange,
 } from "../../components/chart/core/date-window";
+import { parseChartSpec } from "../../plugins/builtin/chart-composer/chart-spec";
+import { publicTickerKey } from "../../utils/exchanges";
+import { apiClient } from "../../api-client";
+import type { FredSeriesCacheEntry } from "../../data/fred-series";
 import {
   collectShotSymbols,
   clipPriceHistoryToRange,
@@ -47,6 +52,29 @@ import {
 const DESKTOP_CELL_WIDTH_PX = 8;
 const DESKTOP_CELL_HEIGHT_PX = 18;
 const OPTIONS_PANE_ID = "options";
+
+async function collectShotFredSeries(
+  resolved: ResolvedPaneFunction,
+): Promise<Array<[string, FredSeriesCacheEntry]>> {
+  if (resolved.pane.id !== CHART_COMPOSER_PANE_ID) return [];
+  const spec = parseChartSpec(resolved.instance.settings?.chartSpec);
+  if (!spec) return [];
+  const seriesIds = [...new Set(spec.series.flatMap((series) => (
+    series.source.kind === "economic" ? [series.source.seriesId.trim().toUpperCase()] : []
+  )))];
+  const loaded = await Promise.all(seriesIds.map(async (seriesId) => {
+    try {
+      const data = await apiClient.getCloudFredSeries(seriesId, {
+        startDate: "1900-01-01",
+        sortOrder: "asc",
+      });
+      return [seriesId, { data, fetchedAt: Date.now(), stale: false }] as [string, FredSeriesCacheEntry];
+    } catch {
+      return null;
+    }
+  }));
+  return loaded.filter((entry): entry is [string, FredSeriesCacheEntry] => !!entry);
+}
 
 export interface PaneScreenshotExpectedSelection {
   control: "metric" | "statement" | "period";
@@ -70,12 +98,23 @@ export interface PaneScreenshotChartSeriesEvidence {
 }
 
 export interface PaneScreenshotExpectedChartEvidence {
-  kind: "stock-price" | "price-comparison";
+  kind: "stock-price" | "price-comparison" | "chart-composer";
   symbols: string[];
   rangePreset: string;
-  axisMode: string;
+  axisMode?: string;
   resolution?: string;
-  sourceSeries: PaneScreenshotChartSeriesEvidence[];
+  sourceSeries?: PaneScreenshotChartSeriesEvidence[];
+  baseSeries?: Array<{
+    id: string;
+    sourceKind: "security" | "economic";
+    symbol?: string;
+    fieldId?: string;
+    economicSeriesId?: string;
+    style: string;
+    transform: string;
+    panelId: string;
+    visible: boolean;
+  }>;
 }
 
 export interface PaneScreenshotPriceComparisonEvidence {
@@ -220,18 +259,20 @@ async function buildDesktopShotPayload(
   const tickers: TickerRecord[] = [];
   const financials: Array<[string, TickerFinancials]> = [];
   const optionsChains: Array<[string, OptionsChain]> = [];
+  const fredSeries = await collectShotFredSeries(resolved);
   const includeOptionsChains = resolved.pane.id === OPTIONS_PANE_ID || resolved.template?.paneId === OPTIONS_PANE_ID;
   for (const symbol of collectShotSymbols(resolved, rawArg)) {
     const entry = await fetchTickerFinancials(context, symbol);
     const requestedRange = shotPriceHistoryRange(resolved);
     let data = entry.financials;
     if (requestedRange) {
-      const exchange = entry.tickerFile?.metadata.exchange
+      const exchange = entry.instrument.exchange
+        ?? entry.tickerFile?.metadata.exchange
         ?? data.quote?.listingExchangeName
         ?? data.quote?.exchangeName
         ?? "";
       try {
-        const priceHistory = await context.dataProvider.getPriceHistory(symbol, exchange, requestedRange);
+        const priceHistory = await context.dataProvider.getPriceHistory(entry.instrument.symbol, exchange, requestedRange);
         data = { ...data, priceHistory: clipPriceHistoryToRange(priceHistory, requestedRange) };
       } catch {
         data = await withShotPriceHistory(context, symbol, entry.tickerFile, data);
@@ -240,11 +281,12 @@ async function buildDesktopShotPayload(
     tickers.push(entry.tickerFile ?? createFallbackTicker(symbol, data, context));
     financials.push([symbol, data]);
     if (includeOptionsChains && context.dataProvider.getOptionsChain) {
-      const exchange = entry.tickerFile?.metadata.exchange
+      const exchange = entry.instrument.exchange
+        ?? entry.tickerFile?.metadata.exchange
         ?? data.quote?.listingExchangeName
         ?? data.quote?.exchangeName
         ?? "";
-      const chain = await context.dataProvider.getOptionsChain(symbol, exchange);
+      const chain = await context.dataProvider.getOptionsChain(entry.instrument.symbol, exchange);
       optionsChains.push([symbol, chain]);
     }
   }
@@ -259,12 +301,15 @@ async function buildDesktopShotPayload(
     tickers,
     financials,
     optionsChains,
+    fredSeries,
     paneState,
   };
 }
 
 export function shotPriceHistoryRange(resolved: ResolvedPaneFunction): TimeRange | null {
   switch (resolved.capability.id) {
+    case "chart-composer":
+      return parseChartSpec(resolved.instance.settings?.chartSpec)?.viewport.range ?? null;
     case "valuation-series":
       return "ALL";
     case "price-chart":
@@ -303,8 +348,8 @@ export async function renderDesktopShot({
   const payload = await buildDesktopShotPayload(resolved, context, rawArg, options, width, height);
   const render = await renderDesktopPaneScreenshot(payload, outputPath);
   const symbols = payload.financials.map(([symbol]) => symbol);
-  const rowCount = shotSemanticRowCount(resolved, payload);
-  const unavailableSymbols = shotUnavailableSymbols(resolved, payload);
+  const rowCount = shotSemanticRowCount(resolved, payload, render.semanticUi);
+  const unavailableSymbols = shotUnavailableSymbols(resolved, payload, render.semanticUi);
   const complete = unavailableSymbols.length === 0;
   const expectedText = shotExpectedText(resolved, symbols, payload);
   const normalizedVisibleText = render.visibleText.toLowerCase();
@@ -564,6 +609,34 @@ function shotExpectedChart(
   resolved: ResolvedPaneFunction,
   payload: DesktopPaneShotPayload,
 ): PaneScreenshotExpectedChartEvidence | null {
+  if (resolved.pane.id === CHART_COMPOSER_PANE_ID) {
+    const spec = parseChartSpec(resolved.instance.settings?.chartSpec);
+    if (!spec) return null;
+    return {
+      kind: "chart-composer",
+      symbols: [...new Set(spec.series.flatMap((series) => (
+        series.source.kind === "security"
+          ? [publicTickerKey(series.source.instrument.symbol, series.source.instrument.exchange)]
+          : []
+      )))],
+      rangePreset: spec.viewport.range,
+      resolution: spec.viewport.resolution,
+      baseSeries: spec.series.map((series) => ({
+        id: series.id,
+        sourceKind: series.source.kind,
+        ...(series.source.kind === "security"
+          ? {
+            symbol: publicTickerKey(series.source.instrument.symbol, series.source.instrument.exchange),
+            fieldId: series.source.fieldId,
+          }
+          : { economicSeriesId: series.source.seriesId }),
+        style: series.style,
+        transform: series.transform,
+        panelId: series.panelId,
+        visible: series.visible !== false,
+      })),
+    };
+  }
   if (resolved.capability.id === "price-chart") {
     const range = String(resolved.options.rangePreset ?? "5Y") as TimeRange;
     const sourceSeries = payload.financials.slice(0, 1).map(([symbol, financials]) => {
@@ -690,18 +763,53 @@ export function chartEvidenceMismatchesFor(
     mismatches.push("rendered chart range does not match");
   }
 
+  if (expected.kind === "chart-composer") {
+    if (expected.resolution != null && metadata.resolution !== expected.resolution) {
+      mismatches.push("rendered chart resolution does not match");
+    }
+    const actualSeries = Array.isArray(metadata.baseSeries) ? metadata.baseSeries : [];
+    const expectedSeries = expected.baseSeries ?? [];
+    if (actualSeries.length !== expectedSeries.length) {
+      mismatches.push("rendered chart base-series count does not match");
+    } else {
+      expectedSeries.forEach((series, index) => {
+        const actual = actualSeries[index];
+        if (!isRecord(actual)
+          || actual.id !== series.id
+          || actual.sourceKind !== series.sourceKind
+          || actual.symbol !== series.symbol
+          || actual.fieldId !== series.fieldId
+          || actual.economicSeriesId !== series.economicSeriesId
+          || actual.style !== series.style
+          || actual.transform !== series.transform
+          || actual.panelId !== series.panelId
+          || actual.visible !== series.visible) {
+          mismatches.push(`rendered chart series ${series.id} does not match`);
+          return;
+        }
+        if (series.visible && (typeof actual.pointCount !== "number" || actual.pointCount <= 0)) {
+          mismatches.push(`rendered chart series ${series.id} is empty`);
+        }
+      });
+    }
+    if (typeof metadata.projectedPointCount !== "number" || metadata.projectedPointCount <= 0) {
+      mismatches.push("rendered chart projection is empty");
+    }
+    return mismatches;
+  }
+
   if (expected.kind === "stock-price") {
     if (metadata.axisMode !== expected.axisMode) {
       mismatches.push("rendered chart axis mode does not match");
     }
-    const expectedSeries = expected.sourceSeries[0];
+    const expectedSeries = expected.sourceSeries?.[0];
     if (!expectedSeries) return [...mismatches, "expected stock chart source evidence is missing"];
     mismatches.push(...sourceSeriesMismatches([{
       symbol: symbols?.[0],
       pointCount: metadata.sourcePointCount,
       first: metadata.sourceFirst,
       last: metadata.sourceLast,
-    }], expected.sourceSeries));
+    }], expected.sourceSeries ?? []));
     if (typeof metadata.projectedPointCount !== "number" || metadata.projectedPointCount <= 0) {
       mismatches.push("rendered stock chart projection is empty");
     }
@@ -720,15 +828,16 @@ export function chartEvidenceMismatchesFor(
   ) {
     mismatches.push("rendered comparison resolution does not match");
   }
-  mismatches.push(...sourceSeriesMismatches(metadata.sourceSeries, expected.sourceSeries));
+  const expectedSourceSeries = expected.sourceSeries ?? [];
+  mismatches.push(...sourceSeriesMismatches(metadata.sourceSeries, expectedSourceSeries));
 
   const projectionSeries = Array.isArray(metadata.projectionSeries)
     ? metadata.projectionSeries
     : [];
-  if (projectionSeries.length !== expected.sourceSeries.length) {
+  if (projectionSeries.length !== expectedSourceSeries.length) {
     mismatches.push("rendered comparison projection-series count does not match");
   } else {
-    expected.sourceSeries.forEach((expectedSeries, index) => {
+    expectedSourceSeries.forEach((expectedSeries, index) => {
       const actualSeries = projectionSeries[index];
       if (!isRecord(actualSeries) || actualSeries.symbol !== expectedSeries.symbol) {
         mismatches.push(`${expectedSeries.symbol} comparison projection is missing`);
@@ -761,10 +870,25 @@ export function chartEvidenceMismatchesFor(
   return mismatches;
 }
 
-function shotUnavailableSymbols(
+export function shotUnavailableSymbols(
   resolved: ResolvedPaneFunction,
   payload: DesktopPaneShotPayload,
+  semanticUi: RemoteUiNodeSnapshot[] = [],
 ): string[] {
+  if (resolved.capability.id === "chart-composer") {
+    const metadata = semanticUi.find((node) => (
+      node.role === "chart-data" && node.metadata?.kind === "chart-composer"
+    ))?.metadata;
+    const baseSeries = Array.isArray(metadata?.baseSeries) ? metadata.baseSeries : [];
+    return baseSeries.flatMap((entry) => {
+      if (!isRecord(entry) || (typeof entry.pointCount === "number" && entry.pointCount > 0)) return [];
+      if (entry.sourceKind === "security" && typeof entry.symbol === "string") return [entry.symbol];
+      if (entry.sourceKind === "economic" && typeof entry.economicSeriesId === "string") {
+        return [`FRED:${entry.economicSeriesId}`];
+      }
+      return [];
+    });
+  }
   const graphKind = shotGraphKind(resolved);
   if (graphKind) {
     const metric = resolved.options.metric as GraphMetricKey;
@@ -800,7 +924,20 @@ function shotGraphKind(resolved: ResolvedPaneFunction): GraphKind | null {
   return null;
 }
 
-function shotSemanticRowCount(resolved: ResolvedPaneFunction, payload: DesktopPaneShotPayload): number {
+export function shotSemanticRowCount(
+  resolved: ResolvedPaneFunction,
+  payload: DesktopPaneShotPayload,
+  semanticUi: RemoteUiNodeSnapshot[] = [],
+): number {
+  if (resolved.capability.id === "chart-composer") {
+    const metadata = semanticUi.find((node) => (
+      node.role === "chart-data" && node.metadata?.kind === "chart-composer"
+    ))?.metadata;
+    const baseSeries = Array.isArray(metadata?.baseSeries) ? metadata.baseSeries : [];
+    return baseSeries.reduce((count, entry) => (
+      count + (isRecord(entry) && typeof entry.pointCount === "number" ? Math.max(0, entry.pointCount) : 0)
+    ), 0);
+  }
   const graphKind = shotGraphKind(resolved);
   if (graphKind) {
     const metric = resolved.options.metric as GraphMetricKey;
@@ -842,6 +979,7 @@ function shotExpectedText(
     const period = resolved.options.period as FundamentalPeriod;
     const periodCount = resolved.options.periods == null ? null : Number(resolved.options.periods);
     expected.push(definition.label);
+    if (resolved.pane.id === CHART_COMPOSER_PANE_ID) return expected.filter(Boolean);
     for (const [symbol, financials] of payload.financials) {
       const latestRow = limitGraphRowsBySymbol(
         graphRowsForFinancials(financials, graphKind, metric, period, symbol),
@@ -878,6 +1016,7 @@ function shotExpectedText(
 function shotExpectedSelections(
   resolved: ResolvedPaneFunction,
 ): PaneScreenshotExpectedSelection[] {
+  if (resolved.pane.id === CHART_COMPOSER_PANE_ID) return [];
   if (shotGraphKind(resolved)) {
     return [{
       control: "metric",

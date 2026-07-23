@@ -11,6 +11,13 @@ export interface PaneFooterSegment {
   disabled?: boolean;
 }
 
+export interface PaneFooterPressEvent {
+  pixelX?: number;
+  pixelY?: number;
+  stopPropagation?: () => void;
+  preventDefault?: () => void;
+}
+
 export interface PaneFooterPart {
   text: string;
   tone?: "label" | "value" | "muted" | "positive" | "negative" | "warning";
@@ -22,7 +29,7 @@ export interface PaneHint {
   id: string;
   key: string;
   label: string;
-  onPress?: () => void;
+  onPress?: (event?: PaneFooterPressEvent) => void;
   disabled?: boolean;
 }
 

@@ -15,6 +15,7 @@ import {
   WebSegmentedControl,
   WebTextField,
 } from "./desktop/controls";
+import { WebPopover } from "./desktop/popover";
 import { WebBox } from "./host/box";
 import { WebChartSurface } from "./host/chart-surface";
 import { WebInput, WebTextarea } from "./host/input";
@@ -85,6 +86,7 @@ export function createWebUiHost(desktopPlatform?: string): UiHost {
     Textarea: WebTextarea,
     Button: WebButton,
     Checkbox: WebCheckbox,
+    Popover: WebPopover,
     TextField: WebTextField,
     MessageComposer: WebMessageComposer,
     ListView: WebListView,

@@ -2,13 +2,25 @@ import { Box, Text, useUiHost } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { type AlertContext, useDialog, useDialogKeyboard } from "../../../ui/dialog";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  type ForwardedRef,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { colors } from "../../../theme/colors";
 import { isDetailBackNavigationKey } from "../../../utils/back-navigation";
-import { isPlainKey } from "../../../utils/keyboard";
+import { isPlainKey, isPlainKeyboardEvent } from "../../../utils/keyboard";
 import { ToggleList } from "../../toggle-list";
 import { Button } from "../button";
+import { Checkbox } from "../checkbox";
 import { DialogFrame } from "../frame";
+import { Popover } from "../popover";
 import {
   getMultiSelectDisplayValues,
   mergeMultiSelectDisplayValues,
@@ -46,6 +58,17 @@ export interface MultiSelectDialogButtonProps {
   renderTrigger?: (props: MultiSelectDialogTriggerProps) => ReactNode;
   shortcutKey?: string | string[];
   shortcutActive?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export interface MultiSelectPopoverAnchorPoint {
+  x: number;
+  y: number;
+}
+
+export interface MultiSelectDialogButtonHandle {
+  open(anchorPoint?: MultiSelectPopoverAnchorPoint): void;
+  close(): void;
 }
 
 type DialogTriggerEvent = { stopPropagation?: () => void; preventDefault?: () => void };
@@ -68,8 +91,11 @@ function stopMouseEvent(event?: DialogTriggerEvent) {
   event?.preventDefault?.();
 }
 
-function matchesShortcut(event: { name?: string; sequence?: string }, shortcutKey: string | string[] | undefined): boolean {
-  if (!shortcutKey) return false;
+function matchesShortcut(
+  event: { name?: string; sequence?: string; ctrl?: boolean; meta?: boolean; super?: boolean; alt?: boolean; option?: boolean; shift?: boolean },
+  shortcutKey: string | string[] | undefined,
+): boolean {
+  if (!shortcutKey || !isPlainKeyboardEvent(event)) return false;
   const keys = Array.isArray(shortcutKey) ? shortcutKey : [shortcutKey];
   const name = event.name?.toLowerCase() ?? "";
   const sequence = event.sequence?.toLowerCase() ?? "";
@@ -77,6 +103,69 @@ function matchesShortcut(event: { name?: string; sequence?: string }, shortcutKe
     const normalized = key.toLowerCase();
     return normalized === name || normalized === sequence;
   });
+}
+
+function DesktopMultiSelectMenu({
+  title,
+  options,
+  selectedValues: selectedValuesProp,
+  onChange,
+  emptyLabel,
+}: Pick<MultiSelectDialogContentProps, "title" | "options" | "selectedValues" | "onChange" | "emptyLabel">) {
+  const [selectedValues, setSelectedValues] = useState(() => normalizeMultiSelectValues(options, selectedValuesProp));
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelectedValues(normalizeMultiSelectValues(options, selectedValuesProp));
+  }, [options, selectedValuesProp]);
+
+  const toggleOption = async (option: MultiSelectOption) => {
+    if (option.disabled) return;
+    const previous = selectedValues;
+    const next = toggleMultiSelectValue(options, selectedValues, option.value);
+    setSelectedValues(next);
+    setError(null);
+    try {
+      await onChange(next);
+    } catch (nextError) {
+      setSelectedValues(previous);
+      setError(nextError instanceof Error ? nextError.message : "Could not update selection.");
+    }
+  };
+
+  return (
+    <Box flexDirection="column" width="300px" maxWidth="calc(100vw - 40px)" style={{ gap: 6 }}>
+      <Text fg={colors.textBright} attributes={TextAttributes.BOLD} style={{ fontWeight: 700, padding: "1px 4px 4px" }}>
+        {title}
+      </Text>
+      {options.length === 0 ? (
+        <Text fg={colors.textMuted} style={{ padding: "4px" }}>{emptyLabel ?? "None"}</Text>
+      ) : (
+        <Box flexDirection="column" style={{ gap: 2 }}>
+          {options.map((option) => (
+            <Box
+              key={option.value}
+              width="100%"
+              flexDirection="column"
+              style={{ borderRadius: 6, padding: "5px 6px" }}
+              hoverBackgroundColor="color-mix(in srgb, var(--gloom-text-bright) 7%, transparent)"
+            >
+              <Checkbox
+                label={option.label}
+                checked={selectedValues.includes(option.value)}
+                disabled={option.disabled}
+                description={option.description}
+                width="100%"
+                variant="desktop"
+                onChange={() => { void toggleOption(option); }}
+              />
+            </Box>
+          ))}
+        </Box>
+      )}
+      {error ? <Text fg={colors.negative} wrapText style={{ padding: "4px" }}>{error}</Text> : null}
+    </Box>
+  );
 }
 
 function normalizeDialogSelectedValues(
@@ -237,7 +326,7 @@ export function MultiSelectDialogContent({
   );
 }
 
-export function MultiSelectDialogButton({
+function MultiSelectDialogButtonInner({
   label,
   title,
   options,
@@ -250,16 +339,26 @@ export function MultiSelectDialogButton({
   renderTrigger,
   shortcutKey,
   shortcutActive = false,
-}: MultiSelectDialogButtonProps) {
+  onOpenChange,
+}: MultiSelectDialogButtonProps, ref: ForwardedRef<MultiSelectDialogButtonHandle>) {
   const isDesktopWeb = useUiHost().kind === "desktop-web";
   const dialog = useDialog();
   const triggerMouseDownRef = useRef(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [popoverAnchorPoint, setPopoverAnchorPoint] = useState<MultiSelectPopoverAnchorPoint | null>(null);
   const summary = summarizeMultiSelectValues({ options, selectedValues, emptyLabel });
   const buttonLabel = `${label}: ${summary}`;
   const buttonText = ` ${buttonLabel} `;
-  const openDialog = (event?: DialogTriggerEvent) => {
+  const openDialog = useCallback((event?: DialogTriggerEvent, anchorPoint?: MultiSelectPopoverAnchorPoint) => {
     stopMouseEvent(event);
     if (disabled) return;
+    if (isDesktopWeb && !ordered) {
+      setPopoverAnchorPoint(anchorPoint ?? null);
+      setPopoverOpen(true);
+      onOpenChange?.(true);
+      return;
+    }
+    onOpenChange?.(true);
     void dialog.alert({
       closeOnClickOutside: true,
       content: (ctx: AlertContext) => (
@@ -274,16 +373,33 @@ export function MultiSelectDialogButton({
           idPrefix={idPrefix}
         />
       ),
-    }).catch(() => {});
-  };
+    }).catch(() => {}).finally(() => onOpenChange?.(false));
+  }, [dialog, disabled, emptyLabel, idPrefix, isDesktopWeb, label, onChange, onOpenChange, options, ordered, selectedValues, title]);
+
+  const closePopover = useCallback(() => {
+    setPopoverOpen(false);
+    setPopoverAnchorPoint(null);
+    onOpenChange?.(false);
+  }, [onOpenChange]);
+  useImperativeHandle(ref, () => ({
+    open: (anchorPoint) => openDialog(undefined, anchorPoint),
+    close: closePopover,
+  }), [closePopover, openDialog]);
+
+  useEffect(() => {
+    if (!disabled) return;
+    setPopoverOpen(false);
+    onOpenChange?.(false);
+  }, [disabled, onOpenChange]);
 
   useShortcut((event) => {
     if (!shortcutActive || disabled || !matchesShortcut(event, shortcutKey)) return;
     openDialog(event);
   });
 
+  let trigger: ReactNode;
   if (renderTrigger) {
-    return renderTrigger({
+    trigger = renderTrigger({
       buttonLabel,
       buttonText,
       summary,
@@ -291,10 +407,8 @@ export function MultiSelectDialogButton({
       openDialog,
       stopMouseEvent,
     });
-  }
-
-  if (isDesktopWeb) {
-    return (
+  } else if (isDesktopWeb) {
+    trigger = (
       <Box
         id={idPrefix ? `${idPrefix}:button` : undefined}
         height={1}
@@ -310,39 +424,69 @@ export function MultiSelectDialogButton({
         />
       </Box>
     );
-  }
-
-  const startTriggerPress = (event?: DialogTriggerEvent) => {
-    triggerMouseDownRef.current = true;
-    stopMouseEvent(event);
-  };
-  const finishTriggerPress = (event?: DialogTriggerEvent) => {
-    const startedOnTrigger = triggerMouseDownRef.current;
-    triggerMouseDownRef.current = false;
-    if (startedOnTrigger) openDialog(event);
-    else stopMouseEvent(event);
-  };
-
-  return (
-    <Box
-      id={idPrefix ? `${idPrefix}:button` : undefined}
-      height={1}
-      width={buttonText.length}
-      flexDirection="row"
-      backgroundColor={disabled ? colors.panel : colors.selected}
-      onMouseDown={startTriggerPress}
-      onMouseUp={finishTriggerPress}
-    >
-      <Text
-        fg={disabled ? colors.textMuted : colors.selectedText}
-        attributes={TextAttributes.BOLD}
+  } else {
+    const startTriggerPress = (event?: DialogTriggerEvent) => {
+      triggerMouseDownRef.current = true;
+      stopMouseEvent(event);
+    };
+    const finishTriggerPress = (event?: DialogTriggerEvent) => {
+      const startedOnTrigger = triggerMouseDownRef.current;
+      triggerMouseDownRef.current = false;
+      if (startedOnTrigger) openDialog(event);
+      else stopMouseEvent(event);
+    };
+    trigger = (
+      <Box
+        id={idPrefix ? `${idPrefix}:button` : undefined}
+        height={1}
+        width={buttonText.length}
+        flexDirection="row"
+        backgroundColor={disabled ? colors.panel : colors.selected}
         onMouseDown={startTriggerPress}
         onMouseUp={finishTriggerPress}
       >
-        {buttonText}
-      </Text>
-    </Box>
-  );
+        <Text
+          fg={disabled ? colors.textMuted : colors.selectedText}
+          attributes={TextAttributes.BOLD}
+          onMouseDown={startTriggerPress}
+          onMouseUp={finishTriggerPress}
+        >
+          {buttonText}
+        </Text>
+      </Box>
+    );
+  }
+
+  if (isDesktopWeb && !ordered) {
+    return (
+      <Popover
+        open={popoverOpen}
+        onOpenChange={(open) => {
+          setPopoverOpen(open);
+          if (!open) setPopoverAnchorPoint(null);
+          onOpenChange?.(open);
+        }}
+        trigger={trigger}
+        anchorPoint={popoverAnchorPoint}
+        placement="bottom-start"
+        minWidth={300}
+        label={title ?? label}
+      >
+        <DesktopMultiSelectMenu
+          title={title ?? label}
+          options={options}
+          selectedValues={selectedValues}
+          onChange={onChange}
+          emptyLabel={emptyLabel}
+        />
+      </Popover>
+    );
+  }
+
+  return trigger;
 }
+
+export const MultiSelectDialogButton = forwardRef(MultiSelectDialogButtonInner);
+MultiSelectDialogButton.displayName = "MultiSelectDialogButton";
 
 export type { MultiSelectOption };

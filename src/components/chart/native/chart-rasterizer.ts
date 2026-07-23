@@ -1,4 +1,3 @@
-export { renderNativeComparisonChartBase } from "./raster/comparison-chart";
 export { renderNativeCrosshairOverlay } from "./raster/crosshair";
 export { renderNativeChartBase } from "./raster/price-chart";
 

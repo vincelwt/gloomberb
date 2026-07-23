@@ -3,13 +3,6 @@ import type { TickerFinancials } from "../../../types/financials";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { normalizeTickerInput } from "../../../tickers/search";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
-import { TickerChartPane, ChartResearchTab } from "./chart-pane";
-import {
-  buildGraphPaneSettingsDef,
-  createGraphPaneTemplate,
-  FundamentalGraphPane,
-  FundamentalGraphsResearchTab,
-} from "./data-panes/fundamental-graph";
 import { FinancialAnalysisPane, FinancialsResearchTab } from "./financials/pane";
 import { HistoricalPricesPane } from "./data-panes/historical-prices";
 import {
@@ -22,7 +15,6 @@ import { QuoteMonitorPane } from "./quote-monitor";
 import {
   buildQuoteMonitorSettingsDef,
   buildQuoteMonitorPaneTitle,
-  buildTickerChartSettingsDef,
   buildTickerResearchSettingsDef,
   getTickerResearchPaneSettings,
 } from "./settings";
@@ -48,25 +40,6 @@ export const tickerDetailModule: PluginModule = {
       component: FinancialsResearchTab,
       isVisible: ({ financials }) => hasStatementFinancials(financials),
     });
-    ctx.registerTickerResearchTab({
-      id: "chart",
-      name: "Chart",
-      order: 30,
-      component: ChartResearchTab,
-      isVisible: ({ ticker }) => !!ticker,
-    });
-    ctx.registerTickerResearchTab({
-      id: "fundamental-graphs",
-      name: "Graphs",
-      order: 28,
-      component: FundamentalGraphsResearchTab,
-      isVisible: ({ ticker, financials }) => !!ticker && (
-        (financials?.annualStatements.length ?? 0) > 0
-        || (financials?.quarterlyStatements.length ?? 0) > 0
-        || !!financials?.fundamentals
-        || !!financials?.quote?.marketCap
-      ),
-    });
   },
 
   panes: [
@@ -89,16 +62,6 @@ export const tickerDetailModule: PluginModule = {
       defaultFloatingSize: { width: 98, height: 30 },
     },
     {
-      id: "ticker-chart",
-      name: "Chart",
-      icon: "G",
-      component: TickerChartPane,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 92, height: 30 },
-      settings: () => buildTickerChartSettingsDef(),
-    },
-    {
       id: "quote-monitor",
       name: "Quote Monitor",
       icon: "Q",
@@ -116,16 +79,6 @@ export const tickerDetailModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 92, height: 26 },
-    },
-    {
-      id: "fundamental-graph",
-      name: "Fundamental Graph",
-      icon: "G",
-      component: FundamentalGraphPane,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 82, height: 22 },
-      settings: buildGraphPaneSettingsDef(),
     },
     {
       id: "provider-search-results",
@@ -202,20 +155,6 @@ export const tickerDetailModule: PluginModule = {
       keywords: ["historical", "prices", "hp", "ohlc", "volume"],
       shortcut: "HP",
     }),
-    createGraphPaneTemplate({
-      id: "fundamental-graph-pane",
-      label: "Fundamental Graph",
-      description: "Graph statement metrics for one or more tickers.",
-      shortcut: "GF",
-      chartKind: "fundamental",
-    }),
-    createGraphPaneTemplate({
-      id: "valuation-graph-pane",
-      label: "Valuation Graph",
-      description: "Graph valuation multiples for one or more tickers.",
-      shortcut: "GE",
-      chartKind: "valuation",
-    }),
     createProviderSearchPaneTemplate(),
     createTickerSurfacePaneTemplate({
       id: "financial-analysis-pane",
@@ -225,32 +164,6 @@ export const tickerDetailModule: PluginModule = {
       keywords: ["fa", "financial", "analysis", "statements"],
       shortcut: "FA",
       titlePrefix: "FA",
-    }),
-    createTickerSurfacePaneTemplate({
-      id: "graph-price-pane",
-      paneId: "ticker-chart",
-      label: "Graph Price",
-      description: "Open a price chart for a ticker.",
-      keywords: ["gp", "graph", "price", "chart"],
-      shortcut: "GP",
-      viewKey: "price",
-      settings: () => ({
-        chartRangePreset: "5Y",
-        chartResolution: "auto",
-      }),
-    }),
-    createTickerSurfacePaneTemplate({
-      id: "graph-intraday-price-pane",
-      paneId: "ticker-chart",
-      label: "Intraday Price Graph",
-      description: "Open an intraday price chart for a ticker.",
-      keywords: ["gip", "intraday", "graph", "chart"],
-      shortcut: "GIP",
-      viewKey: "intraday",
-      settings: () => ({
-        chartRangePreset: "1D",
-        chartResolution: "1m",
-      }),
     }),
   ],
 };

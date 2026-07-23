@@ -12,9 +12,9 @@ import { resolveFredMapping } from "./fred-series-map";
 import {
   getCachedFredSeries,
   loadCachedFredSeries,
-  type FredSeriesCacheData,
+  type FredSeriesData,
   type FredSeriesRequest,
-} from "./fred-cache";
+} from "../../../data/fred-series";
 import type { EconEvent } from "./types";
 
 interface EconDetailViewProps {
@@ -40,7 +40,8 @@ export function EconDetailView({ event, width, height, focused }: EconDetailView
   const { navigateTicker } = usePluginTickerActions();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<FredSeriesCacheData | null>(null);
+  const [freshnessWarning, setFreshnessWarning] = useState<string | null>(null);
+  const [data, setData] = useState<FredSeriesData | null>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
 
   const mapping = useMemo(() => resolveFredMapping(event.event, event.country), [event.event, event.country]);
@@ -61,6 +62,7 @@ export function EconDetailView({ event, width, height, focused }: EconDetailView
       setData(null);
       setLoading(false);
       setError(null);
+      setFreshnessWarning(null);
       return;
     }
 
@@ -70,6 +72,7 @@ export function EconDetailView({ event, width, height, focused }: EconDetailView
       if (!cached.stale) {
         setLoading(false);
         setError(null);
+        setFreshnessWarning(null);
         return;
       }
     } else {
@@ -78,6 +81,7 @@ export function EconDetailView({ event, width, height, focused }: EconDetailView
 
     setLoading(true);
     setError(null);
+    setFreshnessWarning(null);
 
     loadCachedFredSeries(
       request,
@@ -87,7 +91,10 @@ export function EconDetailView({ event, width, height, focused }: EconDetailView
       }),
     )
       .then((entry) => {
-        setData(entry);
+        setData(entry.data);
+        setFreshnessWarning(entry.stale
+          ? `Cached ${new Date(entry.fetchedAt).toISOString().slice(0, 10)} · refresh failed`
+          : null);
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : String(err));
@@ -221,6 +228,12 @@ export function EconDetailView({ event, width, height, focused }: EconDetailView
         <Text fg={colors.textMuted}>
           {[units, info?.frequency, info?.seasonalAdjustment].filter(Boolean).join(" · ")}
         </Text>
+        {freshnessWarning ? (
+          <>
+            <Box flexGrow={1} />
+            <Text fg={colors.warning}>{freshnessWarning}</Text>
+          </>
+        ) : null}
       </Box>
 
       <Box paddingX={1} flexDirection="row" height={1}>

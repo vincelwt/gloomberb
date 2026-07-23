@@ -1,5 +1,8 @@
 import type { PaneInstanceConfig } from "../../types/config";
+import { CHART_COMPOSER_PANE_ID } from "../../types/config";
 import type { PaneDef, PaneTemplateCreateOptions, PaneTemplateDef } from "../../types/plugin";
+import { applyChartComposerCapabilityOptions } from "../../plugins/builtin/chart-composer/cli-options";
+import { parseChartSpec } from "../../plugins/builtin/chart-composer/chart-spec";
 import { normalizeTickerInput } from "../../tickers/search";
 import { slugifyName } from "../../utils/slugify";
 import type { MarketContext } from "../types";
@@ -38,7 +41,7 @@ export interface ResolvedPaneFunction {
 }
 
 async function buildPaneInstance(
-  resolved: Pick<ResolvedPaneFunction, "pane" | "template" | "createOptions" | "optionSettings">,
+  resolved: Pick<ResolvedPaneFunction, "pane" | "template" | "createOptions" | "optionSettings" | "capability" | "options">,
   context: MarketContext,
   target: string,
 ): Promise<PaneInstanceConfig> {
@@ -48,16 +51,28 @@ async function buildPaneInstance(
   const templateContext = buildTemplateContext(context, primarySymbol ?? null);
   const spec = await resolved.template?.createInstance?.(templateContext, resolved.createOptions) ?? {};
   const instanceId = `${resolved.pane.id}:cli-${slugifyName(target || resolved.pane.id, "pane")}`;
+  const settings = (() => {
+    if (resolved.pane.id !== CHART_COMPOSER_PANE_ID) {
+      return { ...spec.settings, ...resolved.optionSettings };
+    }
+    const chartSpec = parseChartSpec(spec.settings?.chartSpec);
+    if (!chartSpec) throw new Error("The chart template did not produce a valid chart specification.");
+    return {
+      ...spec.settings,
+      chartSpec: applyChartComposerCapabilityOptions(
+        chartSpec,
+        resolved.capability.id,
+        resolved.options,
+      ),
+    };
+  })();
   return {
     instanceId,
     paneId: resolved.pane.id,
     title: spec.title ?? primarySymbol ?? resolved.pane.name,
     binding: spec.binding ?? (primarySymbol ? { kind: "fixed", symbol: primarySymbol } : { kind: "none" }),
     params: spec.params,
-    settings: {
-      ...spec.settings,
-      ...resolved.optionSettings,
-    },
+    settings,
   };
 }
 

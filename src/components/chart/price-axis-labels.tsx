@@ -7,11 +7,13 @@ interface PriceAxisLabelsProps {
   axisLabels: ReadonlyMap<number, string>;
   axisWidth: number;
   axisSectionWidth: number;
+  side?: "left" | "right";
   height: number;
   cursorRow: number | null;
   cursorPixelY?: number | null;
   cursorLabel: string | null;
   cursorColor: string;
+  cursorBackgroundColor?: string;
   axisColor?: string;
 }
 
@@ -57,11 +59,13 @@ export function PriceAxisLabels({
   axisLabels,
   axisWidth,
   axisSectionWidth,
+  side,
   height,
   cursorRow,
   cursorPixelY = null,
   cursorLabel,
   cursorColor,
+  cursorBackgroundColor = colors.bg,
   axisColor = colors.textDim,
 }: PriceAxisLabelsProps) {
   const { cellHeightPx = 18, fractionalViewport = false } = useUiCapabilities();
@@ -75,17 +79,27 @@ export function PriceAxisLabels({
   }), [axisSectionWidth, axisWidth, cellHeightPx, cursorLabel, cursorPixelY, height]);
   const usePixelOverlay = fractionalViewport && overlay.labelText !== null && overlay.topPercent !== null;
   const axisPaddingWidth = Math.max(0, axisSectionWidth - axisWidth);
-  const axisLabelJustify = fractionalViewport ? "flex-start" : "flex-end";
+  const axisLabelJustify = side === "left"
+    ? "flex-end"
+    : side === "right"
+      ? "flex-start"
+      : fractionalViewport
+        ? "flex-start"
+        : "flex-end";
+  const formatLabel = (label: string | null) => {
+    const formatted = formatAxisCell(label, axisWidth);
+    return side === "right" ? formatted.trimStart().padEnd(axisWidth) : formatted;
+  };
   const renderAxisLabel = (label: string | null, fg: string) => (
     fractionalViewport ? (
       <Box flexDirection="row" width={axisSectionWidth} height={1}>
         <Box flexDirection="row" width={axisWidth} justifyContent={axisLabelJustify} overflow="hidden">
-          {label ? <Text fg={fg} selectable={false}>{formatAxisCell(label, axisWidth).trimStart()}</Text> : null}
+          {label ? <Text fg={fg} selectable={false}>{formatLabel(label).trim()}</Text> : null}
         </Box>
         {axisPaddingWidth > 0 ? <Box width={axisPaddingWidth} /> : null}
       </Box>
     ) : (
-      <Text fg={fg} selectable={false}>{formatAxisCell(label, axisWidth).padEnd(axisSectionWidth)}</Text>
+      <Text fg={fg} selectable={false}>{formatLabel(label).padEnd(axisSectionWidth)}</Text>
     )
   );
 
@@ -109,7 +123,7 @@ export function PriceAxisLabels({
       {usePixelOverlay ? (
         <Box
           width={axisSectionWidth}
-          bg={colors.bg}
+          bg={cursorBackgroundColor}
           flexDirection="row"
           style={{
             position: "absolute",

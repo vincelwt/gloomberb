@@ -216,6 +216,10 @@ export interface CompanyProfile {
 
 export interface FinancialStatement {
   date: string;
+  /** Earliest date on which the complete row was publicly available, when known. */
+  availableAt?: string;
+  /** Per-field publication dates used by point-in-time charts and calculations. */
+  fieldAvailability?: Record<string, string>;
   // Income Statement
   totalRevenue?: number;
   costOfRevenue?: number;

@@ -15,7 +15,11 @@ import {
 } from "../../../market-data/market/status";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
 import { EmptyState } from "../../../components";
-import { ResolvedStockChart } from "../../../components/chart/stock-chart";
+import {
+  CompositeChart,
+  pricePointsToResolvedSeries,
+} from "../../../components/chart/composite";
+import { appendLiveQuotePoint } from "../../../components/chart/core/data";
 import { PriceReturnStrip } from "../../../components/price-performance";
 import {
   appendQuoteToPriceReturnHistory,
@@ -84,6 +88,18 @@ export function OverviewTab({
   const contentWidth = Math.max((width || Math.floor(termWidth * 0.5)) - (fractionalViewport ? 2 : 4), 20);
   const chartWidth = contentWidth;
   const hasHistory = (financials?.priceHistory?.length ?? 0) > 2;
+  const chartHistory = appendLiveQuotePoint(financials?.priceHistory ?? [], quote);
+  const chartDelta = (chartHistory.at(-1)?.close ?? 0) - (chartHistory[0]?.close ?? 0);
+  const priceSeries = pricePointsToResolvedSeries(chartHistory, {
+    id: `${ticker.metadata.ticker}:price`,
+    label: `${ticker.metadata.ticker} Price`,
+    color: priceColor(chartDelta),
+    unit: quoteCurrency,
+    style: "area",
+    axis: "right",
+    panelId: "price",
+    providerId: quote?.provenance?.price?.providerId ?? quote?.providerId,
+  });
   const hasBidAsk = quote?.bid != null || quote?.ask != null;
   const quoteBookInline = hasBidAsk && contentWidth >= 68;
   const quoteBookWidth = quoteBookInline ? Math.min(32, Math.max(24, Math.floor(contentWidth * 0.3))) : Math.min(contentWidth, 32);
@@ -219,13 +235,15 @@ export function OverviewTab({
         )}
 
         {hasHistory && (
-          <ResolvedStockChart
+          <CompositeChart
             width={chartWidth}
             height={10}
             focused={false}
-            compact
-            ticker={ticker}
-            financials={financials}
+            interactive={false}
+            series={[priceSeries]}
+            panels={[{ id: "price" }]}
+            axisWidth={8}
+            showLegend={false}
           />
         )}
 

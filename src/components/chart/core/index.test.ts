@@ -8,7 +8,6 @@ import {
 } from "./data";
 import { stepCursorTowards } from "../cursor-motion";
 import { buildChartScene, buildCursorTimeAxisSegments, buildTimeAxis, formatAxisValue, formatCursorAxisValue, renderChart, resolveChartAxisWidth, resolveChartPalette } from "./renderer";
-import { buildCursorTimeAxisOverlay, resolveCursorDateFromAxis } from "../time-axis-label";
 import { buildCursorPriceAxisOverlay } from "../price-axis-labels";
 import { resolveChartMarketSession, resolveExtendedHoursBackgroundSpans } from "../market-session";
 import type { PricePoint, Quote } from "../../../types/financials";
@@ -195,15 +194,116 @@ describe("appendLiveQuotePoint", () => {
     const extended = appendLiveQuotePoint(
       history,
       quoteFixture(),
-      Date.parse("2026-05-15T21:00:00Z"),
+      { now: Date.parse("2026-05-15T21:00:00Z") },
     );
 
     expect(extended).toHaveLength(3);
-    expect(extended.at(-1)).toMatchObject({
+    expect(extended.at(-1)).toEqual({
       date: new Date("2026-05-15T20:30:00Z"),
-      open: 68,
+      close: 129,
+    });
+  });
+
+  test("merges a quote into the active OHLC bucket", () => {
+    const history: PricePoint[] = [
+      {
+        date: new Date("2026-05-15T20:25:00Z"),
+        open: 124,
+        high: 130,
+        low: 122,
+        close: 126,
+        volume: 1_000,
+      },
+    ];
+
+    const extended = appendLiveQuotePoint(
+      history,
+      quoteFixture({ lastUpdated: Date.parse("2026-05-15T20:29:00Z") }),
+      {
+        now: Date.parse("2026-05-15T20:30:00Z"),
+        mode: "ohlc",
+        resolution: "5m",
+      },
+    );
+
+    expect(extended).toHaveLength(1);
+    expect(extended[0]).toEqual({
+      date: new Date("2026-05-15T20:25:00Z"),
+      open: 124,
+      high: 130,
+      low: 122,
+      close: 129,
+      volume: 1_000,
+    });
+  });
+
+  test("seeds a new OHLC bucket from the live price instead of prior-bar extremes", () => {
+    const history: PricePoint[] = [
+      {
+        date: new Date("2026-05-15T20:25:00Z"),
+        open: 124,
+        high: 180,
+        low: 80,
+        close: 126,
+        volume: 1_000,
+      },
+    ];
+
+    const extended = appendLiveQuotePoint(
+      history,
+      quoteFixture({ lastUpdated: Date.parse("2026-05-15T20:30:00Z") }),
+      {
+        now: Date.parse("2026-05-15T20:31:00Z"),
+        mode: "ohlc",
+        resolution: "5m",
+      },
+    );
+
+    expect(extended).toHaveLength(2);
+    expect(extended[1]).toEqual({
+      date: new Date("2026-05-15T20:30:00Z"),
+      open: 129,
       high: 129,
-      low: 68,
+      low: 129,
+      close: 129,
+    });
+  });
+
+  test("treats calendar-month bars as variable-length buckets", () => {
+    const history: PricePoint[] = [{
+      date: new Date("2026-01-01T00:00:00Z"),
+      open: 120,
+      high: 140,
+      low: 110,
+      close: 125,
+    }];
+
+    const endOfJanuary = appendLiveQuotePoint(
+      history,
+      quoteFixture({ lastUpdated: Date.parse("2026-01-31T20:30:00Z") }),
+      {
+        now: Date.parse("2026-01-31T20:31:00Z"),
+        mode: "ohlc",
+        resolution: "1mo",
+      },
+    );
+    const startOfFebruary = appendLiveQuotePoint(
+      history,
+      quoteFixture({ lastUpdated: Date.parse("2026-02-01T20:30:00Z") }),
+      {
+        now: Date.parse("2026-02-01T20:31:00Z"),
+        mode: "ohlc",
+        resolution: "1mo",
+      },
+    );
+
+    expect(endOfJanuary).toHaveLength(1);
+    expect(endOfJanuary[0]?.close).toBe(129);
+    expect(startOfFebruary).toHaveLength(2);
+    expect(startOfFebruary[1]).toMatchObject({
+      open: 129,
+      high: 129,
+      low: 129,
       close: 129,
     });
   });
@@ -220,7 +320,7 @@ describe("appendLiveQuotePoint", () => {
         postMarketPrice: 131,
         lastUpdated: Date.parse("2026-05-15T21:10:00Z"),
       }),
-      Date.parse("2026-05-15T21:15:00Z"),
+      { now: Date.parse("2026-05-15T21:15:00Z") },
     );
 
     expect(extended.at(-1)?.close).toBe(131);
@@ -260,7 +360,7 @@ describe("appendLiveQuotePoint", () => {
         price: 3.79,
         lastUpdated: Date.parse("2026-05-22T16:39:00Z"),
       }),
-      Date.parse("2026-05-22T16:45:00Z"),
+      { now: Date.parse("2026-05-22T16:45:00Z") },
     );
 
     expect(extended).toBe(history);
@@ -276,7 +376,7 @@ describe("appendLiveQuotePoint", () => {
       quoteFixture({
         lastUpdated: Date.parse("2026-05-08T20:00:00Z"),
       }),
-      Date.parse("2026-05-15T15:00:00Z"),
+      { now: Date.parse("2026-05-15T15:00:00Z") },
     );
 
     expect(extended).toBe(history);
@@ -620,41 +720,6 @@ describe("renderChart", () => {
     });
 
     expect(segments.find((segment) => segment.highlighted)?.text).toBe("Sep 15 2025");
-  });
-
-  test("resolves cursor dates from the full source axis between coarse month ticks", () => {
-    const dates = Array.from({ length: 32 }, (_, index) => new Date(2025, 2, index + 1));
-    const resolved = resolveCursorDateFromAxis({
-      dates,
-      width: 32,
-      cursorColumn: 15,
-    });
-
-    expect(resolved?.toISOString()).toBe(dates[15]!.toISOString());
-  });
-
-  test("positions desktop cursor x-axis overlay from exact pixels", () => {
-    const dates = Array.from({ length: 13 }, (_, index) => new Date(2026, 0, 5, 9, 30 + index * 30));
-    const width = 72;
-    const cursorPixelX = 291.5;
-    const cellWidthPx = 8;
-    const segments = buildCursorTimeAxisSegments({
-      timeLabels: buildTimeAxis(dates, width),
-      width,
-      cursorColumn: 36,
-      cursorDate: dates[6]!,
-      dates,
-    });
-    const overlay = buildCursorTimeAxisOverlay({
-      segments,
-      width,
-      cursorPixelX,
-      cellWidthPx,
-    });
-
-    expect(overlay.label).toBe("12:30");
-    expect(overlay.baseText).toHaveLength(width);
-    expect(overlay.leftPercent).toBeCloseTo((cursorPixelX / (width * cellWidthPx - 1)) * 100, 5);
   });
 
   test("positions desktop cursor y-axis overlay from exact pixels", () => {

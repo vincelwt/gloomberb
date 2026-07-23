@@ -415,13 +415,36 @@ function companyFactsFiledRank(value: string | undefined): number {
   return Date.parse(`${value}T00:00:00Z`) || 0;
 }
 
-function compareCompanyFactsEntries(left: CompanyFactsEntry, right: CompanyFactsEntry | undefined): number {
-  if (!right) return 1;
-  const filedDiff = companyFactsFiledRank(left.filed) - companyFactsFiledRank(right.filed);
-  if (filedDiff !== 0) return filedDiff;
+function shouldReplaceCompanyFact(
+  candidate: CompanyFactsEntry,
+  selected: CompanyFactsEntry | undefined,
+): boolean {
+  if (!selected) return true;
+  const left = candidate;
+  const right = selected;
+  const leftFiled = companyFactsFiledRank(left.filed);
+  const rightFiled = companyFactsFiledRank(right.filed);
+  const filedDiff = leftFiled - rightFiled;
+  if (filedDiff !== 0) {
+    if (leftFiled === 0) return false;
+    if (rightFiled === 0) return true;
+    if (filedDiff < 0) return false;
+    // Later comparative repeats do not move the original disclosure date.
+    // A later value change is a restatement and replaces the selected fact.
+    return !Object.is(left.val, right.val);
+  }
   const formDiff = secFormRank(left.form) - secFormRank(right.form);
-  if (formDiff !== 0) return formDiff;
-  return String(left.frame ?? "").localeCompare(String(right.frame ?? ""));
+  if (formDiff !== 0) return formDiff > 0;
+  return String(left.frame ?? "").localeCompare(String(right.frame ?? "")) > 0;
+}
+
+function compareCompanyFactsChronologically(
+  left: CompanyFactsEntry,
+  right: CompanyFactsEntry,
+): number {
+  return companyFactsFiledRank(left.filed) - companyFactsFiledRank(right.filed)
+    || secFormRank(left.form) - secFormRank(right.form)
+    || String(left.frame ?? "").localeCompare(String(right.frame ?? ""));
 }
 
 function isAnnualCompanyFact(entry: CompanyFactsEntry): boolean {
@@ -437,7 +460,18 @@ function isQuarterlyCompanyFact(entry: CompanyFactsEntry, periodType: "duration"
         && /^Q[1-3]$/.test(normalize(entry.fp ?? undefined))
       );
   }
-  return /^CY\d{4}Q[1-4]$/.test(entry.frame ?? "");
+  if (/^CY\d{4}Q[1-4]$/.test(entry.frame ?? "")) return true;
+  const form = normalize(entry.form);
+  const fiscalPeriod = normalize(entry.fp ?? undefined);
+  if ((form !== "10-Q" && form !== "10-Q/A") || !/^Q[1-3]$/.test(fiscalPeriod)) return false;
+  const start = entry.start ? Date.parse(`${entry.start}T00:00:00Z`) : Number.NaN;
+  const end = entry.end ? Date.parse(`${entry.end}T00:00:00Z`) : Number.NaN;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return false;
+  const durationDays = (end - start) / (24 * 60 * 60 * 1_000);
+  // SEC often omits `frame` from the original issuer-quarter fact while later
+  // comparative filings add it. Duration distinguishes the single quarter
+  // from six- or nine-month year-to-date facts in the same 10-Q.
+  return durationDays >= 60 && durationDays <= 120;
 }
 
 function setCompanyFactValue(
@@ -449,9 +483,20 @@ function setCompanyFactValue(
   entry: CompanyFactsEntry,
 ): void {
   const selectionKey = `${date}:${String(field)}`;
-  if (compareCompanyFactsEntries(entry, selectedFacts.get(selectionKey)) < 0) return;
+  if (!shouldReplaceCompanyFact(entry, selectedFacts.get(selectionKey))) return;
   const row = rows.get(date) ?? { date };
   (row as unknown as Record<string, unknown>)[field] = value;
+  if (entry.filed) {
+    row.fieldAvailability = {
+      ...(row.fieldAvailability ?? {}),
+      [String(field)]: entry.filed,
+    };
+  } else if (row.fieldAvailability) {
+    delete row.fieldAvailability[String(field)];
+    if (Object.keys(row.fieldAvailability).length === 0) delete row.fieldAvailability;
+  }
+  row.availableAt = Object.values(row.fieldAvailability ?? {}).sort().at(-1);
+  if (!row.availableAt) delete row.availableAt;
   rows.set(date, row);
   selectedFacts.set(selectionKey, entry);
 }
@@ -463,7 +508,7 @@ function fillCompanyFactsStatementRows(
   field: CompanyFactsStatementField,
   period: "annual" | "quarterly",
 ): void {
-  for (const entry of entries) {
+  for (const entry of [...entries].sort(compareCompanyFactsChronologically)) {
     if (!entry.end || typeof entry.val !== "number") continue;
     const matchesPeriod = period === "annual"
       ? isAnnualCompanyFact(entry)
@@ -489,6 +534,18 @@ function finalizeCompanyFactsStatements(rows: Map<string, FinancialStatement>): 
       && typeof statement.capitalExpenditure === "number"
     ) {
       statement.freeCashFlow = statement.operatingCashFlow + statement.capitalExpenditure;
+      const operatingCashFlowAvailableAt = statement.fieldAvailability?.operatingCashFlow;
+      const capitalExpenditureAvailableAt = statement.fieldAvailability?.capitalExpenditure;
+      const derivedAvailableAt = [operatingCashFlowAvailableAt, capitalExpenditureAvailableAt]
+        .filter((value): value is string => !!value)
+        .sort()
+        .at(-1);
+      if (derivedAvailableAt) {
+        statement.fieldAvailability = {
+          ...(statement.fieldAvailability ?? {}),
+          freeCashFlow: derivedAvailableAt,
+        };
+      }
     }
   }
   return statements;
@@ -501,12 +558,10 @@ export function parseCompanyFactsFinancialStatements(payload: unknown): SecCompa
   const quarterlySelectedFacts = new Map<string, CompanyFactsEntry>();
 
   for (const field of COMPANY_FACTS_STATEMENT_FIELDS) {
-    for (const tag of field.tags) {
-      const entries = companyFactsEntries(payload, tag, field.units);
-      if (entries.length === 0) continue;
-      fillCompanyFactsStatementRows(annualRows, annualSelectedFacts, entries, field, "annual");
-      fillCompanyFactsStatementRows(quarterlyRows, quarterlySelectedFacts, entries, field, "quarterly");
-    }
+    const entries = field.tags.flatMap((tag) => companyFactsEntries(payload, tag, field.units));
+    if (entries.length === 0) continue;
+    fillCompanyFactsStatementRows(annualRows, annualSelectedFacts, entries, field, "annual");
+    fillCompanyFactsStatementRows(quarterlyRows, quarterlySelectedFacts, entries, field, "quarterly");
   }
 
   return {

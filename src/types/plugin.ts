@@ -115,6 +115,12 @@ export interface PaneSettingsDef {
   title?: string;
   values?: Record<string, unknown>;
   fields: PaneSettingField[];
+  applyValue?: (
+    settings: Record<string, unknown>,
+    field: PaneSettingField,
+    value: unknown,
+    context: PaneSettingsContext,
+  ) => Record<string, unknown> | Promise<Record<string, unknown>>;
 }
 
 export interface PaneTemplateContext {

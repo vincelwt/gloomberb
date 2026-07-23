@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Input, Text, type InputRenderable } from "../../../../ui";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Box, Text, type InputRenderable } from "../../../../ui";
+import { InlineQuickAddRow } from "../../../../components/ui";
 import { useShortcut } from "../../../../react/input";
 import { useAppDispatch, useAppSelector } from "../../../../state/app/context";
 import { useAppInputCapture } from "../../../../state/app/input-capture";
@@ -290,54 +291,31 @@ export function QuickAddTickerInput({
     }
   }, { phase: "before", allowEditable: true });
 
-  const inputWidth = useMemo(() => {
-    const queryWidth = normalizeQuickAddQuery(inputValue).length;
-    if (queryWidth > 0) {
-      return Math.max(4, Math.min(18, queryWidth + 1));
-    }
-    return Math.max(6, Math.min(10, Math.floor(width * 0.18)));
-  }, [inputValue, width]);
-  const previewWidth = Math.max(8, width - inputWidth - 7);
-
   return (
-    <Box
-      height={1}
-      width="100%"
-      flexDirection="row"
-      flexShrink={0}
-      paddingX={1}
-      backgroundColor={colors.panel}
-      onMouseDown={(event: { preventDefault?: () => void }) => {
-        event.preventDefault?.();
-        focusInput();
+    <InlineQuickAddRow
+      value={inputValue}
+      active={inputFocused}
+      paneFocused={focused}
+      width={width}
+      placeholder={t("ticker")}
+      inputRef={inputRef}
+      onFocusRequest={focusInput}
+      onChange={(value) => setInputValue(value.toUpperCase())}
+      onSubmit={(value) => { void submitInput(value); }}
+      onFocus={() => setInputFocused(true)}
+      onBlur={blurInput}
+      onCancel={() => {
+        inputRef.current?.blur?.();
+        resetInput();
+        blurInput();
       }}
-    >
-      <Text fg={inputFocused ? colors.text : colors.textDim}>+</Text>
-      <Box width={1} />
-      <Box width={inputWidth}>
-        <Input
-          ref={inputRef}
-          value={inputValue}
-          focused={inputFocused && focused}
-          placeholder={t("ticker")}
-          placeholderColor={colors.textMuted}
-          textColor={colors.text}
-          backgroundColor={colors.panel}
-          onInput={(value: string) => setInputValue(value.toUpperCase())}
-          onChange={(value: string) => setInputValue(value.toUpperCase())}
-          onSubmit={(value: string) => void submitInput(value)}
-          onFocus={() => setInputFocused(true)}
-          onBlur={blurInput}
-        />
-      </Box>
-      <Box width={1} />
-      <Box width={previewWidth} overflow="hidden">
+      preview={(
         <QuickAddPreview
           validation={validation}
           collectionKind={collectionKind}
           submitting={submitting}
         />
-      </Box>
-    </Box>
+      )}
+    />
   );
 }

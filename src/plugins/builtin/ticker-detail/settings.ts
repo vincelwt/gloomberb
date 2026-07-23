@@ -2,12 +2,6 @@ import type { PaneSettingsDef, TickerResearchTabDef } from "../../../types/plugi
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import type { AppConfig } from "../../../types/config";
-import type { ChartAxisMode, TimeRange } from "../../../components/chart/core/types";
-import {
-  DEFAULT_TICKER_CHART_RANGE_PRESET,
-  DEFAULT_TICKER_CHART_RESOLUTION,
-  normalizeChartResolution,
-} from "../../../components/chart/core/resolution";
 import type { PriceSparklinePeriod } from "../../../components/price-sparkline/view";
 import { getSharedRegistry } from "../../registry";
 import { formatTickerListInput, MAX_TICKER_LIST_SIZE, parseTickerListInput } from "../../../tickers/list";
@@ -17,9 +11,6 @@ type TickerResearchTabSummary = { id: string; name: string; order: number };
 export interface TickerResearchPaneSettings {
   hideTabs: boolean;
   lockedTabId: string;
-  chartAxisMode: ChartAxisMode;
-  chartRangePreset: TimeRange;
-  chartResolution: ReturnType<typeof normalizeChartResolution>;
 }
 
 export interface QuoteMonitorPaneSettings {
@@ -35,19 +26,9 @@ export function getTickerResearchPaneSettings(
 ): TickerResearchPaneSettings {
   return {
     hideTabs: settings?.hideTabs === true,
-    lockedTabId: typeof settings?.lockedTabId === "string" ? settings.lockedTabId : "overview",
-    chartAxisMode: settings?.chartAxisMode === "percent" ? "percent" : "price",
-    chartRangePreset: settings?.chartRangePreset === "1D"
-      || settings?.chartRangePreset === "1W"
-      || settings?.chartRangePreset === "1M"
-      || settings?.chartRangePreset === "3M"
-      || settings?.chartRangePreset === "6M"
-      || settings?.chartRangePreset === "1Y"
-      || settings?.chartRangePreset === "5Y"
-      || settings?.chartRangePreset === "ALL"
-      ? settings.chartRangePreset
-      : DEFAULT_TICKER_CHART_RANGE_PRESET,
-    chartResolution: normalizeChartResolution(settings?.chartResolution, DEFAULT_TICKER_CHART_RESOLUTION),
+    lockedTabId: settings?.lockedTabId === "fundamental-graphs"
+      ? "chart"
+      : typeof settings?.lockedTabId === "string" ? settings.lockedTabId : "overview",
   };
 }
 
@@ -92,34 +73,6 @@ export function buildTickerResearchSettingsDef(settings: TickerResearchPaneSetti
           options: tabs.map((tab) => ({ value: tab.id, label: tab.name })),
         }]
         : []),
-      {
-        key: "chartAxisMode",
-        label: "Chart Y-Axis",
-        description: "Show chart values as raw prices or percent change from the first visible point.",
-        type: "select" as const,
-        options: [
-          { value: "price", label: "Price" },
-          { value: "percent", label: "Percent" },
-        ],
-      },
-    ],
-  };
-}
-
-export function buildTickerChartSettingsDef(): PaneSettingsDef {
-  return {
-    title: "Chart Pane Settings",
-    fields: [
-      {
-        key: "chartAxisMode",
-        label: "Chart Y-Axis",
-        description: "Show chart values as raw prices or percent change from the first visible point.",
-        type: "select" as const,
-        options: [
-          { value: "price", label: "Price" },
-          { value: "percent", label: "Percent" },
-        ],
-      },
     ],
   };
 }

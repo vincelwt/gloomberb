@@ -18,6 +18,9 @@ import { getNativeSurfaceManager } from "../../../components/chart/native/surfac
 import { setSharedRegistryForTests, type PluginRegistry } from "../../registry";
 import { PluginRenderProvider } from "../../runtime";
 import { tickerDetailModule } from ".";
+import { chartComposerModule } from "../chart-composer";
+import { MemoryPluginPersistence } from "../../../test-support/plugin-persistence";
+import { createTestDataProvider } from "../../../test-support/data-provider";
 
 const TEST_PANE_ID = "ticker-detail:test";
 const DetailPane = tickerDetailModule.panes![0]!.component as (props: {
@@ -33,7 +36,11 @@ let root: ReturnType<typeof createRoot> | undefined;
 let harnessDispatch: ((action: AppAction) => void) | null = null;
 const actEnvironment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 
-const runtime = createTestPluginRuntime();
+const chartProvider = createTestDataProvider({
+  getTickerFinancials: async () => makeFinancials(48),
+  getPriceHistory: async () => makeFinancials(48).priceHistory,
+});
+const runtime = createTestPluginRuntime({ getMarketData: () => chartProvider });
 
 function makeTicker(symbol: string): TickerRecord {
   return {
@@ -86,6 +93,7 @@ function makeDetailConfig(symbol: string): AppConfig {
       binding: { kind: "fixed", symbol },
     }],
     floating: [],
+    detached: [],
   };
   config.layouts = [{ name: "Default", layout: cloneLayout(config.layout) }];
   return config;
@@ -94,6 +102,10 @@ function makeDetailConfig(symbol: string): AppConfig {
 function makeRegistry(): PluginRegistry {
   const tickerResearchTabs = new Map<string, TickerResearchTabDef>();
   tickerDetailModule.setup?.({
+    registerTickerResearchTab: (tab: TickerResearchTabDef) => tickerResearchTabs.set(tab.id, tab),
+  } as any);
+  chartComposerModule.setup?.({
+    persistence: new MemoryPluginPersistence(),
     registerTickerResearchTab: (tab: TickerResearchTabDef) => tickerResearchTabs.set(tab.id, tab),
   } as any);
   return { tickerResearchTabs } as unknown as PluginRegistry;
@@ -148,11 +160,24 @@ async function flushFrames(count = 3) {
   }
 }
 
-function getSurfaceVisibleRect(
-  manager: { surfaces: Map<string, { snapshot: { visibleRect: unknown } }> },
-  surfaceId: string,
-): unknown {
-  return manager.surfaces.get(surfaceId)?.snapshot.visibleRect ?? null;
+function hasCompositeSurface(
+  manager: { surfaces: Map<string, { snapshot: { paneId: string } }> },
+  paneId: string,
+): boolean {
+  return [...manager.surfaces.entries()].some(([id, surface]) => (
+    id.startsWith("opentui-chart:") && surface.snapshot.paneId === paneId
+  ));
+}
+
+function hasVisibleCompositeSurface(
+  manager: { surfaces: Map<string, { snapshot: { paneId: string; visibleRect: unknown } }> },
+  paneId: string,
+): boolean {
+  return [...manager.surfaces.entries()].some(([id, surface]) => (
+    id.startsWith("opentui-chart:")
+    && surface.snapshot.paneId === paneId
+    && surface.snapshot.visibleRect !== null
+  ));
 }
 
 afterEach(() => {
@@ -179,8 +204,8 @@ describe("Ticker detail chart tab switching", () => {
 
     actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
     testSetup = await createTestRenderer({ width: 120, height: 36 });
-    (testSetup.renderer as { _capabilities: unknown })._capabilities = { kitty_graphics: true };
-    (testSetup.renderer as { _resolution: unknown })._resolution = { width: 1200, height: 960 };
+    (testSetup.renderer as unknown as { _capabilities: unknown })._capabilities = { kitty_graphics: true };
+    (testSetup.renderer as unknown as { _resolution: unknown })._resolution = { width: 1200, height: 960 };
 
     root = createRoot(testSetup.renderer);
     act(() => {
@@ -197,9 +222,9 @@ describe("Ticker detail chart tab switching", () => {
     const initialOverview = testSetup.captureCharFrame();
     expect(initialOverview).toContain("AAPL");
     const manager = getNativeSurfaceManager(testSetup.renderer as never) as unknown as {
-      surfaces: Map<string, unknown>;
+      surfaces: Map<string, { snapshot: { paneId: string; visibleRect: unknown } }>;
     };
-    expect(manager.surfaces.has("chart-surface:ticker-detail:test:compact:base")).toBe(true);
+    expect(hasCompositeSurface(manager, TEST_PANE_ID)).toBe(true);
 
     act(() => {
       harnessDispatch!({
@@ -211,9 +236,11 @@ describe("Ticker detail chart tab switching", () => {
 
     await flushFrames();
     const chartTabFrame = testSetup.captureCharFrame();
-    expect(chartTabFrame).toContain("AUTO 1M");
+    expect(chartTabFrame).toContain("Latest");
+    expect(chartTabFrame).toContain("5Y");
+    expect(chartTabFrame).toContain("AUTO");
     expect(chartTabFrame).not.toContain("AAPL -");
-    expect(manager.surfaces.has("chart-surface:ticker-detail:test:full:base")).toBe(true);
+    expect(hasVisibleCompositeSurface(manager, TEST_PANE_ID)).toBe(true);
 
     act(() => {
       harnessDispatch!({
@@ -226,7 +253,7 @@ describe("Ticker detail chart tab switching", () => {
     await flushFrames();
     const returnedOverview = testSetup.captureCharFrame();
     expect(returnedOverview).toContain("AAPL");
-    expect(manager.surfaces.has("chart-surface:ticker-detail:test:compact:base")).toBe(true);
+    expect(hasCompositeSurface(manager, TEST_PANE_ID)).toBe(true);
   });
 
   test("hides the full chart kitty surface when switching to financials", async () => {
@@ -236,8 +263,8 @@ describe("Ticker detail chart tab switching", () => {
 
     actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
     testSetup = await createTestRenderer({ width: 120, height: 36 });
-    (testSetup.renderer as { _capabilities: unknown })._capabilities = { kitty_graphics: true };
-    (testSetup.renderer as { _resolution: unknown })._resolution = { width: 1200, height: 960 };
+    (testSetup.renderer as unknown as { _capabilities: unknown })._capabilities = { kitty_graphics: true };
+    (testSetup.renderer as unknown as { _resolution: unknown })._resolution = { width: 1200, height: 960 };
 
     root = createRoot(testSetup.renderer);
     act(() => {
@@ -252,9 +279,8 @@ describe("Ticker detail chart tab switching", () => {
 
     await flushFrames();
     const manager = getNativeSurfaceManager(testSetup.renderer as never) as unknown as {
-      surfaces: Map<string, { snapshot: { visibleRect: unknown } }>;
+      surfaces: Map<string, { snapshot: { paneId: string; visibleRect: unknown } }>;
     };
-    const fullSurfaceId = "chart-surface:ticker-detail:test:full:base";
 
     act(() => {
       harnessDispatch!({
@@ -265,7 +291,7 @@ describe("Ticker detail chart tab switching", () => {
     });
 
     await flushFrames();
-    expect(getSurfaceVisibleRect(manager, fullSurfaceId)).not.toBeNull();
+    expect(hasVisibleCompositeSurface(manager, TEST_PANE_ID)).toBe(true);
 
     act(() => {
       harnessDispatch!({
@@ -277,6 +303,6 @@ describe("Ticker detail chart tab switching", () => {
 
     await flushFrames();
     expect(testSetup.captureCharFrame()).toContain("Income");
-    expect(getSurfaceVisibleRect(manager, fullSurfaceId)).toBeNull();
+    expect(hasVisibleCompositeSurface(manager, TEST_PANE_ID)).toBe(false);
   });
 });

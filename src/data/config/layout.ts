@@ -13,6 +13,10 @@ import {
   normalizePaneLayout,
   normalizePaneId,
 } from "../../types/config";
+import {
+  migrateChartPaneSettings,
+  type LegacyChartMigrationContext,
+} from "./chart-settings";
 
 export function isLayoutConfig(value: unknown): value is LayoutConfig {
   return !!value
@@ -116,7 +120,11 @@ function sanitizePaneSettings(value: unknown): Record<string, unknown> | undefin
   return Object.keys(settings).length > 0 ? clonePaneSettings(settings) : undefined;
 }
 
-function sanitizePaneInstances(value: unknown, fallback: LayoutConfig): PaneInstanceConfig[] {
+function sanitizePaneInstances(
+  value: unknown,
+  fallback: LayoutConfig,
+  chartMigration: LegacyChartMigrationContext,
+): PaneInstanceConfig[] {
   if (!Array.isArray(value)) return cloneLayout(fallback).instances;
   const seen = new Set<string>();
   const instances = value
@@ -127,20 +135,23 @@ function sanitizePaneInstances(value: unknown, fallback: LayoutConfig): PaneInst
       && typeof (entry as PaneInstanceConfig).paneId === "string",
     )
     .map((entry) => {
+      const originalPaneId = entry.paneId;
       const paneId = normalizePaneId(entry.paneId);
       const instanceId = seen.has(entry.instanceId) ? createPaneInstanceId(paneId) : entry.instanceId;
       seen.add(instanceId);
+      const binding = sanitizePaneBinding(entry.binding);
+      const settings = sanitizePaneSettings(entry.settings);
       return {
         instanceId,
         paneId,
         title: typeof entry.title === "string" ? entry.title : undefined,
-        binding: sanitizePaneBinding(entry.binding),
+        binding,
         params: entry.params && typeof entry.params === "object"
           ? Object.fromEntries(
             Object.entries(entry.params).filter((param): param is [string, string] => typeof param[1] === "string"),
           )
           : undefined,
-        settings: sanitizePaneSettings(entry.settings),
+        settings: migrateChartPaneSettings(originalPaneId, binding, settings, chartMigration),
         placementMemory: sanitizePlacementMemory(entry.placementMemory),
       };
     });
@@ -196,7 +207,11 @@ function sanitizeDetachedEntries(value: unknown, validInstanceIds: Set<string>):
     }));
 }
 
-export function sanitizeLayout(value: unknown, fallback: LayoutConfig): LayoutConfig {
+export function sanitizeLayout(
+  value: unknown,
+  fallback: LayoutConfig,
+  chartMigration: LegacyChartMigrationContext = {},
+): LayoutConfig {
   if (!isLayoutConfig(value)) {
     return cloneLayout(fallback);
   }
@@ -208,7 +223,11 @@ export function sanitizeLayout(value: unknown, fallback: LayoutConfig): LayoutCo
     });
   }
 
-  const instances = sanitizePaneInstances((value as LayoutConfig & { instances?: unknown }).instances, fallback);
+  const instances = sanitizePaneInstances(
+    (value as LayoutConfig & { instances?: unknown }).instances,
+    fallback,
+    chartMigration,
+  );
   const validInstanceIds = new Set(instances.map((entry) => entry.instanceId));
   const dockRoot = (value as { dockRoot?: LayoutConfig["dockRoot"] }).dockRoot ?? null;
   const floating = sanitizeFloatingEntries((value as { floating?: unknown }).floating, validInstanceIds);
