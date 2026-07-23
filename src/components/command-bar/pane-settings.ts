@@ -8,6 +8,7 @@ import { summarizePaneSettingValue } from "../pane-settings-dialog/value";
 type NotifyFn = (body: string, options?: { type?: "info" | "success" | "error" }) => void;
 
 type NormalizedPaneSettingField =
+  | { mode: "action" }
   | { mode: "toggle"; value: boolean }
   | { mode: "workflow"; route: CommandBarWorkflowRoute | null }
   | { mode: "picker"; route: Extract<CommandBarRoute, { kind: "picker" }> };
@@ -18,6 +19,8 @@ function normalizePaneSettingField(
   currentValue: unknown,
 ): NormalizedPaneSettingField {
   switch (field.type) {
+    case "action":
+      return { mode: "action" };
     case "toggle":
       return {
         mode: "toggle",
@@ -144,6 +147,59 @@ export function activatePaneSettingFieldAction(options: {
     updateTopRoute,
   } = options;
   const normalized = normalizePaneSettingField(paneId, field, currentValue);
+  if (normalized.mode === "action" && field.type === "action") {
+    const descriptor = pluginRegistry.resolvePaneSettings(paneId);
+    const latestField = descriptor?.settingsDef.fields.find((candidate) => (
+      candidate.type === "action"
+      && candidate.key === field.key
+      && candidate.actionId === field.actionId
+    ));
+    if (!descriptor || latestField?.type !== "action" || latestField.disabled) return;
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      closeAll({ revertThemePreview: false });
+    };
+    if (keepRouteOpen) {
+      updateTopRoute((route) => route.kind === "pane-settings"
+        ? { ...route, pendingFieldKey: latestField.key, error: null }
+        : route);
+    }
+    void Promise.resolve()
+      .then(() => latestField.action({
+        ...descriptor.context,
+        surface: "command-bar",
+        close,
+        openCommandBar: (query) => {
+          close();
+          queueMicrotask(() => pluginRegistry.openCommandBar(query));
+        },
+        notify: (notification) => pluginRegistry.notify(notification),
+      }))
+      .then(() => {
+        if (closed) return;
+        if (keepRouteOpen) {
+          updateTopRoute((route) => route.kind === "pane-settings"
+            ? { ...route, pendingFieldKey: null, error: null }
+            : route);
+        } else {
+          close();
+        }
+      })
+      .catch((error) => {
+        if (closed) return;
+        const message = error instanceof Error ? error.message : "Could not run that action.";
+        if (keepRouteOpen) {
+          updateTopRoute((route) => route.kind === "pane-settings"
+            ? { ...route, pendingFieldKey: null, error: message }
+            : route);
+        } else {
+          notify(message, { type: "error" });
+        }
+      });
+    return;
+  }
   if (normalized.mode === "toggle") {
     if (keepRouteOpen) {
       updateTopRoute((route) => route.kind === "pane-settings"
@@ -204,6 +260,9 @@ export function buildPaneSettingResultItems(options: {
   const paneLabel = descriptor.pane.title || descriptor.paneDef.name || descriptor.pane.paneId;
   const items = descriptor.settingsDef.fields.map((field): ResultItem => {
     const currentValue = descriptor.context.settings[field.key];
+    const actionSearchText = field.type === "action"
+      ? `${field.actionId} ${field.actionLabel ?? ""}`
+      : "";
     return {
       id: `pane-setting:${field.key}`,
       label: field.label,
@@ -211,7 +270,8 @@ export function buildPaneSettingResultItems(options: {
       category,
       kind: "action",
       right: field.type,
-      searchText: `${category} ${paneLabel} ${field.label} ${field.description || ""} ${field.type}`,
+      searchText: `${category} ${paneLabel} ${field.label} ${field.description || ""} ${field.type} ${actionSearchText}`,
+      disabled: field.type === "action" && field.disabled,
       action: () => options.activatePaneSettingField(
         descriptor.paneId,
         field,

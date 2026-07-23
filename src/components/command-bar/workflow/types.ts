@@ -22,6 +22,7 @@ interface CommandBarFieldBase {
   placeholder?: string;
   required?: boolean;
   dependsOn?: CommandBarFieldDependency[];
+  clearOnChange?: string[];
 }
 
 export type CommandBarWorkflowField =

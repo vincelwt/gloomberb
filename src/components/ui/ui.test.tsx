@@ -227,7 +227,13 @@ function MultiSelectDialogButtonHarness() {
   );
 }
 
-function ChoiceDialogHarness({ selectedChoiceId }: { selectedChoiceId?: string } = {}) {
+function ChoiceDialogHarness({
+  selectedChoiceId,
+  choices,
+}: {
+  selectedChoiceId?: string;
+  choices?: Array<{ id: string; label: string; description: string }>;
+} = {}) {
   return (
     <ChoiceDialog
       title="Choose Account"
@@ -235,7 +241,7 @@ function ChoiceDialogHarness({ selectedChoiceId }: { selectedChoiceId?: string }
       resolve={(value) => {
         resolvedChoice = value;
       }}
-      choices={[
+      choices={choices ?? [
         { id: "alpha", label: "Alpha", description: "Alpha account" },
         { id: "beta", label: "Beta", description: "Beta account" },
         { id: "gamma", label: "Gamma", description: "Gamma account" },
@@ -547,6 +553,28 @@ describe("shared UI kit", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Beta account");
     expect(frame).not.toContain("Alpha account");
+  });
+
+  test("keeps long choice catalogs bounded and scrolls to the keyboard selection", async () => {
+    const choices = Array.from({ length: 20 }, (_, index) => ({
+      id: `model-${index + 1}`,
+      label: `Model ${index + 1}`,
+      description: `Catalog model ${index + 1}`,
+    }));
+    testSetup = await testRender(<ChoiceDialogHarness choices={choices} />, { width: 44, height: 17 });
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+    expect(testSetup.captureCharFrame()).not.toContain("Model 20");
+
+    for (let index = 0; index < 19; index += 1) {
+      await emitKeypress({ name: "down" });
+    }
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Model 20");
+    expect(frame).toContain("Catalog model 20");
   });
 
   test("cancels choice dialogs with escape", async () => {

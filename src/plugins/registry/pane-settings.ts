@@ -82,7 +82,7 @@ export function resolveRegistryPaneSettings({
   };
   if (pluginId) {
     for (const field of settingsDef.fields) {
-      if (field.storage !== "plugin") continue;
+      if (field.type === "action" || field.storage !== "plugin") continue;
       const configValue = getConfigState(pluginId, field.key);
       if (configValue === null) {
         delete resolvedSettings[field.key];

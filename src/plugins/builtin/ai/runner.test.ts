@@ -1,116 +1,123 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
-import type { AiProvider } from "./providers";
-import { isAiRunCancelled, runAiPrompt, setAiRunHost } from "./runner";
+import {
+  connectAiRuntimeProvider,
+  disconnectAiRuntimeProvider,
+  getAiRuntimeCatalog,
+  getAiRuntimeCatalogSnapshot,
+  runAiPrompt,
+  setAiRunHost,
+  setAiRuntimeCatalog,
+  subscribeAiRuntimeCatalog,
+  type AiRunHost,
+  type AiRuntimeCatalog,
+} from "./runner";
 
-function shellProvider(script: string): AiProvider {
+function catalog(connectionState: "connected" | "not_connected"): AiRuntimeCatalog {
+  const connected = connectionState === "connected";
   return {
-    id: "codex",
-    name: "Codex",
-    command: "sh",
-    available: true,
-    buildArgs: () => ["-c", script],
-    buildStructuredArgs: () => ["-c", script],
+    providers: [{
+      providerId: "openai-codex",
+      label: "OpenAI (ChatGPT)",
+      status: connected ? "ready" : "not_authenticated",
+      ...(!connected ? { unavailableReason: "Not connected." } : {}),
+      outputModes: ["plain", "structured", "screener"],
+      defaultModelId: "gpt-5.6-sol",
+    }],
+    accounts: [{
+      providerId: "openai-codex",
+      providerLabel: "OpenAI (ChatGPT)",
+      connectionState,
+      connectionLabel: connected ? "Connected with OAuth" : "Not connected.",
+      ...(connected
+        ? { credentialSource: "OAuth", credentialOrigin: "stored" as const }
+        : {}),
+      authMethods: [{ type: "oauth", label: "ChatGPT Plus/Pro", canLogin: true }],
+      canLogin: true,
+      canDisconnect: connected,
+      loginType: "oauth",
+    }],
+    models: [{
+      id: "gpt-5.6-sol",
+      providerId: "openai-codex",
+      label: "GPT-5.6 Sol",
+      available: connected,
+    }],
   };
 }
 
 afterEach(() => {
   setAiRunHost(null);
+  setAiRuntimeCatalog({ providers: [], accounts: [], models: [] });
+});
+
+describe("AI runtime catalog", () => {
+  test("publishes stable snapshots for set, connect, and disconnect", async () => {
+    const connected = catalog("connected");
+    const disconnected = catalog("not_connected");
+    const snapshots: AiRuntimeCatalog[] = [];
+    const authEvents: unknown[] = [];
+    const unsubscribe = subscribeAiRuntimeCatalog(() => {
+      snapshots.push(getAiRuntimeCatalogSnapshot());
+    });
+    setAiRunHost({
+      run: () => ({ done: Promise.resolve("unused"), cancel() {} }),
+      connect: async (_providerId, _authType, onAuthEvent) => {
+        onAuthEvent?.({
+          type: "device_code",
+          userCode: "ABCD-EFGH",
+          verificationUri: "https://github.com/login/device",
+        });
+        return connected;
+      },
+      disconnect: async () => disconnected,
+    });
+
+    const initialSnapshot = getAiRuntimeCatalogSnapshot();
+    setAiRuntimeCatalog(disconnected);
+    const setSnapshot = getAiRuntimeCatalogSnapshot();
+    expect(setSnapshot).not.toBe(initialSnapshot);
+    expect(getAiRuntimeCatalogSnapshot()).toBe(setSnapshot);
+
+    await connectAiRuntimeProvider("codex", undefined, (event) => {
+      authEvents.push(event);
+    });
+    const connectSnapshot = getAiRuntimeCatalogSnapshot();
+    expect(connectSnapshot.accounts[0]?.connectionState).toBe("connected");
+    expect(connectSnapshot).not.toBe(setSnapshot);
+    expect(authEvents).toEqual([{
+      type: "device_code",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://github.com/login/device",
+    }]);
+
+    await disconnectAiRuntimeProvider("openai-codex");
+    expect(getAiRuntimeCatalogSnapshot().accounts[0]?.connectionState).toBe("not_connected");
+    expect(snapshots).toHaveLength(3);
+
+    unsubscribe();
+    setAiRuntimeCatalog(connected);
+    expect(snapshots).toHaveLength(3);
+  });
+
+  test("returns a defensive imperative copy including nested auth methods", () => {
+    setAiRuntimeCatalog(catalog("connected"));
+    const copy = getAiRuntimeCatalog();
+    copy.providers[0]!.outputModes.length = 0;
+    copy.accounts[0]!.authMethods[0]!.label = "mutated";
+
+    expect(getAiRuntimeCatalogSnapshot().providers[0]?.outputModes).toEqual([
+      "plain",
+      "structured",
+      "screener",
+    ]);
+    expect(getAiRuntimeCatalogSnapshot().accounts[0]?.authMethods[0]?.label)
+      .toBe("ChatGPT Plus/Pro");
+  });
 });
 
 describe("AI runner", () => {
-  test("passes the recovered environment to the resolved executable", async () => {
-    if (process.platform === "win32") return;
-    const directory = await mkdtemp(join(tmpdir(), "gloomberb-ai-runner-"));
-    try {
-      const interpreter = join(directory, "gloomberb-test-interpreter");
-      const executable = join(directory, "fake-ai");
-      await writeFile(interpreter, "#!/bin/sh\nexec /bin/sh \"$@\"\n");
-      await writeFile(executable, "#!/usr/bin/env gloomberb-test-interpreter\nprintf ready\n");
-      await chmod(interpreter, 0o755);
-      await chmod(executable, 0o755);
-
-      const provider: AiProvider = {
-        id: "fake",
-        name: "Fake",
-        command: executable,
-        available: true,
-        status: "ready",
-        buildArgs: () => [],
-      };
-      const run = runAiPrompt({
-        provider,
-        prompt: "unused",
-        environment: {
-          ...process.env,
-          PATH: [directory, "/usr/bin", "/bin"].join(delimiter),
-        },
-      });
-
-      expect(await run.done).toBe("ready");
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-});
-
-describe("AI runner structured mode", () => {
-  test("converts JSONL events into cumulative display transcript", async () => {
-    const chunks: string[] = [];
-    const provider = shellProvider(`
-      printf '%s\n' '{"type":"item.completed","item":{"id":"reason","type":"reasoning","text":"hidden"}}'
-      printf '%s\n' '{"type":"item.started","item":{"id":"answer","type":"agent_message","text":"Draft"}}'
-      printf '%s\n' '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"Final answer"}}'
-    `);
-
-    const run = runAiPrompt({
-      provider,
-      prompt: "ignored",
-      outputMode: "structured",
-      onChunk: (output) => chunks.push(output),
-    });
-
-    expect(await run.done).toBe("Final answer");
-    expect(chunks.at(-1)).toBe("Final answer");
-    expect(chunks.join(" ")).not.toContain("hidden");
-  });
-
-  test("cancellation takes precedence over process exit errors", async () => {
-    const run = runAiPrompt({
-      provider: shellProvider("sleep 5; exit 7"),
-      prompt: "ignored",
-      outputMode: "structured",
-    });
-    run.cancel();
-
-    let caught: unknown;
-    try {
-      await run.done;
-    } catch (error) {
-      caught = error;
-    }
-    expect(isAiRunCancelled(caught)).toBe(true);
-  });
-
-  test("uses and removes an empty temporary cwd for isolated workspace runs", async () => {
-    const provider = shellProvider(`printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"%s"}}\\n' "$PWD"`);
-    const run = runAiPrompt({
-      provider,
-      prompt: "ignored",
-      outputMode: "structured",
-      isolatedWorkspace: true,
-    });
-
-    const isolatedPath = await run.done;
-    expect(isolatedPath).toContain("gloomberb-local-agent-");
-    expect(existsSync(isolatedPath)).toBe(false);
-  });
-
-  test("forwards environment, structured isolation, and cancellation through a configured host", async () => {
-    type RunOptions = Parameters<NonNullable<import("./runner").AiRunHost["run"]>>[0];
+  test("delegates canonical provider id, model, and structured history to the native host", async () => {
+    type RunOptions = Parameters<AiRunHost["run"]>[0];
     const received: RunOptions[] = [];
     let cancelled = false;
     setAiRunHost({
@@ -123,20 +130,46 @@ describe("AI runner structured mode", () => {
       },
     });
 
-    const environment = { ...process.env, GLOOMBERB_AI_TEST: "ready" };
     const run = runAiPrompt({
-      provider: shellProvider("unused"),
-      prompt: "selected context only",
-      environment,
+      // Legacy values are accepted only at this migration boundary.
+      providerId: "codex",
+      prompt: "Current request",
+      messages: [
+        { role: "user", content: "Earlier request" },
+        { role: "assistant", content: "Earlier response" },
+      ],
+      modelId: "gpt-5.6-sol",
       outputMode: "structured",
-      isolatedWorkspace: true,
     });
     run.cancel();
+
     expect(await run.done).toBe("host output");
-    expect(received[0]?.prompt).toBe("selected context only");
-    expect(received[0]?.environment).toBe(environment);
-    expect(received[0]?.outputMode).toBe("structured");
-    expect(received[0]?.isolatedWorkspace).toBe(true);
+    expect(received).toEqual([{
+      providerId: "openai-codex",
+      prompt: "Current request",
+      messages: [
+        { role: "user", content: "Earlier request" },
+        { role: "assistant", content: "Earlier response" },
+      ],
+      modelId: "gpt-5.6-sol",
+      onChunk: undefined,
+      outputMode: "structured",
+    }]);
     expect(cancelled).toBe(true);
+  });
+
+  test("fails clearly when the native runtime is unavailable or provider id is unknown", async () => {
+    await expect(runAiPrompt({
+      providerId: "anthropic",
+      prompt: "hello",
+    }).done).rejects.toThrow("native AI runtime is unavailable");
+
+    setAiRunHost({
+      run: () => ({ done: Promise.resolve("unused"), cancel() {} }),
+    });
+    await expect(runAiPrompt({
+      providerId: "opencode",
+      prompt: "hello",
+    }).done).rejects.toThrow("Unknown AI provider: opencode");
   });
 });

@@ -2,15 +2,18 @@ import { useCallback, useEffect, useRef, useState, type Dispatch } from "react";
 import type { DataProvider } from "../../../../types/data-provider";
 import type { TickerRecord } from "../../../../types/ticker";
 import type { AppAction } from "../../../../core/state/app/types";
-import { buildGloomberbCliInstructions, resolveGloomberbCliCommand } from "../gloomberb-cli";
 import type { AiProvider } from "../providers";
 import { getAiProvider, getAiProviderUnavailableReason } from "../providers";
-import { isAiRunCancelled, runAiPrompt, type AiRunController } from "../runner";
+import {
+  checkAiProviderStatus,
+  isAiRunCancelled,
+  runAiPrompt,
+  type AiRunController,
+} from "../runner";
 import {
   buildScreenerPrompt,
   deriveScreenerTitle,
   getScreenerPromptSignature,
-  mergeScreenerResults,
   parseScreenerResponse,
 } from "./contract";
 import type { AiScreenerTab, RunState } from "./model";
@@ -22,7 +25,7 @@ interface UseAiScreenerRunnerOptions {
   providers: AiProvider[];
   tabs: AiScreenerTab[];
   tickers: Map<string, TickerRecord>;
-  clearForceConfirm: () => void;
+  resolveSelection?: (tab: AiScreenerTab) => { providerId: string; modelId: string | null };
   upsertTab: (tabId: string, updater: (tab: AiScreenerTab) => AiScreenerTab) => void;
 }
 
@@ -32,7 +35,7 @@ export function useAiScreenerRunner({
   providers,
   tabs,
   tickers,
-  clearForceConfirm,
+  resolveSelection = (tab) => ({ providerId: tab.providerId, modelId: tab.modelId }),
   upsertTab,
 }: UseAiScreenerRunnerOptions) {
   const [runState, setRunState] = useState<RunState | null>(null);
@@ -44,11 +47,12 @@ export function useAiScreenerRunner({
     setRunState(null);
   }, []);
 
-  const runTab = useCallback(async (tabId: string, mode: RunState["mode"]) => {
+  const runTab = useCallback(async (tabId: string) => {
     const tab = tabs.find((entry) => entry.id === tabId);
     if (!tab) return;
+    const selection = resolveSelection(tab);
 
-    const provider = getAiProvider(tab.providerId, providers);
+    const provider = getAiProvider(selection.providerId, providers);
     if (!provider) {
       upsertTab(tab.id, (current) => ({ ...current, lastError: "Unknown AI provider configured for this screener." }));
       return;
@@ -61,22 +65,31 @@ export function useAiScreenerRunner({
       return;
     }
 
+    try {
+      const providerStatus = await checkAiProviderStatus(provider);
+      if (!providerStatus.available || (!providerStatus.authenticated && !providerStatus.inconclusive)) {
+        upsertTab(tab.id, (current) => ({
+          ...current,
+          lastError: providerStatus.message ?? `${provider.name} is not ready.`,
+        }));
+        return;
+      }
+    } catch (error) {
+      upsertTab(tab.id, (current) => ({
+        ...current,
+        lastError: error instanceof Error ? error.message : `${provider.name} status check failed.`,
+      }));
+      return;
+    }
+
     runRef.current?.cancel();
-    clearForceConfirm();
-    const samePrompt = tab.lastRunPromptSignature === getScreenerPromptSignature(tab.prompt, tab.providerId);
-    const includePreviousResults = samePrompt && tab.results.length > 0;
     const startedAt = Date.now();
-    const cliInstructions = buildGloomberbCliInstructions(resolveGloomberbCliCommand());
     const prompt = buildScreenerPrompt({
       currentDate: new Date(startedAt).toISOString().slice(0, 10),
       prompt: tab.prompt,
-      provider,
-      cliInstructions,
-      previousResults: tab.results,
-      includePreviousResults,
     });
 
-    setRunState({ tabId: tab.id, mode, output: "" });
+    setRunState({ tabId: tab.id, output: "" });
     upsertTab(tab.id, (current) => ({
       ...current,
       lastRunAt: startedAt,
@@ -87,8 +100,10 @@ export function useAiScreenerRunner({
     let rawOutput = "";
     try {
       const run = runAiPrompt({
-        provider,
+        providerId: provider.id,
         prompt,
+        modelId: selection.modelId ?? undefined,
+        outputMode: "screener",
         onChunk: (output) => {
           setRunState((current) => (
             current?.tabId === tab.id
@@ -102,17 +117,18 @@ export function useAiScreenerRunner({
 
       const parsed = parseScreenerResponse(rawOutput);
       const validated = await validateScreenerResults(parsed.tickers, tickers, dispatch, dataProvider);
-      const nextResults = !samePrompt || mode === "force"
-        ? validated.results
-        : mergeScreenerResults(tab.results, validated.results);
 
       upsertTab(tab.id, (current) => ({
         ...current,
         title: parsed.title || current.title || deriveScreenerTitle(current.prompt),
         summary: parsed.summary,
-        results: nextResults,
+        results: validated.results,
         lastSuccessAt: startedAt,
-        lastRunPromptSignature: getScreenerPromptSignature(current.prompt, current.providerId),
+        lastRunPromptSignature: getScreenerPromptSignature(
+          current.prompt,
+          selection.providerId,
+          selection.modelId,
+        ),
         lastError: null,
         lastWarning: validated.warning,
         debugOutput: null,
@@ -130,7 +146,7 @@ export function useAiScreenerRunner({
       }
       setRunState((current) => (current?.tabId === tab.id ? null : current));
     }
-  }, [clearForceConfirm, dataProvider, dispatch, providers, tabs, tickers, upsertTab]);
+  }, [dataProvider, dispatch, providers, resolveSelection, tabs, tickers, upsertTab]);
 
   useEffect(() => () => {
     runRef.current?.cancel();

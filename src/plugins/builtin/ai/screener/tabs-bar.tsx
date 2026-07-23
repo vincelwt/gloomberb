@@ -26,13 +26,13 @@ export function AiScreenerTabsBar({
 }) {
   const lastTabClickRef = useRef<{ tabId: string; at: number } | null>(null);
   const displayTabs = editorState?.mode === "create"
-    ? [...tabs.map((tab) => ({ id: tab.id, title: tab.title })), { id: "__draft__", title: "New Screener", draft: true }]
+    ? [...tabs.map((tab) => ({ id: tab.id, title: tab.title })), { id: "__draft__", title: "New Screener" }]
     : tabs.map((tab) => ({ id: tab.id, title: tab.title }));
 
   return (
     <Tabs
       tabs={displayTabs.map((tab) => {
-        const isDraft = tab.draft === true;
+        const isDraft = tab.id === "__draft__";
         return {
           label: truncateWithEllipsis(tab.title, isDraft ? 20 : 18),
           value: tab.id,

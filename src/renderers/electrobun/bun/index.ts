@@ -431,6 +431,9 @@ async function handleBackendRequest(
   if (method === "init") return initialize(rpc, payload);
   if (method === "http.fetch") return handleHttpFetch(payload);
   if (method === "media.resolveLiveStream") return resolveDesktopLiveStream(payload);
+  if (method === "remote.forward") {
+    return forwardRemoteControlRequest(payload.request as RemoteControlRequest);
+  }
   if (method.startsWith("capability.")) return capabilityBridge.handle(rpc, method, payload);
   if (method.startsWith("desktop.")) {
     return handleDesktopWorkspaceRequest({

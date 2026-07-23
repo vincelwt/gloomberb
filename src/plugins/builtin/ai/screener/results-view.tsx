@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Box, Text, TextAttributes } from "../../../../ui";
+import { Box, Text } from "../../../../ui";
 import { EmptyState, Spinner, TickerListTableView, type DataTableKeyEvent } from "../../../../components";
 import type { ColumnConfig } from "../../../../types/config";
 import type { TickerFinancials } from "../../../../types/financials";
@@ -10,8 +10,6 @@ import { getColumnValue, type ColumnContext } from "../../portfolio-list/metrics
 import type { ValidatedScreenerResult } from "./contract";
 import type { AiScreenerTab, ScreenerSortPreference } from "./model";
 import { truncateWithEllipsis, wrapTextLines } from "../../../../utils/text-wrap";
-
-const DETAIL_FOOTER_LINES = 3;
 
 export function AiScreenerResultsView({
   activeSort,
@@ -52,28 +50,11 @@ export function AiScreenerResultsView({
 }) {
   const detailTextWidth = Math.max(12, width - 2);
   const warningColor = colors.borderFocused;
-  const selectedResult = activeTab?.results.find((result) => result.symbol === cursorSymbol)
-    ?? activeTab?.results[0]
-    ?? null;
   const summaryLines = useMemo(() => (
     activeTab?.summary
       ? wrapTextLines(activeTab.summary, detailTextWidth, 2)
       : []
   ), [activeTab?.summary, detailTextWidth]);
-  const detailLines = promptDirty
-    ? wrapTextLines("Prompt changed. Refresh to rerun this screener.", detailTextWidth, DETAIL_FOOTER_LINES)
-    : selectedResult
-      ? [
-        `${selectedResult.symbol}${selectedResult.resolvedName ? ` · ${selectedResult.resolvedName}` : ""}`,
-        ...wrapTextLines(selectedResult.reason, detailTextWidth, DETAIL_FOOTER_LINES - 1),
-      ]
-      : activeTab
-        ? ["No validated results yet."]
-        : ["Create an AI screener tab to begin."];
-  const paddedDetailLines = [...detailLines];
-  while (paddedDetailLines.length < DETAIL_FOOTER_LINES) {
-    paddedDetailLines.push("");
-  }
 
   return (
     <>
@@ -98,7 +79,7 @@ export function AiScreenerResultsView({
       )}
 
       {activeTab && summaryLines.length > 0 && !activeTab.lastError && (
-        <Box flexDirection="column" paddingX={1} paddingTop={activeTab.lastWarning ? 0 : 1}>
+        <Box flexDirection="column" paddingX={1}>
           {summaryLines.map((line, index) => (
             <Box key={`summary:${index}`} height={1}>
               <Text fg={colors.textDim}>{line || " "}</Text>
@@ -144,26 +125,11 @@ export function AiScreenerResultsView({
             resetScrollKey={activeTab.id}
             onRowActivate={onRowActivate}
             emptyTitle="No matches yet."
-            emptyHint={promptDirty ? "Prompt changed. Refresh to rerun." : "Run this screener. Use PS to customize columns."}
+            emptyHint={promptDirty && !isRunningActiveTab
+              ? "Prompt changed. Refresh to rerun."
+              : "Run this screener. Use PS to customize columns."}
           />
         )}
-      </Box>
-
-      <Box height={1} paddingX={1}>
-        <Text fg={colors.textDim}>{"\u2500".repeat(Math.max(width - 2, 0))}</Text>
-      </Box>
-
-      <Box flexDirection="column" paddingX={1} minHeight={DETAIL_FOOTER_LINES}>
-        {paddedDetailLines.map((line, index) => (
-          <Box key={`detail:${index}`} height={1}>
-            <Text
-              fg={promptDirty ? warningColor : index === 0 && selectedResult ? colors.text : colors.textDim}
-              attributes={index === 0 && selectedResult ? TextAttributes.BOLD : 0}
-            >
-              {line || " "}
-            </Text>
-          </Box>
-        ))}
       </Box>
     </>
   );

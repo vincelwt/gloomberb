@@ -1,152 +1,199 @@
-export interface AiProvider {
-  id: string;
+import type { AiRunOutputMode, AiRuntimeProvider } from "./runner";
+
+export const AI_PROVIDER_IDS = [
+  "anthropic",
+  "openai-codex",
+  "openai",
+  "google",
+  "github-copilot",
+  "xai",
+  "openrouter",
+] as const;
+
+export type AiProviderId = (typeof AI_PROVIDER_IDS)[number];
+
+/**
+ * These aliases exist only to migrate persisted pre-Pi selections. Runtime
+ * catalogs and requests always use the canonical Pi provider ids above.
+ */
+export const LEGACY_AI_PROVIDER_ID_ALIASES = {
+  claude: "anthropic",
+  codex: "openai-codex",
+  gemini: "google",
+} as const satisfies Readonly<Record<string, AiProviderId>>;
+
+export type AiProviderStatus = "ready" | "not_authenticated" | "check_failed";
+
+export interface AiProviderDefinition {
+  id: AiProviderId;
   name: string;
-  command: string;
-  available: boolean;
-  status?: AiProviderStatus;
-  unavailableReason?: string;
-  buildArgs: (prompt: string) => string[];
-  buildStructuredArgs?: (prompt: string) => string[];
-  authLoginCommand?: string;
+  outputModes: readonly AiRunOutputMode[];
+  /**
+   * Ordered, curated defaults. The runtime chooses the first one available to
+   * the connected account and never falls back to provider array order.
+   */
+  preferredModelIds: readonly string[];
 }
 
-export type AiProviderStatus = "ready" | "missing" | "not_authenticated" | "check_failed";
-
-export interface AiProviderAvailability {
+export interface AiProvider {
+  id: AiProviderId;
+  name: string;
   available: boolean;
   status: AiProviderStatus;
   unavailableReason?: string;
+  outputModes: AiRunOutputMode[];
+  defaultModelId?: string;
 }
 
-export interface AiProviderDefinition extends Omit<AiProvider, "available" | "status" | "unavailableReason"> {}
+const ALL_OUTPUT_MODES: readonly AiRunOutputMode[] = ["plain", "structured", "screener"];
 
-const PROVIDER_DEFS: AiProviderDefinition[] = [
+const PROVIDER_DEFINITIONS: readonly AiProviderDefinition[] = [
   {
-    id: "claude",
+    id: "anthropic",
     name: "Claude",
-    command: "claude",
-    buildArgs: (prompt) => ["-p", prompt],
-    buildStructuredArgs: (prompt) => [
-      "--print",
-      prompt,
-      "--verbose",
-      "--output-format",
-      "stream-json",
-      "--include-partial-messages",
-      "--no-session-persistence",
-      "--safe-mode",
-      "--tools",
-      "",
-      "--permission-mode",
-      "manual",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: ["claude-opus-4-8", "claude-sonnet-5"],
+  },
+  {
+    id: "openai-codex",
+    name: "OpenAI (ChatGPT)",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: ["gpt-5.6-sol", "gpt-5.6-terra"],
+  },
+  {
+    id: "openai",
+    name: "OpenAI API",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.4"],
+  },
+  {
+    id: "google",
+    name: "Google Gemini",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: ["gemini-3.6-flash", "gemini-3.5-flash"],
+  },
+  {
+    id: "github-copilot",
+    name: "GitHub Copilot",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: ["gpt-5.6-sol", "claude-sonnet-5", "gpt-5.4"],
+  },
+  {
+    id: "xai",
+    name: "xAI / Grok",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: ["grok-4.5", "grok-4.3"],
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: [
+      "anthropic/claude-sonnet-5",
+      "openai/gpt-5.6-sol",
+      "google/gemini-3.6-flash",
     ],
-    authLoginCommand: "claude auth login",
-  },
-  {
-    id: "gemini",
-    name: "Gemini",
-    command: "gemini",
-    buildArgs: (prompt) => ["-p", prompt],
-  },
-  {
-    id: "codex",
-    name: "Codex",
-    command: "codex",
-    buildArgs: (prompt) => ["exec", "--skip-git-repo-check", prompt],
-    buildStructuredArgs: (prompt) => [
-      "exec",
-      "--skip-git-repo-check",
-      "--ephemeral",
-      "--ignore-user-config",
-      "--ignore-rules",
-      "--disable",
-      "shell_tool",
-      "--sandbox",
-      "read-only",
-      "--json",
-      prompt,
-    ],
-    authLoginCommand: "codex login",
-  },
-  {
-    id: "pi",
-    name: "Pi",
-    command: "pi",
-    buildArgs: (prompt) => ["-p", "--mode", "text", "--offline", "--no-tools", "--no-session", "-nc", "-ne", "-ns", prompt],
-    buildStructuredArgs: (prompt) => ["-p", "--mode", "json", "--offline", "--no-tools", "--no-session", "-nc", "-ne", "-ns", prompt],
-    // Pi authenticates via config/env (no auth-status subcommand), so readiness
-    // is based on executable discovery and authentication errors surface at run time.
   },
 ];
 
 let detectedProviders: AiProvider[] | null = null;
 
-function commandExists(command: string): boolean {
-  try {
-    if (typeof Bun !== "undefined" && typeof Bun.which === "function") {
-      return !!Bun.which(command);
-    }
-  } catch {
-    return false;
-  }
-  return false;
+export function isAiProviderId(providerId: string): providerId is AiProviderId {
+  return (AI_PROVIDER_IDS as readonly string[]).includes(providerId);
 }
 
-export function detectProviders(): AiProvider[] {
-  if (detectedProviders) return detectedProviders;
-
-  detectedProviders = PROVIDER_DEFS.map((definition) => ({
-    ...definition,
-    ...availabilityFromCommand(definition, commandExists(definition.command)),
-  }));
-  return detectedProviders;
+export function migrateLegacyAiProviderId(providerId: string): string {
+  return LEGACY_AI_PROVIDER_ID_ALIASES[
+    providerId as keyof typeof LEGACY_AI_PROVIDER_ID_ALIASES
+  ] ?? providerId;
 }
 
-function availabilityFromCommand(
-  provider: AiProviderDefinition,
-  available: boolean,
-): AiProviderAvailability {
-  return available
-    ? { available: true, status: "ready" }
-    : {
-        available: false,
-        status: "missing",
-        unavailableReason: `${provider.name} is not installed or was not found in PATH.`,
-      };
-}
-
-export function getAvailableProviders(providers = detectProviders()): AiProvider[] {
-  return providers.filter((provider) => provider.available);
-}
-
-export function getLocalWorkspaceProviders(providers = detectProviders()): AiProvider[] {
-  return providers.filter((provider) => provider.id === "claude" || provider.id === "codex" || provider.id === "pi");
-}
-
-export function getAiProvider(providerId: string | null | undefined, providers = detectProviders()): AiProvider | null {
+export function getAiProviderDefinition(
+  providerId: string | null | undefined,
+): AiProviderDefinition | null {
   if (!providerId) return null;
-  return providers.find((provider) => provider.id === providerId) ?? null;
-}
-
-export function resolveDefaultAiProviderId(providers = detectProviders()): string {
-  return getAvailableProviders(providers)[0]?.id ?? providers[0]?.id ?? "claude";
-}
-
-export function getAiProviderUnavailableReason(provider: AiProvider): string {
-  return provider.unavailableReason
-    ?? `${provider.name} is not installed, not authenticated, or not available in PATH.`;
-}
-
-export function getAiProviderUnavailableLabel(provider: AiProvider): string {
-  if (provider.status === "not_authenticated") return "sign in";
-  if (provider.status === "check_failed") return "unavailable";
-  return "missing";
-}
-
-export function __setDetectedProvidersForTests(providers: AiProvider[] | null): void {
-  detectedProviders = providers;
+  const canonicalId = migrateLegacyAiProviderId(providerId);
+  return PROVIDER_DEFINITIONS.find((provider) => provider.id === canonicalId) ?? null;
 }
 
 export function getAiProviderDefinitions(): AiProviderDefinition[] {
-  return PROVIDER_DEFS.map((definition) => ({ ...definition }));
+  return PROVIDER_DEFINITIONS.map((definition) => ({
+    ...definition,
+    outputModes: [...definition.outputModes],
+    preferredModelIds: [...definition.preferredModelIds],
+  }));
 }
+
+function disconnectedProvider(definition: AiProviderDefinition): AiProvider {
+  return {
+    id: definition.id,
+    name: definition.name,
+    available: false,
+    status: "not_authenticated",
+    unavailableReason: `${definition.name} is not connected.`,
+    outputModes: [...definition.outputModes],
+    defaultModelId: definition.preferredModelIds[0],
+  };
+}
+
+export function aiProviderFromRuntime(provider: AiRuntimeProvider): AiProvider {
+  return {
+    id: provider.providerId,
+    name: provider.label,
+    available: provider.status === "ready",
+    status: provider.status,
+    ...(provider.unavailableReason ? { unavailableReason: provider.unavailableReason } : {}),
+    outputModes: [...provider.outputModes],
+    ...(provider.defaultModelId ? { defaultModelId: provider.defaultModelId } : {}),
+  };
+}
+
+/**
+ * Compatibility accessor for pane code while it moves to the reactive runtime
+ * catalog. It contains only Pi providers and never performs CLI discovery.
+ */
+export function detectProviders(): AiProvider[] {
+  if (detectedProviders) return detectedProviders;
+  detectedProviders = PROVIDER_DEFINITIONS.map(disconnectedProvider);
+  return detectedProviders;
+}
+
+export function getAvailableProviders(
+  providers: readonly AiProvider[] = detectProviders(),
+): AiProvider[] {
+  return providers.filter((provider) => provider.available);
+}
+
+export function getAiProvider(
+  providerId: string | null | undefined,
+  providers: readonly AiProvider[] = detectProviders(),
+): AiProvider | null {
+  if (!providerId) return null;
+  const canonicalId = migrateLegacyAiProviderId(providerId);
+  return providers.find((provider) => provider.id === canonicalId) ?? null;
+}
+
+export function resolveDefaultAiProviderId(
+  providers: readonly AiProvider[] = detectProviders(),
+): AiProviderId {
+  return providers.find((provider) => provider.status === "ready")?.id
+    ?? providers[0]?.id
+    ?? "anthropic";
+}
+
+export function getAiProviderUnavailableReason(provider: AiProvider): string {
+  return provider.unavailableReason ?? `${provider.name} is not connected.`;
+}
+
+export function getAiProviderUnavailableLabel(provider: AiProvider): string {
+  return provider.status === "check_failed" ? "unavailable" : "sign in";
+}
+
+export function setDetectedProviders(providers: AiProvider[] | null): void {
+  detectedProviders = providers?.map((provider) => ({
+    ...provider,
+    outputModes: [...provider.outputModes],
+  })) ?? null;
+}
+
+export const __setDetectedProvidersForTests = setDetectedProviders;

@@ -152,8 +152,9 @@ export function normalizeWizardFields(steps: WizardStep[]): {
         options: normalizeFieldOptions(step.options),
         placeholder: step.placeholder,
         description: step.body?.[0],
-        required: true,
+        required: step.required !== false,
         dependsOn: step.dependsOn ? [{ key: step.dependsOn.key, value: step.dependsOn.value }] : undefined,
+        clearOnChange: step.clearOnChange,
       });
       if (step.defaultValue) {
         initialValues[step.key] = step.defaultValue;
@@ -169,8 +170,9 @@ export function normalizeWizardFields(steps: WizardStep[]): {
       type,
       placeholder: step.placeholder,
       description: step.body?.[0],
-      required: true,
+      required: step.required !== false,
       dependsOn: step.dependsOn ? [{ key: step.dependsOn.key, value: step.dependsOn.value }] : undefined,
+      clearOnChange: step.clearOnChange,
     });
     if (step.defaultValue) {
       initialValues[step.key] = step.defaultValue;

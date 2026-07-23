@@ -62,6 +62,27 @@ export function PaneSettingsDialogContent({
 
   const openFieldEditor = async (field: PaneSettingField | undefined) => {
     if (!field || !descriptor) return;
+    if (field.type === "action") {
+      if (field.disabled) return;
+      let closed = false;
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        dismiss();
+      };
+      await field.action({
+        ...descriptor.context,
+        surface: "pane-dialog",
+        close,
+        openCommandBar: (query) => {
+          close();
+          queueMicrotask(() => pluginRegistry.openCommandBar(query));
+        },
+        notify: (notification) => pluginRegistry.notify(notification),
+      });
+      if (!closed) setSettingsRevision((revision) => revision + 1);
+      return;
+    }
     const currentValue = descriptor.context.settings[field.key];
 
     if (field.type === "toggle") {

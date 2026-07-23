@@ -8,13 +8,25 @@ import {
   usePaneInstance,
   usePaneInstanceId,
 } from "../../../../state/app/context";
-import { useAssetData, usePluginPaneState, usePluginState, usePluginTickerActions } from "../../../runtime";
+import {
+  useAssetData,
+  usePluginConfigState,
+  usePluginPaneState,
+  usePluginState,
+  usePluginTickerActions,
+} from "../../../runtime";
 import { type DataTableKeyEvent } from "../../../../components";
 import { colors } from "../../../../theme/colors";
 import { t } from "../../../../i18n";
-import { detectProviders, getAiProvider, resolveDefaultAiProviderId } from "../providers";
+import { getAiProvider, resolveDefaultAiProviderId } from "../providers";
+import { useAiRuntimeProviders } from "../use-runtime-providers";
 import {
-  getScreenerPromptSignature,
+  getSelectableAiRunners,
+  isAiProviderReady,
+  resolveReadyAiRunnerDefault,
+} from "../runner-selection";
+import {
+  matchesScreenerPromptSignature,
 } from "./contract";
 import {
   EMPTY_PANE_STATE,
@@ -27,7 +39,6 @@ import {
   type ScreenerSortPreference,
 } from "./model";
 import { getAiScreenerPaneSettings, resolveVisibleAiScreenerColumns } from "../settings";
-import { AiScreenerActionBar } from "./action-bar";
 import { AiScreenerEditorView } from "./editor";
 import { AiScreenerResultsView } from "./results-view";
 import { useAiScreenerRunner } from "./runner";
@@ -36,8 +47,11 @@ import { useAiScreenerFooter } from "./footer";
 import { useAiScreenerEditorRuntime } from "./editor-runtime";
 import { useAiScreenerKeyboard } from "./keyboard";
 import { AiScreenerTabsBar } from "./tabs-bar";
-
-const FORCE_CONFIRM_TIMEOUT_MS = 4000;
+import {
+  AI_DEFAULT_MODEL_SETTING_KEY,
+  AI_DEFAULT_PROVIDER_SETTING_KEY,
+  resolveAiPaneSelection,
+} from "../pane-settings";
 
 export function AiScreenerPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
@@ -46,9 +60,22 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
   const paneInstance = usePaneInstance();
   const dispatch = useAppDispatch();
   const tickers = useAppSelector((state) => state.tickers);
-  const [providers] = useState(() => detectProviders());
-  const availableProviders = providers.filter((provider) => provider.available);
-  const selectableProviders = availableProviders.length > 0 ? availableProviders : providers;
+  const providers = useAiRuntimeProviders();
+  const selectableProviders = getSelectableAiRunners(providers, { outputMode: "screener" });
+  const readyProviders = selectableProviders.filter(isAiProviderReady);
+  const fallbackProviderId = resolveDefaultAiProviderId(selectableProviders);
+  const [configuredDefaultProviderId] = usePluginConfigState<string>(
+    AI_DEFAULT_PROVIDER_SETTING_KEY,
+    fallbackProviderId,
+  );
+  const [configuredDefaultModelId] = usePluginConfigState<string>(AI_DEFAULT_MODEL_SETTING_KEY, "");
+  const defaults = resolveReadyAiRunnerDefault(
+    selectableProviders,
+    configuredDefaultProviderId,
+    configuredDefaultModelId,
+  );
+  const defaultProviderId = defaults.providerId;
+  const defaultModelId = defaults.modelId;
   const [persistedState, setPersistedState] = usePluginState<PersistedAiScreenerPaneState>(
     `screener-pane:${paneId}`,
     EMPTY_PANE_STATE,
@@ -58,7 +85,6 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
   const [cursorSymbol, setCursorSymbol] = usePluginPaneState<string | null>("cursorSymbol", null);
   const [sorts, setSorts] = usePluginPaneState<Record<string, ScreenerSortPreference>>("sorts", {});
   const [now, setNow] = useState(Date.now());
-  const [forceConfirmTabId, setForceConfirmTabId] = useState<string | null>(null);
   const initializedRef = useRef(false);
   const pendingInitialRunRef = useRef<string | null>(null);
 
@@ -89,12 +115,15 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
 
     const seedProviderId = typeof paneInstance?.params?.providerId === "string"
       ? paneInstance.params.providerId
-      : resolveDefaultAiProviderId(providers);
-    const seededTab = createScreenerTab(seedPrompt, seedProviderId);
+      : defaultProviderId;
+    const seedModelId = typeof paneInstance?.params?.modelId === "string"
+      ? paneInstance.params.modelId.trim() || null
+      : defaultModelId;
+    const seededTab = createScreenerTab(seedPrompt, seedProviderId, seedModelId);
     pendingInitialRunRef.current = seededTab.id;
     setPersistedState({ tabs: [seededTab] });
     setActiveTabId(seededTab.id);
-  }, [paneInstance?.params?.prompt, paneInstance?.params?.providerId, providers, setActiveTabId, setPersistedState, tabs.length]);
+  }, [defaultModelId, defaultProviderId, paneInstance?.params?.modelId, paneInstance?.params?.prompt, paneInstance?.params?.providerId, setActiveTabId, setPersistedState, tabs.length]);
 
   useEffect(() => {
     if (tabs.length === 0) {
@@ -108,10 +137,24 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
   }, [activeTabId, cursorSymbol, setActiveTabId, setCursorSymbol, tabs]);
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0] ?? null;
+  const resolveTabSelection = useCallback((tab: AiScreenerTab) => resolveAiPaneSelection({
+    settings: paneInstance?.settings,
+    savedProviderId: tab.providerId,
+    savedModelId: tab.modelId,
+    defaultProviderId,
+    defaultModelId,
+  }), [defaultModelId, defaultProviderId, paneInstance?.settings]);
+  const activeSelection = activeTab ? resolveTabSelection(activeTab) : null;
   const resultMap = useMemo(() => getResultMap(activeTab), [activeTab]);
   const activeSort = activeTab ? sorts[activeTab.id] ?? EMPTY_SORT : EMPTY_SORT;
-  const activePromptSignature = activeTab ? getScreenerPromptSignature(activeTab.prompt, activeTab.providerId) : null;
-  const promptDirty = activeTab ? activePromptSignature !== activeTab.lastRunPromptSignature : false;
+  const promptDirty = activeTab
+    ? !matchesScreenerPromptSignature(
+      activeTab.lastRunPromptSignature,
+      activeTab.prompt,
+      activeSelection ? activeSelection.providerId : activeTab.providerId,
+      activeSelection ? activeSelection.modelId : activeTab.modelId,
+    )
+    : false;
 
   const {
     columnContext,
@@ -127,8 +170,6 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
     setCursorSymbol,
     tickers,
   });
-
-  const forceRunArmed = !!activeTab && forceConfirmTabId === activeTab.id;
 
   const updateTabs = useCallback((updater: (tabs: AiScreenerTab[]) => AiScreenerTab[]) => {
     setPersistedState((current) => ({
@@ -147,13 +188,20 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
   const {
     closeEditor,
     cycleEditorProvider,
+    editorFocusTarget,
+    editorModelInputRef,
     editorState,
     editorTextareaRef,
+    focusEditorModel,
+    focusEditorPrompt,
     openCreateEditor: openCreateEditorDraft,
     openEditEditor: openEditEditorDraft,
     saveEditor,
+    selectEditorProvider,
     setEditorState,
   } = useAiScreenerEditorRuntime({
+    defaultModelId,
+    defaultProviderId,
     providers,
     queueInitialRun,
     selectableProviders,
@@ -164,12 +212,10 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
   });
 
   const openCreateEditor = useCallback(() => {
-    setForceConfirmTabId(null);
     openCreateEditorDraft();
   }, [openCreateEditorDraft]);
 
   const openEditEditor = useCallback((tab: AiScreenerTab | null) => {
-    setForceConfirmTabId(null);
     openEditEditorDraft(tab);
   }, [openEditEditorDraft]);
 
@@ -181,9 +227,9 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
     dataProvider,
     dispatch,
     providers,
+    resolveSelection: resolveTabSelection,
     tabs,
     tickers,
-    clearForceConfirm: () => setForceConfirmTabId(null),
     upsertTab,
   });
   const isRunningActiveTab = runState?.tabId === activeTab?.id;
@@ -196,9 +242,6 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
     if (runState?.tabId === tabId) {
       cancelRun();
     }
-    if (forceConfirmTabId === tabId) {
-      setForceConfirmTabId(null);
-    }
     setEditorState((current) => current?.tabId === tabId ? null : current);
     updateTabs((current) => current.filter((tab) => tab.id !== tabId));
     if (activeTabId === tabId) {
@@ -207,7 +250,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
       setActiveTabId(fallback?.id ?? null);
       setCursorSymbol(null);
     }
-  }, [activeTabId, cancelRun, forceConfirmTabId, runState?.tabId, setActiveTabId, setCursorSymbol, tabs, updateTabs]);
+  }, [activeTabId, cancelRun, runState?.tabId, setActiveTabId, setCursorSymbol, tabs, updateTabs]);
 
   const editTab = useCallback((tab: AiScreenerTab | null) => {
     openEditEditor(tab);
@@ -222,22 +265,8 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
     if (!tabs.some((tab) => tab.id === pendingInitialRunRef.current)) return;
     const targetTabId = pendingInitialRunRef.current;
     pendingInitialRunRef.current = null;
-    void runTab(targetTabId, "refresh");
+    void runTab(targetTabId);
   }, [runTab, tabs]);
-
-  useEffect(() => {
-    if (!forceConfirmTabId) return;
-    const timeoutId = setTimeout(() => {
-      setForceConfirmTabId((current) => (current === forceConfirmTabId ? null : current));
-    }, FORCE_CONFIRM_TIMEOUT_MS);
-    return () => clearTimeout(timeoutId);
-  }, [forceConfirmTabId]);
-
-  useEffect(() => {
-    if (forceConfirmTabId && activeTab && forceConfirmTabId !== activeTab.id) {
-      setForceConfirmTabId(null);
-    }
-  }, [activeTab, forceConfirmTabId]);
 
   const cycleTabs = useCallback((direction: -1 | 1) => {
     if (!activeTab || tabs.length <= 1) return;
@@ -274,6 +303,13 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
     return true;
   }, [cursorSymbol, pinTicker]);
 
+  const contentHeight = Math.max(height - 3, 4);
+  const editorProvider = editorState ? getAiProvider(editorState.providerId, providers) : null;
+  const refreshActiveTab = useCallback(() => {
+    if (!activeTab || isRunningActiveTab) return;
+    void runTab(activeTab.id);
+  }, [activeTab, isRunningActiveTab, runTab]);
+
   useAiScreenerKeyboard({
     activeTab,
     addTab,
@@ -282,53 +318,28 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
     cycleEditorProvider,
     cycleTabs,
     editActiveTab,
+    editorFocusTarget,
     editorState,
     focused,
+    focusEditorModel,
+    focusEditorPrompt,
     isRunningActiveTab,
+    refreshActiveTab,
     removeTab,
-    runTab,
     saveEditor,
   });
 
-  const contentHeight = Math.max(height - 8, 4);
-  const editorProvider = editorState ? getAiProvider(editorState.providerId, providers) : null;
-  const primaryRunLabel = !activeTab
-    ? "Refresh"
-    : activeTab.lastSuccessAt == null && activeTab.lastRunAt == null
-      ? "Run Screener"
-      : promptDirty
-        ? "Run Updated Prompt"
-        : "Refresh";
-  const refreshActiveTab = useCallback(() => {
-    if (!activeTab || isRunningActiveTab) return;
-    void runTab(activeTab.id, "refresh");
-  }, [activeTab, isRunningActiveTab, runTab]);
-  const forceRefreshActiveTab = useCallback(() => {
-    if (!activeTab || isRunningActiveTab) return;
-    if (forceRunArmed) {
-      setForceConfirmTabId(null);
-      void runTab(activeTab.id, "force");
-      return;
-    }
-    setForceConfirmTabId(activeTab.id);
-  }, [activeTab, forceRunArmed, isRunningActiveTab, runTab, setForceConfirmTabId]);
-
   useAiScreenerFooter({
     activeTab,
-    addTab,
-    cycleEditorProvider,
-    editActiveTab,
-    editorProvider,
     editorState,
-    forceRefreshActiveTab,
-    forceRunArmed,
     isRunningActiveTab,
-    providers,
-    refreshActiveTab,
-    removeTab,
     runState,
-    saveEditor,
-    selectableProviders,
+    onAddTab: addTab,
+    onCancelRun: cancelRun,
+    onCloseEditor: closeEditor,
+    onEdit: editActiveTab,
+    onRefresh: refreshActiveTab,
+    onSaveEditor: saveEditor,
   });
 
   return (
@@ -347,43 +358,29 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
         />
       </Box>
 
-      {!editorState && (
-        <AiScreenerActionBar
-          active={!!activeTab}
-          forceRunArmed={forceRunArmed}
-          isRunning={isRunningActiveTab}
-          primaryRunLabel={primaryRunLabel}
-          promptDirty={promptDirty}
-          runMode={runState?.mode ?? null}
-          onCancelRun={cancelRun}
-          onEdit={editActiveTab}
-          onForceRefresh={forceRefreshActiveTab}
-          onRefresh={refreshActiveTab}
-        />
-      )}
-
-      {availableProviders.length === 0 && (
+      {readyProviders.length === 0 && (
         <Box flexDirection="column" paddingX={1} paddingTop={1}>
-          <Text fg={colors.textDim}>{t("No supported AI CLI tools detected. Install one to run screeners.")}</Text>
+          <Text fg={colors.textDim}>{t("No AI providers are ready. Connect an account in pane settings.")}</Text>
         </Box>
       )}
 
       {editorState ? (
         <AiScreenerEditorView
-          contentHeight={contentHeight}
           editorProvider={editorProvider}
+          editorFocusTarget={editorFocusTarget}
           editorState={editorState}
           focused={focused}
+          modelInputRef={editorModelInputRef}
           selectableProviders={selectableProviders}
           textareaRef={editorTextareaRef}
-          width={width}
-          onCancel={closeEditor}
-          onProviderChange={(providerId) => {
+          onModelFocusRequest={focusEditorModel}
+          onProviderChange={selectEditorProvider}
+          onModelChange={(modelId) => {
             setEditorState((current) => current
-              ? { ...current, providerId, error: null }
+              ? { ...current, modelId, error: null }
               : current);
           }}
-          onSave={saveEditor}
+          onPromptFocusRequest={focusEditorPrompt}
         />
       ) : (
         <AiScreenerResultsView

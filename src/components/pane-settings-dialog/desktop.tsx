@@ -140,6 +140,23 @@ function DesktopValuePill({ value }: { value: string }) {
   );
 }
 
+function DesktopActionPill({ disabled, label }: { disabled: boolean; label: string }) {
+  return (
+    <Box
+      flexDirection="row"
+      alignItems="center"
+      backgroundColor={disabled ? "transparent" : desktopSubtleSurface()}
+      style={{
+        border: `1px solid ${colors.border}`,
+        borderRadius: 6,
+        padding: "1px 7px",
+      }}
+    >
+      <Text fg={disabled ? colors.textMuted : colors.text} style={desktopText(650)}>{label}</Text>
+    </Box>
+  );
+}
+
 function DesktopSettingsRow({
   field,
   selected,
@@ -160,6 +177,7 @@ function DesktopSettingsRow({
   onApply: (field: PaneSettingField, value: unknown) => void;
 }) {
   const isToggle = field.type === "toggle";
+  const disabled = field.type === "action" && field.disabled === true;
   const summary = summarizePaneSettingValue(field, currentValue);
   const control = field.type === "toggle" ? (
     <DesktopSwitch checked={currentValue === true} onChange={(checked) => onApply(field, checked)} />
@@ -171,6 +189,8 @@ function DesktopSettingsRow({
       selectRef={(element) => onSelectRef(field.key, element)}
       onChange={(value) => onApply(field, value)}
     />
+  ) : field.type === "action" ? (
+    <DesktopActionPill disabled={disabled} label={summary} />
   ) : (
     <Box flexDirection="row" alignItems="center" gap={1}>
       <DesktopValuePill value={summary} />
@@ -183,17 +203,19 @@ function DesktopSettingsRow({
       flexDirection="column"
       minHeight={field.description ? undefined : 2}
       backgroundColor={hovered || selected ? desktopHoverSurface() : "transparent"}
-      onMouseOver={onHover}
+      onMouseOver={disabled ? undefined : onHover}
       onMouseDown={field.type === "select" ? undefined : (event: any) => {
         event.stopPropagation?.();
         event.preventDefault?.();
+        if (disabled) return;
         if (isToggle) onApply(field, currentValue !== true);
         else onEdit();
       }}
-      data-gloom-interactive={field.type === "select" ? undefined : "true"}
+      data-gloom-interactive={field.type === "select" || disabled ? undefined : "true"}
       style={{
         borderRadius: 6,
-        cursor: field.type === "select" ? "default" : "pointer",
+        cursor: field.type === "select" || disabled ? "default" : "pointer",
+        opacity: disabled ? 0.6 : 1,
         padding: "7px 4px 8px",
         transition: "background-color 100ms ease",
       }}

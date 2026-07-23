@@ -123,6 +123,105 @@ describe("createPaneTemplateOrThrow", () => {
 });
 
 describe("applyPaneSettingFieldValue", () => {
+  test("atomically clears dependent plugin settings when a selector changes", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+    config.pluginConfig.ai = { defaultProviderId: "claude", defaultModelId: "opus" };
+    const state = createInitialState(config);
+    const updates: unknown[] = [];
+    const pane = findPaneInstance(state.config.layout, "chat:main")!;
+
+    await applyPaneSettingFieldValue("chat:main", {
+      key: "defaultProviderId",
+      label: "Default provider",
+      type: "select",
+      storage: "plugin",
+      clearOnChange: ["defaultModelId"],
+      options: [],
+    }, "codex", {
+      dataProvider: makeDataProvider() as any,
+      tickerRepository: makeTickerRepository() as any,
+      dispatch: () => {},
+      getState: () => state,
+      persistLayout: () => {},
+      pluginRegistry: {
+        resolvePaneSettings: () => ({
+          paneId: "chat:main",
+          pluginId: "ai",
+          pane,
+          paneDef: { id: "chat", name: "Chat", component: () => null, defaultPosition: "right" },
+          settingsDef: { fields: [] },
+          rawSettings: {},
+          context: {
+            config: state.config,
+            layout: state.config.layout,
+            paneId: "chat:main",
+            paneType: "chat",
+            pane,
+            settings: config.pluginConfig.ai,
+            paneState: {},
+            activeTicker: null,
+            activeCollectionId: null,
+          },
+        }),
+        setConfigStates: async (pluginId: string, values: Record<string, unknown>) => {
+          updates.push({ pluginId, values });
+        },
+      } as any,
+    });
+
+    expect(updates).toEqual([{
+      pluginId: "ai",
+      values: { defaultModelId: "", defaultProviderId: "codex" },
+    }]);
+  });
+
+  test("clears a pane model override in the same layout update as its provider", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+    const state = createInitialState(config);
+    const pane = findPaneInstance(state.config.layout, "chat:main")!;
+    pane.settings = { providerId: "claude", modelId: "opus" };
+    const persisted: LayoutConfig[] = [];
+
+    await applyPaneSettingFieldValue("chat:main", {
+      key: "providerId",
+      label: "Provider",
+      type: "select",
+      clearOnChange: ["modelId"],
+      options: [],
+    }, "codex", {
+      dataProvider: makeDataProvider() as any,
+      tickerRepository: makeTickerRepository() as any,
+      dispatch: () => {},
+      getState: () => state,
+      persistLayout: (layout) => { persisted.push(layout); },
+      pluginRegistry: {
+        resolvePaneSettings: () => ({
+          paneId: "chat:main",
+          pane,
+          paneDef: { id: "chat", name: "Chat", component: () => null, defaultPosition: "right" },
+          settingsDef: { fields: [] },
+          rawSettings: pane.settings ?? {},
+          context: {
+            config: state.config,
+            layout: state.config.layout,
+            paneId: "chat:main",
+            paneType: "chat",
+            pane,
+            settings: pane.settings ?? {},
+            paneState: {},
+            activeTicker: null,
+            activeCollectionId: null,
+          },
+        }),
+      } as any,
+    });
+
+    expect(findPaneInstance(persisted[0]!, "chat:main")?.settings).toMatchObject({
+      providerId: "codex",
+      modelId: "",
+    });
+  });
+
   test("keeps portfolio panes on their displayed collection when switching back to all collections", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
     const layout = cloneLayout(config.layout);

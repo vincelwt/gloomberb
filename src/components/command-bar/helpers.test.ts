@@ -76,9 +76,10 @@ describe("command-bar helpers", () => {
     const steps: WizardStep[] = [
       { key: "intro", label: "Intro", type: "info", body: ["Line one", "Line two"] },
       { key: "_validate-broker", label: "Validate", type: "info", body: ["Connecting…", "Connected"] },
-      { key: "mode", label: "Mode", type: "select", options: [{ label: "Paper", value: "paper" }, { label: "Live", value: "live" }] },
+      { key: "mode", label: "Mode", type: "select", clearOnChange: ["account"], options: [{ label: "Paper", value: "paper" }, { label: "Live", value: "live" }] },
       { key: "account", label: "Account", type: "text", defaultValue: "DU12345", dependsOn: { key: "mode", value: "live" } },
       { key: "prompt", label: "Prompt", type: "textarea", defaultValue: "Find quality compounders" },
+      { key: "modelId", label: "Model", type: "text", required: false },
     ];
 
     const normalized = normalizeWizardFields(steps);
@@ -92,7 +93,9 @@ describe("command-bar helpers", () => {
       prompt: "Find quality compounders",
     });
     expect(normalized.fields[1]?.dependsOn).toEqual([{ key: "mode", value: "live" }]);
+    expect(normalized.fields[0]?.clearOnChange).toEqual(["account"]);
     expect(normalized.fields[2]?.type).toBe("textarea");
+    expect(normalized.fields[3]?.required).toBe(false);
   });
 
   test("builds generated template fields from shortcut placeholders", () => {

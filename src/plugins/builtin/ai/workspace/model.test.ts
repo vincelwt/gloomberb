@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   appendLocalAgentMessages,
-  buildLocalAgentPrompt,
+  buildLocalAgentHistory,
+  buildLocalAgentRequestPrompt,
   createLocalAgentThread,
   EMPTY_LOCAL_AGENT_WORKSPACE,
   normalizeLocalAgentWorkspace,
@@ -10,20 +11,23 @@ import {
 
 describe("local agent workspace model", () => {
   test("binds a provider at creation and refuses later provider mutation", () => {
-    const created = createLocalAgentThread(EMPTY_LOCAL_AGENT_WORKSPACE, "claude", {
+    const created = createLocalAgentThread(EMPTY_LOCAL_AGENT_WORKSPACE, "anthropic", {
       id: "thread-1",
       now: 10,
+      modelId: "sonnet",
     });
     const attemptedMutation = updateLocalAgentThread(created, "thread-1", (thread) => ({
       ...thread,
-      providerId: "codex",
+      providerId: "openai-codex",
+      modelId: "gpt-custom",
     }));
 
-    expect(attemptedMutation.threads[0]?.providerId).toBe("claude");
+    expect(attemptedMutation.threads[0]?.providerId).toBe("anthropic");
+    expect(attemptedMutation.threads[0]?.modelId).toBe("sonnet");
   });
 
   test("creates a second provider thread without changing the first transcript", () => {
-    const claude = createLocalAgentThread(EMPTY_LOCAL_AGENT_WORKSPACE, "claude", { id: "claude-1", now: 10 });
+    const claude = createLocalAgentThread(EMPTY_LOCAL_AGENT_WORKSPACE, "anthropic", { id: "claude-1", now: 10 });
     const withMessage = appendLocalAgentMessages(claude, "claude-1", [{
       id: "message-1",
       role: "assistant",
@@ -31,37 +35,71 @@ describe("local agent workspace model", () => {
       createdAt: 11,
       status: "complete",
     }]);
-    const codex = createLocalAgentThread(withMessage, "codex", { id: "codex-1", now: 12 });
+    const codex = createLocalAgentThread(withMessage, "openai-codex", { id: "codex-1", now: 12 });
 
     expect(codex.activeThreadId).toBe("codex-1");
     expect(codex.threads.find((thread) => thread.id === "claude-1")?.messages[0]?.content).toBe("Original answer");
   });
 
-  test("normalizes and creates Pi threads with the Pi title", () => {
+  test("preserves legacy Pi and OpenCode threads as history", () => {
     const normalized = normalizeLocalAgentWorkspace({
-      activeThreadId: "pi-1",
+      activeThreadId: "open-code-1",
+      threads: [
+        {
+          id: "open-code-1",
+          providerId: "opencode",
+          modelId: "openai/gpt-5.4",
+          title: "OpenCode research",
+          createdAt: 1,
+          updatedAt: 2,
+          messages: [{ id: "m1", role: "assistant", content: "Saved answer", createdAt: 2, status: "complete" }],
+        },
+        {
+          id: "pi-1",
+          providerId: "pi",
+          title: "Pi research",
+          createdAt: 1,
+          updatedAt: 1,
+          messages: [],
+        },
+      ],
+    });
+
+    expect(normalized.activeThreadId).toBe("open-code-1");
+    expect(normalized.threads.map((thread) => thread.providerId)).toEqual(["opencode", "pi"]);
+    expect(normalized.threads[0]?.messages[0]?.content).toBe("Saved answer");
+  });
+
+  test("normalizes and creates Gemini threads admitted by the shared runner flow", () => {
+    const normalized = normalizeLocalAgentWorkspace({
+      activeThreadId: "gemini-1",
       threads: [{
-        id: "pi-1",
-        providerId: "pi",
-        title: "Pi research",
+        id: "gemini-1",
+        providerId: "gemini",
+        modelId: "gemini-2.5-pro",
+        title: "Gemini research",
         createdAt: 1,
         updatedAt: 1,
         messages: [],
       }],
     });
-    const created = createLocalAgentThread(EMPTY_LOCAL_AGENT_WORKSPACE, "pi", { id: "pi-2", now: 2 });
+    const created = createLocalAgentThread(EMPTY_LOCAL_AGENT_WORKSPACE, "google", {
+      id: "gemini-2",
+      now: 2,
+      providerLabel: "Google Gemini",
+    });
 
-    expect(normalized.threads[0]?.providerId).toBe("pi");
-    expect(created.threads[0]?.providerId).toBe("pi");
-    expect(created.threads[0]?.title).toContain("Pi");
+    expect(normalized.threads[0]?.providerId).toBe("google");
+    expect(normalized.threads[0]?.modelId).toBe("gemini-2.5-pro");
+    expect(created.threads[0]?.title).toBe("New Google Gemini thread");
   });
 
   test("sends no financial context unless the user selected an attachment", () => {
-    const state = createLocalAgentThread(EMPTY_LOCAL_AGENT_WORKSPACE, "codex", { id: "thread-1", now: 10 });
+    const state = createLocalAgentThread(EMPTY_LOCAL_AGENT_WORKSPACE, "openai-codex", { id: "thread-1", now: 10 });
     const thread = state.threads[0];
     if (!thread) throw new Error("Expected a created thread");
-    const withoutContext = buildLocalAgentPrompt(thread, "Compare the risks", []);
-    const withContext = buildLocalAgentPrompt(thread, "Compare the risks", [{
+    const withoutContext = buildLocalAgentRequestPrompt("Compare the risks", []);
+    const withContext = buildLocalAgentRequestPrompt("Compare the risks", [{
       id: "ticker:AAPL:10",
       kind: "ticker",
       label: "Ticker AAPL",
@@ -75,18 +113,30 @@ describe("local agent workspace model", () => {
     expect(withContext).toContain("Company: Apple Inc. (AAPL)");
   });
 
-  test("appends app-control instructions only when explicitly enabled", () => {
-    const state = createLocalAgentThread(EMPTY_LOCAL_AGENT_WORKSPACE, "codex", { id: "thread-1", now: 10 });
-    const thread = state.threads[0];
-    if (!thread) throw new Error("Expected a created thread");
+  test("passes completed conversation history as structured messages", () => {
+    const thread = {
+      id: "thread-1",
+      providerId: "anthropic",
+      modelId: null,
+      title: "Research",
+      createdAt: 1,
+      updatedAt: 6,
+      messages: [
+        { id: "u1", role: "user" as const, content: "First question", createdAt: 2 },
+        { id: "a1", role: "assistant" as const, content: "Completed answer", createdAt: 3, status: "complete" as const },
+        { id: "a2", role: "assistant" as const, content: "Partial cancellation", createdAt: 4, status: "cancelled" as const },
+        { id: "a3", role: "assistant" as const, content: "Failed answer", createdAt: 5, status: "error" as const },
+        { id: "a4", role: "assistant" as const, content: "Legacy loading answer", createdAt: 6 },
+      ],
+    };
 
-    const disabled = buildLocalAgentPrompt(thread, "Open the ticker", []);
-    const enabled = buildLocalAgentPrompt(thread, "Open the ticker", [], {
-      appControlInstructions: "APP CONTROL POLICY",
-    });
-
-    expect(disabled).not.toContain("APP CONTROL POLICY");
-    expect(enabled.endsWith("APP CONTROL POLICY")).toBe(true);
+    expect(buildLocalAgentHistory(thread)).toEqual([
+      { role: "user", content: "First question" },
+      { role: "assistant", content: "Completed answer" },
+    ]);
+    expect(buildLocalAgentRequestPrompt("Current question", [])).toBe(
+      "Current user request:\nCurrent question",
+    );
   });
 
   test("drops malformed persisted threads and preserves ordered messages", () => {
@@ -102,7 +152,14 @@ describe("local agent workspace model", () => {
           { id: "m1", role: "user", content: "First", createdAt: 2 },
           { id: "m2", role: "assistant", content: "Second", createdAt: 3, status: "complete" },
         ],
-      }, { id: "bad", providerId: "gemini", messages: [] }],
+      }, {
+        id: "bad",
+        providerId: "",
+        title: "Malformed",
+        createdAt: 1,
+        updatedAt: 1,
+        messages: [],
+      }],
     });
 
     expect(normalized.threads).toHaveLength(1);

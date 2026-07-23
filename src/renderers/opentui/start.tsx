@@ -17,9 +17,17 @@ import { ToastHostProvider } from "../../ui/toast";
 import { colors } from "../../theme/colors";
 import { startMainThreadMonitor } from "../../utils/main-thread-monitor";
 import { measurePerfAsync } from "../../utils/perf-marks";
+import { withDeadline } from "../../utils/async-deadline";
 import type { CliLaunchRequest } from "../../types/plugin";
 import type { RemoteControlAdapter } from "../../remote/app-host";
 import { startRemoteControlServer, type RemoteControlServer } from "../../remote/server";
+import { createPiAiHost } from "../../plugins/builtin/ai/pi";
+import {
+  setAiRunHost,
+  setAiRuntimeCatalog,
+} from "../../plugins/builtin/ai/runner";
+
+const AI_STARTUP_READINESS_TIMEOUT_MS = 5_000;
 
 export interface StartOpenTuiAppOptions {
   externalPlugins?: Awaited<ReturnType<typeof loadExternalPlugins>>;
@@ -97,6 +105,31 @@ export async function startOpenTuiApp(options: StartOpenTuiAppOptions = {}): Pro
 
     const config = await measurePerfAsync("startup.opentui.init-data-dir", () => initDataDir(dataDir));
     applyLanguageFromConfig(config);
+    try {
+      const aiHost = createPiAiHost({
+        appKind: "tui",
+        dataDir: config.dataDir,
+      });
+      setAiRunHost(aiHost);
+      const catalog = await measurePerfAsync(
+        "startup.opentui.ai-catalog",
+        () => withDeadline(
+          aiHost.getCatalog?.() ?? Promise.resolve({ providers: [], accounts: [], models: [] }),
+          AI_STARTUP_READINESS_TIMEOUT_MS,
+          "In-app AI provider discovery timed out during startup",
+        ),
+      ).catch((error) => {
+        appLog.warn("In-app AI provider discovery could not finish during startup", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return { providers: [], accounts: [], models: [] };
+      });
+      setAiRuntimeCatalog(catalog);
+    } catch (error) {
+      appLog.warn("In-app AI providers could not be initialized", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     host = await measurePerfAsync("startup.opentui.create-host", () => createOpenTuiHost());
     host.renderer.once("destroy", finishProcessExit);
 

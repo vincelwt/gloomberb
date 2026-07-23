@@ -17,13 +17,37 @@ function createRegistryHarness() {
     actions.push(action);
     state = appReducer(state, action);
   };
+  const invokedCapabilities: Array<{ capabilityId: string; operationId: string; payload: unknown }> = [];
+  const marketDataQueries: Array<{ operation: string; input: unknown }> = [];
   const registry = {
     panes: new Map(),
     paneTemplates: new Map(),
     commands: new Map(),
     capabilities: {
       manifests: () => [],
-      invoke: async () => ({ invoked: true }),
+      invoke: async (capabilityId: string, operationId: string, payload: unknown) => {
+        invokedCapabilities.push({ capabilityId, operationId, payload });
+        return { invoked: true, capabilityId, operationId, payload };
+      },
+    },
+    marketData: {
+      search: async (query: string) => {
+        marketDataQueries.push({ operation: "search", input: { query } });
+        return [{
+          symbol: "NVDA",
+          name: "NVIDIA Corporation",
+          exchange: "NASDAQ",
+          type: "Equity",
+        }];
+      },
+      getQuote: async (symbol: string, exchange?: string) => {
+        marketDataQueries.push({ operation: "quote", input: { symbol, exchange } });
+        return { symbol, exchange, price: 180 };
+      },
+      getTickerFinancials: async (symbol: string, exchange?: string) => {
+        marketDataQueries.push({ operation: "financials", input: { symbol, exchange } });
+        return { quote: { symbol, exchange, price: 180 } };
+      },
     },
     resolvePaneSettings: () => null,
     showPane: () => {},
@@ -62,7 +86,9 @@ function createRegistryHarness() {
     actions,
     controller,
     getState: () => state,
+    invokedCapabilities,
     invokedUiActions,
+    marketDataQueries,
     setUiNodes: (nodes: RemoteUiNodeSnapshot[]) => {
       uiNodes = nodes;
     },
@@ -99,6 +125,47 @@ describe("createAppRemoteController", () => {
       expect(data.ui).toEqual([{ id: "ui:test", role: "button", label: "Test", actions: ["press"] }]);
       expect(typeof snapshot.rev).toBe("string");
     }
+  });
+
+  test("queries configured market data without dispatching app-control actions", async () => {
+    const { actions, controller, marketDataQueries } = createRegistryHarness();
+
+    const search = await controller.handle({
+      type: "data",
+      operation: "search",
+      query: "NVIDIA",
+    });
+    const quote = await controller.handle({
+      type: "data",
+      operation: "quote",
+      symbol: "nvda",
+      exchange: "nasdaq",
+    });
+
+    expect(search).toMatchObject({
+      ok: true,
+      data: [{ symbol: "NVDA", exchange: "NASDAQ" }],
+    });
+    expect(quote).toMatchObject({
+      ok: true,
+      data: { symbol: "NVDA", exchange: "NASDAQ", price: 180 },
+    });
+    expect(marketDataQueries).toEqual([
+      { operation: "search", input: { query: "NVIDIA" } },
+      { operation: "quote", input: { symbol: "NVDA", exchange: "NASDAQ" } },
+    ]);
+    expect(actions).toEqual([]);
+
+    const appControlAttempt = await controller.handle({
+      type: "data",
+      operation: "app.openCommandBar",
+      query: "NVDA",
+    } as never);
+    expect(appControlAttempt).toMatchObject({
+      ok: false,
+      error: { message: expect.stringContaining("Unknown market data operation") },
+    });
+    expect(actions).toEqual([]);
   });
 
   test("dispatches semantic app operations", async () => {
@@ -288,6 +355,40 @@ describe("createAppRemoteController", () => {
       expect(directResponse.data).toMatchObject({
         ok: true,
         result: { nodeId: "ui:done", action: "press" },
+      });
+    }
+  });
+
+  test("forwards plugin capability operations without narrowing their payload", async () => {
+    const { controller, invokedCapabilities } = createRegistryHarness();
+    const payload = {
+      instanceId: "broker-main",
+      operation: "placeOrder",
+      args: [{ symbol: "NVDA", side: "BUY", quantity: 5 }],
+    };
+
+    const response = await controller.handle({
+      type: "call",
+      operation: "capability.invoke",
+      input: {
+        capabilityId: "desktop.broker",
+        operationId: "invoke",
+        payload,
+      },
+    });
+
+    expect(response.ok).toBe(true);
+    expect(invokedCapabilities).toEqual([{
+      capabilityId: "desktop.broker",
+      operationId: "invoke",
+      payload,
+    }]);
+    if (response.ok) {
+      expect(response.data).toEqual({
+        invoked: true,
+        capabilityId: "desktop.broker",
+        operationId: "invoke",
+        payload,
       });
     }
   });

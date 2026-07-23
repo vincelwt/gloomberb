@@ -1,44 +1,68 @@
 import { describe, expect, test } from "bun:test";
-import { getAiProviderDefinitions, getLocalWorkspaceProviders } from "./providers";
+import {
+  AI_PROVIDER_IDS,
+  getAiProvider,
+  getAiProviderDefinitions,
+  migrateLegacyAiProviderId,
+  setDetectedProviders,
+} from "./providers";
+import {
+  GLOOMBERB_PI_PROVIDER_FACTORIES,
+  GLOOMBERB_PI_PROVIDER_IDS,
+} from "./pi/providers";
 
-describe("local workspace provider contracts", () => {
-  test("uses supported isolated structured modes for Claude and Codex", () => {
+describe("Pi provider catalog", () => {
+  test("exposes exactly the curated canonical providers in a stable order", () => {
+    expect(AI_PROVIDER_IDS).toEqual([
+      "anthropic",
+      "openai-codex",
+      "openai",
+      "google",
+      "github-copilot",
+      "xai",
+      "openrouter",
+    ]);
+    expect(GLOOMBERB_PI_PROVIDER_IDS).toEqual(AI_PROVIDER_IDS);
+    expect(new Set(AI_PROVIDER_IDS).size).toBe(AI_PROVIDER_IDS.length);
+    expect(AI_PROVIDER_IDS).not.toContain("opencode");
+    expect(AI_PROVIDER_IDS).not.toContain("pi");
+  });
+
+  test("keeps UI metadata and curated defaults aligned with Pi models", () => {
     const definitions = getAiProviderDefinitions();
-    const claude = definitions.find((provider) => provider.id === "claude");
-    const codex = definitions.find((provider) => provider.id === "codex");
-    if (!claude?.buildStructuredArgs || !codex?.buildStructuredArgs) {
-      throw new Error("Expected structured Claude and Codex definitions");
+    const piProviders = GLOOMBERB_PI_PROVIDER_FACTORIES.map((createProvider) => createProvider());
+
+    expect(definitions.map((provider) => provider.id)).toEqual([...AI_PROVIDER_IDS]);
+    for (const definition of definitions) {
+      const provider = piProviders.find((candidate) => candidate.id === definition.id);
+      expect(provider).toBeDefined();
+      expect(definition.name.length).toBeGreaterThan(0);
+      expect(definition.outputModes).toEqual(["plain", "structured", "screener"]);
+      expect(definition.preferredModelIds.length).toBeGreaterThan(0);
+      expect(provider?.getModels().some((model) => (
+        definition.preferredModelIds.includes(model.id)
+      ))).toBe(true);
+      expect(definition).not.toHaveProperty("command");
+      expect(definition).not.toHaveProperty("buildArgs");
     }
-    const claudeArgs = claude.buildStructuredArgs("PROMPT");
-    const codexArgs = codex.buildStructuredArgs("PROMPT");
-
-    expect(claudeArgs.slice(0, 2)).toEqual(["--print", "PROMPT"]);
-    expect(claudeArgs).toContain("--safe-mode");
-    expect(claudeArgs).toContain("--no-session-persistence");
-    expect(codexArgs).toContain("--ephemeral");
-    expect(codexArgs).toContain("--ignore-user-config");
-    expect(codexArgs).toContain("--ignore-rules");
-    expect(codexArgs).toContain("--disable");
-    expect(codexArgs).toContain("shell_tool");
-    expect(codexArgs).toContain("--json");
   });
 
-  test("defines Pi structured mode", () => {
-    const definitions = getAiProviderDefinitions();
-    const pi = definitions.find((provider) => provider.id === "pi");
-    if (!pi?.buildStructuredArgs) throw new Error("Expected a structured Pi definition");
+  test("uses legacy ids only to migrate persisted selections", () => {
+    expect(migrateLegacyAiProviderId("claude")).toBe("anthropic");
+    expect(migrateLegacyAiProviderId("codex")).toBe("openai-codex");
+    expect(migrateLegacyAiProviderId("gemini")).toBe("google");
+    expect(migrateLegacyAiProviderId("openai")).toBe("openai");
+    expect(migrateLegacyAiProviderId("opencode")).toBe("opencode");
 
-    const args = pi.buildStructuredArgs("PROMPT");
-    expect(pi.name).toBe("Pi");
-    expect(pi.command).toBe("pi");
-    expect(args).toContain("--mode");
-    expect(args).toContain("json");
-    expect(args.at(-1)).toBe("PROMPT");
-  });
-
-  test("includes Pi in the local workspace runtimes", () => {
-    const providers = getAiProviderDefinitions().map((provider) => ({ ...provider, available: true }));
-
-    expect(getLocalWorkspaceProviders(providers).map((provider) => provider.id)).toEqual(["claude", "codex", "pi"]);
+    setDetectedProviders(getAiProviderDefinitions().map((definition) => ({
+      id: definition.id,
+      name: definition.name,
+      available: false,
+      status: "not_authenticated",
+      outputModes: [...definition.outputModes],
+    })));
+    expect(getAiProvider("claude")?.id).toBe("anthropic");
+    expect(getAiProvider("codex")?.id).toBe("openai-codex");
+    setDetectedProviders(null);
   });
 });

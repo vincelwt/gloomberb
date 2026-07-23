@@ -49,6 +49,8 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "0.81.1",
+    "@earendil-works/pi-ai": "0.81.1",
     "@opentui-ui/dialog": "^0.1.2",
     "@opentui-ui/toast": "^0.0.5",
     "@opentui/core": "^0.3.2",
@@ -61,6 +63,7 @@
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "rxjs": "^7.8.2",
+    "typebox": "1.1.38",
     "web-tree-sitter": "0.25.10",
     "youtubei.js": "17.0.1"
   },

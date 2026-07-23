@@ -1,3 +1,4 @@
+import { migrateLegacyAiProviderId } from "../providers";
 import { deriveScreenerTitle, type ValidatedScreenerResult } from "./contract";
 
 export interface AiScreenerTab {
@@ -5,6 +6,7 @@ export interface AiScreenerTab {
   title: string;
   prompt: string;
   providerId: string;
+  modelId: string | null;
   createdAt: number;
   lastRunAt: number | null;
   lastSuccessAt: number | null;
@@ -27,7 +29,6 @@ export interface ScreenerSortPreference {
 
 export interface RunState {
   tabId: string;
-  mode: "refresh" | "force";
   output: string;
 }
 
@@ -35,6 +36,7 @@ export interface ScreenerEditorState {
   mode: "create" | "edit";
   tabId: string | null;
   providerId: string;
+  modelId: string;
   prompt: string;
   key: string;
   error: string | null;
@@ -54,12 +56,13 @@ export function generateScreenerEditorKey(): string {
   return `editor-${Date.now()}-${nextScreenerEditorId++}`;
 }
 
-export function createScreenerTab(prompt: string, providerId: string): AiScreenerTab {
+export function createScreenerTab(prompt: string, providerId: string, modelId: string | null = null): AiScreenerTab {
   return {
     id: generateScreenerTabId(),
     title: deriveScreenerTitle(prompt),
     prompt,
     providerId,
+    modelId: modelId?.trim() || null,
     createdAt: Date.now(),
     lastRunAt: null,
     lastSuccessAt: null,
@@ -80,7 +83,10 @@ export function normalizeTabs(value: unknown): AiScreenerTab[] {
       ...entry,
       title: typeof entry.title === "string" ? entry.title : "New Screener",
       prompt: typeof entry.prompt === "string" ? entry.prompt : "",
-      providerId: typeof entry.providerId === "string" ? entry.providerId : "claude",
+      providerId: typeof entry.providerId === "string" && entry.providerId.trim()
+        ? migrateLegacyAiProviderId(entry.providerId.trim())
+        : "anthropic",
+      modelId: typeof entry.modelId === "string" && entry.modelId.trim() ? entry.modelId.trim() : null,
       createdAt: typeof entry.createdAt === "number" ? entry.createdAt : Date.now(),
       lastRunAt: typeof entry.lastRunAt === "number" ? entry.lastRunAt : null,
       lastSuccessAt: typeof entry.lastSuccessAt === "number" ? entry.lastSuccessAt : null,
