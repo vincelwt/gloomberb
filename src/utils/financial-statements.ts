@@ -1,6 +1,7 @@
 import type { FinancialStatement } from "../types/financials";
 
 const STATEMENT_METADATA_KEYS = new Set(["date", "availableAt", "fieldAvailability"]);
+const NEARBY_PERIOD_END_MS = 7 * 24 * 60 * 60 * 1_000;
 
 function metricKeys(...rows: Array<FinancialStatement | undefined>): string[] {
   return [...new Set(rows.flatMap((row) => Object.keys(row ?? {})))]
@@ -15,6 +16,56 @@ function hasMetricValue(row: FinancialStatement | undefined, key: string): boole
   return typeof metricValue(row, key) === "number";
 }
 
+function hasAvailabilityEvidence(row: FinancialStatement | undefined): boolean {
+  return !!row?.availableAt || Object.keys(row?.fieldAvailability ?? {}).length > 0;
+}
+
+function canonicalStatementDate(
+  primary: FinancialStatement,
+  fallback: FinancialStatement | undefined,
+): string {
+  if (!fallback) return primary.date;
+  return hasAvailabilityEvidence(fallback) && !hasAvailabilityEvidence(primary)
+    ? fallback.date
+    : primary.date;
+}
+
+function statementDateTime(row: FinancialStatement): number | null {
+  const time = Date.parse(`${row.date}T00:00:00Z`);
+  return Number.isFinite(time) ? time : null;
+}
+
+export function areNearbyFinancialPeriodEnds(
+  left: string | Date,
+  right: string | Date,
+): boolean {
+  const leftTime = left instanceof Date ? left.getTime() : Date.parse(`${left}T00:00:00Z`);
+  const rightTime = right instanceof Date ? right.getTime() : Date.parse(`${right}T00:00:00Z`);
+  return Number.isFinite(leftTime)
+    && Number.isFinite(rightTime)
+    && Math.abs(leftTime - rightTime) <= NEARBY_PERIOD_END_MS;
+}
+
+function matchFallbackRow(
+  primary: FinancialStatement,
+  fallbackRows: FinancialStatement[],
+  usedFallbackRows: Set<FinancialStatement>,
+): FinancialStatement | undefined {
+  const exact = fallbackRows.find((row) => row.date === primary.date && !usedFallbackRows.has(row));
+  if (exact) return exact;
+  const primaryTime = statementDateTime(primary);
+  if (primaryTime === null) return undefined;
+  return fallbackRows
+    .flatMap((row) => {
+      if (usedFallbackRows.has(row)) return [];
+      const fallbackTime = statementDateTime(row);
+      if (fallbackTime === null) return [];
+      const distance = Math.abs(fallbackTime - primaryTime);
+      return areNearbyFinancialPeriodEnds(primary.date, row.date) ? [{ row, distance }] : [];
+    })
+    .sort((left, right) => left.distance - right.distance || left.row.date.localeCompare(right.row.date))[0]?.row;
+}
+
 export function mergeFinancialStatementRows(
   primaryRows: FinancialStatement[],
   fallbackRows: FinancialStatement[],
@@ -22,14 +73,16 @@ export function mergeFinancialStatementRows(
   if (primaryRows.length === 0) return fallbackRows;
   if (fallbackRows.length === 0) return primaryRows;
 
-  const fallbackByDate = new Map(fallbackRows.map((row) => [row.date, row]));
-  const primaryDates = new Set(primaryRows.map((row) => row.date));
+  const usedFallbackRows = new Set<FinancialStatement>();
   const mergedRows = primaryRows.map((row) => {
-    const fallback = fallbackByDate.get(row.date);
+    const fallback = matchFallbackRow(row, fallbackRows, usedFallbackRows);
+    if (fallback) usedFallbackRows.add(fallback);
     const merged = {
       ...fallback,
       ...row,
-      date: row.date,
+      // Prefer the date backed by filing provenance. Generic provider merges
+      // otherwise retain their primary provider's period identity.
+      date: canonicalStatementDate(row, fallback),
     } as FinancialStatement;
     const fieldAvailability: Record<string, string> = {};
     const keys = metricKeys(row, fallback);
@@ -70,7 +123,7 @@ export function mergeFinancialStatementRows(
   });
 
   for (const row of fallbackRows) {
-    if (!primaryDates.has(row.date)) mergedRows.push(row);
+    if (!usedFallbackRows.has(row)) mergedRows.push(row);
   }
 
   return mergedRows.sort((left, right) => left.date.localeCompare(right.date));

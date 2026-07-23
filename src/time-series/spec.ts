@@ -29,7 +29,6 @@ const STYLES = new Set<SeriesStyle>(["line", "area", "step", "columns", "points"
 const ECONOMIC_STYLES = new Set<SeriesStyle>(["line", "area", "step", "columns", "points"]);
 const TRANSFORMS = new Set<SeriesTransform>(["raw", "percent", "index100", "yoy", "qoq", "log"]);
 const AXES = new Set<SeriesAxis>(["auto", "left", "right"]);
-const INTERPOLATIONS = new Set<SeriesInterpolation>(["none", "step-after"]);
 const SCALES = new Set<PanelScale>(["linear", "log"]);
 const STUDIES = new Set<ChartStudyKind>([
   "volume",
@@ -52,6 +51,12 @@ export function coerceSeriesTransformForStyle(
   transform: SeriesTransform,
 ): SeriesTransform {
   return isOhlcSeriesStyle(style) ? "raw" : transform;
+}
+
+export function coerceSeriesInterpolationForStyle(
+  style: SeriesStyle,
+): SeriesInterpolation {
+  return style === "step" ? "step-after" : "none";
 }
 
 export const MAX_CHART_SERIES = 10;
@@ -197,17 +202,25 @@ function normalizeSeries(
       ? requestedTransform
       : "raw"
     : requestedTransform ?? "raw";
+  const normalizedSource = source.kind === "security"
+    && (
+      source.fieldId.startsWith("fundamental.")
+      || source.fieldId.startsWith("valuation.")
+    )
+    ? {
+        ...source,
+        timestampMode: style === "columns" ? "period-end" as const : "available-at" as const,
+      }
+    : source;
   return {
     id: uniqueId(entry.id, "series", index, seen),
-    source,
+    source: normalizedSource,
     label: nonEmptyString(entry.label) ?? undefined,
     style,
     transform,
     axis: AXES.has(entry.axis as SeriesAxis) ? entry.axis as SeriesAxis : "auto",
     panelId: nonEmptyString(entry.panelId) ?? defaultPanelId,
-    interpolation: INTERPOLATIONS.has(entry.interpolation as SeriesInterpolation)
-      ? entry.interpolation as SeriesInterpolation
-      : definition?.defaultInterpolation ?? (source.kind === "economic" ? "step-after" : "none"),
+    interpolation: coerceSeriesInterpolationForStyle(style),
     color: nonEmptyString(entry.color) ?? undefined,
     visible: typeof entry.visible === "boolean" ? entry.visible : true,
   };

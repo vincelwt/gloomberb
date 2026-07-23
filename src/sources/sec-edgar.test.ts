@@ -221,6 +221,136 @@ describe("parseCompanyFactsFinancialStatements", () => {
     ]);
   });
 
+  test("keeps the original filing date for unchanged unframed quarter facts", () => {
+    const payload = {
+      facts: {
+        "us-gaap": {
+          RevenueFromContractWithCustomerExcludingAssessedTax: {
+            units: {
+              USD: [
+                {
+                  start: "2024-12-29",
+                  end: "2025-03-29",
+                  val: 95_359,
+                  filed: "2026-05-01",
+                  form: "10-Q",
+                  fp: "Q2",
+                  frame: "CY2025Q1",
+                },
+                {
+                  start: "2024-12-29",
+                  end: "2025-03-29",
+                  val: 95_359,
+                  filed: "2025-05-02",
+                  form: "10-Q",
+                  fp: "Q2",
+                },
+                {
+                  start: "2024-09-29",
+                  end: "2025-03-29",
+                  val: 219_659,
+                  filed: "2025-05-02",
+                  form: "10-Q",
+                  fp: "Q2",
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+
+    expect(parseCompanyFactsFinancialStatements(payload).quarterlyStatements).toEqual([{
+      date: "2025-03-29",
+      availableAt: "2025-05-02",
+      fieldAvailability: { totalRevenue: "2025-05-02" },
+      totalRevenue: 95_359,
+    }]);
+  });
+
+  test("uses the later filing when a quarter value is actually restated", () => {
+    const payload = {
+      facts: {
+        "us-gaap": {
+          RevenueFromContractWithCustomerExcludingAssessedTax: {
+            units: {
+              USD: [
+                {
+                  start: "2024-12-29",
+                  end: "2025-03-29",
+                  val: 95_000,
+                  filed: "2025-05-02",
+                  form: "10-Q",
+                  fp: "Q2",
+                },
+                {
+                  start: "2024-12-29",
+                  end: "2025-03-29",
+                  val: 95_359,
+                  filed: "2025-06-01",
+                  form: "10-Q/A",
+                  fp: "Q2",
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+
+    expect(parseCompanyFactsFinancialStatements(payload).quarterlyStatements[0]).toMatchObject({
+      date: "2025-03-29",
+      availableAt: "2025-06-01",
+      totalRevenue: 95_359,
+    });
+  });
+
+  test("retains the latest disclosure when a restated value returns to its original value", () => {
+    const payload = {
+      facts: {
+        "us-gaap": {
+          RevenueFromContractWithCustomerExcludingAssessedTax: {
+            units: {
+              USD: [
+                {
+                  start: "2024-12-29",
+                  end: "2025-03-29",
+                  val: 95_000,
+                  filed: "2025-07-01",
+                  form: "10-Q/A",
+                  fp: "Q2",
+                },
+                {
+                  start: "2024-12-29",
+                  end: "2025-03-29",
+                  val: 96_000,
+                  filed: "2025-06-01",
+                  form: "10-Q/A",
+                  fp: "Q2",
+                },
+                {
+                  start: "2024-12-29",
+                  end: "2025-03-29",
+                  val: 95_000,
+                  filed: "2025-05-02",
+                  form: "10-Q",
+                  fp: "Q2",
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+
+    expect(parseCompanyFactsFinancialStatements(payload).quarterlyStatements[0]).toMatchObject({
+      date: "2025-03-29",
+      availableAt: "2025-07-01",
+      fieldAvailability: { totalRevenue: "2025-07-01" },
+      totalRevenue: 95_000,
+    });
+  });
+
   test("merges statement values from all configured tags for a field", () => {
     const fact = (tag: string, unit: string, rows: unknown[]) => ({
       [tag]: {

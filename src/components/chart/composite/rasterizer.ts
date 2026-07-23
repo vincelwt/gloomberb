@@ -85,14 +85,52 @@ function drawConnectedSeries(
   }
 }
 
-function observationWidth(points: CompositeProjectedPoint[], pixelWidth: number, maximum: number): number {
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[middle - 1]! + sorted[middle]!) / 2
+    : sorted[middle]!;
+}
+
+function observationGaps(points: CompositeProjectedPoint[], pixelWidth: number): number[] {
   const xs = points.map((point) => point.xRatio * Math.max(pixelWidth - 1, 0)).sort((left, right) => left - right);
-  let minimumGap = Number.POSITIVE_INFINITY;
+  const positiveGaps: number[] = [];
   for (let index = 1; index < xs.length; index += 1) {
     const gap = xs[index]! - xs[index - 1]!;
-    if (gap > 0) minimumGap = Math.min(minimumGap, gap);
+    if (gap > 0) positiveGaps.push(gap);
   }
-  return clamp(Number.isFinite(minimumGap) ? minimumGap * 0.58 : 5, 2, maximum);
+  return positiveGaps;
+}
+
+function observationWidth(points: CompositeProjectedPoint[], pixelWidth: number, maximum: number): number {
+  const minimumGap = Math.min(...observationGaps(points, pixelWidth));
+  return clamp(Number.isFinite(minimumGap) ? minimumGap * 0.58 : maximum, 2, maximum);
+}
+
+function columnObservationWidth(
+  points: CompositeProjectedPoint[],
+  pixelWidth: number,
+  maximum: number,
+): number {
+  const typicalGap = median(observationGaps(points, pixelWidth));
+  return clamp(typicalGap === null ? maximum : typicalGap * 0.58, 2, maximum);
+}
+
+export function resolveCompositeColumnWidth(
+  points: CompositeProjectedPoint[],
+  pixelWidth: number,
+): number {
+  const maximum = clamp(pixelWidth * 0.04, 18, 72);
+  return columnObservationWidth(points, pixelWidth, maximum);
+}
+
+export function resolveCompositeOhlcWidth(
+  points: CompositeProjectedPoint[],
+  pixelWidth: number,
+): number {
+  return observationWidth(points, pixelWidth, 9);
 }
 
 function drawColumns(
@@ -106,12 +144,12 @@ function drawColumns(
   opacity: number,
 ): void {
   const baseline = pixelY(0, domain, height) ?? height - 1;
-  const singleSeriesWidth = observationWidth(series.points, width, 18);
+  const singleSeriesWidth = resolveCompositeColumnWidth(series.points, width);
   const hasGroupedObservations = series.points.some((point) => (
     (layout.groupByPoint.get(point)?.count ?? 1) > 1
   ));
   const groupedSeriesWidth = hasGroupedObservations
-    ? observationWidth(layout.pointsByAxis[series.source.axis], width, 18)
+    ? resolveCompositeColumnWidth(layout.pointsByAxis[series.source.axis], width)
     : singleSeriesWidth;
   for (const projected of series.points) {
     const point = pixelPoint(projected, width, height);
@@ -164,7 +202,7 @@ function drawOhlc(
   color: RgbaColor,
   negative: RgbaColor,
 ): void {
-  const candleWidth = observationWidth(series.points, width, 9);
+  const candleWidth = resolveCompositeOhlcWidth(series.points, width);
   for (const projected of series.points) {
     const source = projected.point;
     const x = pixelPoint(projected, width, height).x;

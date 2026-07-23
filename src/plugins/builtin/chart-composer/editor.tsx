@@ -318,21 +318,23 @@ export function SeriesEditorDialog({ dialogId, resolve, initialSpec }: SeriesEdi
           : candidate.source.instrument,
       }
       : candidate.source;
-    const next: ChartSeriesSpec = {
+    const style = previousFieldId === nextFieldId || styles.includes(selected.style)
+      ? selected.style
+      : candidate.style;
+    const next = applySeriesStyle({
       ...candidate,
       id: selected.id,
       source,
       ...(selected.label ? { label: selected.label } : {}),
       ...(selected.color ? { color: selected.color } : {}),
       ...(selected.visible !== undefined ? { visible: selected.visible } : {}),
-      style: previousFieldId === nextFieldId || styles.includes(selected.style) ? selected.style : candidate.style,
+      style,
       transform: previousFieldId === nextFieldId || transforms.includes(selected.transform)
         ? selected.transform
         : candidate.transform,
       axis: selected.axis,
       panelId: selected.panelId,
-      interpolation: previousFieldId === nextFieldId ? selected.interpolation : candidate.interpolation,
-    };
+    }, style);
     setDraft((current) => ({ ...current, series: replaceAt(current.series, selectedIndex, next) }));
     setExpression(formatSeriesExpression(next));
     setEditingExpression(false);

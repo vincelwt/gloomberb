@@ -72,4 +72,67 @@ describe("mergeFinancialStatementRows", () => {
     expect(different?.fieldAvailability?.totalRevenue).toBeUndefined();
     expect(different?.availableAt).toBeUndefined();
   });
+
+  test("coalesces calendar-normalized and issuer fiscal period ends", () => {
+    const merged = mergeFinancialStatementRows(
+      [
+        { date: "2025-06-30", totalRevenue: 94_036 },
+        { date: "2025-09-30", totalRevenue: 102_466 },
+      ],
+      [
+        {
+          date: "2025-06-28",
+          totalRevenue: 94_036,
+          fieldAvailability: { totalRevenue: "2025-08-01" },
+        },
+        {
+          date: "2025-09-27",
+          totalRevenue: 102_466,
+          fieldAvailability: { totalRevenue: "2025-10-31" },
+        },
+      ],
+    );
+
+    expect(merged).toEqual([
+      {
+        date: "2025-06-28",
+        availableAt: "2025-08-01",
+        totalRevenue: 94_036,
+        fieldAvailability: { totalRevenue: "2025-08-01" },
+      },
+      {
+        date: "2025-09-27",
+        availableAt: "2025-10-31",
+        totalRevenue: 102_466,
+        fieldAvailability: { totalRevenue: "2025-10-31" },
+      },
+    ]);
+  });
+
+  test("does not coalesce statement rows outside the fiscal-close tolerance", () => {
+    const merged = mergeFinancialStatementRows(
+      [{ date: "2025-06-30", totalRevenue: 94_036 }],
+      [{
+        date: "2025-07-15",
+        totalRevenue: 94_036,
+        fieldAvailability: { totalRevenue: "2025-08-01" },
+      }],
+    );
+
+    expect(merged.map((row) => row.date)).toEqual(["2025-06-30", "2025-07-15"]);
+  });
+
+  test("retains a primary fiscal close when only the fallback is calendar-normalized", () => {
+    const merged = mergeFinancialStatementRows(
+      [{
+        date: "2025-06-28",
+        totalRevenue: 94_036,
+        fieldAvailability: { totalRevenue: "2025-08-01" },
+      }],
+      [{ date: "2025-06-30", totalRevenue: 94_036 }],
+    );
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.date).toBe("2025-06-28");
+  });
 });

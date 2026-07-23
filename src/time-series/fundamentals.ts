@@ -3,6 +3,7 @@ import type {
   PricePoint,
   TickerFinancials,
 } from "../types/financials";
+import { areNearbyFinancialPeriodEnds } from "../utils/financial-statements";
 import { canonicalTimeSeriesFieldId } from "./field-catalog";
 import type { SecuritySeriesSource, SeriesPeriod, TimeSeriesPoint } from "./types";
 
@@ -55,6 +56,11 @@ export const QUARTERLY_SNAPSHOT_FIELDS: readonly NumericStatementField[] = [
   "dilutedShares",
   "shareIssued",
   "ordinarySharesNumber",
+];
+
+const NUMERIC_STATEMENT_FIELDS: readonly NumericStatementField[] = [
+  ...QUARTERLY_FLOW_FIELDS,
+  ...QUARTERLY_SNAPSHOT_FIELDS,
 ];
 
 const FUNDAMENTAL_IDS = new Set([
@@ -158,43 +164,110 @@ function periodCategory(date: string, period: "annual" | "quarterly"): string {
   return quarter > 0 && year > 0 ? `${year} Q${quarter}` : date;
 }
 
-function mergeStatementsByDate(statements: readonly FinancialStatement[]): InternalStatement[] {
-  const byDate = new Map<string, InternalStatement>();
-  for (const source of statements) {
-    const existing = byDate.get(source.date);
-    if (!existing) {
-      byDate.set(source.date, {
-        ...source,
-        fieldAvailability: source.fieldAvailability ? { ...source.fieldAvailability } : undefined,
-      });
-      continue;
-    }
-
-    for (const [key, value] of Object.entries(source)) {
-      if (key === "date" || key === "availableAt" || key === "fieldAvailability") continue;
-      if (value !== undefined && (existing as unknown as Record<string, unknown>)[key] === undefined) {
-        (existing as unknown as Record<string, unknown>)[key] = value;
-      }
-    }
-    existing.fieldAvailability = {
-      ...source.fieldAvailability,
-      ...existing.fieldAvailability,
-    };
-    existing.availableAt = latestDateString([existing.availableAt, source.availableAt]);
-  }
-  return [...byDate.values()].sort((left, right) => left.date.localeCompare(right.date));
+function statementAvailabilityScore(statement: FinancialStatement): number {
+  return Object.values(statement.fieldAvailability ?? {})
+    .filter((value) => Number.isFinite(Date.parse(value)))
+    .length + (Number.isFinite(Date.parse(statement.availableAt ?? "")) ? 1 : 0);
 }
 
-function precedingQuarterValues(
+interface StatementFieldCandidate {
+  statement: InternalStatement;
+  value: number;
+  availableAt?: string;
+  derived: boolean;
+}
+
+function selectFieldCandidate(candidates: StatementFieldCandidate[]): StatementFieldCandidate {
+  const reported = candidates.filter((candidate) => !candidate.derived);
+  const qualityCandidates = reported.length > 0 ? reported : candidates;
+  const dated = qualityCandidates.filter((candidate) => (
+    Number.isFinite(Date.parse(candidate.availableAt ?? ""))
+  ));
+  const chronological = [...(dated.length > 0 ? dated : qualityCandidates)].sort((left, right) => (
+    Date.parse(left.availableAt ?? "") - Date.parse(right.availableAt ?? "")
+    || left.statement.date.localeCompare(right.statement.date)
+  ));
+  let selected = chronological[0]!;
+  for (const candidate of chronological.slice(1)) {
+    if (!Object.is(candidate.value, selected.value)) selected = candidate;
+  }
+  return selected;
+}
+
+function periodDateSource(statements: readonly InternalStatement[]): InternalStatement {
+  return [...statements].sort((left, right) => {
+    const availabilityDifference = statementAvailabilityScore(right) - statementAvailabilityScore(left);
+    return availabilityDifference || left.date.localeCompare(right.date);
+  })[0]!;
+}
+
+function mergeStatementPeriodGroup(statements: readonly InternalStatement[]): InternalStatement {
+  const dateSource = periodDateSource(statements);
+  const merged: InternalStatement = { date: dateSource.date };
+  const derivedFields: NumericStatementField[] = [];
+  const fieldAvailability: Record<string, string> = {};
+  const record = merged as unknown as Record<string, unknown>;
+
+  for (const field of NUMERIC_STATEMENT_FIELDS) {
+    const candidates = statements.flatMap((statement): StatementFieldCandidate[] => {
+      const value = statementNumber(statement, field);
+      if (value === null) return [];
+      return [{
+        statement,
+        value,
+        availableAt: statement.fieldAvailability?.[field] ?? statement.availableAt,
+        derived: statement.__timeSeriesDerivedFields?.includes(field) === true,
+      }];
+    });
+    if (candidates.length === 0) continue;
+    const selected = selectFieldCandidate(candidates);
+    record[field] = selected.value;
+    if (selected.availableAt) fieldAvailability[field] = selected.availableAt;
+    if (selected.derived) derivedFields.push(field);
+  }
+
+  if (Object.keys(fieldAvailability).length > 0) {
+    merged.fieldAvailability = fieldAvailability;
+    merged.availableAt = latestDateString(Object.values(fieldAvailability));
+  }
+  if (derivedFields.length > 0) merged.__timeSeriesDerivedFields = derivedFields;
+  return merged;
+}
+
+function mergeStatementsByPeriod(
+  statements: readonly FinancialStatement[],
+): InternalStatement[] {
+  const groups: InternalStatement[][] = [];
+  const sorted = [...statements].sort((left, right) => left.date.localeCompare(right.date));
+  for (const statement of sorted) {
+    const group = groups.find((candidate) => (
+      areNearbyFinancialPeriodEnds(candidate[0]!.date, statement.date)
+    ));
+    if (group) group.push(statement as InternalStatement);
+    else groups.push([statement as InternalStatement]);
+  }
+  return groups
+    .map(mergeStatementPeriodGroup)
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+interface PrecedingQuarterInput {
+  date: string;
+  time: number;
+  value: number;
+  availableAt?: string;
+}
+
+function precedingQuarterInputs(
   quarterlyStatements: readonly FinancialStatement[],
   annualStatement: FinancialStatement,
   field: NumericStatementField,
-): number[] {
+): PrecedingQuarterInput[] {
   const annualTime = statementTime(annualStatement);
   if (!Number.isFinite(annualTime)) return [];
 
   const annualCategory = periodCategory(annualStatement.date, "quarterly");
-  const byCategory = new Map<string, { date: string; time: number; value: number }>();
+  const byCategory = new Map<string, PrecedingQuarterInput>();
   for (const statement of quarterlyStatements) {
     const time = statementTime(statement);
     if (!Number.isFinite(time) || time >= annualTime || annualTime - time > 370 * DAY_MS) continue;
@@ -204,30 +277,35 @@ function precedingQuarterValues(
     if (value === null) continue;
     const previous = byCategory.get(category);
     if (!previous || statement.date.localeCompare(previous.date) > 0) {
-      byCategory.set(category, { date: statement.date, time, value });
+      byCategory.set(category, {
+        date: statement.date,
+        time,
+        value,
+        availableAt: statement.fieldAvailability?.[field] ?? statement.availableAt,
+      });
     }
   }
 
   return [...byCategory.values()]
     .sort((left, right) => right.time - left.time)
     .slice(0, 3)
-    .sort((left, right) => left.time - right.time)
-    .map((entry) => entry.value);
+    .sort((left, right) => left.time - right.time);
 }
 
 /**
  * Completes missing fiscal Q4 rows from the annual total and the three reported
  * quarters. Snapshot fields are copied from the annual balance sheet. Derived
- * values inherit the annual filing availability, which prevents Q4 look-ahead.
+ * values become available only after the annual total and every quarterly
+ * input used in the derivation are public.
  */
 export function deriveQuarterlyStatements(
   quarterlyStatements: readonly FinancialStatement[],
   annualStatements: readonly FinancialStatement[],
 ): FinancialStatement[] {
-  const mergedQuarterly = mergeStatementsByDate(quarterlyStatements);
+  const mergedQuarterly = mergeStatementsByPeriod(quarterlyStatements);
   const byDate = new Map(mergedQuarterly.map((statement) => [statement.date, { ...statement }]));
 
-  for (const annualStatement of mergeStatementsByDate(annualStatements)) {
+  for (const annualStatement of mergeStatementsByPeriod(annualStatements)) {
     let target: InternalStatement = byDate.get(annualStatement.date) ?? { date: annualStatement.date };
     let changed = false;
 
@@ -235,11 +313,14 @@ export function deriveQuarterlyStatements(
       if (statementNumber(target, field) !== null) continue;
       const annualValue = statementNumber(annualStatement, field);
       if (annualValue === null) continue;
-      const previousValues = precedingQuarterValues(mergedQuarterly, annualStatement, field);
-      if (previousValues.length !== 3) continue;
-      const derived = annualValue - previousValues.reduce((sum, value) => sum + value, 0);
+      const previousInputs = precedingQuarterInputs(mergedQuarterly, annualStatement, field);
+      if (previousInputs.length !== 3) continue;
+      const derived = annualValue - previousInputs.reduce((sum, input) => sum + input.value, 0);
       if (!Number.isFinite(derived)) continue;
-      const availableAt = annualStatement.fieldAvailability?.[field] ?? annualStatement.availableAt;
+      const availableAt = latestDateString([
+        annualStatement.fieldAvailability?.[field] ?? annualStatement.availableAt,
+        ...previousInputs.map((input) => input.availableAt),
+      ]);
       setStatementNumber(target, field, derived, availableAt);
       changed = true;
     }
@@ -263,11 +344,11 @@ export function deriveQuarterlyStatements(
     }
   }
 
-  return [...byDate.values()].sort((left, right) => left.date.localeCompare(right.date));
+  return mergeStatementsByPeriod([...byDate.values()]);
 }
 
 function buildTtmStatements(statements: readonly FinancialStatement[]): InternalStatement[] {
-  const sorted = mergeStatementsByDate(statements);
+  const sorted = mergeStatementsByPeriod(statements);
   const result: InternalStatement[] = [];
   for (let index = 3; index < sorted.length; index += 1) {
     const window = sorted.slice(index - 3, index + 1);
@@ -325,7 +406,7 @@ function sourceStatements(
   const normalized = normalizeFundamentalPeriod(period);
   const quarterly = deriveQuarterlyStatements(financials.quarterlyStatements, financials.annualStatements);
   if (normalized === "annual") {
-    return { statements: mergeStatementsByDate(financials.annualStatements), period: "annual" };
+    return { statements: mergeStatementsByPeriod(financials.annualStatements), period: "annual" };
   }
   if (normalized === "ttm" || valuationMetric) {
     const ttm = buildTtmStatements(quarterly);
@@ -337,13 +418,13 @@ function sourceStatements(
     }
     if (normalized === "ttm") return { statements: [], period: "ttm" };
     if (valuationMetric) {
-      return { statements: mergeStatementsByDate(financials.annualStatements), period: "annual" };
+      return { statements: mergeStatementsByPeriod(financials.annualStatements), period: "annual" };
     }
   }
   if (normalized === "quarterly" || (normalized === "auto" && quarterly.length > 0)) {
     return { statements: quarterly, period: "quarterly" };
   }
-  return { statements: mergeStatementsByDate(financials.annualStatements), period: "annual" };
+  return { statements: mergeStatementsByPeriod(financials.annualStatements), period: "annual" };
 }
 
 function ratio(numerator: unknown, denominator: unknown): number | null {
@@ -643,6 +724,63 @@ function dedupeAndSortPoints(points: readonly TimeSeriesPoint[]): TimeSeriesPoin
   return [...byTimestamp.values()].sort((left, right) => left.date.getTime() - right.date.getTime());
 }
 
+function preferredPeriodPoint(
+  existing: TimeSeriesPoint,
+  candidate: TimeSeriesPoint,
+): TimeSeriesPoint {
+  if (existing.provenance?.quality !== candidate.provenance?.quality) {
+    return candidate.provenance?.quality === "reported" ? candidate : existing;
+  }
+  const existingAvailableAt = existing.availableAt?.getTime();
+  const candidateAvailableAt = candidate.availableAt?.getTime();
+  const existingHasAvailability = Number.isFinite(existingAvailableAt);
+  const candidateHasAvailability = Number.isFinite(candidateAvailableAt);
+  if (existingHasAvailability !== candidateHasAvailability) {
+    return candidateHasAvailability ? candidate : existing;
+  }
+  if (
+    existingHasAvailability
+    && candidateHasAvailability
+    && candidateAvailableAt! !== existingAvailableAt!
+  ) {
+    const preferLater = !Object.is(existing.value, candidate.value);
+    const candidateWins = preferLater
+      ? candidateAvailableAt! > existingAvailableAt!
+      : candidateAvailableAt! < existingAvailableAt!;
+    return candidateWins ? candidate : existing;
+  }
+  return candidate.observedAt.getTime() < existing.observedAt.getTime()
+    ? candidate
+    : existing;
+}
+
+/**
+ * Provider snapshots can contain both an issuer fiscal-period row and a
+ * calendar-normalized row for the same observation. Their period ends and
+ * display timestamps differ slightly, so timestamp-only deduplication renders
+ * paired bars. A financial period is the observation identity; publication
+ * time only decides when that observation became available.
+ */
+function dedupeFundamentalPeriods(points: readonly TimeSeriesPoint[]): TimeSeriesPoint[] {
+  const groups: TimeSeriesPoint[][] = [];
+  const sorted = [...points].sort((left, right) => (
+    left.observedAt.getTime() - right.observedAt.getTime()
+  ));
+  for (const point of sorted) {
+    const group = groups.find((candidate) => (
+      areNearbyFinancialPeriodEnds(candidate[0]!.observedAt, point.observedAt)
+    ));
+    if (group) group.push(point);
+    else groups.push([point]);
+  }
+  return groups
+    .map((group) => group.slice(1).reduce(preferredPeriodPoint, group[0]!))
+    .sort((left, right) => (
+      left.date.getTime() - right.date.getTime()
+      || left.observedAt.getTime() - right.observedAt.getTime()
+    ));
+}
+
 /** Extracts a point-in-time-safe fundamental or valuation series from a snapshot. */
 export function extractFundamentalSeries(
   financials: TickerFinancials | null,
@@ -666,7 +804,7 @@ export function extractFundamentalSeries(
       );
       return point ? [point] : [];
     });
-    return dedupeAndSortPoints(points);
+    return dedupeFundamentalPeriods(points);
   }
 
   if (namespace !== "valuation" || !VALUATION_IDS.has(metric)) return [];
@@ -690,7 +828,8 @@ export function extractFundamentalSeries(
     return point ? [point] : [];
   });
   const current = currentDerivedValuationPoint(financials, selected.statements, metric);
-  return dedupeAndSortPoints(current ? [...historical, current] : historical);
+  const dedupedHistorical = dedupeFundamentalPeriods(historical);
+  return dedupeAndSortPoints(current ? [...dedupedHistorical, current] : dedupedHistorical);
 }
 
 export function fundamentalSeriesUsesAvailabilityFallback(

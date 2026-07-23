@@ -451,7 +451,7 @@ export function migrateChartPaneSettings(
           fieldId: `${valuation ? "valuation" : "fundamental"}.${metric}`,
           style: valuation ? "line" : "columns",
           period,
-          timestampMode: "available-at",
+          timestampMode: valuation ? "available-at" : "period-end",
         })),
         {
           range: "ALL",
@@ -590,7 +590,7 @@ function buildLegacyGraphSpec(
       fieldId: field.fieldId,
       style: field.valuation ? "line" : "columns",
       period,
-      timestampMode: "available-at",
+      timestampMode: field.valuation ? "available-at" : "period-end",
     }),
     visible: !hidden.has(symbol),
   }));

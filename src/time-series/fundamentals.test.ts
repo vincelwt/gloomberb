@@ -49,6 +49,24 @@ describe("fundamental series extraction", () => {
     expect(q4?.fieldAvailability?.totalRevenue).toBe("2025-02-15");
   });
 
+  test("delays derived Q4 until a later amended input is available", () => {
+    const derived = deriveQuarterlyStatements([
+      {
+        date: "2024-03-31",
+        availableAt: "2025-04-01",
+        fieldAvailability: { totalRevenue: "2025-04-01" },
+        totalRevenue: 11,
+      },
+      { date: "2024-06-30", availableAt: "2024-08-01", totalRevenue: 20 },
+      { date: "2024-09-30", availableAt: "2024-11-01", totalRevenue: 30 },
+    ], annual);
+
+    const q4 = derived.find((statement) => statement.date === "2024-12-31");
+    expect(q4?.totalRevenue).toBe(39);
+    expect(q4?.availableAt).toBe("2025-04-01");
+    expect(q4?.fieldAvailability?.totalRevenue).toBe("2025-04-01");
+  });
+
   test("timestamps reported values when they became available, not at period end", () => {
     const points = extractFundamentalSeries(financials(quarters, annual), source("fundamental.totalRevenue"));
     const q4 = points.find((point) => point.periodLabel === "2024 Q4");
@@ -56,6 +74,201 @@ describe("fundamental series extraction", () => {
     expect(q4?.observedAt.toISOString().slice(0, 10)).toBe("2024-12-31");
     expect(q4?.date.toISOString().slice(0, 10)).toBe("2025-02-15");
     expect(q4?.provenance?.quality).toBe("derived");
+  });
+
+  test("deduplicates fiscal and calendar rows for the same financial period", () => {
+    const points = extractFundamentalSeries(
+      financials([
+        {
+          date: "2025-06-28",
+          availableAt: "2025-08-01",
+          fieldAvailability: { totalRevenue: "2025-08-01" },
+          totalRevenue: 94_036,
+        },
+        { date: "2025-06-30", totalRevenue: 94_036 },
+        {
+          date: "2025-09-27",
+          availableAt: "2025-10-31",
+          fieldAvailability: { totalRevenue: "2025-10-31" },
+          totalRevenue: 102_466,
+        },
+        { date: "2025-09-30", totalRevenue: 102_466 },
+      ], []),
+      source("fundamental.totalRevenue"),
+    );
+
+    expect(points.map((point) => ({
+      period: point.periodLabel,
+      observedAt: point.observedAt.toISOString().slice(0, 10),
+      availableAt: point.availableAt?.toISOString().slice(0, 10),
+      value: point.value,
+    }))).toEqual([
+      {
+        period: "2025 Q2",
+        observedAt: "2025-06-28",
+        availableAt: "2025-08-01",
+        value: 94_036,
+      },
+      {
+        period: "2025 Q3",
+        observedAt: "2025-09-27",
+        availableAt: "2025-10-31",
+        value: 102_466,
+      },
+    ]);
+  });
+
+  test("preserves distinct periods that share one publication date", () => {
+    const points = extractFundamentalSeries(
+      financials([
+        {
+          date: "2025-03-29",
+          availableAt: "2025-08-01",
+          fieldAvailability: { totalRevenue: "2025-08-01" },
+          totalRevenue: 95_359,
+        },
+        {
+          date: "2025-06-28",
+          availableAt: "2025-08-01",
+          fieldAvailability: { totalRevenue: "2025-08-01" },
+          totalRevenue: 94_036,
+        },
+      ], []),
+      source("fundamental.totalRevenue"),
+    );
+
+    expect(points.map((point) => point.periodLabel)).toEqual(["2025 Q1", "2025 Q2"]);
+  });
+
+  test("preserves distinct irregular periods within one calendar quarter", () => {
+    const points = extractFundamentalSeries(
+      financials([
+        { date: "2025-04-15", availableAt: "2025-05-01", totalRevenue: 10 },
+        { date: "2025-06-30", availableAt: "2025-08-01", totalRevenue: 20 },
+      ], []),
+      source("fundamental.totalRevenue"),
+    );
+
+    expect(points.map((point) => ({
+      observedAt: point.observedAt.toISOString().slice(0, 10),
+      value: point.value,
+    }))).toEqual([
+      { observedAt: "2025-04-15", value: 10 },
+      { observedAt: "2025-06-30", value: 20 },
+    ]);
+  });
+
+  test("deduplicates provider period aliases before computing TTM values", () => {
+    const points = extractFundamentalSeries(
+      financials([
+        { date: "2025-03-29", availableAt: "2025-05-02", totalRevenue: 10 },
+        { date: "2025-03-31", totalRevenue: 10 },
+        { date: "2025-06-28", availableAt: "2025-08-01", totalRevenue: 20 },
+        { date: "2025-06-30", totalRevenue: 20 },
+        { date: "2025-09-27", availableAt: "2025-10-31", totalRevenue: 30 },
+        { date: "2025-09-30", totalRevenue: 30 },
+        { date: "2025-12-27", availableAt: "2026-01-30", totalRevenue: 40 },
+        { date: "2025-12-31", totalRevenue: 40 },
+      ], []),
+      source("fundamental.totalRevenue", "ttm"),
+    );
+
+    expect(points.map((point) => ({
+      period: point.periodLabel,
+      value: point.value,
+    }))).toEqual([{ period: "TTM 2025 Q4", value: 100 }]);
+  });
+
+  test("retains a later disclosed value when a period is actually restated", () => {
+    const points = extractFundamentalSeries(
+      financials([
+        { date: "2025-06-28", availableAt: "2025-08-01", totalRevenue: 94_036 },
+        { date: "2025-06-30", availableAt: "2025-08-15", totalRevenue: 95_000 },
+      ], []),
+      source("fundamental.totalRevenue"),
+    );
+
+    expect(points).toHaveLength(1);
+    expect(points[0]?.value).toBe(95_000);
+    expect(points[0]?.availableAt?.toISOString().slice(0, 10)).toBe("2025-08-15");
+  });
+
+  test("retains a later restatement with the same period-end date", () => {
+    const points = extractFundamentalSeries(
+      financials([
+        { date: "2025-06-30", availableAt: "2025-08-01", totalRevenue: 94_036 },
+        { date: "2025-06-30", availableAt: "2025-08-15", totalRevenue: 95_000 },
+      ], []),
+      source("fundamental.totalRevenue"),
+    );
+
+    expect(points).toHaveLength(1);
+    expect(points[0]?.value).toBe(95_000);
+    expect(points[0]?.availableAt?.toISOString().slice(0, 10)).toBe("2025-08-15");
+  });
+
+  test("selects restatements by the changed field's own disclosure date", () => {
+    const points = extractFundamentalSeries(
+      financials([
+        {
+          date: "2025-06-28",
+          fieldAvailability: {
+            totalRevenue: "2025-08-01",
+            netIncome: "2025-09-01",
+          },
+          totalRevenue: 94_036,
+          netIncome: 20_000,
+        },
+        {
+          date: "2025-06-30",
+          fieldAvailability: {
+            totalRevenue: "2025-08-15",
+            netIncome: "2025-07-01",
+          },
+          totalRevenue: 95_000,
+          netIncome: 20_000,
+        },
+      ], []),
+      source("fundamental.totalRevenue"),
+    );
+
+    expect(points[0]?.value).toBe(95_000);
+    expect(points[0]?.availableAt?.toISOString().slice(0, 10)).toBe("2025-08-15");
+  });
+
+  test("retains a restored value at its latest disclosure date", () => {
+    const points = extractFundamentalSeries(
+      financials([
+        { date: "2025-06-28", availableAt: "2025-07-15", totalRevenue: 95_000 },
+        { date: "2025-06-29", availableAt: "2025-06-15", totalRevenue: 96_000 },
+        { date: "2025-06-30", availableAt: "2025-05-15", totalRevenue: 95_000 },
+      ], []),
+      source("fundamental.totalRevenue"),
+    );
+
+    expect(points[0]?.value).toBe(95_000);
+    expect(points[0]?.availableAt?.toISOString().slice(0, 10)).toBe("2025-07-15");
+  });
+
+  test("keeps reported provenance when a derived period alias has the same value", () => {
+    const points = extractFundamentalSeries(
+      financials([
+        { date: "2025-03-29", availableAt: "2025-05-02", totalRevenue: 10 },
+        { date: "2025-06-28", availableAt: "2025-08-01", totalRevenue: 20 },
+        { date: "2025-09-27", availableAt: "2025-10-31", totalRevenue: 30 },
+        { date: "2025-12-27", availableAt: "2026-01-30", totalRevenue: 40 },
+      ], [{
+        date: "2025-12-31",
+        availableAt: "2026-02-15",
+        totalRevenue: 100,
+      }]),
+      source("fundamental.totalRevenue"),
+    );
+
+    expect(points.at(-1)).toMatchObject({
+      value: 40,
+      provenance: { quality: "reported" },
+    });
   });
 
   test("builds TTM flow values from four discrete quarters", () => {
@@ -149,6 +362,23 @@ describe("fundamental series extraction", () => {
 
     expect(points[0]?.value).toBe(20);
     expect(points[0]?.date.toISOString().slice(0, 10)).toBe("2025-02-01");
+  });
+
+  test("deduplicates annual provider aliases before calculating valuation points", () => {
+    const points = extractFundamentalSeries(
+      financials([], [
+        { date: "2024-12-28", availableAt: "2025-02-01", eps: 5 },
+        { date: "2024-12-31", eps: 5 },
+      ], [
+        { date: new Date("2024-12-28T00:00:00Z"), close: 100 },
+        { date: new Date("2024-12-31T00:00:00Z"), close: 101 },
+      ]),
+      source("valuation.trailingPE", "annual"),
+    );
+
+    expect(points).toHaveLength(1);
+    expect(points[0]?.periodLabel).toBe("FY2024");
+    expect(points[0]?.value).toBe(20.2);
   });
 
   test("prices historical multiples when all of their inputs became public", () => {

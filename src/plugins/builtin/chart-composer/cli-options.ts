@@ -79,7 +79,7 @@ export function applyChartComposerCapabilityOptions(
           ...entry.source,
           fieldId: `${graphKind}.${options.metric}`,
           ...(period ? { period } : {}),
-          timestampMode: "available-at",
+          timestampMode: entry.style === "columns" ? "period-end" : "available-at",
         } : entry.source,
       })),
     };

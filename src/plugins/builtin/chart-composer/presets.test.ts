@@ -10,6 +10,7 @@ import {
   buildFundamentalChartPreset,
   buildIntradayPriceChartPreset,
   buildPriceChartPreset,
+  buildSeriesSpec,
   applySeriesStyle,
   getSelectedBuiltinStudies,
   getSelectedPairStudies,
@@ -115,6 +116,26 @@ describe("chart composer expressions", () => {
     expect(buildCustomChartPreset("AAPL:revenue, MSFT:revenue").series.map((series) => series.axis))
       .toEqual(["auto", "auto"]);
   });
+
+  test("keeps interpolation consistent with an overridden series style", () => {
+    expect(buildSeriesSpec(
+      { kind: "security", symbol: "AAPL", fieldId: "fundamental.totalRevenue" },
+      0,
+      { style: "columns", interpolation: "step-after" },
+    )).toMatchObject({
+      style: "columns",
+      interpolation: "none",
+      source: { timestampMode: "period-end" },
+    });
+    expect(buildSeriesSpec(
+      { kind: "economic", provider: "fred", seriesId: "CPIAUCSL" },
+      0,
+      { style: "line", interpolation: "step-after" },
+    )).toMatchObject({
+      style: "line",
+      interpolation: "none",
+    });
+  });
 });
 
 describe("chart composer presets and formulas", () => {
@@ -156,6 +177,20 @@ describe("chart composer presets and formulas", () => {
     expect(applySeriesStyle(transformed, "candles")).toMatchObject({
       style: "candles",
       transform: "raw",
+    });
+  });
+
+  test("uses period-end timestamps when a financial series changes to columns", () => {
+    const revenue = buildCustomChartPreset("AAPL:revenue").series[0]!;
+    const columns = applySeriesStyle(revenue, "columns");
+
+    expect(columns.interpolation).toBe("none");
+    expect(columns.source).toMatchObject({ timestampMode: "period-end" });
+    expect(applySeriesStyle(columns, "line")).toMatchObject({
+      interpolation: "none",
+      source: {
+        timestampMode: "available-at",
+      },
     });
   });
 

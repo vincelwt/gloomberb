@@ -89,6 +89,63 @@ describe("chart spec normalization and validation", () => {
     expect(validateChartSpec(normalized).valid).toBe(true);
   });
 
+  test("normalizes persisted financial columns to period-end timestamps", () => {
+    const normalized = normalizeChartSpec({
+      viewport: { range: "1Y", resolution: "auto" },
+      panels: [{ id: "main" }],
+      series: [{
+        id: "revenue",
+        source: {
+          kind: "security",
+          instrument: { symbol: "AAPL" },
+          fieldId: "fundamental.totalRevenue",
+          period: "quarterly",
+          timestampMode: "available-at",
+        },
+        style: "columns",
+        transform: "raw",
+        axis: "right",
+        panelId: "main",
+        interpolation: "none",
+      }],
+      studies: [],
+    });
+
+    expect(normalized.series[0]?.source).toMatchObject({
+      kind: "security",
+      timestampMode: "period-end",
+    });
+
+    const line = normalizeChartSpec({
+      viewport: { range: "1Y", resolution: "auto" },
+      panels: [{ id: "main" }],
+      series: [{
+        id: "revenue",
+        source: {
+          kind: "security",
+          instrument: { symbol: "AAPL" },
+          fieldId: "fundamental.totalRevenue",
+          period: "quarterly",
+          timestampMode: "period-end",
+        },
+        style: "line",
+        transform: "raw",
+        axis: "right",
+        panelId: "main",
+        interpolation: "step-after",
+      }],
+      studies: [],
+    });
+    expect(line.series[0]).toMatchObject({
+      style: "line",
+      interpolation: "none",
+      source: {
+        kind: "security",
+        timestampMode: "available-at",
+      },
+    });
+  });
+
   test("rejects annual QoQ, duplicate OHLC series, and missing study inputs", () => {
     const normalized = normalizeChartSpec({
       viewport: { range: "5Y", resolution: "1d" },

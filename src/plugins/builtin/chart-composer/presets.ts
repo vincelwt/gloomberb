@@ -17,6 +17,7 @@ import {
   listTimeSeriesFields,
 } from "../../../time-series/field-catalog";
 import {
+  coerceSeriesInterpolationForStyle,
   coerceSeriesTransformForStyle,
   isOhlcSeriesStyle,
 } from "../../../time-series/spec";
@@ -155,10 +156,22 @@ export function getCompatibleSeriesTransforms(fieldId: string): SeriesTransform[
 
 /** Apply style invariants shared by the series editor and toolbar mode cycle. */
 export function applySeriesStyle(series: ChartSeriesSpec, style: SeriesStyle): ChartSeriesSpec {
+  const source = series.source.kind === "security"
+    && (
+      series.source.fieldId.startsWith("fundamental.")
+      || series.source.fieldId.startsWith("valuation.")
+    )
+    ? {
+        ...series.source,
+        timestampMode: style === "columns" ? "period-end" as const : "available-at" as const,
+      }
+    : series.source;
   return {
     ...series,
+    source,
     style,
     transform: coerceSeriesTransformForStyle(style, series.transform),
+    interpolation: coerceSeriesInterpolationForStyle(style),
   };
 }
 
@@ -171,7 +184,6 @@ function defaultSeriesPresentation(fieldId: string): {
   transform: SeriesTransform;
   axis: SeriesAxis;
   period: SeriesPeriod;
-  interpolation: ChartSeriesSpec["interpolation"];
   panelId: string;
 } {
   const field = getTimeSeriesField(fieldId);
@@ -180,7 +192,6 @@ function defaultSeriesPresentation(fieldId: string): {
     transform: "raw",
     axis: "auto",
     period: field?.nativeFrequency === "daily" ? "auto" : field?.nativeFrequency ?? "auto",
-    interpolation: field?.defaultInterpolation ?? "none",
     panelId: fieldId === CHART_FIELD_IDS.volume ? "volume" : "main",
   };
 }
@@ -191,19 +202,23 @@ export function buildSeriesSpec(
   overrides: Partial<Omit<ChartSeriesSpec, "id" | "source">> = {},
 ): ChartSeriesSpec {
   if (expression.kind === "economic") {
+    const style = overrides.style ?? "step";
     return {
       id: `fred-${slug(expression.seriesId)}-${index + 1}`,
       source: { kind: "economic", provider: "fred", seriesId: expression.seriesId },
       ...(expression.label ? { label: expression.label } : {}),
-      style: "step",
       transform: "raw",
       axis: "auto",
       panelId: "main",
-      interpolation: "step-after",
       ...overrides,
+      style,
+      interpolation: coerceSeriesInterpolationForStyle(style),
     };
   }
   const presentation = defaultSeriesPresentation(expression.fieldId);
+  const style = overrides.style ?? presentation.style;
+  const financialSource = expression.fieldId.startsWith("fundamental.")
+    || expression.fieldId.startsWith("valuation.");
   return {
     id: `${slug(expression.symbol)}-${slug(expression.fieldId)}-${index + 1}`,
     source: {
@@ -214,17 +229,17 @@ export function buildSeriesSpec(
       },
       fieldId: expression.fieldId,
       period: presentation.period,
-      timestampMode: expression.fieldId.startsWith("fundamental.") || expression.fieldId.startsWith("valuation.")
-        ? "available-at"
+      timestampMode: financialSource
+        ? style === "columns" ? "period-end" : "available-at"
         : undefined,
     },
     ...(expression.label ? { label: expression.label } : {}),
-    style: presentation.style,
     transform: presentation.transform,
     axis: presentation.axis,
     panelId: presentation.panelId,
-    interpolation: presentation.interpolation,
     ...overrides,
+    style,
+    interpolation: coerceSeriesInterpolationForStyle(style),
   };
 }
 

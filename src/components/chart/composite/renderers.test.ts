@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../time-series/types";
-import { renderCompositePanelBitmap } from "./rasterizer";
+import {
+  renderCompositePanelBitmap,
+  resolveCompositeColumnWidth,
+  resolveCompositeOhlcWidth,
+} from "./rasterizer";
 import { buildCompositeChartScene } from "./scene";
 import { renderCompositePanelText } from "./text-renderer";
 
@@ -203,6 +207,38 @@ describe("composite chart renderers", () => {
     }
 
     expect(sortCalls).toBeLessThanOrEqual(4);
+  });
+
+  test("uses the typical observation cadence when one stray gap is much smaller", () => {
+    const nearDuplicate = series("revenue", "columns", [], "left");
+    nearDuplicate.points = [
+      point("2025-01-01", 1),
+      point("2025-01-02", 2),
+      point("2025-04-01", 3),
+      point("2025-07-01", 4),
+      point("2025-10-01", 5),
+    ];
+    const scene = buildCompositeChartScene(
+      [nearDuplicate],
+      [{ id: "main" }],
+      {
+        width: 120,
+        height: 20,
+        viewport: {
+          start: new Date("2025-01-01T00:00:00.000Z"),
+          end: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      },
+    )!;
+
+    expect(resolveCompositeColumnWidth(
+      scene.panels[0]!.series[0]!.points,
+      2_000,
+    )).toBe(72);
+    expect(resolveCompositeOhlcWidth(
+      scene.panels[0]!.series[0]!.points,
+      2_000,
+    )).toBeLessThan(4);
   });
 
   test("marks a standalone line observation without extending it through time", () => {
