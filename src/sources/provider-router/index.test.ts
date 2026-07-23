@@ -209,6 +209,49 @@ describe("AssetDataRouter", () => {
     expect(holders.holders[0]?.name).toBe("Vanguard Group Inc");
   });
 
+  test("routes earnings calendars through providers and fills missing symbols from fallback", async () => {
+    const cloudCalls: string[][] = [];
+    const yahooCalls: string[][] = [];
+    const event = (symbol: string, date: string) => ({
+      symbol,
+      name: symbol,
+      earningsDate: new Date(date),
+      epsEstimate: null,
+      epsActual: null,
+      revenueEstimate: null,
+      revenueActual: null,
+      surprise: null,
+      timing: "" as const,
+    });
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async getEarningsCalendar(symbols) {
+        cloudCalls.push(symbols);
+        return [event("AAPL", "2026-07-30T20:00:00Z")];
+      },
+    };
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getEarningsCalendar(symbols) {
+        yahooCalls.push(symbols);
+        return [event("MSFT", "2026-07-29T20:00:00Z")];
+      },
+    };
+
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
+    const events = await router.getEarningsCalendar(["msft", " AAPL ", "aapl"]);
+
+    expect(cloudCalls).toEqual([["MSFT", "AAPL"]]);
+    expect(yahooCalls).toEqual([["MSFT"]]);
+    expect(events.map((entry) => entry.symbol)).toEqual(["MSFT", "AAPL"]);
+  });
+
   test("falls back to later analyst providers when rating targets are missing", async () => {
     const cloudProvider: DataProvider = {
       ...fallbackProvider,

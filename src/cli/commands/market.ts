@@ -466,20 +466,7 @@ async function runEarnings(rawArgs: string[], ctx: Parameters<CliCommandDef["exe
   if (symbols.length === 0) ctx.fail("Usage: gloomberb earnings <symbol...>");
   const services = await ctx.initServices();
   try {
-    let events: EarningsEvent[] = [];
-    for (const { capability } of services.services.pluginRegistry.capabilities.list("asset-data")) {
-      if (!capability.operations.getEarningsCalendar?.handler) continue;
-      try {
-        events = await services.services.pluginRegistry.capabilities.invoke<EarningsEvent[]>(
-          capability.id,
-          "getEarningsCalendar",
-          { symbols },
-        );
-      } catch {
-        continue;
-      }
-      if (events.length > 0) break;
-    }
+    const events = await services.dataProvider.getEarningsCalendar(symbols);
     ctx.printResult({ data: events }, {
       rows: earningsRows,
       columns: [
