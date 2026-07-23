@@ -1,5 +1,5 @@
 import { useShortcut } from "../../../../react/input";
-import type { AiScreenerTab, RunState, ScreenerEditorState } from "./model";
+import type { AiScreenerTab, ScreenerEditorState } from "./model";
 
 export function useAiScreenerKeyboard({
   activeTab,
@@ -9,11 +9,14 @@ export function useAiScreenerKeyboard({
   cycleEditorProvider,
   cycleTabs,
   editActiveTab,
+  editorFocusTarget,
   editorState,
   focused,
+  focusEditorModel,
+  focusEditorPrompt,
   isRunningActiveTab,
+  refreshActiveTab,
   removeTab,
-  runTab,
   saveEditor,
 }: {
   activeTab: AiScreenerTab | null;
@@ -23,27 +26,44 @@ export function useAiScreenerKeyboard({
   cycleEditorProvider: (direction: -1 | 1) => void;
   cycleTabs: (direction: -1 | 1) => void;
   editActiveTab: () => void;
+  editorFocusTarget: "prompt" | "model";
   editorState: ScreenerEditorState | null;
   focused: boolean;
+  focusEditorModel: () => void;
+  focusEditorPrompt: () => void;
   isRunningActiveTab: boolean;
+  refreshActiveTab: () => void;
   removeTab: (tabId: string) => void;
-  runTab: (tabId: string, mode: RunState["mode"]) => void;
   saveEditor: () => void;
 }) {
   useShortcut((event) => {
     if (!focused) return;
 
     if (editorState) {
+      if (event.ctrl && event.name === "s") {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        saveEditor();
+        return;
+      }
+      if (editorFocusTarget === "model") {
+        if (event.name === "escape" || event.name === "tab") {
+          event.stopPropagation?.();
+          event.preventDefault?.();
+          focusEditorPrompt();
+        }
+        return;
+      }
       if (event.name === "escape") {
         event.stopPropagation?.();
         event.preventDefault?.();
         closeEditor();
         return;
       }
-      if (event.ctrl && event.name === "s") {
+      if (event.ctrl && event.name === "o") {
         event.stopPropagation?.();
         event.preventDefault?.();
-        saveEditor();
+        focusEditorModel();
         return;
       }
       if (event.ctrl && event.name === "p") {
@@ -75,12 +95,8 @@ export function useAiScreenerKeyboard({
       cancelRun();
       return;
     }
-    if (event.shift && event.name === "r" && activeTab && !isRunningActiveTab) {
-      void runTab(activeTab.id, "force");
-      return;
-    }
-    if (event.name === "r" && activeTab && !isRunningActiveTab) {
-      void runTab(activeTab.id, "refresh");
+    if (!event.shift && event.name === "r" && activeTab && !isRunningActiveTab) {
+      refreshActiveTab();
       return;
     }
     if (event.name === "e") {

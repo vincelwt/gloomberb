@@ -7,6 +7,8 @@ export function isSpaceKey(event: { name?: string; sequence?: string }): boolean
 
 export function summarizePaneSettingValue(field: PaneSettingField, value: unknown): string {
   switch (field.type) {
+    case "action":
+      return t(field.actionLabel ?? "Open");
     case "toggle":
       return value === true ? t("On") : t("Off");
     case "text":

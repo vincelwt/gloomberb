@@ -1,4 +1,3 @@
-import type { AiProvider } from "../providers";
 import { truncateWithEllipsis } from "../../../../utils/text-wrap";
 
 interface ScreenerCandidate {
@@ -57,49 +56,39 @@ export function deriveScreenerTitle(prompt: string): string {
   return truncateWithEllipsis(normalized || "New Screener", 22);
 }
 
-export function getScreenerPromptSignature(prompt: string, providerId: string): string {
-  return JSON.stringify([providerId.trim(), prompt.trim()]);
+export function getScreenerPromptSignature(prompt: string, providerId: string, modelId?: string | null): string {
+  return JSON.stringify([providerId.trim(), modelId?.trim() || null, prompt.trim()]);
+}
+
+export function matchesScreenerPromptSignature(
+  signature: string | null,
+  prompt: string,
+  providerId: string,
+  modelId?: string | null,
+): boolean {
+  if (signature === getScreenerPromptSignature(prompt, providerId, modelId)) return true;
+  return !modelId?.trim() && signature === JSON.stringify([providerId.trim(), prompt.trim()]);
 }
 
 export function buildScreenerPrompt({
   currentDate,
   prompt,
-  provider,
-  cliInstructions,
-  previousResults,
-  includePreviousResults,
 }: {
   currentDate: string;
   prompt: string;
-  provider: AiProvider;
-  cliInstructions: string[];
-  previousResults: ValidatedScreenerResult[];
-  includePreviousResults: boolean;
 }): string {
   const lines = [
     `Today is ${currentDate}.`,
-    `You are running in the ${provider.name} CLI.`,
     "",
     "Find public-market tickers that match this screening prompt:",
     prompt.trim(),
     "",
-    "You may use the local Gloomberb CLI to validate companies before returning them:",
-    ...cliInstructions.map((instruction) => `- ${instruction}`),
+    "Use the available Gloomberb data tools to validate every company before submitting it.",
     "",
   ];
 
-  if (includePreviousResults && previousResults.length > 0) {
-    lines.push("These tickers were already found for this exact screener. Prefer new names if you can validate them:");
-    for (const result of previousResults) {
-      lines.push(`- ${result.symbol} (${result.exchange}): ${result.reason}`);
-    }
-    lines.push("");
-  }
-
   lines.push(
-    "Return raw JSON only. Do not wrap it in markdown or add commentary.",
-    "Schema:",
-    '{ "title": "optional short title", "summary": "optional one-line summary", "tickers": [{ "symbol": "AAPL", "exchange": "NASDAQ", "reason": "concise reason" }] }',
+    "Submit the final structured screener result with an optional short title, an optional one-line summary, and the validated tickers.",
     "Rules:",
     "- Return at most 25 unique ticker candidates.",
     "- Use uppercase symbols.",
@@ -144,31 +133,4 @@ export function parseScreenerResponse(raw: string): ParsedScreenerResponse {
     summary: normalizeString(payload.summary) || null,
     tickers,
   };
-}
-
-export function mergeScreenerResults(
-  previous: ValidatedScreenerResult[],
-  next: ValidatedScreenerResult[],
-): ValidatedScreenerResult[] {
-  const nextBySymbol = new Map(next.map((result) => [result.symbol, result] as const));
-  const merged: ValidatedScreenerResult[] = [];
-
-  for (const result of previous) {
-    const replacement = nextBySymbol.get(result.symbol);
-    if (replacement) {
-      merged.push(replacement);
-      nextBySymbol.delete(result.symbol);
-      continue;
-    }
-    merged.push(result);
-  }
-
-  for (const result of next) {
-    if (nextBySymbol.has(result.symbol)) {
-      merged.push(result);
-      nextBySymbol.delete(result.symbol);
-    }
-  }
-
-  return merged;
 }

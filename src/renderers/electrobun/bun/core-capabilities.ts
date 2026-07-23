@@ -8,9 +8,16 @@ import {
   type PluginCapability,
 } from "../../../capabilities";
 import type { AppServices } from "../../../core/app-services";
-import { discoverAiCliProviders } from "../../../plugins/builtin/ai/cli-readiness";
-import type { AiProviderAvailability } from "../../../plugins/builtin/ai/providers";
-import { isAiRunCancelled, runAiPrompt, type AiProviderStatus } from "../../../plugins/builtin/ai/runner";
+import {
+  isAiProviderId,
+  type AiProviderId,
+} from "../../../plugins/builtin/ai/providers";
+import { createPiAiHost } from "../../../plugins/builtin/ai/pi";
+import {
+  isAiRunCancelled,
+  type AiConversationMessage,
+  type AiRuntimeAuthType,
+} from "../../../plugins/builtin/ai/runner";
 import type { BrokerAdapter } from "../../../types/broker";
 import type { AppConfig, BrokerInstanceConfig } from "../../../types/config";
 
@@ -267,13 +274,44 @@ function createNotesFilesCapability(): PluginCapability {
 }
 
 function createAiRunnerCapability(options: CoreCapabilityOptions): PluginCapability {
-  let providersPromise: ReturnType<typeof discoverAiCliProviders> | null = null;
-  const getProviders = (refresh = false) => {
-    if (refresh || !providersPromise) providersPromise = discoverAiCliProviders({
-      cwd: options.getConfig().dataDir,
-      recoverLoginShellPath: process.platform === "darwin",
+  const aiHost = createPiAiHost({
+    appKind: "desktop",
+    dataDir: options.getConfig().dataDir,
+  });
+  const requireProviderId = (value: unknown): AiProviderId => {
+    const providerId = requireString(value, "AI provider");
+    if (!isAiProviderId(providerId)) {
+      throw new Error(`Unknown AI provider: ${providerId}`);
+    }
+    return providerId;
+  };
+  const requireCatalogProvider = async (value: unknown): Promise<AiProviderId> => {
+    const providerId = requireProviderId(value);
+    const catalog = await aiHost.getCatalog?.();
+    if (!catalog?.providers.some((provider) => provider.providerId === providerId)) {
+      throw new Error(`Unknown AI provider: ${providerId}`);
+    }
+    return providerId;
+  };
+  const optionalAuthType = (value: unknown): AiRuntimeAuthType | undefined => {
+    if (value === undefined || value === null || value === "") return undefined;
+    if (value === "oauth" || value === "api_key") return value;
+    throw new Error(`Unknown AI authentication method: ${String(value)}`);
+  };
+  const optionalMessages = (value: unknown): AiConversationMessage[] | undefined => {
+    if (value === undefined || value === null) return undefined;
+    if (!Array.isArray(value)) throw new Error("AI conversation messages must be an array.");
+    return value.map((message, index) => {
+      if (!message || typeof message !== "object") {
+        throw new Error(`AI conversation message ${index + 1} is invalid.`);
+      }
+      const role = (message as { role?: unknown }).role;
+      const content = (message as { content?: unknown }).content;
+      if ((role !== "user" && role !== "assistant") || typeof content !== "string") {
+        throw new Error(`AI conversation message ${index + 1} is invalid.`);
+      }
+      return { role, content };
     });
-    return providersPromise;
   };
 
   return {
@@ -281,67 +319,60 @@ function createAiRunnerCapability(options: CoreCapabilityOptions): PluginCapabil
     kind: "ai-runner",
     name: "AI Runner",
     operations: {
-      getProviderAvailability: op(async () => {
-        const providers = await getProviders();
-        return Object.fromEntries(providers.map(({ provider }) => [
-          provider.id,
-          {
-            available: provider.available,
-            status: provider.status ?? (provider.available ? "ready" : "check_failed"),
-            unavailableReason: provider.unavailableReason,
-          } satisfies AiProviderAvailability,
-        ]));
+      getCatalog: op(async () => aiHost.getCatalog?.() ?? { providers: [], accounts: [], models: [] }),
+      connectProvider: stream(async (input: any, emit) => {
+        const providerId = await requireCatalogProvider(input.providerId);
+        const authType = optionalAuthType(input.authType);
+        if (!aiHost.connect) throw new Error("In-app AI sign-in is unavailable.");
+        let disposed = false;
+        aiHost.connect(providerId, authType, (event) => {
+          if (!disposed) emit({ kind: "account-auth", event });
+        }).then((catalog) => {
+          if (!disposed) emit({ kind: "account-connected", catalog });
+        }).catch((error) => {
+          if (!disposed) emit({
+            kind: "account-error",
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+        return () => {
+          disposed = true;
+        };
       }),
+      disconnectProvider: op(async (input: any) => {
+        const providerId = await requireCatalogProvider(input.providerId);
+        if (!aiHost.disconnect) throw new Error("In-app AI account disconnection is unavailable.");
+        return aiHost.disconnect(providerId);
+      }, "action"),
       checkProviderStatus: op(async (input: any) => {
-        const providerId = requireString(input.providerId, "AI provider");
-        const resolved = (await getProviders(true)).find(({ provider }) => provider.id === providerId)?.provider;
-        if (!resolved) throw new Error(`Unknown AI provider: ${providerId}`);
-        if (resolved.status === "ready") {
-          return { available: true, authenticated: true, message: null } satisfies AiProviderStatus;
+        const providerId = await requireCatalogProvider(input.providerId);
+        if (!aiHost.checkStatus) {
+          throw new Error("AI provider status checks are unavailable.");
         }
-        if (resolved.status === "missing") {
-          return {
-            available: false,
-            authenticated: false,
-            message: resolved.unavailableReason ?? `${resolved.name} is not installed.`,
-          } satisfies AiProviderStatus;
-        }
-        if (resolved.status === "not_authenticated") {
-          return {
-            available: true,
-            authenticated: false,
-            message: resolved.unavailableReason ?? `${resolved.name} is not authenticated.`,
-          } satisfies AiProviderStatus;
-        }
-        return {
-          available: true,
-          authenticated: false,
-          inconclusive: true,
-          message: resolved.unavailableReason ?? `${resolved.name} readiness could not be verified.`,
-        } satisfies AiProviderStatus;
+        return aiHost.checkStatus(providerId);
       }),
       run: stream(async (input: any, emit) => {
-        const providerId = requireString(input.providerId, "AI provider");
+        const providerId = await requireCatalogProvider(input.providerId);
         const prompt = requireString(input.prompt, "AI prompt");
-        const resolvedProvider = (await getProviders()).find(({ provider }) => provider.id === providerId);
-        if (!resolvedProvider) {
-          throw new Error(`Unknown AI provider: ${providerId}`);
-        }
-        if (!resolvedProvider.provider.available && resolvedProvider.provider.status !== "check_failed") {
+        const messages = optionalMessages(input.messages);
+        const modelId = optionalString(input.modelId);
+        const providerStatus = await aiHost.checkStatus?.(providerId);
+        if (providerStatus && !providerStatus.authenticated) {
           throw new Error(
-            resolvedProvider.provider.unavailableReason
-              ?? `${resolvedProvider.provider.name} is not ready.`,
+            providerStatus.message
+              ?? `${providerId} is not connected.`,
           );
         }
 
         let disposed = false;
-        const controller = runAiPrompt({
-          provider: resolvedProvider.provider,
+        const controller = aiHost.run({
+          providerId,
           prompt,
-          cwd: optionalString(input.cwd) ?? options.getConfig().dataDir,
-          environment: resolvedProvider.environment,
-          outputMode: input.outputMode === "structured" ? "structured" : "plain",
-          isolatedWorkspace: input.isolatedWorkspace === true,
+          messages,
+          modelId: modelId ?? undefined,
+          outputMode: input.outputMode === "structured" || input.outputMode === "screener"
+            ? input.outputMode
+            : "plain",
           onChunk: (output) => {
             if (!disposed) emit({ kind: "chunk", output });
           },

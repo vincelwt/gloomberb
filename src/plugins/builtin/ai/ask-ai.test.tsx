@@ -15,6 +15,7 @@ import {
   __setDetectedProvidersForTests,
   type AiProvider,
 } from "./ask-ai-detail-tab";
+import { setAiRunHost, setAiRuntimeCatalog, type AiRunHost } from "./runner";
 import type { TickerRecord } from "../../../types/ticker";
 
 const PANE_ID = "ticker-detail:main";
@@ -95,19 +96,33 @@ function setProviders(providers: AiProvider[]) {
   __setDetectedProvidersForTests(providers);
 }
 
-afterEach(() => {
-  __setDetectedProvidersForTests(null);
-  __resetAskAiHistoryForTests();
-  setSharedRegistryForTests(undefined);
-  setSharedMarketDataForTests(undefined);
+function readyProvider(id: AiProvider["id"] = "anthropic"): AiProvider {
+  return {
+    id,
+    name: id === "anthropic" ? "Claude" : id,
+    available: true,
+    status: "ready",
+    outputModes: ["plain", "structured", "screener"],
+  };
+}
+
+afterEach(async () => {
   if (testSetup) {
-    testSetup.renderer.destroy();
+    await act(async () => {
+      testSetup?.renderer.destroy();
+    });
     testSetup = undefined;
   }
+  __setDetectedProvidersForTests(null);
+  __resetAskAiHistoryForTests();
+  setAiRunHost(null);
+  setAiRuntimeCatalog({ providers: [], accounts: [], models: [] });
+  setSharedRegistryForTests(undefined);
+  setSharedMarketDataForTests(undefined);
 });
 
 describe("AskAiTab", () => {
-  test("lists Claude, Gemini, and Codex when no AI CLIs are detected", async () => {
+  test("points to shared pane settings when no AI provider is ready", async () => {
     setProviders([]);
 
     await act(async () => {
@@ -119,16 +134,14 @@ describe("AskAiTab", () => {
 
     await flushFrame();
 
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("No AI CLI tools are ready:");
-    expect(frame).toContain("claude");
-    expect(frame).toContain("gemini");
-    expect(frame).toContain("codex");
+    const frame = testSetup!.captureCharFrame();
+    expect(frame).toContain("No AI providers are ready.");
+    expect(frame).toContain("Open any AI pane's settings");
   });
 
   test("focuses the input when the prompt row is clicked", async () => {
     setProviders([
-      { id: "claude", name: "Claude", command: "claude", available: true, buildArgs: () => [] },
+      readyProvider(),
     ]);
 
     await act(async () => {
@@ -140,7 +153,7 @@ describe("AskAiTab", () => {
 
     await flushFrame();
 
-    const frameBeforeClick = testSetup.captureCharFrame().split("\n");
+    const frameBeforeClick = testSetup!.captureCharFrame().split("\n");
     const inputRow = frameBeforeClick.findIndex((line) => line.includes("Ask a question..."));
     const inputCol = frameBeforeClick[inputRow]?.indexOf("Ask a question...") ?? -1;
 
@@ -155,7 +168,7 @@ describe("AskAiTab", () => {
           await testSetup!.renderOnce();
           await testSetup!.renderOnce();
         });
-        if (testSetup.captureCharFrame().includes("Ask a question...")) {
+        if (testSetup!.captureCharFrame().includes("Ask a question...")) {
           focusedByClick = true;
           break;
         }
@@ -171,13 +184,61 @@ describe("AskAiTab", () => {
       await testSetup!.renderOnce();
     });
 
-    const frameAfterType = testSetup.captureCharFrame();
+    const frameAfterType = testSetup!.captureCharFrame();
     expect(frameAfterType).toContain("> DCF");
+  });
+
+  test("passes completed history to Pi as structured messages", async () => {
+    setProviders([readyProvider()]);
+    __setAskAiHistoryForTests("AAPL", [
+      { role: "user", content: "What changed?" },
+      { role: "assistant", content: "Margins improved.", loading: false },
+    ]);
+    let request: Parameters<AiRunHost["run"]>[0] | null = null;
+    setAiRunHost({
+      run(options) {
+        request = options;
+        return {
+          done: Promise.resolve("Growth remains healthy."),
+          cancel() {},
+        };
+      },
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createAskAiHarness(60, 12), {
+        width: 60,
+        height: 12,
+      });
+    });
+    await flushFrame();
+
+    const lines = testSetup!.captureCharFrame().split("\n");
+    const inputRow = lines.findIndex((line) => line.includes("Ask a question..."));
+    const inputCol = lines[inputRow]?.indexOf("Ask a question...") ?? -1;
+    await act(async () => {
+      await testSetup!.mockMouse.click(inputCol + 1, inputRow);
+      await testSetup!.mockInput.typeText("What next?");
+      testSetup!.mockInput.pressEnter();
+      await Promise.resolve();
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const capturedRequest = request as Parameters<AiRunHost["run"]>[0] | null;
+    if (!capturedRequest) throw new Error("Expected a captured AI request");
+    expect(capturedRequest.providerId).toBe("anthropic");
+    expect(capturedRequest.messages).toEqual([
+      { role: "user", content: "What changed?" },
+      { role: "assistant", content: "Margins improved." },
+    ]);
+    expect(capturedRequest.prompt).toContain("User question: What next?");
+    expect(capturedRequest.prompt).not.toContain("Margins improved.");
   });
 
   test("renders assistant ticker badges and opens a floating Ticker Research pane on click", async () => {
     setProviders([
-      { id: "claude", name: "Claude", command: "claude", available: true, buildArgs: () => [] },
+      readyProvider(),
     ]);
 
     const opened: string[] = [];
@@ -200,7 +261,7 @@ describe("AskAiTab", () => {
 
     await flushFrame();
 
-    const lines = testSetup.captureCharFrame().split("\n");
+    const lines = testSetup!.captureCharFrame().split("\n");
     const row = lines.findIndex((line) => line.includes("AAPL +3%"));
     const col = lines[row]?.indexOf("AAPL +3%") ?? -1;
 
@@ -216,9 +277,9 @@ describe("AskAiTab", () => {
     expect(opened).toEqual(["AAPL"]);
   });
 
-  test("does not persist previous ticker messages while hydrating a newly selected ticker", async () => {
+  test("migrates legacy provider history without leaking messages across tickers", async () => {
     setProviders([
-      { id: "claude", name: "Claude", command: "claude", available: true, buildArgs: () => [] },
+      readyProvider(),
     ]);
 
     const runtime = createStatefulTestPluginRuntime();
@@ -287,17 +348,17 @@ describe("AskAiTab", () => {
     });
     await flushFrame();
 
-    expect(testSetup.captureCharFrame()).toContain("AAPL answer");
+    expect(testSetup!.captureCharFrame()).toContain("AAPL answer");
 
     await act(() => {
       selectSymbol?.("MSFT");
     });
     await flushFrame();
 
-    const frame = testSetup.captureCharFrame();
+    const frame = testSetup!.captureCharFrame();
     expect(frame).toContain("MSFT answer");
     expect(frame).not.toContain("AAPL answer");
-    expect((runtime.getResumeState("ai", "conversation:claude:MSFT") as any)?.messages).toEqual([
+    expect((runtime.getResumeState("ai", "conversation:anthropic:MSFT") as any)?.messages).toEqual([
       { role: "user", content: "MSFT question" },
       { role: "assistant", content: "MSFT answer", loading: false },
     ]);

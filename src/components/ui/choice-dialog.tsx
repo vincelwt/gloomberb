@@ -23,6 +23,8 @@ export interface ChoiceDialogProps extends PromptContext<string> {
   bgColor?: string;
 }
 
+const MAX_VISIBLE_CHOICE_ROWS = 12;
+
 function clampChoiceIndex(index: number, length: number): number {
   if (length <= 0) return -1;
   return Math.max(0, Math.min(length - 1, index));
@@ -101,6 +103,8 @@ export function ChoiceDialog({
           emptyMessage={t("No choices.")}
           rowGap={0}
           surface="framed"
+          height={Math.min(Math.max(items.length, 1), MAX_VISIBLE_CHOICE_ROWS)}
+          scrollable={items.length > MAX_VISIBLE_CHOICE_ROWS}
           selectOnHover
           onSelect={setIndex}
           onActivate={(_, nextIndex) => activateChoice(choices[nextIndex])}

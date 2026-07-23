@@ -1,7 +1,8 @@
 import { useCallback, useRef, useState } from "react";
-import type { TextareaRenderable } from "../../../../ui";
+import type { InputRenderable, TextareaRenderable } from "../../../../ui";
 import type { AiProvider } from "../providers";
 import { resolveDefaultAiProviderId } from "../providers";
+import { modelIdAfterAiProviderChange, normalizeAiModelId } from "../runner-selection";
 import {
   createScreenerTab,
   generateScreenerEditorKey,
@@ -10,6 +11,8 @@ import {
 } from "./model";
 
 export function useAiScreenerEditorRuntime({
+  defaultModelId,
+  defaultProviderId,
   providers,
   queueInitialRun,
   selectableProviders,
@@ -18,6 +21,8 @@ export function useAiScreenerEditorRuntime({
   updateTabs,
   upsertTab,
 }: {
+  defaultModelId: string | null;
+  defaultProviderId: string;
   providers: AiProvider[];
   queueInitialRun: (tabId: string) => void;
   selectableProviders: AiProvider[];
@@ -27,25 +32,43 @@ export function useAiScreenerEditorRuntime({
   upsertTab: (tabId: string, updater: (tab: AiScreenerTab) => AiScreenerTab) => void;
 }) {
   const [editorState, setEditorState] = useState<ScreenerEditorState | null>(null);
+  const [editorFocusTarget, setEditorFocusTarget] = useState<"prompt" | "model">("prompt");
+  const editorModelInputRef = useRef<InputRenderable | null>(null);
   const editorTextareaRef = useRef<TextareaRenderable | null>(null);
 
+  const focusEditorPrompt = useCallback(() => {
+    setEditorFocusTarget("prompt");
+    queueMicrotask(() => editorTextareaRef.current?.focus?.());
+  }, []);
+
+  const focusEditorModel = useCallback(() => {
+    setEditorFocusTarget("model");
+    queueMicrotask(() => editorModelInputRef.current?.focus?.());
+  }, []);
+
   const openCreateEditor = useCallback(() => {
+    setEditorFocusTarget("prompt");
     setEditorState({
       mode: "create",
       tabId: null,
-      providerId: resolveDefaultAiProviderId(providers),
+      providerId: selectableProviders.some((provider) => provider.id === defaultProviderId)
+        ? defaultProviderId
+        : resolveDefaultAiProviderId(providers),
+      modelId: defaultModelId ?? "",
       prompt: "",
       key: generateScreenerEditorKey(),
       error: null,
     });
-  }, [providers]);
+  }, [defaultModelId, defaultProviderId, providers, selectableProviders]);
 
   const openEditEditor = useCallback((tab: AiScreenerTab | null) => {
     if (!tab) return;
+    setEditorFocusTarget("prompt");
     setEditorState({
       mode: "edit",
       tabId: tab.id,
       providerId: tab.providerId,
+      modelId: tab.modelId ?? "",
       prompt: tab.prompt,
       key: generateScreenerEditorKey(),
       error: null,
@@ -53,9 +76,23 @@ export function useAiScreenerEditorRuntime({
   }, []);
 
   const closeEditor = useCallback(() => {
+    editorModelInputRef.current = null;
     editorTextareaRef.current = null;
+    setEditorFocusTarget("prompt");
     setEditorState(null);
   }, []);
+
+  const selectEditorProvider = useCallback((providerId: string) => {
+    setEditorState((current) => {
+      if (!current || current.providerId === providerId) return current;
+      return {
+        ...current,
+        providerId,
+        modelId: modelIdAfterAiProviderChange(providerId, defaultProviderId, defaultModelId),
+        error: null,
+      };
+    });
+  }, [defaultModelId, defaultProviderId]);
 
   const cycleEditorProvider = useCallback((direction: -1 | 1) => {
     setEditorState((current) => {
@@ -65,10 +102,15 @@ export function useAiScreenerEditorRuntime({
       return {
         ...current,
         providerId: selectableProviders[nextIndex]!.id,
+        modelId: modelIdAfterAiProviderChange(
+          selectableProviders[nextIndex]!.id,
+          defaultProviderId,
+          defaultModelId,
+        ),
         error: null,
       };
     });
-  }, [selectableProviders]);
+  }, [defaultModelId, defaultProviderId, selectableProviders]);
 
   const saveEditor = useCallback(() => {
     if (!editorState) return;
@@ -79,7 +121,7 @@ export function useAiScreenerEditorRuntime({
     }
 
     if (editorState.mode === "create") {
-      const tab = createScreenerTab(prompt, editorState.providerId);
+      const tab = createScreenerTab(prompt, editorState.providerId, normalizeAiModelId(editorState.modelId));
       queueInitialRun(tab.id);
       updateTabs((current) => [...current, tab]);
       setActiveTabId(tab.id);
@@ -89,22 +131,30 @@ export function useAiScreenerEditorRuntime({
         ...current,
         prompt,
         providerId: editorState.providerId,
+        modelId: normalizeAiModelId(editorState.modelId),
         lastError: null,
       }));
     }
 
     editorTextareaRef.current = null;
+    editorModelInputRef.current = null;
+    setEditorFocusTarget("prompt");
     setEditorState(null);
   }, [editorState, queueInitialRun, setActiveTabId, setCursorSymbol, updateTabs, upsertTab]);
 
   return {
     closeEditor,
     cycleEditorProvider,
+    editorFocusTarget,
+    editorModelInputRef,
     editorState,
     editorTextareaRef,
+    focusEditorModel,
+    focusEditorPrompt,
     openCreateEditor,
     openEditEditor,
     saveEditor,
+    selectEditorProvider,
     setEditorState,
   };
 }

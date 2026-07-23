@@ -17,6 +17,7 @@ import type {
   RemoteControlRequest,
   RemoteControlResponse,
   RemoteJsonPatchOperation,
+  RemoteMarketDataRequest,
   RemoteStateInclude,
 } from "./types";
 import type { RemoteUiRegistry } from "./semantic-tree";
@@ -51,6 +52,26 @@ interface AppRemoteControllerOptions {
 }
 
 const DEFAULT_MUTATION_INCLUDE: RemoteStateInclude[] = ["app", "layout", "panes", "commandBar"];
+const MAX_MARKET_DATA_SEARCH_RESULTS = 20;
+const MAX_MARKET_DATA_FILINGS = 20;
+const MAX_MARKET_DATA_EARNINGS_SYMBOLS = 25;
+const MAX_MARKET_DATA_HOLDERS = 25;
+const MAX_MARKET_DATA_EVENT_ROWS = 20;
+
+function requiredMarketDataText(value: string, field: string): string {
+  const normalized = value.trim();
+  if (!normalized) throw new Error(`Market data ${field} is required.`);
+  return normalized;
+}
+
+function normalizedMarketDataSymbol(symbol: string): string {
+  return requiredMarketDataText(symbol, "symbol").toUpperCase();
+}
+
+function normalizedOptionalExchange(exchange: string | undefined): string | undefined {
+  const normalized = exchange?.trim().toUpperCase();
+  return normalized || undefined;
+}
 
 export function createAppRemoteController({
   dispatch,
@@ -70,6 +91,105 @@ export function createAppRemoteController({
   const getAfterMutationSummary = async (extra?: Record<string, unknown>): Promise<unknown> => {
     await afterMutation();
     return mutationSummary(getState(), extra);
+  };
+
+  const queryMarketData = async (request: RemoteMarketDataRequest): Promise<unknown> => {
+    const marketData = pluginRegistry.marketData;
+    switch (request.operation) {
+      case "search":
+        return (await marketData.search(requiredMarketDataText(request.query, "query")))
+          .slice(0, MAX_MARKET_DATA_SEARCH_RESULTS)
+          .map((result) => ({
+            providerId: result.providerId,
+            symbol: result.symbol,
+            name: result.name,
+            exchange: result.exchange,
+            primaryExchange: result.primaryExchange,
+            type: result.type,
+            currency: result.currency,
+          }));
+      case "quote":
+        return marketData.getQuote(
+          normalizedMarketDataSymbol(request.symbol),
+          normalizedOptionalExchange(request.exchange),
+        );
+      case "financials": {
+        const financials = await marketData.getTickerFinancials(
+          normalizedMarketDataSymbol(request.symbol),
+          normalizedOptionalExchange(request.exchange),
+        );
+        return {
+          quote: financials.quote,
+          fundamentals: financials.fundamentals,
+          profile: financials.profile,
+          annualStatements: financials.annualStatements.slice(0, 5),
+          quarterlyStatements: financials.quarterlyStatements.slice(0, 8),
+        };
+      }
+      case "secFilings": {
+        if (!marketData.getSecFilings) throw new Error("The configured market data sources do not provide SEC filings.");
+        const count = Math.max(1, Math.min(
+          MAX_MARKET_DATA_FILINGS,
+          Number.isFinite(request.count) ? Math.trunc(request.count!) : 10,
+        ));
+        return (await marketData.getSecFilings(
+          normalizedMarketDataSymbol(request.symbol),
+          count,
+          normalizedOptionalExchange(request.exchange),
+        )).slice(0, count);
+      }
+      case "holders": {
+        if (!marketData.getHolders) throw new Error("The configured market data sources do not provide holder data.");
+        const holders = await marketData.getHolders(
+          normalizedMarketDataSymbol(request.symbol),
+          normalizedOptionalExchange(request.exchange),
+        );
+        return {
+          ...holders,
+          holders: holders.holders.slice(0, MAX_MARKET_DATA_HOLDERS),
+        };
+      }
+      case "analystResearch": {
+        if (!marketData.getAnalystResearch) throw new Error("The configured market data sources do not provide analyst research.");
+        const research = await marketData.getAnalystResearch(
+          normalizedMarketDataSymbol(request.symbol),
+          normalizedOptionalExchange(request.exchange),
+        );
+        return {
+          ...research,
+          recommendations: research.recommendations.slice(0, MAX_MARKET_DATA_EVENT_ROWS),
+          ratings: research.ratings.slice(0, MAX_MARKET_DATA_EVENT_ROWS),
+          earningsEstimates: research.earningsEstimates.slice(0, MAX_MARKET_DATA_EVENT_ROWS),
+          revenueEstimates: research.revenueEstimates.slice(0, MAX_MARKET_DATA_EVENT_ROWS),
+        };
+      }
+      case "corporateActions": {
+        if (!marketData.getCorporateActions) throw new Error("The configured market data sources do not provide corporate actions.");
+        const actions = await marketData.getCorporateActions(
+          normalizedMarketDataSymbol(request.symbol),
+          normalizedOptionalExchange(request.exchange),
+        );
+        return {
+          ...actions,
+          dividends: actions.dividends.slice(0, MAX_MARKET_DATA_EVENT_ROWS),
+          splits: actions.splits.slice(0, MAX_MARKET_DATA_EVENT_ROWS),
+          earnings: actions.earnings.slice(0, MAX_MARKET_DATA_EVENT_ROWS),
+        };
+      }
+      case "earningsCalendar": {
+        if (!marketData.getEarningsCalendar) throw new Error("The configured market data sources do not provide an earnings calendar.");
+        const symbols = request.symbols
+          .map((symbol) => normalizedMarketDataSymbol(symbol))
+          .filter((symbol, index, all) => all.indexOf(symbol) === index)
+          .slice(0, MAX_MARKET_DATA_EARNINGS_SYMBOLS);
+        if (symbols.length === 0) throw new Error("Market data symbols are required.");
+        return marketData.getEarningsCalendar(symbols);
+      }
+      default:
+        throw new Error(
+          `Unknown market data operation "${String((request as { operation?: unknown }).operation)}".`,
+        );
+    }
   };
 
   const openCommandBar = async (input: Record<string, unknown>): Promise<unknown> => {
@@ -370,6 +490,8 @@ export function createAppRemoteController({
           const data = getResource(request.resource);
           return ok(data, revisionFor(data), buildIncludedState(request.include));
         }
+        case "data":
+          return ok(await queryMarketData(request));
         case "call": {
           const data = await call(request.operation, request.input, request.dryRun);
           return ok(data, undefined, buildIncludedState(request.include, request.dryRun ? [] : DEFAULT_MUTATION_INCLUDE));

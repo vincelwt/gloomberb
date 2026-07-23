@@ -28,10 +28,21 @@ export type RemoteStateInclude =
   | "help"
   | "all";
 
+export type RemoteMarketDataRequest =
+  | { type: "data"; operation: "search"; query: string }
+  | { type: "data"; operation: "quote"; symbol: string; exchange?: string }
+  | { type: "data"; operation: "financials"; symbol: string; exchange?: string }
+  | { type: "data"; operation: "secFilings"; symbol: string; exchange?: string; count?: number }
+  | { type: "data"; operation: "holders"; symbol: string; exchange?: string }
+  | { type: "data"; operation: "analystResearch"; symbol: string; exchange?: string }
+  | { type: "data"; operation: "corporateActions"; symbol: string; exchange?: string }
+  | { type: "data"; operation: "earningsCalendar"; symbols: string[] };
+
 export type RemoteControlRequest =
   | { type: "help"; topic?: string }
   | { type: "schema" }
   | { type: "get"; resource: string; include?: RemoteStateInclude[] }
+  | RemoteMarketDataRequest
   | { type: "call"; operation: string; input?: unknown; dryRun?: boolean; include?: RemoteStateInclude[] }
   | {
     type: "patch";

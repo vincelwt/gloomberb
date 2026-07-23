@@ -1,49 +1,82 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Box, ScrollBox, Text, TextAttributes, useUiCapabilities } from "../../../../ui";
-import type { ScrollBoxRenderable, TextareaRenderable } from "../../../../ui";
-import { type PromptContext, useDialog } from "../../../../ui/dialog";
+import type { InputRenderable, ScrollBoxRenderable, TextareaRenderable } from "../../../../ui";
 import { MarkdownText } from "../../../../components/markdown-text";
-import { ConfirmDialog, MessageComposer, Spinner, usePaneFooter } from "../../../../components";
-import { useRemoteControlHandler } from "../../../../remote/app-host";
+import {
+  getPaneSidebarWidth,
+  Button,
+  MessageComposer,
+  PaneSidebar,
+  PaneSidebarAction,
+  PaneSidebarRow,
+  shouldShowPaneSidebar,
+  Spinner,
+  usePaneFooter,
+} from "../../../../components";
 import { useShortcut } from "../../../../react/input";
 import { resolveTickerForPane, useAppDispatch, useAppSelector, usePaneInstance } from "../../../../state/app/context";
 import { useInlineTickers } from "../../../../state/hooks/inline-tickers";
 import type { PaneProps } from "../../../../types/plugin";
-import { colors, hoverBg } from "../../../../theme/colors";
-import { usePluginPaneState, usePluginState } from "../../../runtime";
-import { buildTickerAiContext } from "../ticker-context";
-import { detectProviders, getLocalWorkspaceProviders, type AiProvider } from "../providers";
-import { checkAiProviderStatus, isAiRunCancelled, runAiPrompt, type AiRunController } from "../runner";
+import { colors } from "../../../../theme/colors";
+import { truncateWithEllipsis } from "../../../../utils/text-wrap";
 import {
-  LOCAL_AGENT_APP_CONTROL_INSTRUCTIONS,
-  resolveLocalAgentAppControlOutput,
-  summarizeLocalAgentAppAction,
-  visibleLocalAgentOutput,
-} from "./app-control";
+  usePluginAppActions,
+  usePluginConfigState,
+  usePluginPaneState,
+  usePluginState,
+} from "../../../runtime";
+import { buildTickerAiContext } from "../ticker-context";
+import { resolveDefaultAiProviderId, type AiProvider } from "../providers";
+import { useAiRuntimeProviders } from "../use-runtime-providers";
+import {
+  formatAiRunnerSelection,
+  isAiProviderReady,
+  modelIdAfterAiProviderChange,
+  normalizeAiModelId,
+  resolveReadyAiRunnerDefault,
+  supportsAiRunOutputMode,
+} from "../runner-selection";
+import { checkAiProviderStatus, isAiRunCancelled, runAiPrompt } from "../runner";
+import { AiRunnerSelector } from "../runner-selector";
+import {
+  AI_DEFAULT_MODEL_SETTING_KEY,
+  AI_DEFAULT_PROVIDER_SETTING_KEY,
+  resolveAiPaneSelection,
+} from "../pane-settings";
 import {
   EMPTY_LOCAL_AGENT_WORKSPACE,
   appendLocalAgentMessages,
-  buildLocalAgentPrompt,
+  buildLocalAgentHistory,
+  buildLocalAgentRequestPrompt,
   createLocalAgentThread,
   normalizeLocalAgentWorkspace,
   removeLocalAgentMessages,
   type LocalAgentAttachmentPayload,
-  type LocalAgentProviderId,
   type LocalAgentWorkspaceState,
 } from "./model";
 
 export const LOCAL_AGENT_WORKSPACE_STATE_KEY = "local-agent-workspace";
 export const LOCAL_AGENT_WORKSPACE_SCHEMA_VERSION = 1;
 
-function providerLabel(providerId: LocalAgentProviderId): string {
-  if (providerId === "claude") return "Claude Code";
-  if (providerId === "codex") return "Codex";
-  return "Pi";
+function providerLabel(providerId: string): string {
+  if (providerId === "anthropic") return "Claude";
+  if (providerId === "claude") return "Claude";
+  if (providerId === "google") return "Google Gemini";
+  if (providerId === "gemini") return "Gemini";
+  if (providerId === "openai-codex") return "OpenAI";
+  if (providerId === "codex") return "OpenAI";
+  if (providerId === "openai") return "OpenAI API";
+  if (providerId === "github-copilot") return "GitHub Copilot";
+  if (providerId === "xai") return "xAI / Grok";
+  if (providerId === "openrouter") return "OpenRouter";
+  if (providerId === "opencode") return "OpenCode";
+  if (providerId === "pi") return "Pi";
+  return providerId;
 }
 
 function providerPrerequisite(provider: AiProvider): string {
-  if (provider.available) return `Uses your existing local ${provider.name} sign-in.`;
-  return `${provider.name} is not installed or not available in PATH.`;
+  if (isAiProviderReady(provider)) return `${provider.name} is ready.`;
+  return `${provider.name} is not connected. Open settings to sign in or configure access.`;
 }
 
 function WorkspaceProviderChooser({
@@ -51,74 +84,134 @@ function WorkspaceProviderChooser({
   selectedIndex,
   checkingProviderId,
   statusMessage,
+  modelId,
+  modelInputRef,
+  modelFocused,
   onSelectIndex,
-  onCreate,
+  onModelChange,
+  onModelFocusRequest,
+  onModelBlur,
+  onConfigure,
 }: {
   providers: AiProvider[];
   selectedIndex: number;
   checkingProviderId: string | null;
   statusMessage: string | null;
+  modelId: string;
+  modelInputRef: RefObject<InputRenderable | null>;
+  modelFocused: boolean;
   onSelectIndex: (index: number) => void;
-  onCreate: (provider: AiProvider) => void;
+  onModelChange: (modelId: string) => void;
+  onModelFocusRequest: () => void;
+  onModelBlur: () => void;
+  onConfigure: () => void;
 }) {
+  const selectedProvider = providers[selectedIndex] ?? providers[0] ?? null;
   return (
     <Box flexDirection="column" paddingX={1} paddingTop={1} flexGrow={1}>
-      <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Choose a local runtime</Text>
-      <Text fg={colors.textDim}>The selection is permanent for this thread. A different runtime creates a new thread.</Text>
+      <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Choose an AI provider</Text>
+      <Text fg={colors.textDim}>Provider and model are fixed for this thread. Create another thread to switch.</Text>
       <Box height={1} />
       {statusMessage && <Text fg={colors.warning}>{statusMessage}</Text>}
-      {providers.map((provider, index) => {
-        const selected = index === selectedIndex;
-        return (
-          <Box
-            key={provider.id}
-            flexDirection="column"
-            paddingX={1}
-            marginBottom={1}
-            backgroundColor={selected ? colors.selected : colors.panel}
-            onMouseDown={() => {
-              onSelectIndex(index);
-              onCreate(provider);
-            }}
-            style={{ cursor: "pointer" }}
-          >
-            <Text
-              fg={selected ? colors.selectedText : colors.text}
-              attributes={TextAttributes.BOLD}
-            >
-              {selected ? "› " : "  "}{providerLabel(provider.id as LocalAgentProviderId)}
-              {checkingProviderId === provider.id ? " · checking local sign-in…" : ""}
-            </Text>
-            <Text fg={provider.available ? colors.textDim : colors.warning}>
-              {providerPrerequisite(provider)}
-            </Text>
-          </Box>
-        );
-      })}
-      <Text fg={colors.textMuted}>↑/↓ choose · Enter create · Esc return to threads</Text>
+      <AiRunnerSelector
+        providers={providers}
+        providerId={selectedProvider?.id ?? ""}
+        modelId={modelId}
+        description={selectedProvider ? (
+          <Text fg={isAiProviderReady(selectedProvider) ? colors.textDim : colors.warning}>
+            {checkingProviderId === selectedProvider.id
+              ? "Checking account…"
+              : providerPrerequisite(selectedProvider)}
+          </Text>
+        ) : null}
+        onProviderChange={(providerId) => {
+          const index = providers.findIndex((provider) => provider.id === providerId);
+          if (index >= 0) onSelectIndex(index);
+        }}
+        onModelChange={onModelChange}
+        modelInputRef={modelInputRef}
+        modelFocused={modelFocused}
+        onModelFocusRequest={onModelFocusRequest}
+        onModelBlur={onModelBlur}
+        modelHint="Press m to choose from the Pi model catalog."
+      />
+      {selectedProvider && !isAiProviderReady(selectedProvider) && (
+        <Box paddingTop={1}>
+          <Button
+            label={`Configure ${selectedProvider.name}`}
+            variant="primary"
+            shortcut="s"
+            onPress={onConfigure}
+          />
+        </Box>
+      )}
+      <Box height={1} />
+      <Text fg={colors.textMuted}>↑/↓ provider · m model · Enter create · s settings · Esc return to threads</Text>
     </Box>
   );
 }
 
-export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
+export function LocalAgentWorkspacePane({ paneId, focused, width, height }: PaneProps) {
   const { nativePaneChrome } = useUiCapabilities();
-  const dialog = useDialog();
-  const remoteControlHandler = useRemoteControlHandler();
   const dispatch = useAppDispatch();
   const paneInstance = usePaneInstance();
-  const [providers] = useState(() => getLocalWorkspaceProviders(detectProviders()));
+  const { openPaneSettings } = usePluginAppActions();
+  const providers = useAiRuntimeProviders();
+  const workspaceProviders = useMemo(
+    () => providers.filter((provider) => supportsAiRunOutputMode(provider, "structured")),
+    [providers],
+  );
+  const fallbackProviderId = resolveDefaultAiProviderId(workspaceProviders);
+  const [defaultProviderId] = usePluginConfigState<string>(
+    AI_DEFAULT_PROVIDER_SETTING_KEY,
+    fallbackProviderId,
+  );
+  const [defaultModelId] = usePluginConfigState<string>(AI_DEFAULT_MODEL_SETTING_KEY, "");
+  const workspaceDefaults = resolveReadyAiRunnerDefault(
+    workspaceProviders,
+    defaultProviderId,
+    defaultModelId,
+  );
+  const workspaceDefaultProviderId = workspaceDefaults.providerId;
+  const preferredProviderIndex = Math.max(
+    0,
+    workspaceProviders.findIndex((provider) => provider.id === workspaceDefaultProviderId),
+  );
+  const workspaceDefaultModelId = workspaceDefaults.modelId ?? "";
   const [persistedWorkspace, setPersistedWorkspace] = usePluginState<LocalAgentWorkspaceState>(
     LOCAL_AGENT_WORKSPACE_STATE_KEY,
     EMPTY_LOCAL_AGENT_WORKSPACE,
     { schemaVersion: LOCAL_AGENT_WORKSPACE_SCHEMA_VERSION },
   );
   const workspace = useMemo(() => normalizeLocalAgentWorkspace(persistedWorkspace), [persistedWorkspace]);
+  const requestedNewThreadId = typeof paneInstance?.params?.newThreadId === "string"
+    ? paneInstance.params.newThreadId.trim()
+    : "";
+  const pendingNewThreadId = requestedNewThreadId
+    && !workspace.threads.some((thread) => thread.id === requestedNewThreadId)
+    ? requestedNewThreadId
+    : null;
   const [paneThreadId, setPaneThreadId] = usePluginPaneState<string | null>("activeThreadId", null);
   const activeThread = workspace.threads.find((thread) => thread.id === paneThreadId)
     ?? workspace.threads.find((thread) => thread.id === workspace.activeThreadId)
     ?? null;
-  const [creating, setCreating] = useState(() => workspace.threads.length === 0);
-  const [selectedProviderIndex, setSelectedProviderIndex] = useState(0);
+  const activeSelection = useMemo(() => resolveAiPaneSelection({
+    settings: paneInstance?.settings,
+    savedProviderId: activeThread?.providerId,
+    savedModelId: activeThread?.modelId,
+    defaultProviderId: workspaceDefaultProviderId,
+    defaultModelId: workspaceDefaultModelId,
+  }), [activeThread?.modelId, activeThread?.providerId, paneInstance?.settings, workspaceDefaultModelId, workspaceDefaultProviderId]);
+  const activeThreadProviderSupported = activeThread
+    ? providers.some((provider) => provider.id === activeThread.providerId)
+    : true;
+  const [creating, setCreating] = useState(() => (
+    workspace.threads.length === 0 || pendingNewThreadId !== null
+  ));
+  const [selectedProviderIndex, setSelectedProviderIndex] = useState(preferredProviderIndex);
+  const providerSelectionTouchedRef = useRef(false);
+  const [modelId, setModelId] = useState(workspaceDefaultModelId);
+  const [modelInputFocused, setModelInputFocused] = useState(false);
   const [checkingProviderId, setCheckingProviderId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [inputFocused, setInputFocused] = useState(false);
@@ -126,10 +219,14 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
   const [attachments, setAttachments] = useState<LocalAgentAttachmentPayload[]>([]);
   const [runningMessageId, setRunningMessageId] = useState<string | null>(null);
   const [streamingOutput, setStreamingOutput] = useState("");
-  const [hoveredThreadId, setHoveredThreadId] = useState<string | null>(null);
   const inputRef = useRef<TextareaRenderable | null>(null);
+  const modelInputRef = useRef<InputRenderable | null>(null);
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
-  const runRef = useRef<{ controller: AiRunController; threadId: string; assistantMessageId: string } | null>(null);
+  const runRef = useRef<{
+    controller: ReturnType<typeof runAiPrompt>;
+    threadId: string;
+    assistantMessageId: string;
+  } | null>(null);
   const busyRef = useRef(false);
   const seededRef = useRef(false);
   const mountedRef = useRef(true);
@@ -159,8 +256,48 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
     setAttachments([]);
   }, []);
 
-  const createThread = useCallback(async (provider: AiProvider, threadId?: string) => {
+  const beginCreateThread = useCallback(() => {
+    providerSelectionTouchedRef.current = false;
+    setSelectedProviderIndex(preferredProviderIndex);
+    setModelId(workspaceDefaultModelId);
+    setCreating(true);
+  }, [preferredProviderIndex, workspaceDefaultModelId]);
+
+  const selectProviderForCreation = useCallback((index: number) => {
+    const provider = workspaceProviders[index];
+    if (!provider) return;
+    providerSelectionTouchedRef.current = true;
+    setSelectedProviderIndex(index);
+    setModelId(modelIdAfterAiProviderChange(
+      provider.id,
+      workspaceDefaultProviderId,
+      workspaceDefaultModelId,
+    ));
+  }, [workspaceDefaultModelId, workspaceDefaultProviderId, workspaceProviders]);
+
+  useEffect(() => {
+    if (!creating || providerSelectionTouchedRef.current) return;
+    setSelectedProviderIndex(preferredProviderIndex);
+  }, [creating, preferredProviderIndex]);
+
+  const openConfiguration = useCallback(() => {
+    openPaneSettings(paneId);
+  }, [openPaneSettings, paneId]);
+
+  const focusModelInput = useCallback(() => {
+    setModelInputFocused(true);
+    dispatch({ type: "SET_INPUT_CAPTURED", captured: true });
+    modelInputRef.current?.focus?.();
+  }, [dispatch]);
+
+  const blurModelInput = useCallback(() => {
+    setModelInputFocused(false);
+    dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
+  }, [dispatch]);
+
+  const createThread = useCallback(async (provider: AiProvider, modelOverride = "", threadId?: string) => {
     if (busyRef.current || runRef.current) return;
+    blurModelInput();
     busyRef.current = true;
     setCheckingProviderId(provider.id);
     setStatusMessage(null);
@@ -177,11 +314,16 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
       const nextThreadId = threadId ?? crypto.randomUUID();
       updateWorkspace((current) => createLocalAgentThread(
         current,
-        provider.id as LocalAgentProviderId,
-        { id: nextThreadId },
+        provider.id,
+        {
+          id: nextThreadId,
+          modelId: normalizeAiModelId(modelOverride),
+          providerLabel: provider.name,
+        },
       ));
       setPaneThreadId(nextThreadId);
       clearDraft();
+      setModelId("");
       setCreating(false);
     } catch (error) {
       if (mountedRef.current) {
@@ -191,25 +333,27 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
       busyRef.current = false;
       if (mountedRef.current) setCheckingProviderId(null);
     }
-  }, [clearDraft, setPaneThreadId, updateWorkspace]);
+  }, [blurModelInput, clearDraft, setPaneThreadId, updateWorkspace]);
 
   useEffect(() => {
     if (seededRef.current) return;
     seededRef.current = true;
     const providerId = paneInstance?.params?.providerId;
     const threadId = paneInstance?.params?.threadId;
-    const providerIndex = providers.findIndex((provider) => provider.id === providerId);
-    const provider = providers[providerIndex];
+    const provider = providers.find((entry) => entry.id === providerId);
+    const providerIndex = workspaceProviders.findIndex((entry) => entry.id === providerId);
     if (provider && typeof threadId === "string") {
-      setSelectedProviderIndex(providerIndex);
+      if (providerIndex >= 0) setSelectedProviderIndex(providerIndex);
+      const seededModelId = normalizeAiModelId(paneInstance?.params?.modelId) ?? "";
+      setModelId(seededModelId);
       if (workspace.threads.some((thread) => thread.id === threadId)) {
         setPaneThreadId(threadId);
         setCreating(false);
       } else {
-        void createThread(provider, threadId);
+        void createThread(provider, seededModelId, threadId);
       }
     }
-  }, [createThread, paneInstance?.params?.providerId, paneInstance?.params?.threadId, providers, setPaneThreadId, workspace.threads]);
+  }, [createThread, paneInstance?.params?.modelId, paneInstance?.params?.providerId, paneInstance?.params?.threadId, providers, setPaneThreadId, workspace.threads, workspaceProviders]);
 
   useEffect(() => {
     if (!focused) return;
@@ -232,6 +376,10 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
   useEffect(() => {
     if (!focused && inputFocused) blurInput();
   }, [blurInput, focused, inputFocused]);
+
+  useEffect(() => {
+    if (!focused && modelInputFocused) blurModelInput();
+  }, [blurModelInput, focused, modelInputFocused]);
 
   const cycleThread = useCallback((direction: -1 | 1) => {
     if (!activeThread || busyRef.current || workspace.threads.length < 2) return;
@@ -271,9 +419,15 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
 
   const sendMessage = useCallback(async (text: string) => {
     if (!activeThread || runRef.current || busyRef.current) return;
-    const provider = providers.find((entry) => entry.id === activeThread.providerId);
+    if (!activeThreadProviderSupported) {
+      setStatusMessage(
+        `This ${providerLabel(activeThread.providerId)} thread is read-only because its provider is no longer supported. Create a new thread to continue.`,
+      );
+      return;
+    }
+    const provider = providers.find((entry) => entry.id === activeSelection.providerId);
     if (!provider) {
-      setStatusMessage("This thread's local runtime is no longer configured.");
+      setStatusMessage("This thread's AI provider is no longer configured.");
       return;
     }
 
@@ -301,9 +455,7 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
     const userMessageId = crypto.randomUUID();
     const assistantMessageId = crypto.randomUUID();
     const attachmentMetadata = attachments.map(({ content: _content, ...metadata }) => metadata);
-    const prompt = buildLocalAgentPrompt(activeThread, text, attachments, {
-      appControlInstructions: remoteControlHandler ? LOCAL_AGENT_APP_CONTROL_INSTRUCTIONS : undefined,
-    });
+    const prompt = buildLocalAgentRequestPrompt(text, attachments);
     updateWorkspace((current) => appendLocalAgentMessages(current, activeThread.id, [{
       id: userMessageId,
       role: "user",
@@ -321,13 +473,14 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
     let streamedOutput = "";
     try {
       const controller = runAiPrompt({
-        provider,
+        providerId: provider.id,
         prompt,
+        messages: buildLocalAgentHistory(activeThread),
+        modelId: activeSelection.modelId ?? undefined,
         outputMode: "structured",
-        isolatedWorkspace: true,
         onChunk: (output) => {
           if (!mountedRef.current) return;
-          streamedOutput = visibleLocalAgentOutput(output);
+          streamedOutput = output;
           setStreamingOutput(streamedOutput);
         },
       });
@@ -336,43 +489,14 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
       if (!mountedRef.current) return;
       setRunningMessageId(null);
       setStreamingOutput("");
-      const outcome = await resolveLocalAgentAppControlOutput(output, {
-        handler: remoteControlHandler,
-        isActive: () => mountedRef.current,
-        requestApproval: (proposal) => dialog.prompt<boolean>({
-          closeOnClickOutside: false,
-          content: (context: PromptContext<boolean>) => (
-            <ConfirmDialog
-              {...context}
-              title="Allow app action?"
-              body={[
-                `The local AI wants to ${summarizeLocalAgentAppAction(proposal)}.`,
-                `Reason: ${proposal.reason}`,
-                `Operation: ${proposal.operation}`,
-                `Input: ${JSON.stringify(proposal.input)}`,
-                "This approves one action only.",
-              ]}
-              confirmLabel="Allow Once"
-              cancelLabel="Cancel"
-              confirmVariant="primary"
-              width={64}
-              footer="Enter allow once · Esc cancel"
-            />
-          ),
-        }),
-      });
-      if (!mountedRef.current) return;
-      const outcomeIsError = outcome.kind === "invalid" || outcome.kind === "unavailable" || outcome.kind === "failed";
-      if (outcomeIsError) setStatusMessage(outcome.content);
       updateWorkspace((current) => appendLocalAgentMessages(current, activeThread.id, [{
         id: assistantMessageId,
         role: "assistant",
-        content: outcome.content,
+        content: output,
         createdAt: Date.now(),
-        status: outcome.kind === "cancelled" ? "cancelled" : outcomeIsError ? "error" : "complete",
+        status: "complete",
       }]));
     } catch (error) {
-      if (!mountedRef.current) return;
       if (isAiRunCancelled(error)) {
         updateWorkspace((current) => appendLocalAgentMessages(current, activeThread.id, [{
           id: assistantMessageId,
@@ -387,10 +511,12 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
           activeThread.id,
           [userMessageId],
         ));
-        setInputValue(text);
-        inputRef.current?.editBuffer.setText?.(text);
-        setAttachments(attachments);
-        setStatusMessage(error instanceof Error ? error.message : `${provider.name} failed to start.`);
+        if (mountedRef.current) {
+          setInputValue(text);
+          inputRef.current?.editBuffer.setText?.(text);
+          setAttachments(attachments);
+          setStatusMessage(error instanceof Error ? error.message : `${provider.name} failed to start.`);
+        }
       } else {
         const message = error instanceof Error ? error.message : `${provider.name} failed.`;
         updateWorkspace((current) => appendLocalAgentMessages(current, activeThread.id, [{
@@ -400,7 +526,7 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
           createdAt: Date.now(),
           status: "error",
         }]));
-        setStatusMessage(message);
+        if (mountedRef.current) setStatusMessage(message);
       }
     } finally {
       runRef.current = null;
@@ -410,7 +536,7 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
         setStreamingOutput("");
       }
     }
-  }, [activeThread, attachments, dialog, providers, remoteControlHandler, updateWorkspace]);
+  }, [activeSelection.modelId, activeSelection.providerId, activeThread, activeThreadProviderSupported, attachments, providers, updateWorkspace]);
 
   const submitInput = useCallback(() => {
     const value = inputRef.current?.editBuffer.getText() ?? inputValue;
@@ -426,17 +552,48 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
       return;
     }
     if (creating) {
+      if (modelInputFocused) {
+        if (event.name === "escape") {
+          event.stopPropagation?.();
+          event.preventDefault?.();
+          blurModelInput();
+        }
+        return;
+      }
       if (event.name === "escape" && workspace.threads.length > 0) setCreating(false);
-      if (event.name === "up") setSelectedProviderIndex((current) => (current - 1 + providers.length) % providers.length);
-      if (event.name === "down") setSelectedProviderIndex((current) => (current + 1) % providers.length);
-      const selectedProvider = providers[selectedProviderIndex];
-      if (isEnter && selectedProvider) void createThread(selectedProvider);
+      if (event.name === "m") {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        focusModelInput();
+        return;
+      }
+      if (event.name === "s") {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        openConfiguration();
+        return;
+      }
+      if (workspaceProviders.length === 0) return;
+      if (event.name === "up") {
+        selectProviderForCreation(
+          (selectedProviderIndex - 1 + workspaceProviders.length) % workspaceProviders.length,
+        );
+      }
+      if (event.name === "down") {
+        selectProviderForCreation((selectedProviderIndex + 1) % workspaceProviders.length);
+      }
+      const selectedProvider = workspaceProviders[selectedProviderIndex];
+      if (isEnter && selectedProvider) {
+        void createThread(selectedProvider, modelId, pendingNewThreadId ?? undefined);
+      }
       return;
     }
-    if (isEnter) focusInput();
-    if (event.name === "n" && !busyRef.current) setCreating(true);
-    if (event.name === "a") attachSelectedTicker();
-    if (event.name === "x") removeAttachments();
+    if (isEnter && activeThreadProviderSupported) focusInput();
+    if (event.name === "n" && !busyRef.current) {
+      beginCreateThread();
+    }
+    if (event.name === "a" && activeThreadProviderSupported) attachSelectedTicker();
+    if (event.name === "x" && activeThreadProviderSupported) removeAttachments();
     if (event.name === "c" && runRef.current) cancelRun();
     if (event.name === "[") cycleThread(-1);
     if (event.name === "]") cycleThread(1);
@@ -454,23 +611,33 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
 
   usePaneFooter("local-agent-workspace", () => ({
     info: runningMessageId
-      ? [{ id: "running", parts: [{ text: "Streaming local reply", tone: "positive" as const, bold: true }] }]
+      ? [{ id: "running", parts: [{ text: "Streaming reply", tone: "positive" as const, bold: true }] }]
       : checkingProviderId
-        ? [{ id: "checking", parts: [{ text: "Checking local sign-in", tone: "muted" as const }] }]
+        ? [{ id: "checking", parts: [{ text: "Checking account", tone: "muted" as const }] }]
         : statusMessage
           ? [{ id: "error", parts: [{ text: statusMessage, tone: "warning" as const }] }]
           : [],
-    hints: [],
-  }), [checkingProviderId, runningMessageId, statusMessage]);
+    hints: creating
+      ? [{
+          id: "settings",
+          key: "s",
+          label: "ettings",
+          onPress: openConfiguration,
+        }]
+      : [],
+  }), [checkingProviderId, creating, openConfiguration, runningMessageId, statusMessage]);
 
   const messageText = activeThread?.messages.map((message) => message.content) ?? [];
   const { catalog, openTicker } = useInlineTickers(messageText);
 
-  if (providers.length === 0) {
+  if (workspaceProviders.length === 0 && !activeThread) {
     return (
       <Box flexDirection="column" paddingX={1} paddingTop={1}>
-        <Text fg={colors.warning}>No supported local AI runtime was detected.</Text>
-        <Text fg={colors.textDim}>Install and authenticate Claude Code or Codex locally. Gloomberb never requests provider credentials.</Text>
+        <Text fg={colors.warning}>No supported AI providers are available.</Text>
+        <Text fg={colors.textDim}>Open pane settings to review AI provider configuration.</Text>
+        <Box paddingTop={1}>
+          <Button label="Open AI settings" variant="primary" shortcut="s" onPress={openConfiguration} />
+        </Box>
       </Box>
     );
   }
@@ -478,80 +645,120 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
   if (creating || !activeThread) {
     return (
       <WorkspaceProviderChooser
-        providers={providers}
+        providers={workspaceProviders}
         selectedIndex={selectedProviderIndex}
         checkingProviderId={checkingProviderId}
         statusMessage={statusMessage}
-        onSelectIndex={setSelectedProviderIndex}
-        onCreate={(provider) => { void createThread(provider); }}
+        modelId={modelId}
+        modelInputRef={modelInputRef}
+        modelFocused={modelInputFocused && focused}
+        onSelectIndex={selectProviderForCreation}
+        onModelChange={setModelId}
+        onModelFocusRequest={focusModelInput}
+        onModelBlur={blurModelInput}
+        onConfigure={openConfiguration}
       />
     );
   }
 
-  const showSidebar = width >= 72;
-  const sidebarWidth = showSidebar ? Math.min(24, Math.max(18, Math.floor(width * 0.24))) : 0;
+  const showSidebar = shouldShowPaneSidebar(workspace.threads.length, width, height, 1);
+  const sidebarWidth = showSidebar ? getPaneSidebarWidth(width, !!nativePaneChrome) : 0;
   const contentWidth = Math.max(20, width - sidebarWidth - (nativePaneChrome ? 0 : 2));
   const composerHeight = nativePaneChrome ? 3 : 2;
 
   return (
     <Box flexDirection="row" width={nativePaneChrome ? "100%" : width} height={nativePaneChrome ? "100%" : height} overflow="hidden">
       {showSidebar && (
-        <Box width={sidebarWidth} flexDirection="column" backgroundColor={colors.panel}>
-          <Box height={1} paddingX={1} flexDirection="row">
-            <Text fg={colors.textDim}>Threads</Text>
-            <Box flexGrow={1} />
-            <Text fg={colors.textBright} onMouseDown={() => { if (!busyRef.current) setCreating(true); }} style={{ cursor: "pointer" }}>+ New</Text>
-          </Box>
-          <ScrollBox flexGrow={1} scrollY focusable={false}>
-            {workspace.threads.map((thread) => {
-              const selected = thread.id === activeThread.id;
-              const backgroundColor = selected ? colors.selected : hoveredThreadId === thread.id ? hoverBg() : colors.panel;
-              return (
-                <Box
-                  key={thread.id}
-                  flexDirection="column"
-                  paddingX={1}
-                  backgroundColor={backgroundColor}
-                  onMouseOver={() => setHoveredThreadId(thread.id)}
-                  onMouseOut={() => setHoveredThreadId((current) => current === thread.id ? null : current)}
-                  onMouseDown={() => {
-                    if (busyRef.current) return;
-                    setPaneThreadId(thread.id);
-                    clearDraft();
-                    setStatusMessage(null);
+        <PaneSidebar width={sidebarWidth} height={height} focused={focused}>
+          {({ backgroundColor, listWidth }) => (
+            <>
+              <Box height={1} width={listWidth} paddingLeft={1} flexDirection="row" backgroundColor={backgroundColor}>
+                <Text fg={colors.textDim}>Threads</Text>
+                <Box flexGrow={1} />
+                <PaneSidebarAction
+                  width={5}
+                  ariaLabel="Create AI thread"
+                  disabled={busyRef.current}
+                  onPress={() => {
+                    beginCreateThread();
                   }}
-                  style={{ cursor: "pointer" }}
                 >
-                  <Text fg={selected ? colors.selectedText : colors.text} attributes={selected ? TextAttributes.BOLD : 0}>
-                    {thread.title}
-                  </Text>
-                  <Text fg={selected ? colors.selectedText : colors.textMuted}>{providerLabel(thread.providerId)}</Text>
-                </Box>
-              );
-            })}
-          </ScrollBox>
-        </Box>
+                  {({ foregroundColor, onMouseDown }) => (
+                    <Text fg={foregroundColor} onMouseDown={onMouseDown}>+ New</Text>
+                  )}
+                </PaneSidebarAction>
+              </Box>
+              <ScrollBox flexGrow={1} scrollY focusable={false}>
+                {workspace.threads.map((thread) => {
+                  const selected = thread.id === activeThread.id;
+                  const supported = providers.some((provider) => provider.id === thread.providerId);
+                  return (
+                    <PaneSidebarRow
+                      key={thread.id}
+                      active={selected}
+                      disabled={busyRef.current}
+                      height={2}
+                      ariaLabel={`Open AI thread ${thread.title}`}
+                      onSelect={() => {
+                        setPaneThreadId(thread.id);
+                        clearDraft();
+                        setStatusMessage(null);
+                      }}
+                    >
+                      {({ foregroundColor, onMouseDown }) => (
+                        <Box flexDirection="column" width={listWidth} paddingX={1} onMouseDown={onMouseDown}>
+                          <Text fg={foregroundColor} attributes={selected ? TextAttributes.BOLD : 0} onMouseDown={onMouseDown}>
+                            {truncateWithEllipsis(thread.title, Math.max(listWidth - 2, 1))}
+                          </Text>
+                          <Text fg={selected ? foregroundColor : colors.textMuted} onMouseDown={onMouseDown}>
+                            {truncateWithEllipsis(
+                              `${formatAiRunnerSelection(providerLabel(thread.providerId), thread.modelId)}${supported ? "" : " · unsupported"}`,
+                              Math.max(listWidth - 2, 1),
+                            )}
+                          </Text>
+                        </Box>
+                      )}
+                    </PaneSidebarRow>
+                  );
+                })}
+              </ScrollBox>
+            </>
+          )}
+        </PaneSidebar>
       )}
 
       <Box flexDirection="column" flexGrow={1} minWidth={0} overflow="hidden">
         <Box height={1} paddingX={1} flexDirection="row">
-          <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{providerLabel(activeThread.providerId)}</Text>
-          <Text fg={colors.textDim}> · local thread</Text>
+          <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
+            {formatAiRunnerSelection(
+              providerLabel(activeThreadProviderSupported ? activeSelection.providerId : activeThread.providerId),
+              activeThreadProviderSupported ? activeSelection.modelId : activeThread.modelId,
+            )}
+          </Text>
+          <Text fg={colors.textDim}> · persistent thread</Text>
           {!showSidebar && (
             <>
               <Text fg={colors.textDim}> · </Text>
               <Text fg={colors.textBright} onMouseDown={() => cycleThread(-1)} style={{ cursor: "pointer" }}>‹ </Text>
               <Text fg={colors.text}>{activeThread.title}</Text>
               <Text fg={colors.textBright} onMouseDown={() => cycleThread(1)} style={{ cursor: "pointer" }}> ›</Text>
-              <Text fg={colors.textBright} onMouseDown={() => { if (!busyRef.current) setCreating(true); }} style={{ cursor: "pointer" }}>  + New</Text>
+              <Text fg={colors.textBright} onMouseDown={() => { if (!busyRef.current) beginCreateThread(); }} style={{ cursor: "pointer" }}>  + New</Text>
             </>
           )}
         </Box>
 
+        {!activeThreadProviderSupported && (
+          <Box paddingX={1}>
+            <Text fg={colors.warning}>
+              This legacy thread is read-only because {providerLabel(activeThread.providerId)} is no longer supported. Create a new thread to continue.
+            </Text>
+          </Box>
+        )}
+
         <ScrollBox ref={scrollRef} flexGrow={1} minHeight={0} scrollY focusable={false} paddingX={1}>
           {activeThread.messages.length === 0 ? (
             <Box flexDirection="column" paddingTop={1}>
-              <Text fg={colors.textDim}>Start a local research conversation. No financial context is attached automatically.</Text>
+              <Text fg={colors.textDim}>Start a research conversation. No financial context is attached automatically.</Text>
               <Text fg={colors.textMuted}>Press a to attach the selected ticker, then review the preview before sending.</Text>
             </Box>
           ) : activeThread.messages.map((message) => (
@@ -560,7 +767,9 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
                 fg={message.role === "user" ? colors.textBright : colors.positive}
                 attributes={TextAttributes.BOLD}
               >
-                {message.role === "user" ? "You" : providerLabel(activeThread.providerId)}
+                {message.role === "user"
+                  ? "You"
+                  : providerLabel(activeThreadProviderSupported ? activeSelection.providerId : activeThread.providerId)}
                 {message.id === runningMessageId ? " · streaming" : message.status === "cancelled" ? " · cancelled" : ""}
               </Text>
               {message.attachments?.map((attachment) => (
@@ -575,14 +784,14 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
                   openTicker={openTicker}
                 />
               ) : message.id === runningMessageId ? (
-                <Spinner label="Waiting for local runtime…" />
+                <Spinner label="Waiting for provider…" />
               ) : null}
             </Box>
           ))}
           {runningMessageId && (
             <Box flexDirection="column" paddingTop={1}>
               <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
-                {providerLabel(activeThread.providerId)} · streaming
+                {providerLabel(activeThreadProviderSupported ? activeSelection.providerId : activeThread.providerId)} · streaming
               </Text>
               {streamingOutput ? (
                 <MarkdownText
@@ -593,7 +802,7 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
                   openTicker={openTicker}
                 />
               ) : (
-                <Spinner label="Waiting for local runtime…" />
+                <Spinner label="Waiting for provider…" />
               )}
             </Box>
           )}
@@ -602,46 +811,54 @@ export function LocalAgentWorkspacePane({ focused, width, height }: PaneProps) {
         {statusMessage && (
           <Box paddingX={1}><Text fg={colors.warning}>{statusMessage}</Text></Box>
         )}
-        <Box flexDirection="column" paddingX={1}>
-          {attachments.map((attachment) => (
-            <Box key={attachment.id} flexDirection="column" backgroundColor={colors.panel} paddingX={1}>
-              <Box flexDirection="row">
-                <Text fg={colors.warning} attributes={TextAttributes.BOLD}>Attached: {attachment.label}</Text>
-                <Box flexGrow={1} />
-                <Text fg={colors.textBright} onMouseDown={removeAttachments} style={{ cursor: "pointer" }}>Remove</Text>
+        {activeThreadProviderSupported ? (
+          <>
+            <Box flexDirection="column" paddingX={1}>
+              {attachments.map((attachment) => (
+                <Box key={attachment.id} flexDirection="column" backgroundColor={colors.panel} paddingX={1}>
+                  <Box flexDirection="row">
+                    <Text fg={colors.warning} attributes={TextAttributes.BOLD}>Attached: {attachment.label}</Text>
+                    <Box flexGrow={1} />
+                    <Text fg={colors.textBright} onMouseDown={removeAttachments} style={{ cursor: "pointer" }}>Remove</Text>
+                  </Box>
+                  <ScrollBox height={Math.min(8, Math.max(3, height - 12))} scrollY focusable={false}>
+                    <Text fg={colors.textDim}>{attachment.content}</Text>
+                  </ScrollBox>
+                </Box>
+              ))}
+              <Box height={1} flexDirection="row">
+                <Text fg={colors.textBright} onMouseDown={attachSelectedTicker} style={{ cursor: "pointer" }}>
+                  {attachments.length > 0 ? "Replace context" : `Attach ${previousSymbol ? previousSymbol : "selected ticker"}`}
+                </Text>
+                {runningMessageId && (
+                  <Text fg={colors.warning} onMouseDown={cancelRun} style={{ cursor: "pointer" }}>  Cancel</Text>
+                )}
               </Box>
-              <ScrollBox height={Math.min(8, Math.max(3, height - 12))} scrollY focusable={false}>
-                <Text fg={colors.textDim}>{attachment.content}</Text>
-              </ScrollBox>
             </Box>
-          ))}
-          <Box height={1} flexDirection="row">
-            <Text fg={colors.textBright} onMouseDown={attachSelectedTicker} style={{ cursor: "pointer" }}>
-              {attachments.length > 0 ? "Replace context" : `Attach ${previousSymbol ? previousSymbol : "selected ticker"}`}
-            </Text>
-            {runningMessageId && (
-              <Text fg={colors.warning} onMouseDown={cancelRun} style={{ cursor: "pointer" }}>  Cancel</Text>
-            )}
+            <MessageComposer
+              inputRef={inputRef}
+              initialValue={inputValue}
+              focused={inputFocused && focused}
+              placeholder={`Message ${providerLabel(activeSelection.providerId)}…`}
+              width="100%"
+              height={composerHeight}
+              terminalPrefix=" > "
+              terminalBottomInset={nativePaneChrome ? 0 : 1}
+              onFocusRequest={focusInput}
+              onInput={setInputValue}
+              keyBindings={[
+                { name: "return", action: "submit" },
+                { name: "linefeed", action: "submit" },
+              ]}
+              onSubmit={submitInput}
+              wrapText
+            />
+          </>
+        ) : (
+          <Box height={composerHeight} paddingX={1}>
+            <Text fg={colors.textMuted}>Read-only legacy history</Text>
           </Box>
-        </Box>
-        <MessageComposer
-          inputRef={inputRef}
-          initialValue={inputValue}
-          focused={inputFocused && focused}
-          placeholder={`Message ${providerLabel(activeThread.providerId)}…`}
-          width="100%"
-          height={composerHeight}
-          terminalPrefix=" > "
-          terminalBottomInset={nativePaneChrome ? 0 : 1}
-          onFocusRequest={focusInput}
-          onInput={setInputValue}
-          keyBindings={[
-            { name: "return", action: "submit" },
-            { name: "linefeed", action: "submit" },
-          ]}
-          onSubmit={submitInput}
-          wrapText
-        />
+        )}
       </Box>
     </Box>
   );

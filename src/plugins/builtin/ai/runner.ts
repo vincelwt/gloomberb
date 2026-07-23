@@ -1,9 +1,12 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { discoverAiCliProviders } from "./cli-readiness";
-import type { AiProvider } from "./providers";
-import { AiStructuredStreamParser } from "./stream-events";
+import {
+  aiProviderFromRuntime,
+  isAiProviderId,
+  migrateLegacyAiProviderId,
+  setDetectedProviders,
+  type AiProvider,
+  type AiProviderId,
+  type AiProviderStatus,
+} from "./providers";
 
 export class AiRunCancelledError extends Error {
   constructor() {
@@ -17,251 +20,267 @@ export interface AiRunController {
   cancel: () => void;
 }
 
-export interface AiRunHost {
-  run(options: {
-    provider: AiProvider;
-    prompt: string;
-    cwd?: string;
-    environment?: NodeJS.ProcessEnv;
-    onChunk?: (output: string) => void;
-    outputMode?: "plain" | "structured";
-    isolatedWorkspace?: boolean;
-  }): AiRunController;
-  checkStatus?(provider: AiProvider): Promise<AiProviderStatus>;
+export interface AiConversationMessage {
+  role: "user" | "assistant";
+  content: string;
 }
 
-export interface AiProviderStatus {
+export type AiRunOutputMode = "plain" | "structured" | "screener";
+export type AiRuntimeConnectionState = "connected" | "not_connected" | "error";
+export type AiRuntimeAuthType = "oauth" | "api_key";
+export type AiCredentialOrigin = "stored" | "external";
+
+export type AiAuthProgressEvent =
+  | {
+      type: "info";
+      message: string;
+      links?: readonly { url: string; label?: string }[];
+    }
+  | {
+      type: "auth_url";
+      url: string;
+      instructions?: string;
+    }
+  | {
+      type: "device_code";
+      userCode: string;
+      verificationUri: string;
+      intervalSeconds?: number;
+      expiresInSeconds?: number;
+    }
+  | {
+      type: "progress";
+      message: string;
+    };
+
+export interface AiRuntimeModel {
+  id: string;
+  providerId: AiProviderId;
+  label: string;
+  available: boolean;
+}
+
+export interface AiRuntimeAuthMethod {
+  type: AiRuntimeAuthType;
+  label: string;
+  /**
+   * True only when the current renderer-neutral host can complete this method
+   * without exposing a credential in an unmasked field.
+   */
+  canLogin: boolean;
+}
+
+export interface AiRuntimeAccount {
+  providerId: AiProviderId;
+  providerLabel: string;
+  connectionState: AiRuntimeConnectionState;
+  connectionLabel: string;
+  credentialSource?: string;
+  credentialOrigin?: AiCredentialOrigin;
+  authMethods: AiRuntimeAuthMethod[];
+  canLogin: boolean;
+  canDisconnect: boolean;
+  loginType?: AiRuntimeAuthType;
+}
+
+export interface AiRuntimeProvider {
+  providerId: AiProviderId;
+  label: string;
+  status: AiProviderStatus;
+  unavailableReason?: string;
+  outputModes: AiRunOutputMode[];
+  defaultModelId?: string;
+}
+
+export interface AiRuntimeCatalog {
+  providers: AiRuntimeProvider[];
+  accounts: AiRuntimeAccount[];
+  models: AiRuntimeModel[];
+}
+
+export interface AiRunHost {
+  run(options: {
+    providerId: AiProviderId;
+    prompt: string;
+    messages?: AiConversationMessage[];
+    modelId?: string;
+    onChunk?: (output: string) => void;
+    outputMode?: AiRunOutputMode;
+  }): AiRunController;
+  checkStatus?(providerId: AiProviderId): Promise<AiProviderStatusResult>;
+  getCatalog?(): Promise<AiRuntimeCatalog>;
+  connect?(
+    providerId: AiProviderId,
+    authType?: AiRuntimeAuthType,
+    onAuthEvent?: (event: AiAuthProgressEvent) => void,
+  ): Promise<AiRuntimeCatalog>;
+  disconnect?(providerId: AiProviderId): Promise<AiRuntimeCatalog>;
+}
+
+export interface AiProviderStatusResult {
   available: boolean;
   authenticated: boolean;
-  /** True when the check could not determine auth state, such as a timeout or spawn failure. */
+  /** True when the provider exists but credential validation failed unexpectedly. */
   inconclusive?: boolean;
   message: string | null;
 }
 
+type CatalogListener = () => void;
+
 let configuredHost: AiRunHost | null = null;
+let runtimeCatalog: AiRuntimeCatalog = { providers: [], accounts: [], models: [] };
+const catalogListeners = new Set<CatalogListener>();
+
+function canonicalProviderId(providerId: string): AiProviderId {
+  const canonicalId = migrateLegacyAiProviderId(providerId);
+  if (!isAiProviderId(canonicalId)) {
+    throw new Error(`Unknown AI provider: ${providerId}`);
+  }
+  return canonicalId;
+}
+
+function cloneCatalog(catalog: AiRuntimeCatalog): AiRuntimeCatalog {
+  return {
+    providers: catalog.providers.map((provider) => ({
+      ...provider,
+      outputModes: [...provider.outputModes],
+    })),
+    accounts: catalog.accounts.map((account) => ({
+      ...account,
+      authMethods: account.authMethods.map((method) => ({ ...method })),
+    })),
+    models: catalog.models.map((model) => ({ ...model })),
+  };
+}
+
+function publishCatalog(catalog: AiRuntimeCatalog): void {
+  runtimeCatalog = cloneCatalog(catalog);
+  setDetectedProviders(runtimeCatalog.providers.map(aiProviderFromRuntime));
+  for (const listener of [...catalogListeners]) listener();
+}
 
 export function setAiRunHost(host: AiRunHost | null): void {
   configuredHost = host;
+}
+
+export function setAiRuntimeCatalog(catalog: AiRuntimeCatalog): void {
+  publishCatalog(catalog);
+}
+
+/**
+ * Stable snapshot for useSyncExternalStore. A new reference is published only
+ * when set/connect/disconnect replaces the catalog.
+ */
+export function getAiRuntimeCatalogSnapshot(): AiRuntimeCatalog {
+  return runtimeCatalog;
+}
+
+export function subscribeAiRuntimeCatalog(listener: CatalogListener): () => void {
+  catalogListeners.add(listener);
+  return () => {
+    catalogListeners.delete(listener);
+  };
+}
+
+/** Defensive copy for imperative consumers. */
+export function getAiRuntimeCatalog(): AiRuntimeCatalog {
+  return cloneCatalog(runtimeCatalog);
+}
+
+export async function refreshAiRuntimeCatalog(): Promise<AiRuntimeCatalog> {
+  if (!configuredHost?.getCatalog) return getAiRuntimeCatalog();
+  publishCatalog(await configuredHost.getCatalog());
+  return getAiRuntimeCatalog();
+}
+
+export async function connectAiRuntimeProvider(
+  providerId: string,
+  authType?: AiRuntimeAuthType,
+  onAuthEvent?: (event: AiAuthProgressEvent) => void,
+): Promise<AiRuntimeCatalog> {
+  if (!configuredHost?.connect) {
+    throw new Error("In-app AI account connections are unavailable in this renderer.");
+  }
+  const canonicalId = canonicalProviderId(providerId);
+  publishCatalog(await configuredHost.connect(canonicalId, authType, onAuthEvent));
+  return getAiRuntimeCatalog();
+}
+
+export async function disconnectAiRuntimeProvider(providerId: string): Promise<AiRuntimeCatalog> {
+  if (!configuredHost?.disconnect) {
+    throw new Error("In-app AI account disconnection is unavailable in this renderer.");
+  }
+  publishCatalog(await configuredHost.disconnect(canonicalProviderId(providerId)));
+  return getAiRuntimeCatalog();
 }
 
 export function isAiRunCancelled(error: unknown): boolean {
   return error instanceof AiRunCancelledError;
 }
 
-function remediationFor(provider: AiProvider, reason: "unavailable" | "unauthenticated"): string {
-  if (reason === "unavailable") {
-    return `${provider.name} is not installed or not available in PATH.`;
-  }
-  const loginCommand = provider.authLoginCommand ?? provider.command;
-  return `${provider.name} is installed but not authenticated. Run \`${loginCommand}\` in your terminal.`;
-}
+export async function checkAiProviderStatus(
+  provider: AiProvider | AiProviderId,
+): Promise<AiProviderStatusResult> {
+  const providerId = canonicalProviderId(typeof provider === "string" ? provider : provider.id);
+  if (configuredHost?.checkStatus) return configuredHost.checkStatus(providerId);
 
-function sanitizeRuntimeError(value: string): string {
-  return value
-    .replace(/(bearer\s+)[^\s]+/gi, "$1[redacted]")
-    .replace(/((?:access[_ -]?token|auth[_ -]?token|oauth[_ -]?token|claude_code_oauth_token|api[_ -]?key|authorization)["']?\s*[:=]\s*["']?)[^\s"']+/gi, "$1[redacted]")
-    .trim()
-    .slice(0, 2_000);
-}
-
-export async function checkStatusWithBun(
-  provider: AiProvider,
-): Promise<AiProviderStatus> {
-  if (typeof Bun === "undefined" || typeof Bun.spawn !== "function") {
-    return { available: false, authenticated: false, message: "Local AI status checks require a native Bun host." };
+  const account = runtimeCatalog.accounts.find((candidate) => candidate.providerId === providerId);
+  if (account?.connectionState === "connected") {
+    return { available: true, authenticated: true, message: null };
   }
-  try {
-    const resolved = (await discoverAiCliProviders({
-      cwd: typeof process !== "undefined" ? process.cwd() : undefined,
-      recoverLoginShellPath: false,
-    })).find(({ provider: candidate }) => candidate.id === provider.id)?.provider;
-    if (!resolved || resolved.status === "missing") {
-      return { available: false, authenticated: false, message: remediationFor(provider, "unavailable") };
-    }
-    if (resolved.status === "ready") {
-      return { available: true, authenticated: true, message: null };
-    }
-    if (resolved.status === "not_authenticated") {
-      return {
-        available: true,
-        authenticated: false,
-        message: resolved.unavailableReason ?? remediationFor(provider, "unauthenticated"),
-      };
-    }
+  if (account?.connectionState === "error") {
     return {
-      available: true,
+      available: false,
       authenticated: false,
       inconclusive: true,
-      message: resolved.unavailableReason ?? `${provider.name} authentication check failed.`,
-    };
-  } catch (error) {
-    return {
-      available: true,
-      authenticated: false,
-      inconclusive: true,
-      message: sanitizeRuntimeError(error instanceof Error
-        ? error.message
-        : `${provider.name} authentication check failed.`),
+      message: account.connectionLabel,
     };
   }
-}
-
-export function checkAiProviderStatus(provider: AiProvider): Promise<AiProviderStatus> {
-  return configuredHost?.checkStatus?.(provider) ?? checkStatusWithBun(provider);
-}
-
-function runWithBun({
-  provider,
-  prompt,
-  cwd = typeof process !== "undefined" ? process.cwd() : ".",
-  environment,
-  onChunk,
-  outputMode = "plain",
-  isolatedWorkspace = false,
-}: {
-  provider: AiProvider;
-  prompt: string;
-  cwd?: string;
-  environment?: NodeJS.ProcessEnv;
-  onChunk?: (output: string) => void;
-  outputMode?: "plain" | "structured";
-  isolatedWorkspace?: boolean;
-}): AiRunController {
-  type BunSubprocess = ReturnType<typeof Bun.spawn>;
-  if (typeof Bun === "undefined" || typeof Bun.spawn !== "function") {
-    return {
-      done: Promise.reject(new Error("AI execution requires a native Bun host.")),
-      cancel: () => {},
-    };
-  }
-
-  let cancelled = false;
-  let processRef: BunSubprocess | null = null;
-
-  const done = (async () => {
-    if (cancelled) throw new AiRunCancelledError();
-
-    const args = outputMode === "structured"
-      ? provider.buildStructuredArgs?.(prompt)
-      : provider.buildArgs(prompt);
-    if (!args) {
-      throw new Error(`${provider.name} does not support structured non-interactive output.`);
-    }
-
-    const isolatedCwd = isolatedWorkspace
-      ? await mkdtemp(join(tmpdir(), "gloomberb-local-agent-"))
-      : null;
-    let proc: BunSubprocess | null = null;
-    try {
-      if (cancelled) throw new AiRunCancelledError();
-      proc = Bun.spawn([provider.command, ...args], {
-        cwd: isolatedCwd ?? cwd,
-        env: environment,
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      processRef = proc;
-
-      const stderrPromise = new Response(proc.stderr).text().catch(() => "");
-      const stdoutReader = proc.stdout.getReader();
-      const decoder = new TextDecoder();
-      let fullOutput = "";
-      const structuredParser = outputMode === "structured"
-        ? new AiStructuredStreamParser(provider.id)
-        : null;
-
-      while (true) {
-        const { done: streamDone, value } = await stdoutReader.read();
-        if (streamDone) break;
-        if (cancelled) throw new AiRunCancelledError();
-        const decoded = decoder.decode(value, { stream: true });
-        if (structuredParser) {
-          const nextOutput = structuredParser.push(decoded).transcript;
-          if (nextOutput !== fullOutput) {
-            fullOutput = nextOutput;
-            onChunk?.(fullOutput);
-          }
-        } else {
-          fullOutput += decoded;
-          onChunk?.(fullOutput);
-        }
-      }
-
-      const tail = decoder.decode();
-      if (structuredParser && tail) structuredParser.push(tail);
-      const structuredResult = structuredParser?.finish();
-      if (structuredResult && structuredResult.transcript !== fullOutput) {
-        fullOutput = structuredResult.transcript;
-        onChunk?.(fullOutput);
-      }
-
-      const exitCode = await proc.exited;
-      const stderr = sanitizeRuntimeError(await stderrPromise);
-
-      if (cancelled) throw new AiRunCancelledError();
-      if (exitCode !== 0 || structuredResult?.terminalError) {
-        const errorText = sanitizeRuntimeError(structuredResult?.terminalError || stderr || fullOutput);
-        if (/not authenticated|authentication required|not logged in|login required|credential(?:s)? (?:expired|required)|refresh token/i.test(errorText)) {
-          throw new Error(remediationFor(provider, "unauthenticated"));
-        }
-        throw new Error(errorText || `${provider.name} exited with status ${exitCode}.`);
-      }
-
-      const finalOutput = fullOutput.trim();
-      if (!finalOutput) {
-        throw new Error(stderr || `${provider.name} returned an empty response.`);
-      }
-
-      return finalOutput;
-    } catch (error) {
-      try { proc?.kill(); } catch { /* ignore cleanup failures */ }
-      await proc?.exited.catch(() => {});
-      if (cancelled) throw new AiRunCancelledError();
-      throw error;
-    } finally {
-      processRef = null;
-      if (isolatedCwd) await rm(isolatedCwd, { recursive: true, force: true }).catch(() => {});
-    }
-  })();
-
   return {
-    done,
-    cancel: () => {
-      cancelled = true;
-      try {
-        processRef?.kill();
-      } catch {
-        // ignore cleanup failures
-      }
-    },
+    available: false,
+    authenticated: false,
+    message: account?.connectionLabel ?? "AI provider is not connected.",
   };
 }
 
 export function runAiPrompt({
-  provider,
+  providerId,
   prompt,
-  cwd,
-  environment,
+  messages,
+  modelId,
   onChunk,
   outputMode,
-  isolatedWorkspace,
 }: {
-  provider: AiProvider;
+  providerId: string;
   prompt: string;
-  cwd?: string;
-  environment?: NodeJS.ProcessEnv;
+  messages?: AiConversationMessage[];
+  modelId?: string;
   onChunk?: (output: string) => void;
-  outputMode?: "plain" | "structured";
-  isolatedWorkspace?: boolean;
+  outputMode?: AiRunOutputMode;
 }): AiRunController {
-  return (configuredHost ?? { run: runWithBun }).run({
-    provider,
+  if (!configuredHost) {
+    return {
+      done: Promise.reject(new Error("The native AI runtime is unavailable in this renderer.")),
+      cancel: () => {},
+    };
+  }
+
+  let canonicalId: AiProviderId;
+  try {
+    canonicalId = canonicalProviderId(providerId);
+  } catch (error) {
+    return {
+      done: Promise.reject(error),
+      cancel: () => {},
+    };
+  }
+
+  return configuredHost.run({
+    providerId: canonicalId,
     prompt,
-    cwd,
-    environment,
+    messages,
+    modelId,
     onChunk,
     outputMode,
-    isolatedWorkspace,
   });
 }

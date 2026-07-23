@@ -1,26 +1,28 @@
 import type { RefObject } from "react";
 import { useEffect } from "react";
-import { Box, Text, Textarea, type TextareaRenderable } from "../../../../ui";
-import { Button, SegmentedControl } from "../../../../components";
+import { Box, Text, Textarea, type InputRenderable, type TextareaRenderable } from "../../../../ui";
 import { colors } from "../../../../theme/colors";
 import { t } from "../../../../i18n";
 import {
-  getAiProviderUnavailableLabel,
   getAiProviderUnavailableReason,
   type AiProvider,
 } from "../providers";
 import type { ScreenerEditorState } from "./model";
+import { AiRunnerSelector } from "../runner-selector";
+import { isAiProviderReady } from "../runner-selection";
 
 function ScreenerPromptEditor({
   editorKey,
   initialValue,
   focused,
   textareaRef,
+  onFocusRequest,
 }: {
   editorKey: string;
   initialValue: string;
   focused: boolean;
   textareaRef: RefObject<TextareaRenderable | null>;
+  onFocusRequest: () => void;
 }) {
   useEffect(() => {
     if (focused) {
@@ -31,10 +33,11 @@ function ScreenerPromptEditor({
   return (
     <Box
       flexGrow={1}
-      minHeight={10}
+      minHeight={3}
       border
       borderColor={colors.border}
       backgroundColor={colors.panel}
+      onMouseDown={onFocusRequest}
     >
       <Textarea
         key={editorKey}
@@ -53,50 +56,49 @@ function ScreenerPromptEditor({
 }
 
 export function AiScreenerEditorView({
-  contentHeight,
   editorProvider,
+  editorFocusTarget,
   editorState,
   focused,
+  modelInputRef,
   selectableProviders,
   textareaRef,
-  width,
-  onCancel,
+  onModelFocusRequest,
   onProviderChange,
-  onSave,
+  onModelChange,
+  onPromptFocusRequest,
 }: {
-  contentHeight: number;
   editorProvider: AiProvider | null;
+  editorFocusTarget: "prompt" | "model";
   editorState: ScreenerEditorState;
   focused: boolean;
+  modelInputRef: RefObject<InputRenderable | null>;
   selectableProviders: AiProvider[];
   textareaRef: RefObject<TextareaRenderable | null>;
-  width: number;
-  onCancel: () => void;
+  onModelFocusRequest: () => void;
   onProviderChange: (providerId: string) => void;
-  onSave: () => void;
+  onModelChange: (modelId: string) => void;
+  onPromptFocusRequest: () => void;
 }) {
   return (
     <>
-      <Box flexDirection="row" height={1} gap={1}>
-        <Button label={t("Save")} variant="primary" onPress={onSave} />
-        <Button label={t("Cancel")} variant="ghost" onPress={onCancel} />
-      </Box>
-
       <Box flexDirection="column" paddingX={1} paddingTop={1} gap={1}>
         <Text fg={colors.textDim}>
           {editorState.mode === "create"
             ? t("Describe the companies or setups you want this screener to discover.")
             : t("Update the screener prompt or provider. Saving does not rerun it automatically.")}
         </Text>
-        <SegmentedControl
-          value={editorState.providerId}
-          options={selectableProviders.map((provider) => ({
-            value: provider.id,
-            label: provider.available
-              ? provider.name
-              : `${provider.name} (${getAiProviderUnavailableLabel(provider)})`,
-          }))}
-          onChange={onProviderChange}
+        <AiRunnerSelector
+          providers={selectableProviders}
+          providerId={editorState.providerId}
+          modelId={editorState.modelId}
+          modelInputRef={modelInputRef}
+          modelFocused={focused && editorFocusTarget === "model"}
+          onProviderChange={onProviderChange}
+          onModelChange={onModelChange}
+          onModelFocusRequest={onModelFocusRequest}
+          onModelBlur={onPromptFocusRequest}
+          modelHint="Ctrl+O opens the Pi model catalog."
         />
         {editorState.error ? (
           <Text fg={colors.negative}>{editorState.error}</Text>
@@ -107,24 +109,21 @@ export function AiScreenerEditorView({
         )}
       </Box>
 
-      <Box flexGrow={1} minHeight={contentHeight} padding={1}>
+      <Box flexGrow={1} minHeight={4} padding={1}>
         <ScreenerPromptEditor
           editorKey={editorState.key}
           initialValue={editorState.prompt}
-          focused={focused}
+          focused={focused && editorFocusTarget === "prompt"}
           textareaRef={textareaRef}
+          onFocusRequest={onPromptFocusRequest}
         />
-      </Box>
-
-      <Box height={1} paddingX={1}>
-        <Text fg={colors.textDim}>{"\u2500".repeat(Math.max(width - 2, 0))}</Text>
       </Box>
 
       <Box flexDirection="column" paddingX={1}>
         <Text fg={colors.textDim}>
-          {editorProvider?.available === false
+          {editorProvider && !isAiProviderReady(editorProvider)
             ? `${getAiProviderUnavailableReason(editorProvider)} Save and switch later.`
-            : "Click a provider chip to switch. Save to keep the draft."}
+            : "Click a provider to switch. Save to keep the draft."}
         </Text>
       </Box>
     </>

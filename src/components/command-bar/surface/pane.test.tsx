@@ -100,6 +100,31 @@ function registerAiScreenerPane(pluginRegistry: MutablePaneRegistry): void {
   });
 }
 
+function registerLocalAiWorkspacePane(pluginRegistry: MutablePaneRegistry): void {
+  mutableRegistryMap(pluginRegistry.panes).set("local-agent-workspace", {
+    id: "local-agent-workspace",
+    name: "Local AI",
+    component: () => null,
+    defaultPosition: "right",
+    defaultMode: "floating",
+  });
+  mutableRegistryMap(pluginRegistry.paneTemplates).set("new-local-agent-workspace", {
+    id: "new-local-agent-workspace",
+    paneId: "local-agent-workspace",
+    label: "Local AI Workspace",
+    description: "Create a persistent local AI research thread.",
+    keywords: ["ai", "agent", "local", "research", "thread"],
+    shortcut: { prefix: "AGENT" },
+    wizard: [{
+      key: "providerId",
+      label: "Local Runtime",
+      type: "select",
+      defaultValue: "claude",
+      options: [{ label: "Claude", value: "claude" }],
+    }],
+  });
+}
+
 function registerOptionalTextPane(pluginRegistry: MutablePaneRegistry): void {
   mutableRegistryMap(pluginRegistry.panes).set("optional-search", {
     id: "optional-search",
@@ -278,6 +303,27 @@ describe("CommandBar pane and layout routes", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Quote Monitor");
     expect(frame).toContain("QQ");
+  });
+
+  test("keeps related pane matches visible beside a bare shortcut", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="AI"
+      configurePluginRegistry={(pluginRegistry) => {
+        registerAiScreenerPane(pluginRegistry);
+        registerLocalAiWorkspacePane(pluginRegistry);
+      }}
+    />, {
+      width: 100,
+      height: 18,
+    });
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("AI Screener");
+    expect(frame).toContain("Local AI Workspace");
+    expect(frame).toContain("AGENT");
+    expect(frame.indexOf("AI Screener")).toBeLessThan(frame.indexOf("Local AI Workspace"));
   });
 
   test("executes optional text pane shortcuts without opening the generated form", async () => {

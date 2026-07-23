@@ -6,7 +6,7 @@ import { type ScrollBoxRenderable, type TextareaRenderable } from "../../../ui";
 import type { TickerResearchTabProps } from "../../../types/plugin";
 import { useAppSelector, usePaneTicker } from "../../../state/app/context";
 import { useFxRatesMap } from "../../../market-data/hooks";
-import { usePluginState } from "../../runtime";
+import { usePluginConfigState, usePluginState } from "../../runtime";
 import { useInlineTickers } from "../../../state/hooks/inline-tickers";
 import { MarkdownText } from "../../../components/markdown-text";
 import { getMessageComposerBlockHeight, MessageComposer, Spinner, usePaneFooter } from "../../../components";
@@ -14,14 +14,18 @@ import { colors } from "../../../theme/colors";
 import { t } from "../../../i18n";
 import { buildTickerAiContext } from "./ticker-context";
 import {
-  detectProviders,
-  getAiProviderUnavailableLabel,
-  getAvailableProviders,
+  migrateLegacyAiProviderId,
   resolveDefaultAiProviderId,
   __setDetectedProvidersForTests,
   type AiProvider,
 } from "./providers";
-import { runAiPrompt } from "./runner";
+import { runAiPrompt, type AiConversationMessage } from "./runner";
+import { isAiProviderReady, resolveReadyAiRunnerDefault } from "./runner-selection";
+import {
+  AI_DEFAULT_MODEL_SETTING_KEY,
+  AI_DEFAULT_PROVIDER_SETTING_KEY,
+} from "./pane-settings";
+import { useAiRuntimeProviders } from "./use-runtime-providers";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -37,6 +41,11 @@ interface PersistedConversation {
 const ASK_AI_HISTORY_LIMIT = 40;
 const ASK_AI_RETENTION_MS = 90 * 24 * 60 * 60_000;
 const chatHistories = new Map<string, ChatMessage[]>();
+const LEGACY_HISTORY_PROVIDER_IDS: Readonly<Record<string, string>> = {
+  anthropic: "claude",
+  "openai-codex": "codex",
+  google: "gemini",
+};
 
 export { __setDetectedProvidersForTests };
 export type { AiProvider };
@@ -56,12 +65,34 @@ function historyKeyFor(providerId: string, symbol: string): string {
 }
 
 export function __setAskAiHistoryForTests(symbol: string, messages: ChatMessage[]): void {
+  chatHistories.set(historyKeyFor("anthropic", symbol), messages);
   chatHistories.set(historyKeyFor("claude", symbol), messages);
   chatHistories.set(symbol, messages);
 }
 
 export function __resetAskAiHistoryForTests(): void {
   chatHistories.clear();
+}
+
+function completedConversation(messages: readonly ChatMessage[]): AiConversationMessage[] {
+  const completed: AiConversationMessage[] = [];
+  let pendingUser: AiConversationMessage | null = null;
+
+  for (const message of messages) {
+    if (message.loading || !message.content.trim()) continue;
+    if (message.role === "user") {
+      pendingUser = { role: "user", content: message.content };
+      continue;
+    }
+    if (!pendingUser || message.content.startsWith("Error:")) {
+      pendingUser = null;
+      continue;
+    }
+    completed.push(pendingUser, { role: "assistant", content: message.content });
+    pendingUser = null;
+  }
+
+  return completed;
 }
 
 export function AskAiResearchTab({ width, height, focused, onCapture }: TickerResearchTabProps) {
@@ -78,25 +109,46 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
   const effectiveExchangeRates = exchangeRates.size > 1 || cachedExchangeRates.size === 0
     ? exchangeRates
     : cachedExchangeRates;
-  const [providers] = useState(() => detectProviders());
-  const defaultProviderId = resolveDefaultAiProviderId(providers);
+  const providers = useAiRuntimeProviders();
+  const fallbackProviderId = resolveDefaultAiProviderId(providers);
+  const [configuredDefaultProviderId] = usePluginConfigState<string>(
+    AI_DEFAULT_PROVIDER_SETTING_KEY,
+    fallbackProviderId,
+  );
+  const [configuredDefaultModelId] = usePluginConfigState<string>(AI_DEFAULT_MODEL_SETTING_KEY, "");
+  const defaults = resolveReadyAiRunnerDefault(
+    providers,
+    configuredDefaultProviderId,
+    configuredDefaultModelId,
+  );
+  const defaultProviderId = defaults.providerId;
   const [providerId, setProviderId] = usePluginState<string>("providerId", defaultProviderId);
+  const canonicalProviderId = migrateLegacyAiProviderId(providerId);
   const [conversationMessagesByKey, setConversationMessagesByKey] = useState<Record<string, ChatMessage[]>>({});
   const [inputFocused, setInputFocused] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const runRef = useRef<ReturnType<typeof runAiPrompt> | null>(null);
-  const availableProviders = getAvailableProviders(providers);
-  const currentProvider = providers.find((provider) => provider.id === providerId && provider.available)
-    ?? providers.find((provider) => provider.id === defaultProviderId)
-    ?? providers[0];
+  const availableProviders = providers.filter(isAiProviderReady);
+  const currentProvider = availableProviders.find((provider) => provider.id === canonicalProviderId)
+    ?? availableProviders.find((provider) => provider.id === defaultProviderId)
+    ?? availableProviders[0];
+  const currentModelId = currentProvider?.id === defaultProviderId
+    ? defaults.modelId
+    : null;
 
   const tickerSymbol = ticker?.metadata.ticker ?? null;
   const conversationKey = tickerSymbol && currentProvider
     ? `conversation:${currentProvider.id}:${tickerSymbol}`
     : "__conversation:none__";
   const historyKey = tickerSymbol && currentProvider ? historyKeyFor(currentProvider.id, tickerSymbol) : null;
+  const legacyHistoryProviderId = currentProvider
+    ? LEGACY_HISTORY_PROVIDER_IDS[currentProvider.id]
+    : null;
+  const legacyConversationKey = tickerSymbol && legacyHistoryProviderId
+    ? historyKeyFor(legacyHistoryProviderId, tickerSymbol)
+    : "__conversation:legacy:none__";
   const messages = conversationMessagesByKey[conversationKey] ?? [];
   const setMessages = useCallback((nextValue: SetStateAction<ChatMessage[]>) => {
     setConversationMessagesByKey((previous) => {
@@ -113,6 +165,15 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
     null,
     { schemaVersion: 1 },
   );
+  const [legacyPersistedConversation] = usePluginState<PersistedConversation | null>(
+    legacyConversationKey,
+    null,
+    { schemaVersion: 1 },
+  );
+
+  useEffect(() => {
+    if (providerId !== canonicalProviderId) setProviderId(canonicalProviderId);
+  }, [canonicalProviderId, providerId, setProviderId]);
 
   useEffect(() => {
     if (!tickerSymbol) {
@@ -123,16 +184,40 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
       return;
     }
 
-    if (historyKey && persistedConversation && Date.now() - persistedConversation.updatedAt <= ASK_AI_RETENTION_MS) {
-      chatHistories.set(historyKey, persistedConversation.messages);
+    const currentPersisted = persistedConversation
+      ?? (
+        legacyPersistedConversation
+        && Date.now() - legacyPersistedConversation.updatedAt <= ASK_AI_RETENTION_MS
+          ? legacyPersistedConversation
+          : null
+      );
+    if (historyKey && currentPersisted && Date.now() - currentPersisted.updatedAt <= ASK_AI_RETENTION_MS) {
+      chatHistories.set(historyKey, currentPersisted.messages);
+      if (!persistedConversation && legacyPersistedConversation) {
+        setPersistedConversation(legacyPersistedConversation);
+      }
     }
 
-    const nextMessages = (historyKey ? chatHistories.get(historyKey) : null) ?? chatHistories.get(tickerSymbol) ?? [];
+    const legacyHistoryKey = legacyHistoryProviderId
+      ? historyKeyFor(legacyHistoryProviderId, tickerSymbol)
+      : null;
+    const nextMessages = (historyKey ? chatHistories.get(historyKey) : null)
+      ?? (legacyHistoryKey ? chatHistories.get(legacyHistoryKey) : null)
+      ?? chatHistories.get(tickerSymbol)
+      ?? [];
     setConversationMessagesByKey((previous) => {
       const previousMessages = previous[conversationKey] ?? [];
       return sameMessages(previousMessages, nextMessages) ? previous : { ...previous, [conversationKey]: nextMessages };
     });
-  }, [conversationKey, historyKey, persistedConversation, tickerSymbol]);
+  }, [
+    conversationKey,
+    historyKey,
+    legacyHistoryProviderId,
+    legacyPersistedConversation,
+    persistedConversation,
+    setPersistedConversation,
+    tickerSymbol,
+  ]);
 
   useEffect(() => {
     if (!tickerSymbol || !currentProvider || !historyKey || messages.length === 0) return;
@@ -152,26 +237,23 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
 
   useEffect(() => {
     const sb = scrollRef.current;
-    if (!sb || messages.length === 0) return;
+    if (!sb?.viewport || messages.length === 0) return;
     sb.scrollTo({ x: 0, y: Math.max(0, sb.scrollHeight - sb.viewport.height) });
   }, [messages, focused]);
 
   const cycleProvider = useCallback(() => {
     if (availableProviders.length <= 1) return;
     setProviderId((current) => {
-      const currentIndex = providers.findIndex((provider) => provider.id === current);
-      let nextIndex = currentIndex >= 0 ? (currentIndex + 1) % providers.length : 0;
-      while (!providers[nextIndex]?.available) {
-        nextIndex = (nextIndex + 1) % providers.length;
-      }
-      return providers[nextIndex]?.id ?? current;
+      const currentIndex = availableProviders.findIndex((provider) => provider.id === current);
+      const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % availableProviders.length : 0;
+      return availableProviders[nextIndex]?.id ?? current;
     });
-  }, [availableProviders.length, providers, setProviderId]);
+  }, [availableProviders, setProviderId]);
 
   const focusInput = useCallback(() => {
     setInputFocused(true);
     onCapture(true);
-    inputRef.current?.focus();
+    inputRef.current?.focus?.();
   }, [onCapture]);
 
   const blurInput = useCallback(() => {
@@ -193,12 +275,14 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
       baseCurrency,
       effectiveExchangeRates,
     );
-    const fullPrompt = `You are a financial analyst assistant. Here is the current financial data for the company being discussed:\n\n${context}\n\nUser question: ${text}`;
+    const prompt = `You are a financial analyst assistant. Here is the current financial data for the company being discussed:\n\n${context}\n\nUser question: ${text}`;
 
     try {
       const run = runAiPrompt({
-        provider: currentProvider,
-        prompt: fullPrompt,
+        providerId: currentProvider.id,
+        prompt,
+        messages: completedConversation(messages),
+        modelId: currentModelId ?? undefined,
         onChunk: (output) => {
           setMessages((previous) => {
             const updated = [...previous];
@@ -223,7 +307,7 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
         const updated = [...previous];
         updated[updated.length - 1] = {
           role: "assistant",
-          content: `Error: ${error?.message || "Failed to run AI command"}`,
+          content: `Error: ${error?.message || "AI request failed"}`,
           loading: false,
         };
         return updated;
@@ -231,7 +315,7 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
     } finally {
       runRef.current = null;
     }
-  }, [baseCurrency, currentProvider, effectiveExchangeRates, financials, ticker]);
+  }, [baseCurrency, currentModelId, currentProvider, effectiveExchangeRates, financials, messages, ticker]);
 
   const submitInput = useCallback(() => {
     const currentValue = inputRef.current?.editBuffer.getText() ?? inputValue;
@@ -270,40 +354,22 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
   const thinking = messages.some((message) => message.loading);
 
   usePaneFooter("ask-ai", () => ({
-    info: [
-      ...(currentProvider ? [{
-        id: "provider",
-        parts: [
-          { text: "Provider", tone: "label" as const },
-          { text: currentProvider.name, tone: currentProvider.available ? "value" as const : "warning" as const, bold: true },
-        ],
-      }] : []),
-      { id: "messages", parts: [{ text: `${messages.length} messages`, tone: "muted" }] },
-      ...(thinking ? [{ id: "thinking", parts: [{ text: "thinking", tone: "muted" as const }] }] : []),
-    ],
-    hints: availableProviders.length > 1
-      ? [{ id: "provider", key: "t", label: "provider", onPress: cycleProvider }]
+    info: thinking
+      ? [{ id: "thinking", parts: [{ text: "Thinking…", tone: "muted" as const }] }]
       : [],
-  }), [availableProviders.length, currentProvider?.available, currentProvider?.name, cycleProvider, messages.length, thinking]);
+    hints: [],
+  }), [thinking]);
 
   if (!ticker) return <Text fg={colors.textDim}>{t("Select a ticker to ask AI.")}</Text>;
 
   if (availableProviders.length === 0) {
     return (
       <Box flexDirection="column" paddingX={1} flexGrow={1}>
-        <Text fg={colors.textDim}>{t("No AI CLI tools are ready:")}</Text>
+        <Text fg={colors.textDim}>{t("No AI providers are ready.")}</Text>
         <Box height={1} />
-        {providers.length > 0 ? providers.map((provider) => (
-          <Text key={provider.id} fg={colors.text}>
-            {`  ${provider.command.padEnd(7)} - ${provider.name}: ${getAiProviderUnavailableLabel(provider)}`}
-          </Text>
-        )) : (
-          <>
-            <Text fg={colors.text}>  claude  - Claude: missing</Text>
-            <Text fg={colors.text}>  gemini  - Gemini: missing</Text>
-            <Text fg={colors.text}>  codex   - Codex: missing</Text>
-          </>
-        )}
+        <Text fg={colors.text}>
+          {t("Open any AI pane's settings to connect an account.")}
+        </Text>
       </Box>
     );
   }

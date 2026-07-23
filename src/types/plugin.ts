@@ -78,6 +78,8 @@ interface PaneSettingFieldBase {
   label: string;
   description?: string;
   storage?: "pane" | "plugin";
+  /** Keys in the same storage scope that should be reset when this value changes. */
+  clearOnChange?: string[];
 }
 
 interface PaneSettingToggleField extends PaneSettingFieldBase {
@@ -104,12 +106,32 @@ interface PaneSettingOrderedMultiSelectField extends PaneSettingFieldBase {
   options: PaneSettingOption[];
 }
 
+export interface PaneSettingActionContext extends PaneSettingsContext {
+  surface: "pane-dialog" | "command-bar";
+  close(): void;
+  openCommandBar(query?: string): void;
+  notify(notification: AppNotificationRequest): void;
+}
+
+export type PaneSettingActionHandler = (
+  context: PaneSettingActionContext,
+) => void | Promise<void>;
+
+export type PaneSettingActionField = Omit<PaneSettingFieldBase, "storage" | "clearOnChange"> & {
+  type: "action";
+  actionId: string;
+  actionLabel?: string;
+  disabled?: boolean;
+  action: PaneSettingActionHandler;
+};
+
 export type PaneSettingField =
   | PaneSettingToggleField
   | PaneSettingTextField
   | PaneSettingSelectField
   | PaneSettingMultiSelectField
-  | PaneSettingOrderedMultiSelectField;
+  | PaneSettingOrderedMultiSelectField
+  | PaneSettingActionField;
 
 export interface PaneSettingsDef {
   title?: string;
@@ -172,9 +194,12 @@ export interface WizardStep {
   label: string;
   placeholder?: string;
   defaultValue?: string;
+  required?: boolean;
   type?: "text" | "password" | "info" | "select" | "number" | "textarea";
   options?: Array<{ label: string; value: string }>;
   dependsOn?: { key: string; value: string };
+  /** Later wizard values to clear when this selection changes from its default. */
+  clearOnChange?: string[];
   body?: string[];
 }
 

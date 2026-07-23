@@ -37,6 +37,7 @@ export function TuiPaneSettingsDialogBody({
           label: t(field.label),
           description: field.description ? t(field.description) : field.description,
           detail: summarizePaneSettingValue(field, settings[field.key]),
+          disabled: field.type === "action" && field.disabled,
         }))}
         selectedIndex={selectedIndex}
         bgColor={colors.commandBg}
@@ -52,13 +53,13 @@ export function TuiPaneSettingsDialogBody({
                 {rowState.selected ? "\u25b8 " : "  "}
               </Text>
               <Text
-                fg={rowState.selected ? colors.text : colors.textDim}
-                attributes={rowState.selected ? TextAttributes.BOLD : 0}
+                fg={rowState.disabled ? colors.textMuted : rowState.selected ? colors.text : colors.textDim}
+                attributes={rowState.selected && !rowState.disabled ? TextAttributes.BOLD : 0}
               >
                 {item.label}
               </Text>
             </Box>
-            <Text fg={rowState.selected ? colors.textMuted : colors.textMuted}>
+            <Text fg={colors.textMuted}>
               {item.detail}
             </Text>
           </Box>

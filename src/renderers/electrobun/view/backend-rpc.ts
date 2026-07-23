@@ -164,6 +164,10 @@ export async function backendRequest<T = unknown>(method: string, payload: unkno
   return decodeRpcValue<T>(result);
 }
 
+export function requestMainWindowRemoteControl(request: RemoteControlRequest): Promise<RemoteControlResponse> {
+  return backendRequest("remote.forward", { request });
+}
+
 export async function initElectrobunBackend(payload?: { kind?: "main" | "detached"; paneId?: string }): Promise<ElectrobunBackendInit> {
   initSnapshot = await backendRequest<ElectrobunBackendInit>("init", payload ?? null);
   return initSnapshot;

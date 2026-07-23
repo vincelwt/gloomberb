@@ -46,7 +46,11 @@ export function PaneTemplateInputStep({
   return (
     <DialogFrame
       title={step.label}
-      footer={step.defaultValue ? `Press Enter to use ${step.defaultValue}` : "Enter to continue"}
+      footer={step.defaultValue
+        ? `Press Enter to use ${step.defaultValue}`
+        : step.required === false
+          ? "Enter to keep the default"
+          : "Enter to continue"}
     >
       <Box flexDirection="column">
         {step.body?.map((line, index) => (
@@ -64,7 +68,7 @@ export function PaneTemplateInputStep({
           onChange={setValue}
           onSubmit={(submittedValue) => {
             const submitted = submittedValue.trim() || step.defaultValue || "";
-            if (submitted) resolve(submitted);
+            if (submitted || step.required === false) resolve(submitted);
           }}
         />
       </Box>

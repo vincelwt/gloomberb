@@ -16,6 +16,7 @@ export function useRemoteControlHandler(): RemoteControlHandler | null {
 }
 
 export interface RemoteControlAdapter {
+  handleRequest?: RemoteControlHandler;
   startServer?(options: { dataDir: string; handle: RemoteControlHandler }): void | (() => void | Promise<void>);
   registerHandler?(handler: RemoteControlHandler | null): void | (() => void);
 }
@@ -82,7 +83,7 @@ export function RemoteControlHost({
   }, [adapter, controller]);
 
   return (
-    <RemoteControlHandlerContext value={adapter ? controller.handle : null}>
+    <RemoteControlHandlerContext value={adapter?.handleRequest ?? (adapter ? controller.handle : null)}>
       {children}
     </RemoteControlHandlerContext>
   );

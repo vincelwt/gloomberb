@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act, useReducer, useState } from "react";
 import { TestDialogProvider, testRender } from "../../../../renderers/opentui/test-utils";
 import { PaneFooterBar, PaneFooterProvider } from "../../../../components/layout/pane/footer";
@@ -13,6 +13,7 @@ import { PluginRenderProvider, type PluginRuntimeAccess } from "../../../runtime
 import { getSharedMarketData, setSharedMarketDataForTests, setSharedRegistryForTests } from "../../../registry";
 import { AiScreenerPane } from "./pane";
 import { __setDetectedProvidersForTests, type AiProvider } from "../providers";
+import { setAiRunHost, setAiRuntimeCatalog, type AiRunHost } from "../runner";
 
 const PANE_ID = "ai-screener:test";
 
@@ -59,38 +60,49 @@ function makeFinancials(symbol: string, price: number, changePercent: number, ma
   };
 }
 
-function makePromptAwareProvider(initialOutput: string, rerunOutput: string): AiProvider {
+function makeProvider(id: AiProvider["id"], name: string = id): AiProvider {
   return {
-    id: "shell",
-    name: "Shell",
-    command: "sh",
+    id,
+    name,
     available: true,
-    buildArgs: (prompt) => [
-      "-c",
-      `
-prompt="$1"
-if printf '%s' "$prompt" | grep -q "These tickers were already found"; then
-cat <<'EOF'
-${rerunOutput}
-EOF
-else
-cat <<'EOF'
-${initialOutput}
-EOF
-fi
-      `,
-      "ai-screener-test",
-      prompt,
-    ],
+    status: "ready",
+    outputModes: ["plain", "structured", "screener"],
   };
+}
+
+function installHost(
+  output: (options: Parameters<AiRunHost["run"]>[0]) => string | Promise<string>,
+): void {
+  setAiRunHost({
+    async checkStatus() {
+      return { available: true, authenticated: true, message: null };
+    },
+    run(options) {
+      return {
+        done: Promise.resolve().then(() => output(options)),
+        cancel() {},
+      };
+    },
+  });
+}
+
+function installSequentialHost(initialOutput: string, rerunOutput: string): void {
+  let runCount = 0;
+  installHost(() => {
+    const output = runCount === 0 ? initialOutput : rerunOutput;
+    runCount += 1;
+    return output;
+  });
 }
 
 function ScreenerHarness({
   prompt,
   providerId,
+  settings,
 }: {
   prompt: string;
   providerId: string;
+  settings?: Record<string, unknown>;
 }) {
   const config = createDefaultConfig("/tmp/gloomberb-ai-screener");
   config.layout.instances.push({
@@ -101,6 +113,7 @@ function ScreenerHarness({
       prompt,
       providerId,
     },
+    ...(settings ? { settings } : {}),
   });
 
   const [state, dispatch] = useReducer(appReducer, undefined, () => {
@@ -152,7 +165,16 @@ async function waitForFrameToContain(text: string, attempts = 30): Promise<strin
   throw new Error(`Timed out waiting for "${text}"\n${lastFrame}`);
 }
 
+beforeEach(() => {
+  setAiRuntimeCatalog({ providers: [], accounts: [], models: [] });
+  installHost(() => {
+    throw new Error("Test AI host output was not configured.");
+  });
+});
+
 afterEach(() => {
+  setAiRunHost(null);
+  setAiRuntimeCatalog({ providers: [], accounts: [], models: [] });
   __setDetectedProvidersForTests(null);
   setSharedRegistryForTests(undefined);
   setSharedMarketDataForTests(undefined);
@@ -163,8 +185,34 @@ afterEach(() => {
 });
 
 describe("AiScreenerPane", () => {
+  test("shows the account connection message before trying to run", async () => {
+    const provider = makeProvider("anthropic", "Claude");
+    __setDetectedProvidersForTests([provider]);
+    setAiRunHost({
+      run() {
+        throw new Error("provider should not run before it is connected");
+      },
+      async checkStatus() {
+        return {
+          available: true,
+          authenticated: false,
+          message: "Connect Claude in pane settings.",
+        };
+      },
+    });
+
+    testSetup = await testRender(
+      <ScreenerHarness prompt="Find candidates." providerId="anthropic" />,
+      { width: 96, height: 18 },
+    );
+
+    const frame = await waitForFrameToContain("Connect Claude in pane settings.");
+    expect(frame).not.toContain("provider should not run");
+  });
+
   test("seeds a screener from pane params and runs it immediately", async () => {
-    const provider = makePromptAwareProvider(
+    const provider = makeProvider("anthropic", "Claude");
+    installSequentialHost(
       '{"title":"Compounders","summary":"Initial pass","tickers":[{"symbol":"AAPL","exchange":"NASDAQ","reason":"Strong cash flow durability"}]}',
       '{"title":"Compounders","summary":"Second pass","tickers":[{"symbol":"MSFT","exchange":"NASDAQ","reason":"Fresh rerun result"}]}',
     );
@@ -183,7 +231,7 @@ describe("AiScreenerPane", () => {
       pinTicker() {},
     } as any);
 
-    testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="shell" />, {
+    testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="anthropic" />, {
       width: 96,
       height: 18,
     });
@@ -193,10 +241,56 @@ describe("AiScreenerPane", () => {
     expect(frame).toContain("Compounders");
     expect(frame).toContain("Initial pass");
     expect(frame).toContain("Strong cash flow durability");
+    expect(frame.match(/Strong cash flow durability/g)?.length).toBe(1);
+    expect(frame).toContain("[r]efresh");
+    expect(frame).not.toContain("[Shift+R]");
+    const lines = frame.split("\n");
+    const tabLine = lines.findIndex((line) => line.includes("Compounders"));
+    const summaryLine = lines.findIndex((line) => line.includes("Initial pass"));
+    expect(summaryLine).toBe(tabLine + 1);
   });
 
-  test("merges new unique results on a normal refresh", async () => {
-    const provider = makePromptAwareProvider(
+  test("uses pane runner overrides without rewriting the seeded tab", async () => {
+    __setDetectedProvidersForTests([
+      makeProvider("anthropic", "Claude"),
+      makeProvider("openai-codex", "OpenAI"),
+    ]);
+    installHost(({ providerId, modelId }) => JSON.stringify({
+      title: "Override result",
+      summary: `${providerId}:${modelId ?? "auto"}`,
+      tickers: [{ symbol: "AAPL", exchange: "NASDAQ", reason: "Selected override" }],
+    }));
+
+    const dataProvider = createTestDataProvider();
+    setSharedMarketDataForTests(dataProvider);
+    setSharedRegistryForTests({
+      dataProvider,
+      tickerRepository: {
+        loadTicker: async () => null,
+        createTicker: async (metadata: TickerRecord["metadata"]) => ({ metadata }),
+        saveTicker: async () => {},
+      },
+      events: { emit() {} },
+      pinTicker() {},
+    } as any);
+
+    testSetup = await testRender(
+      <ScreenerHarness
+        prompt="Find override candidates."
+        providerId="anthropic"
+        settings={{ providerId: "openai-codex", modelId: "override-model" }}
+      />,
+      { width: 96, height: 18 },
+    );
+
+    const frame = await waitForFrameToContain("openai-codex:override-model");
+    expect(frame).toContain("Selected override");
+    expect(frame).not.toContain("anthropic:auto");
+  });
+
+  test("replaces results on refresh", async () => {
+    const provider = makeProvider("anthropic", "Claude");
+    installSequentialHost(
       '{"title":"Compounders","summary":"Initial pass","tickers":[{"symbol":"AAPL","exchange":"NASDAQ","reason":"Strong cash flow durability"}]}',
       '{"title":"Compounders","summary":"Second pass","tickers":[{"symbol":"MSFT","exchange":"NASDAQ","reason":"Fresh rerun result"}]}',
     );
@@ -215,7 +309,7 @@ describe("AiScreenerPane", () => {
       pinTicker() {},
     } as any);
 
-    testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="shell" />, {
+    testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="anthropic" />, {
       width: 96,
       height: 18,
     });
@@ -229,12 +323,13 @@ describe("AiScreenerPane", () => {
 
     await waitForFrameToContain("MSFT");
     const frame = await waitForFrameToContain("Second pass");
-    expect(frame).toContain("AAPL");
+    expect(frame).not.toContain("AAPL");
     expect(frame).toContain("MSFT");
   });
 
   test("opens the inline prompt editor without using the dialog flow", async () => {
-    const provider = makePromptAwareProvider(
+    const provider = makeProvider("anthropic", "Claude");
+    installSequentialHost(
       '{"title":"Compounders","summary":"Initial pass","tickers":[{"symbol":"AAPL","exchange":"NASDAQ","reason":"Strong cash flow durability"}]}',
       '{"title":"Compounders","summary":"Second pass","tickers":[{"symbol":"MSFT","exchange":"NASDAQ","reason":"Fresh rerun result"}]}',
     );
@@ -253,7 +348,7 @@ describe("AiScreenerPane", () => {
       pinTicker() {},
     } as any);
 
-    testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="shell" />, {
+    testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="anthropic" />, {
       width: 96,
       height: 18,
     });
@@ -265,18 +360,16 @@ describe("AiScreenerPane", () => {
       await testSetup!.renderOnce();
     });
 
-    const frame = await waitForFrameToContain("Save");
-    expect(frame).toContain("Save");
-    expect(frame).toContain("Cancel");
+    const frame = await waitForFrameToContain("[Ctrl+S]save");
+    expect(frame).toContain("[Ctrl+S]save");
+    expect(frame).toContain("[Esc]cancel");
     expect(frame).toContain("Find quality compounders.");
   });
 
-  test("replaces results on a force refresh", async () => {
-    const provider = makePromptAwareProvider(
-      '{"title":"Compounders","summary":"Initial pass","tickers":[{"symbol":"AAPL","exchange":"NASDAQ","reason":"Strong cash flow durability"}]}',
-      '{"title":"Compounders","summary":"Second pass","tickers":[{"symbol":"MSFT","exchange":"NASDAQ","reason":"Fresh rerun result"}]}',
-    );
+  test("does not show a stale prompt-changed status while a refresh is active", async () => {
+    const provider = makeProvider("anthropic", "Claude");
     __setDetectedProvidersForTests([provider]);
+    installHost(() => new Promise<string>(() => {}));
 
     const dataProvider = createTestDataProvider();
     setSharedMarketDataForTests(dataProvider);
@@ -291,26 +384,20 @@ describe("AiScreenerPane", () => {
       pinTicker() {},
     } as any);
 
-    testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="shell" />, {
-      width: 96,
-      height: 18,
-    });
+    testSetup = await testRender(
+      <ScreenerHarness prompt="Find quality compounders." providerId="anthropic" />,
+      { width: 96, height: 18 },
+    );
 
-    await waitForFrameToContain("AAPL");
-
-    await act(async () => {
-      testSetup!.mockInput.pressKey("r", { shift: true });
-      await testSetup!.renderOnce();
-    });
-
-    await waitForFrameToContain("MSFT");
-    const frame = await waitForFrameToContain("Second pass");
-    expect(frame).not.toContain("AAPL");
-    expect(frame).toContain("MSFT");
+    await waitForFrameToContain("Running AI screener...");
+    const frame = await waitForFrameToContain("Refreshing");
+    expect(frame).not.toContain("Prompt changed");
+    expect(frame).not.toContain("Refresh to rerun");
   });
 
   test("keeps the last good results visible when a rerun returns invalid JSON", async () => {
-    const provider = makePromptAwareProvider(
+    const provider = makeProvider("anthropic", "Claude");
+    installSequentialHost(
       '{"title":"Compounders","summary":"Initial pass","tickers":[{"symbol":"AAPL","exchange":"NASDAQ","reason":"Strong cash flow durability"}]}',
       "not-json",
     );
@@ -329,7 +416,7 @@ describe("AiScreenerPane", () => {
       pinTicker() {},
     } as any);
 
-    testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="shell" />, {
+    testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="anthropic" />, {
       width: 96,
       height: 18,
     });

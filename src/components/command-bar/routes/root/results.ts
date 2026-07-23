@@ -133,8 +133,14 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
         shortcutExecution: true,
       }))
       : [shortcutItem];
+    const relatedTemplateItems = rootQuery.trim().toUpperCase() === rootShortcutIntent.prefix
+      ? paneShortcutItems({
+        filterQuery: rootQuery,
+        includePromptableTickerTemplates: true,
+      })
+      : [];
     const seenItemIds = new Set<string>();
-    for (const item of templateItems) {
+    for (const item of [...templateItems, ...relatedTemplateItems]) {
       if (seenItemIds.has(item.id)) continue;
       seenItemIds.add(item.id);
       items.push(item);

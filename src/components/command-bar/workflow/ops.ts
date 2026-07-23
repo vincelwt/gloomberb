@@ -195,6 +195,9 @@ export async function applyPaneSettingFieldValue(
   deps: ApplyPaneSettingDeps,
   options?: { pushHistory?: boolean },
 ): Promise<void> {
+  if (field.type === "action") {
+    throw new Error("Pane setting actions cannot be applied as values.");
+  }
   const descriptor = deps.pluginRegistry.resolvePaneSettings(targetId);
   if (!descriptor) {
     throw new Error("This pane does not expose settings.");
@@ -202,12 +205,18 @@ export async function applyPaneSettingFieldValue(
 
   const state = deps.getState();
   const shouldPushHistory = options?.pushHistory !== false;
+  const clearOnChange = !Object.is(descriptor.context.settings[field.key], value)
+    ? Object.fromEntries((field.clearOnChange ?? []).map((key) => [key, ""]))
+    : {};
 
   if (field.storage === "plugin") {
     if (!descriptor.pluginId) {
       throw new Error("This pane setting is not owned by a plugin.");
     }
-    await deps.pluginRegistry.setConfigState(descriptor.pluginId, field.key, value);
+    await deps.pluginRegistry.setConfigStates(descriptor.pluginId, {
+      ...clearOnChange,
+      [field.key]: value,
+    });
     return;
   }
 
@@ -283,6 +292,7 @@ export async function applyPaneSettingFieldValue(
 
   let nextSettings: Record<string, unknown> = {
     ...(descriptor.rawSettings ?? descriptor.context.settings),
+    ...clearOnChange,
     [field.key]: value,
   };
 

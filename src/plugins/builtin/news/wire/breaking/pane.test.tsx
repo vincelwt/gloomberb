@@ -126,11 +126,11 @@ describe("BreakingPane", () => {
     setSharedNewsService(newsService.service);
     __setDetectedProvidersForTests([
       {
-        id: "claude",
+        id: "anthropic",
         name: "Claude",
-        command: "claude",
         available: true,
-        buildArgs: () => [],
+        status: "ready",
+        outputModes: ["plain", "structured", "screener"],
       },
     ]);
     setAiRunHost({

@@ -1,4 +1,6 @@
-export type LocalAgentProviderId = "claude" | "codex" | "pi";
+import { migrateLegacyAiProviderId, type AiProviderId } from "../providers";
+
+export type LocalAgentProviderId = string;
 
 export interface LocalAgentAttachmentMetadata {
   id: string;
@@ -23,6 +25,7 @@ export interface LocalAgentMessage {
 export interface LocalAgentThread {
   id: string;
   providerId: LocalAgentProviderId;
+  modelId: string | null;
   title: string;
   createdAt: number;
   updatedAt: number;
@@ -34,6 +37,11 @@ export interface LocalAgentWorkspaceState {
   threads: LocalAgentThread[];
 }
 
+export interface LocalAgentHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export const EMPTY_LOCAL_AGENT_WORKSPACE: LocalAgentWorkspaceState = {
   activeThreadId: null,
   threads: [],
@@ -41,14 +49,29 @@ export const EMPTY_LOCAL_AGENT_WORKSPACE: LocalAgentWorkspaceState = {
 
 const MAX_THREADS = 50;
 const MAX_MESSAGES_PER_THREAD = 100;
-const PROVIDER_TITLES: Record<LocalAgentProviderId, string> = {
+const LEGACY_PROVIDER_TITLES: Record<string, string> = {
+  anthropic: "Claude",
   claude: "Claude",
-  codex: "Codex",
+  google: "Google Gemini",
+  gemini: "Gemini",
+  "openai-codex": "OpenAI",
+  codex: "OpenAI",
+  openai: "OpenAI API",
+  "github-copilot": "GitHub Copilot",
+  xai: "xAI / Grok",
+  openrouter: "OpenRouter",
+  opencode: "OpenCode",
   pi: "Pi",
 };
 
 function isProviderId(value: unknown): value is LocalAgentProviderId {
-  return value === "claude" || value === "codex" || value === "pi";
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function providerTitle(providerId: string, providerLabel?: string): string {
+  return providerLabel?.trim()
+    || LEGACY_PROVIDER_TITLES[providerId]
+    || providerId;
 }
 
 function normalizeMessage(value: unknown): LocalAgentMessage | null {
@@ -102,6 +125,10 @@ export function normalizeLocalAgentWorkspace(value: unknown): LocalAgentWorkspac
       .filter(isThread)
       .map((thread) => ({
         ...thread,
+        providerId: migrateLegacyAiProviderId(thread.providerId.trim()),
+        modelId: typeof thread.modelId === "string" && thread.modelId.trim()
+          ? thread.modelId.trim()
+          : null,
         messages: thread.messages
           .map(normalizeMessage)
           .filter((message): message is LocalAgentMessage => message !== null)
@@ -118,15 +145,16 @@ export function normalizeLocalAgentWorkspace(value: unknown): LocalAgentWorkspac
 
 export function createLocalAgentThread(
   state: LocalAgentWorkspaceState,
-  providerId: LocalAgentProviderId,
-  options: { id?: string; now?: number } = {},
+  providerId: AiProviderId,
+  options: { id?: string; now?: number; modelId?: string | null; providerLabel?: string } = {},
 ): LocalAgentWorkspaceState {
   const now = options.now ?? Date.now();
   const id = options.id ?? crypto.randomUUID();
   const thread: LocalAgentThread = {
     id,
     providerId,
-    title: `New ${PROVIDER_TITLES[providerId]} thread`,
+    modelId: options.modelId?.trim() || null,
+    title: `New ${providerTitle(providerId, options.providerLabel)} thread`,
     createdAt: now,
     updatedAt: now,
     messages: [],
@@ -156,10 +184,10 @@ export function updateLocalAgentThread(
     if (thread.id !== threadId) return thread;
     const updated = updater(thread);
     changed = updated !== thread;
-    // Provider identity is a creation-time property. Ignore accidental mutation.
-    return updated.providerId === thread.providerId
+    // Runner identity is a creation-time property. Ignore accidental mutation.
+    return updated.providerId === thread.providerId && updated.modelId === thread.modelId
       ? updated
-      : { ...updated, providerId: thread.providerId };
+      : { ...updated, providerId: thread.providerId, modelId: thread.modelId };
   });
   return changed ? { ...state, threads } : state;
 }
@@ -212,20 +240,19 @@ export function removeLocalAgentMessages(
   }));
 }
 
-export function buildLocalAgentPrompt(
+export function buildLocalAgentHistory(
   thread: LocalAgentThread,
+): LocalAgentHistoryMessage[] {
+  return thread.messages
+    .filter((message) => message.role === "user" || message.status === "complete")
+    .map(({ role, content }) => ({ role, content }));
+}
+
+export function buildLocalAgentRequestPrompt(
   userText: string,
   attachments: LocalAgentAttachmentPayload[],
-  options: { appControlInstructions?: string } = {},
 ): string {
-  const transcript = thread.messages
-    .filter((message) => message.role === "user" || message.status === "complete")
-    .map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.content}`)
-    .join("\n\n");
-  const sections = [
-    "Continue this local research conversation. Answer the current user request directly.",
-  ];
-  if (transcript) sections.push(`Conversation so far:\n${transcript}`);
+  const sections: string[] = [];
   if (attachments.length > 0) {
     sections.push([
       "Context explicitly attached by the user for this request:",
@@ -233,7 +260,5 @@ export function buildLocalAgentPrompt(
     ].join("\n"));
   }
   sections.push(`Current user request:\n${userText.trim()}`);
-  const appControlInstructions = options.appControlInstructions?.trim();
-  if (appControlInstructions) sections.push(appControlInstructions);
   return sections.join("\n\n");
 }

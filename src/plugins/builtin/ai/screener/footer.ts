@@ -1,97 +1,108 @@
 import { usePaneFooter } from "../../../../components";
-import { formatTimeAgo } from "../../../../utils/format";
-import { t, tf } from "../../../../i18n";
-import { getAiProvider, type AiProvider } from "../providers";
+import { t } from "../../../../i18n";
 import type { AiScreenerTab, RunState, ScreenerEditorState } from "./model";
 
 interface UseAiScreenerFooterOptions {
   activeTab: AiScreenerTab | null;
-  addTab: () => void;
-  cycleEditorProvider: (direction: -1 | 1) => void;
-  editActiveTab: () => void;
-  editorProvider: AiProvider | null;
   editorState: ScreenerEditorState | null;
-  forceRefreshActiveTab: () => void;
-  forceRunArmed: boolean;
   isRunningActiveTab: boolean;
-  providers: AiProvider[];
-  refreshActiveTab: () => void;
-  removeTab: (tabId: string) => void;
   runState: RunState | null;
-  saveEditor: () => void;
-  selectableProviders: AiProvider[];
+  onAddTab: () => void;
+  onCancelRun: () => void;
+  onCloseEditor: () => void;
+  onEdit: () => void;
+  onRefresh: () => void;
+  onSaveEditor: () => void;
 }
 
 export function useAiScreenerFooter({
   activeTab,
-  addTab,
-  cycleEditorProvider,
-  editActiveTab,
-  editorProvider,
   editorState,
-  forceRefreshActiveTab,
-  forceRunArmed,
   isRunningActiveTab,
-  providers,
-  refreshActiveTab,
-  removeTab,
   runState,
-  saveEditor,
-  selectableProviders,
+  onAddTab,
+  onCancelRun,
+  onCloseEditor,
+  onEdit,
+  onRefresh,
+  onSaveEditor,
 }: UseAiScreenerFooterOptions) {
-  const activeProvider = activeTab ? getAiProvider(activeTab.providerId, providers) : null;
-  const statusText = activeTab
-    ? isRunningActiveTab && runState
-      ? tf("{mode} with {provider}...", {
-        mode: runState.mode === "force" ? t("Force refreshing") : t("Refreshing"),
-        provider: activeProvider?.name ?? t("AI"),
-      })
-      : activeTab.lastSuccessAt
-        ? tf("Last ran {time}", { time: formatTimeAgo(new Date(activeTab.lastSuccessAt)) })
-        : t("Never run")
-    : t("No screener selected");
-
   usePaneFooter("ai-screener", () => ({
-    info: [
-      ...(editorState ? [{
-        id: "provider",
-        parts: [{ text: editorProvider?.name ?? editorState.providerId, tone: editorProvider?.available === false ? "warning" as const : "value" as const, bold: true }],
-      }] : activeTab ? [{
-        id: "provider",
-        parts: [{ text: activeProvider?.name ?? activeTab.providerId, tone: activeProvider?.available === false ? "warning" as const : "value" as const, bold: true }],
-      }] : []),
-      { id: "status", parts: [{ text: statusText, tone: isRunningActiveTab ? "muted" : "value" }] },
-      ...(forceRunArmed ? [{ id: "force", parts: [{ text: t("force refresh armed"), tone: "warning" as const }] }] : []),
-    ],
+    info: isRunningActiveTab && runState
+      ? [{
+          id: "running",
+          parts: [{
+            text: t("Refreshing…"),
+            tone: "muted" as const,
+          }],
+        }]
+      : activeTab?.lastError
+        ? [{
+            id: "error",
+            parts: [{ text: activeTab.lastError, tone: "warning" as const }],
+          }]
+        : activeTab?.lastWarning
+          ? [{
+              id: "warning",
+              parts: [{ text: activeTab.lastWarning, tone: "warning" as const }],
+            }]
+          : [],
     hints: editorState
       ? [
-          { id: "save", key: "Ctrl+S", label: t("save"), onPress: saveEditor },
-          { id: "provider", key: "Ctrl+P", label: t("provider"), onPress: () => cycleEditorProvider(1), disabled: selectableProviders.length <= 1 },
+          {
+            id: "save",
+            key: "Ctrl+S",
+            label: t("save"),
+            onPress: onSaveEditor,
+          },
+          {
+            id: "cancel-edit",
+            key: "Esc",
+            label: t("cancel"),
+            onPress: onCloseEditor,
+          },
         ]
-      : [
-          { id: "new", key: "t", label: t("new"), onPress: addTab },
-          { id: "close", key: "w", label: t("close tab"), onPress: activeTab ? () => removeTab(activeTab.id) : undefined, disabled: !activeTab },
-          { id: "refresh", key: "r", label: t("efresh"), onPress: refreshActiveTab, disabled: !activeTab || isRunningActiveTab },
-          { id: "force-refresh", key: "Shift+R", label: t("force refresh"), onPress: forceRefreshActiveTab, disabled: !activeTab || isRunningActiveTab },
-          { id: "edit", key: "e", label: t("dit"), onPress: editActiveTab, disabled: !activeTab },
-        ],
+      : isRunningActiveTab
+        ? [
+            {
+              id: "stop",
+              key: "Esc",
+              label: t("stop"),
+              onPress: onCancelRun,
+            },
+          ]
+        : [
+            {
+              id: "new",
+              key: "t",
+              label: t("ab"),
+              onPress: onAddTab,
+            },
+            {
+              id: "refresh",
+              key: "r",
+              label: t("efresh"),
+              onPress: onRefresh,
+              disabled: !activeTab,
+            },
+            {
+              id: "edit",
+              key: "e",
+              label: t("dit"),
+              onPress: onEdit,
+              disabled: !activeTab,
+            },
+          ],
   }), [
-    activeProvider?.available,
-    activeProvider?.name,
     activeTab,
-    addTab,
-    cycleEditorProvider,
-    editActiveTab,
-    editorProvider?.available,
-    editorProvider?.name,
     editorState,
-    forceRefreshActiveTab,
-    forceRunArmed,
     isRunningActiveTab,
-    refreshActiveTab,
-    removeTab,
-    saveEditor,
-    selectableProviders.length,
-    statusText,
+    onAddTab,
+    onCancelRun,
+    onCloseEditor,
+    onEdit,
+    onRefresh,
+    onSaveEditor,
+    runState,
   ]);
 }
